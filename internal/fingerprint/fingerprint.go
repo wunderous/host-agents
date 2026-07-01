@@ -15,9 +15,9 @@ const Version = "v1"
 type Source string
 
 const (
-	SourceLinuxMachineID      Source = "linux-machine-id"
-	SourceWindowsMachineGUID  Source = "windows-machine-guid"
-	SourceMacOSPlatformUUID   Source = "macos-io-platform-uuid"
+	SourceLinuxMachineID     Source = "linux-machine-id"
+	SourceWindowsMachineGUID Source = "windows-machine-guid"
+	SourceMacOSPlatformUUID  Source = "macos-io-platform-uuid"
 )
 
 type Identity struct {

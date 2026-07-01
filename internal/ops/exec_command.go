@@ -9,10 +9,10 @@ import (
 const defaultExecCommandTimeout = 30 * time.Second
 
 type ExecCommandArgs struct {
-	VMName     string
-	Command    string
-	Args       []string
-	TimeoutMs  int
+	VMName    string
+	Command   string
+	Args      []string
+	TimeoutMs int
 }
 
 func (s *HostOperationsService) ExecCommand(args ExecCommandArgs, onData func(string)) (map[string]any, error) {

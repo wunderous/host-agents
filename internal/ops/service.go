@@ -18,12 +18,12 @@ import (
 )
 
 const (
-	defaultDiscoveryTimeout   = 45 * time.Second
-	provisionVMTimeout        = 10 * time.Minute
-	hostK3sServiceWait        = 120 * time.Second
-	clusterAgentServiceName   = "opute-cluster-agent"
-	sqlConnectorMaxPerHost    = 32
-	sqlConnectorIdleDrain     = 120 * time.Second
+	defaultDiscoveryTimeout = 45 * time.Second
+	provisionVMTimeout      = 10 * time.Minute
+	hostK3sServiceWait      = 120 * time.Second
+	clusterAgentServiceName = "opute-cluster-agent"
+	sqlConnectorMaxPerHost  = 32
+	sqlConnectorIdleDrain   = 120 * time.Second
 )
 
 var clusterScopedK8sResources = map[string]bool{
@@ -72,7 +72,7 @@ type HostOperationsService struct {
 }
 
 type Options struct {
-	ProviderID provider.ID
+	ProviderID       provider.ID
 	ToolsForProvider func(providerID string) []string
 }
 
@@ -902,19 +902,19 @@ func k8sAge(creationTimestamp string) string {
 // --- TCP relay + SQL connector supervisor ---
 
 type tcpRelayManager struct {
-	mu             sync.Mutex
-	sessions       map[string]*relaySession
-	portToSession  map[int]string
+	mu            sync.Mutex
+	sessions      map[string]*relaySession
+	portToSession map[int]string
 }
 
 type relaySession struct {
-	sessionID    string
-	listenHost   string
-	listenPort   int
-	targetHost   string
-	targetPort   int
-	listener     net.Listener
-	active       map[net.Conn]struct{}
+	sessionID  string
+	listenHost string
+	listenPort int
+	targetHost string
+	targetPort int
+	listener   net.Listener
+	active     map[net.Conn]struct{}
 }
 
 func newTCPRelayManager() *tcpRelayManager {

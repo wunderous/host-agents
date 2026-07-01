@@ -8,18 +8,18 @@ import (
 )
 
 const (
-	DefaultTTL           = time.Hour
-	PollIntervalMs       = 3000
+	DefaultTTL     = time.Hour
+	PollIntervalMs = 3000
 )
 
 type Status string
 
 const (
-	StatusWorking        Status = "working"
-	StatusCompleted      Status = "completed"
-	StatusFailed         Status = "failed"
-	StatusCancelled      Status = "cancelled"
-	StatusInputRequired  Status = "input_required"
+	StatusWorking       Status = "working"
+	StatusCompleted     Status = "completed"
+	StatusFailed        Status = "failed"
+	StatusCancelled     Status = "cancelled"
+	StatusInputRequired Status = "input_required"
 )
 
 type ToolResult struct {
@@ -29,20 +29,20 @@ type ToolResult struct {
 }
 
 type Record struct {
-	TaskID         string         `json:"taskId"`
-	ToolName       string         `json:"toolName"`
-	ToolArgs       map[string]any `json:"toolArgs"`
-	Status         Status         `json:"status"`
-	StatusMessage  string         `json:"statusMessage,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
-	CreatedAt      string         `json:"createdAt"`
-	LastUpdatedAt  string         `json:"lastUpdatedAt"`
-	TTL            int64          `json:"ttl"`
-	PollInterval   int            `json:"pollInterval"`
-	Logs           []string       `json:"logs,omitempty"`
-	ToolResult     *ToolResult    `json:"-"`
-	resultCh       chan ToolResult
+	TaskID        string         `json:"taskId"`
+	ToolName      string         `json:"toolName"`
+	ToolArgs      map[string]any `json:"toolArgs"`
+	Status        Status         `json:"status"`
+	StatusMessage string         `json:"statusMessage,omitempty"`
+	Description   string         `json:"description,omitempty"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
+	CreatedAt     string         `json:"createdAt"`
+	LastUpdatedAt string         `json:"lastUpdatedAt"`
+	TTL           int64          `json:"ttl"`
+	PollInterval  int            `json:"pollInterval"`
+	Logs          []string       `json:"logs,omitempty"`
+	ToolResult    *ToolResult    `json:"-"`
+	resultCh      chan ToolResult
 }
 
 type Registry struct {
@@ -200,21 +200,21 @@ func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 }
 
 var TaskAwareTools = map[string]bool{
-	"create_vm":                    true,
-	"provision_vm":                 true,
-	"delete_vm":                    true,
-	"start_vm":                     true,
-	"stop_vm":                      true,
-	"restart_vm":                   true,
-	"install_k3s":                  true,
-	"configure_k3s_load_balancer":  true,
-	"configure_k3s_ha_servers":     true,
-	"uninstall_k3s":                true,
-	"restart_cluster":              true,
-	"drain_cluster_nodes":          true,
-	"configure_network":            true,
-	"remove_vm_network_device":     true,
-	"install_cluster_agent":        true,
-	"install_host_agent":           true,
-	"restart_cluster_agent":        true,
+	"create_vm":                   true,
+	"provision_vm":                true,
+	"delete_vm":                   true,
+	"start_vm":                    true,
+	"stop_vm":                     true,
+	"restart_vm":                  true,
+	"install_k3s":                 true,
+	"configure_k3s_load_balancer": true,
+	"configure_k3s_ha_servers":    true,
+	"uninstall_k3s":               true,
+	"restart_cluster":             true,
+	"drain_cluster_nodes":         true,
+	"configure_network":           true,
+	"remove_vm_network_device":    true,
+	"install_cluster_agent":       true,
+	"install_host_agent":          true,
+	"restart_cluster_agent":       true,
 }
