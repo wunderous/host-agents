@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -987,7 +988,7 @@ func (m *tcpRelayManager) acceptLoop(session *relaySession) {
 }
 
 func (m *tcpRelayManager) pipe(session *relaySession, client net.Conn) {
-	upstream, err := net.Dial("tcp", fmt.Sprintf("%s:%d", session.targetHost, session.targetPort))
+	upstream, err := net.Dial("tcp", net.JoinHostPort(session.targetHost, strconv.Itoa(session.targetPort)))
 	if err != nil {
 		client.Close()
 		return
