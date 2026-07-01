@@ -1,0 +1,3684 @@
+[
+  {
+    "name": "get_host_info",
+    "title": "Get Host Info",
+    "description": "Return host metadata and supported infrastructure operations",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "hostName": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "lxcBinaryPath": {
+          "type": "string"
+        },
+        "systemctlPath": {
+          "type": "string"
+        },
+        "supportedTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "hostName",
+        "providerId",
+        "lxcBinaryPath",
+        "systemctlPath",
+        "supportedTools"
+      ]
+    }
+  },
+  {
+    "name": "stream_vm_console",
+    "title": "Stream VM Console",
+    "description": "Stream VM serial console output (lxc console). Direct TTY access for boot observability on this host.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Name of the VM"
+        },
+        "width": {
+          "type": "number",
+          "description": "Terminal width in columns"
+        },
+        "height": {
+          "type": "number",
+          "description": "Terminal height in rows"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "operationId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "vmName",
+        "status",
+        "operationId"
+      ]
+    }
+  },
+  {
+    "name": "send_console_input",
+    "title": "Send Console Input",
+    "description": "Send input data to an active console stream on this host.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "description": "The operationId returned by stream_vm_console"
+        },
+        "data": {
+          "type": "string",
+          "description": "Raw string data to send to the console PTY"
+        }
+      },
+      "required": [
+        "operationId",
+        "data"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "operationId"
+      ]
+    }
+  },
+  {
+    "name": "resize_console",
+    "title": "Resize Console",
+    "description": "Resize an active console terminal on this host.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "description": "The operationId returned by stream_vm_console"
+        },
+        "width": {
+          "type": "number",
+          "description": "New width in columns"
+        },
+        "height": {
+          "type": "number",
+          "description": "New height in rows"
+        }
+      },
+      "required": [
+        "operationId",
+        "width",
+        "height"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "operationId"
+      ]
+    }
+  },
+  {
+    "name": "create_vm",
+    "title": "Create VM",
+    "description": "Launch a new Incus virtual machine on the host",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "VM instance name to create (legacy)"
+        },
+        "name": {
+          "type": "string",
+          "description": "VM instance name to create"
+        },
+        "image": {
+          "type": "string",
+          "description": "Optional Incus image alias or remote image reference"
+        },
+        "cpus": {
+          "type": "number",
+          "description": "CPU count (default: 2)"
+        },
+        "memory": {
+          "type": "string",
+          "description": "Memory limit such as 2GiB (default: 2GiB)"
+        },
+        "disk": {
+          "type": "string",
+          "description": "Optional root disk size such as 20GiB"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "image",
+        "status"
+      ]
+    },
+    "execution": {
+      "taskSupport": "optional"
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "provision_vm",
+    "title": "Provision VM",
+    "description": "Launch a new Incus virtual machine on the host",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "VM instance name to create"
+        },
+        "image": {
+          "type": "string",
+          "description": "Optional Incus image alias or remote image reference"
+        },
+        "cpus": {
+          "type": "number",
+          "description": "CPU count (default: 2)"
+        },
+        "memory": {
+          "type": "string",
+          "description": "Memory limit such as 2GiB (default: 2GiB)"
+        },
+        "disk": {
+          "type": "string",
+          "description": "Optional root disk size such as 20GiB"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "image",
+        "status"
+      ]
+    },
+    "execution": {
+      "taskSupport": "optional"
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "configure_k3s_load_balancer",
+    "title": "Configure K3s HA load balancer",
+    "description": "Provision or reuse a VM, install HAProxy, and forward the K3s API port to planned server nodes",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string",
+          "description": "Managed HA cluster identifier"
+        },
+        "vmName": {
+          "type": "string",
+          "description": "Load balancer VM name"
+        },
+        "image": {
+          "type": "string",
+          "description": "Optional Incus image alias or remote image reference"
+        },
+        "cpus": {
+          "type": "number",
+          "description": "CPU count (default: 2)"
+        },
+        "memory": {
+          "type": "string",
+          "description": "Memory limit such as 2GiB (default: 2GiB)"
+        },
+        "disk": {
+          "type": "string",
+          "description": "Optional root disk size such as 20GiB"
+        },
+        "apiPort": {
+          "type": "number",
+          "description": "Kubernetes API listen port (default: 6443)"
+        },
+        "serverBackends": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "vmName": {
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "port": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "host"
+            ]
+          }
+        }
+      },
+      "required": [
+        "clusterId",
+        "vmName",
+        "serverBackends"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "vmName": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string",
+          "enum": [
+            "haproxy"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        },
+        "apiEndpoint": {
+          "type": "string"
+        },
+        "apiPort": {
+          "type": "number"
+        },
+        "ipv4": {
+          "type": "string"
+        },
+        "backends": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "clusterId",
+        "vmName",
+        "serviceName",
+        "status",
+        "apiEndpoint",
+        "apiPort",
+        "backends"
+      ]
+    },
+    "execution": {
+      "taskSupport": "optional"
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "configure_k3s_ha_servers",
+    "title": "Configure K3s HA servers",
+    "description": "Provision or reuse K3s server VMs and bootstrap/join them into the planned HA cluster topology",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string",
+          "description": "Managed HA cluster identifier"
+        },
+        "apiEndpoint": {
+          "type": "string",
+          "description": "Cluster API endpoint exposed by the load balancer"
+        },
+        "loadBalancerVmName": {
+          "type": "string",
+          "description": "Load balancer VM name"
+        },
+        "loadBalancerApiPort": {
+          "type": "number",
+          "description": "Load balancer API port (default: 6443)"
+        },
+        "tokenSecretRef": {
+          "type": "string",
+          "description": "K3s token secret reference"
+        },
+        "tokenValue": {
+          "type": "string",
+          "description": "Resolved K3s join token value supplied by the Bridge"
+        },
+        "tlsSans": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "TLS subject alternate names for the cluster API endpoint"
+        },
+        "serverNodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "vmName": {
+                "type": "string"
+              },
+              "bootstrap": {
+                "type": "boolean"
+              },
+              "installArgs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "vmName",
+              "bootstrap",
+              "installArgs"
+            ]
+          }
+        },
+        "image": {
+          "type": "string",
+          "description": "Optional Incus image alias or remote image reference"
+        },
+        "cpus": {
+          "type": "number",
+          "description": "CPU count (default: 2)"
+        },
+        "memory": {
+          "type": "string",
+          "description": "Memory limit such as 2GiB (default: 2GiB)"
+        },
+        "disk": {
+          "type": "string",
+          "description": "Optional root disk size such as 20GiB"
+        }
+      },
+      "required": [
+        "clusterId",
+        "apiEndpoint",
+        "loadBalancerVmName",
+        "tokenSecretRef",
+        "tlsSans",
+        "serverNodes"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string",
+          "enum": [
+            "k3s"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        },
+        "kubeconfigContent": {
+          "type": "string"
+        },
+        "servers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "vmName": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "ipv4": {
+                "type": "string"
+              },
+              "health": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "id",
+              "vmName",
+              "status"
+            ]
+          }
+        }
+      },
+      "required": [
+        "clusterId",
+        "serviceName",
+        "status",
+        "servers"
+      ]
+    },
+    "execution": {
+      "taskSupport": "optional"
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "start_vm",
+    "title": "Start VM",
+    "description": "Start a VM on the host",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "stop_vm",
+    "title": "Stop VM",
+    "description": "Stop a VM on the host",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "stopped"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "restart_vm",
+    "title": "Restart VM",
+    "description": "Force-stop and then start a VM on the host",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "install_k3s",
+    "title": "Install K3s",
+    "description": "Install K3s inside a VM and verify the service becomes active",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string",
+          "enum": [
+            "k3s"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "serviceName",
+        "status"
+      ]
+    },
+    "execution": {
+      "taskSupport": "optional"
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "uninstall_k3s",
+    "title": "Uninstall K3s",
+    "description": "Uninstall K3s inside a VM and verify the binary is removed",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string",
+          "enum": [
+            "k3s"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "removed"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "serviceName",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "install_cluster_agent",
+    "title": "Install Cluster Agent",
+    "description": "Install and activate the Opute cluster agent service inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "clusterId": {
+          "type": "string",
+          "description": "Managed cluster identifier"
+        },
+        "clusterName": {
+          "type": "string",
+          "description": "Managed cluster display name"
+        },
+        "agentId": {
+          "type": "string",
+          "description": "Cluster agent identifier"
+        },
+        "bridgeToken": {
+          "type": "string",
+          "description": "Bridge bearer token for guest agent registration"
+        },
+        "bridgeUrl": {
+          "type": "string",
+          "description": "Explicit bridge URL reachable from the guest VM"
+        },
+        "bridgePort": {
+          "type": "number",
+          "description": "Bridge port to use when bridgeUrl is omitted and the host should auto-resolve the bridge address"
+        },
+        "providerId": {
+          "type": "string",
+          "description": "Infrastructure provider identifier (incus)"
+        },
+        "resourceId": {
+          "type": "string",
+          "description": "Infrastructure resource identifier"
+        },
+        "apiEndpoint": {
+          "type": "string",
+          "description": "Optional cluster API endpoint"
+        }
+      },
+      "required": [
+        "vmName",
+        "clusterId",
+        "clusterName",
+        "agentId",
+        "bridgeToken"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "bridgeUrl": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "bridgeUrl",
+        "serviceName",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "restart_cluster_agent",
+    "title": "Restart Cluster Agent",
+    "description": "Restart the Opute cluster agent service inside a VM and verify it becomes active again",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string",
+          "enum": [
+            "opute-cluster-agent"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "serviceName",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "restart_cluster",
+    "title": "Restart Cluster",
+    "description": "Restart K3s inside a VM and verify the service becomes active again",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string",
+          "enum": [
+            "k3s"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "serviceName",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "restart_host_service",
+    "title": "Restart Host Service",
+    "description": "Restart a host-level service such as Incus and verify it becomes active",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "serviceName": {
+          "type": "string",
+          "description": "Systemd service name to restart"
+        }
+      },
+      "required": [
+        "serviceName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "serviceName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        }
+      },
+      "required": [
+        "serviceName",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "drain_cluster_nodes",
+    "title": "Drain Cluster Nodes",
+    "description": "Drain all schedulable K3s nodes in a multi-node cluster from inside the VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "drainedNodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "vmName",
+        "drainedNodes"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "delete_vm",
+    "title": "Delete VM",
+    "description": "Delete a VM forcefully from the host",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "vmName",
+        "deleted"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "configure_network",
+    "title": "Configure Network",
+    "description": "Attach a bridged NIC device to a VM so it joins a host network bridge (e.g. wlan0)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "parent": {
+          "type": "string",
+          "description": "Host bridge/NIC to attach (default: wlan0)"
+        },
+        "deviceName": {
+          "type": "string",
+          "description": "Name of the NIC device inside the VM (default: eth1)"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "deviceName": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "attached"
+          ]
+        }
+      },
+      "required": [
+        "vmName",
+        "deviceName",
+        "parent",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "list_vm_network_devices",
+    "title": "List VM Network Devices",
+    "description": "List Incus network interface devices attached to a VM (from expanded config)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "nictype": {
+                "type": "string"
+              },
+              "parent": {
+                "type": "string"
+              },
+              "network": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "type"
+            ]
+          }
+        }
+      },
+      "required": [
+        "vmName",
+        "devices"
+      ]
+    },
+    "_meta": {
+      "needsApproval": false
+    }
+  },
+  {
+    "name": "remove_vm_network_device",
+    "title": "Remove VM Network Device",
+    "description": "Remove a network interface device from a VM Incus configuration",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "deviceName": {
+          "type": "string",
+          "description": "Name of the NIC device to remove (e.g. eth1)"
+        }
+      },
+      "required": [
+        "vmName",
+        "deviceName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "deviceName": {
+          "type": "string"
+        },
+        "removed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "vmName",
+        "deviceName",
+        "removed"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "ensure_docker",
+    "title": "Ensure Docker daemon",
+    "description": "Verify Docker Desktop daemon is running on Windows hosts (does not install Docker Desktop)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "daemonRunning": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "alreadyRunning": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "daemonRunning",
+        "alreadyRunning"
+      ]
+    }
+  },
+  {
+    "name": "ensure_k3d",
+    "title": "Ensure k3d",
+    "description": "Install k3d CLI on Windows hosts when missing (requires Docker Desktop already installed)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "installed": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "binaryPath": {
+          "type": "string"
+        },
+        "alreadyPresent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "installed",
+        "binaryPath",
+        "alreadyPresent"
+      ]
+    }
+  },
+  {
+    "name": "install_provider_tools",
+    "title": "Install Provider Tools",
+    "description": "Validate provider readiness and switch the active infrastructure provider on this host (incus)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "description": "Target provider to switch to ('incus')",
+          "enum": [
+            "incus"
+          ]
+        }
+      },
+      "required": [
+        "providerId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "binaryPath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "installed",
+        "binaryPath"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "uninstall_provider_tools",
+    "title": "Uninstall Provider Tools",
+    "description": "Remove active provider association from the host after ensuring no VMs remain",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "removed"
+          ]
+        }
+      },
+      "required": [
+        "providerId",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "register_kubernetes_cluster",
+    "title": "Register Kubernetes Cluster",
+    "description": "Register an externally-managed Kubernetes cluster (not provisioned by Opute). The cluster record is persisted in the bridge database and the kubeconfig is stored on the host.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterName": {
+          "type": "string",
+          "description": "Display name for the cluster"
+        },
+        "apiEndpoint": {
+          "type": "string",
+          "description": "Kubernetes API server endpoint (e.g. https://1.2.3.4:6443)"
+        },
+        "kubeconfigContent": {
+          "type": "string",
+          "description": "Raw kubeconfig YAML content"
+        },
+        "kubeconfigPath": {
+          "type": "string",
+          "description": "Path to an existing kubeconfig file on the host"
+        }
+      },
+      "required": [
+        "clusterName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "external"
+          ]
+        },
+        "connectionState": {
+          "type": "string"
+        },
+        "apiEndpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId",
+        "clusterName",
+        "source",
+        "connectionState"
+      ]
+    }
+  },
+  {
+    "name": "list_kubernetes_clusters",
+    "title": "List Kubernetes Clusters",
+    "description": "List all managed Kubernetes clusters (both provisioned by Opute and externally registered).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Filter by cluster source: k3s-vm or external",
+          "enum": [
+            "k3s-vm",
+            "external"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "connectionState": {
+                "type": "string"
+              },
+              "apiEndpoint": {
+                "type": "string"
+              },
+              "agentId": {
+                "type": "string"
+              },
+              "lastHeartbeatAt": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "clusters",
+        "total"
+      ]
+    }
+  },
+  {
+    "name": "exec_kubernetes_command",
+    "title": "Execute Kubernetes Command",
+    "description": "Execute a kubectl command against a registered cluster using its stored kubeconfig.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string",
+          "description": "Managed cluster identifier"
+        },
+        "command": {
+          "type": "string",
+          "description": "kubectl sub-command (e.g. get, apply, delete)"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments to pass to kubectl (each argument as a separate array element)"
+        }
+      },
+      "required": [
+        "clusterId",
+        "command"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId",
+        "command",
+        "stdout"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "list_namespaces",
+    "title": "List Namespaces",
+    "description": "List Kubernetes namespaces inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "namespaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "namespaces"
+      ]
+    }
+  },
+  {
+    "name": "list_services",
+    "title": "List Services",
+    "description": "List Kubernetes services inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Optional namespace filter"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "services"
+      ]
+    }
+  },
+  {
+    "name": "list_pods",
+    "title": "List Pods",
+    "description": "List Kubernetes pods inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Optional namespace filter"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "pods": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "pods"
+      ]
+    }
+  },
+  {
+    "name": "list_deployments",
+    "title": "List Deployments",
+    "description": "List Kubernetes deployments inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Optional namespace filter"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "deployments": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "deployments"
+      ]
+    }
+  },
+  {
+    "name": "list_configmaps",
+    "title": "List ConfigMaps",
+    "description": "List Kubernetes ConfigMaps inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Optional namespace filter"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "configmaps": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "configmaps"
+      ]
+    }
+  },
+  {
+    "name": "list_persistent_volume_claims",
+    "title": "List Persistent Volume Claims",
+    "description": "List Kubernetes persistent volume claims inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Optional namespace filter"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "claims"
+      ]
+    }
+  },
+  {
+    "name": "list_ingress_classes",
+    "title": "List Ingress Classes",
+    "description": "List Kubernetes ingress classes inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "classes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "classes"
+      ]
+    }
+  },
+  {
+    "name": "list_kubernetes_secrets",
+    "title": "List Kubernetes Secrets",
+    "description": "List Kubernetes secrets inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Optional namespace filter"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "secrets"
+      ]
+    }
+  },
+  {
+    "name": "list_storage_classes",
+    "title": "List Storage Classes",
+    "description": "List Kubernetes StorageClasses inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "storageClasses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "storageClasses"
+      ]
+    }
+  },
+  {
+    "name": "list_certificate_issuers",
+    "title": "List Certificate Issuers",
+    "description": "List cert-manager Issuers and ClusterIssuers inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Optional namespace filter for Issuers"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "issuers": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "issuers"
+      ]
+    }
+  },
+  {
+    "name": "list_service_ports",
+    "title": "List Service Ports",
+    "description": "List exposed ports for a Kubernetes Service inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Service namespace"
+        },
+        "serviceName": {
+          "type": "string",
+          "description": "Service name"
+        }
+      },
+      "required": [
+        "vmName",
+        "serviceName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "ports"
+      ]
+    }
+  },
+  {
+    "name": "inspect_workload",
+    "title": "Inspect Workload",
+    "description": "Inspect a Kubernetes Deployment and return fields useful for workload forms",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Workload namespace"
+        },
+        "workloadName": {
+          "type": "string",
+          "description": "Deployment name"
+        }
+      },
+      "required": [
+        "vmName",
+        "workloadName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "workload": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "workload"
+      ]
+    }
+  },
+  {
+    "name": "list_configmap_keys",
+    "title": "List ConfigMap Keys",
+    "description": "List data keys in a Kubernetes ConfigMap inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "ConfigMap namespace"
+        },
+        "configMapName": {
+          "type": "string",
+          "description": "ConfigMap name"
+        }
+      },
+      "required": [
+        "vmName",
+        "configMapName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "keys"
+      ]
+    }
+  },
+  {
+    "name": "list_secret_keys",
+    "title": "List Secret Keys",
+    "description": "List data keys in a Kubernetes Secret inside a VM",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Secret namespace"
+        },
+        "secretName": {
+          "type": "string",
+          "description": "Secret name"
+        }
+      },
+      "required": [
+        "vmName",
+        "secretName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "keys"
+      ]
+    }
+  },
+  {
+    "name": "get_k8s_resource",
+    "title": "Get Kubernetes Resource",
+    "description": "Fetch a Kubernetes resource from a VM-backed cluster as YAML.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "kind": {
+          "type": "string",
+          "description": "Kubernetes resource kind, such as Deployment, Service, Pod, ConfigMap, or PersistentVolumeClaim"
+        },
+        "resourceName": {
+          "type": "string",
+          "description": "Kubernetes resource name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Namespace containing the resource"
+        }
+      },
+      "required": [
+        "vmName",
+        "kind",
+        "resourceName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "resourceName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "yaml": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "yaml"
+      ],
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "get_k8s_resource_status",
+    "title": "Get Kubernetes Resource Status",
+    "description": "Fetch a normalized readiness status for a Kubernetes resource in a VM-backed cluster.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "resourceKind": {
+          "type": "string",
+          "description": "Kubernetes resource kind, such as Deployment, Service, Pod, ConfigMap, or PersistentVolumeClaim"
+        },
+        "resourceName": {
+          "type": "string",
+          "description": "Kubernetes resource name"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Namespace containing the resource"
+        }
+      },
+      "required": [
+        "vmName",
+        "resourceKind",
+        "resourceName",
+        "namespace"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "resourceKind": {
+          "type": "string"
+        },
+        "resourceName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "pending",
+            "missing",
+            "error"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "message"
+      ],
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "list_service_domain_bindings",
+    "title": "List Service Domain Bindings",
+    "description": "List service-owned hostname bindings stored in the Bridge for a managed cluster.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string",
+          "description": "Managed cluster identifier"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "clusterId": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "serviceName": {
+                "type": "string"
+              },
+              "hostname": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "observedTarget": {
+                "type": "string"
+              },
+              "syncState": {
+                "type": "object"
+              },
+              "ingress": {
+                "type": "object"
+              },
+              "tls": {
+                "type": "object"
+              },
+              "providerMetadata": {
+                "type": "object"
+              },
+              "lastReconciledAt": {
+                "type": "string"
+              },
+              "lastError": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "clusterId",
+              "namespace",
+              "serviceName",
+              "hostname",
+              "status"
+            ]
+          }
+        }
+      },
+      "required": [
+        "bindings"
+      ]
+    }
+  },
+  {
+    "name": "get_service_domain_binding",
+    "title": "Get Service Domain Binding",
+    "description": "Fetch a single service-owned hostname binding by ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "bindingId": {
+          "type": "string",
+          "description": "Binding identifier"
+        }
+      },
+      "required": [
+        "bindingId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "clusterId": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "serviceName": {
+              "type": "string"
+            },
+            "hostname": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "observedTarget": {
+              "type": "string"
+            },
+            "syncState": {
+              "type": "object"
+            },
+            "ingress": {
+              "type": "object"
+            },
+            "tls": {
+              "type": "object"
+            },
+            "providerMetadata": {
+              "type": "object"
+            },
+            "lastReconciledAt": {
+              "type": "string"
+            },
+            "lastError": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "clusterId",
+            "namespace",
+            "serviceName",
+            "hostname",
+            "status"
+          ]
+        }
+      },
+      "required": [
+        "binding"
+      ]
+    }
+  },
+  {
+    "name": "upsert_service_domain_binding",
+    "title": "Upsert Service Domain Binding",
+    "description": "Create or update a service-owned hostname binding.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "type": "object",
+          "properties": {
+            "clusterId": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "serviceName": {
+              "type": "string"
+            },
+            "hostname": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "cloudflare"
+              ]
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "cloudflare": {
+              "type": "object",
+              "properties": {
+                "zoneId": {
+                  "type": "string"
+                },
+                "recordName": {
+                  "type": "string"
+                },
+                "secretId": {
+                  "type": "string"
+                },
+                "proxied": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "zoneId",
+                "recordName",
+                "secretId"
+              ]
+            },
+            "ingressClassName": {
+              "type": "string"
+            },
+            "tlsSecretName": {
+              "type": "string"
+            },
+            "ingress": {
+              "type": "object",
+              "properties": {
+                "className": {
+                  "type": "string"
+                },
+                "annotations": {
+                  "type": "object"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "pathType": {
+                  "type": "string",
+                  "enum": [
+                    "Prefix",
+                    "Exact",
+                    "ImplementationSpecific"
+                  ]
+                },
+                "servicePort": {
+                  "type": "number"
+                }
+              }
+            },
+            "tls": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "secretName": {
+                  "type": "string"
+                },
+                "issuerRef": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "Issuer",
+                        "ClusterIssuer"
+                      ]
+                    },
+                    "group": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ]
+                }
+              }
+            },
+            "metadata": {
+              "type": "object"
+            },
+            "providerMetadata": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "clusterId",
+            "namespace",
+            "serviceName",
+            "hostname",
+            "provider",
+            "enabled",
+            "cloudflare"
+          ]
+        }
+      },
+      "required": [
+        "binding"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "binding"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "delete_service_domain_binding",
+    "title": "Delete Service Domain Binding",
+    "description": "Remove a service-owned hostname binding from the Bridge.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "bindingId": {
+          "type": "string",
+          "description": "Binding identifier"
+        }
+      },
+      "required": [
+        "bindingId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "bindingId": {
+          "type": "string"
+        },
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bindingId",
+        "deleted"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "sync_service_domain_binding",
+    "title": "Sync Service Domain Binding",
+    "description": "Manually trigger reconciliation for a service-owned hostname binding.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "bindingId": {
+          "type": "string",
+          "description": "Binding identifier"
+        },
+        "targetIp": {
+          "type": "string",
+          "description": "Optional explicit IP to sync to."
+        }
+      },
+      "required": [
+        "bindingId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "type": "object"
+        },
+        "synced": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "binding",
+        "synced"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "list_postgresql_databases",
+    "title": "List PostgreSQL Databases",
+    "description": "List CloudNativePG PostgreSQL database records in Bridge inventory. Default returns non-deleted rows on existing managed clusters. Set includeDeleted: true for tombstoned/removed history (optional clusterId).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string",
+          "description": "Optional managed cluster identifier"
+        },
+        "includeDeleted": {
+          "type": "boolean",
+          "description": "Include status:deleted rows (default: true when clusterId is set, otherwise false)"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "databases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "clusterId": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "string",
+                "enum": [
+                  "minimal",
+                  "small",
+                  "medium",
+                  "large"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "provisioning",
+                  "ready",
+                  "resizing",
+                  "deleting",
+                  "deleted",
+                  "failed"
+                ]
+              },
+              "lastAction": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "readyAt": {
+                "type": "string"
+              },
+              "deletedAt": {
+                "type": "string"
+              },
+              "lastError": {
+                "type": "string"
+              },
+              "connection": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "id",
+              "clusterId",
+              "name",
+              "size",
+              "status"
+            ]
+          }
+        }
+      },
+      "required": [
+        "databases"
+      ]
+    }
+  },
+  {
+    "name": "get_postgresql_database",
+    "title": "Get PostgreSQL Database",
+    "description": "Fetch a PostgreSQL database record by ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "databaseId": {
+          "type": "string",
+          "description": "Database identifier"
+        }
+      },
+      "required": [
+        "databaseId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "clusterId": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "string",
+                  "enum": [
+                    "minimal",
+                    "small",
+                    "medium",
+                    "large"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "provisioning",
+                    "ready",
+                    "resizing",
+                    "deleting",
+                    "deleted",
+                    "failed"
+                  ]
+                },
+                "lastAction": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                },
+                "readyAt": {
+                  "type": "string"
+                },
+                "deletedAt": {
+                  "type": "string"
+                },
+                "lastError": {
+                  "type": "string"
+                },
+                "connection": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "id",
+                "clusterId",
+                "name",
+                "size",
+                "status"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "database"
+      ]
+    }
+  },
+  {
+    "name": "create_postgresql_database",
+    "title": "Create PostgreSQL Database",
+    "description": "Provision a CloudNativePG-backed PostgreSQL database from a minimal name and size contract.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string",
+          "description": "Managed cluster identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "Database name"
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "small",
+            "medium",
+            "large"
+          ],
+          "description": "Desired size profile"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Optional Kubernetes namespace"
+        },
+        "postgresVersion": {
+          "type": "string",
+          "description": "Optional PostgreSQL version override"
+        },
+        "storageClassName": {
+          "type": "string",
+          "description": "Optional storage class name override"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Optional metadata payload"
+        }
+      },
+      "required": [
+        "clusterId",
+        "name",
+        "size"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "database"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "resize_postgresql_database",
+    "title": "Resize PostgreSQL Database",
+    "description": "Request a new size profile for an existing PostgreSQL database.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "databaseId": {
+          "type": "string",
+          "description": "Database identifier"
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "small",
+            "medium",
+            "large"
+          ],
+          "description": "Desired size profile"
+        }
+      },
+      "required": [
+        "databaseId",
+        "size"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "database"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "delete_postgresql_database",
+    "title": "Delete PostgreSQL Database",
+    "description": "Delete a PostgreSQL database managed by CloudNativePG.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "databaseId": {
+          "type": "string",
+          "description": "Database identifier"
+        }
+      },
+      "required": [
+        "databaseId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "databaseId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "deleting",
+            "deleted"
+          ]
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "queued": {
+          "type": "boolean"
+        },
+        "operationId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "databaseId",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "list_service_storages",
+    "title": "List Service Storages",
+    "description": "List persistent storage declarations for a managed service.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string",
+          "description": "Optional managed cluster identifier"
+        },
+        "serviceId": {
+          "type": "string",
+          "description": "Optional service identifier"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "storages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "serviceId": {
+                "type": "string"
+              },
+              "clusterId": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "serviceName": {
+                "type": "string"
+              },
+              "volumeName": {
+                "type": "string"
+              },
+              "mountPath": {
+                "type": "string"
+              },
+              "size": {
+                "type": "string"
+              },
+              "storageClassName": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "attachmentState": {
+                "type": "string"
+              },
+              "capacity": {
+                "type": "object"
+              },
+              "backup": {
+                "type": "object"
+              },
+              "restore": {
+                "type": "object"
+              },
+              "lastError": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "serviceId",
+              "clusterId",
+              "namespace",
+              "serviceName",
+              "volumeName",
+              "mountPath",
+              "size",
+              "status",
+              "attachmentState"
+            ]
+          }
+        }
+      },
+      "required": [
+        "storages"
+      ]
+    }
+  },
+  {
+    "name": "get_service_storage",
+    "title": "Get Service Storage",
+    "description": "Fetch a persistent storage declaration by ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "storageId": {
+          "type": "string",
+          "description": "Storage identifier"
+        }
+      },
+      "required": [
+        "storageId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "storage": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "serviceId": {
+                  "type": "string"
+                },
+                "clusterId": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "serviceName": {
+                  "type": "string"
+                },
+                "volumeName": {
+                  "type": "string"
+                },
+                "mountPath": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "string"
+                },
+                "storageClassName": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "attachmentState": {
+                  "type": "string"
+                },
+                "capacity": {
+                  "type": "object"
+                },
+                "backup": {
+                  "type": "object"
+                },
+                "restore": {
+                  "type": "object"
+                },
+                "lastError": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "serviceId",
+                "clusterId",
+                "namespace",
+                "serviceName",
+                "volumeName",
+                "mountPath",
+                "size",
+                "status",
+                "attachmentState"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "storage"
+      ]
+    }
+  },
+  {
+    "name": "create_service_storage",
+    "title": "Create Service Storage",
+    "description": "Provision storage for a managed service and queue the storage workload through the bridge.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "storage": {
+          "type": "object",
+          "properties": {
+            "serviceId": {
+              "type": "string"
+            },
+            "clusterId": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "serviceName": {
+              "type": "string"
+            },
+            "volumeName": {
+              "type": "string"
+            },
+            "mountPath": {
+              "type": "string"
+            },
+            "size": {
+              "type": "string"
+            },
+            "storageClassName": {
+              "type": "string"
+            },
+            "retentionPolicy": {
+              "type": "string",
+              "enum": [
+                "retain",
+                "delete",
+                "snapshot"
+              ]
+            },
+            "accessMode": {
+              "type": "string",
+              "enum": [
+                "ReadWriteOnce",
+                "ReadWriteMany"
+              ]
+            },
+            "profile": {
+              "type": "string",
+              "enum": [
+                "generic",
+                "database"
+              ]
+            },
+            "metadata": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "serviceId",
+            "clusterId",
+            "namespace",
+            "serviceName",
+            "volumeName",
+            "mountPath",
+            "size"
+          ]
+        }
+      },
+      "required": [
+        "storage"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "storage": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "storage"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "update_service_storage",
+    "title": "Update Service Storage",
+    "description": "Update a managed service storage declaration.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "storageId": {
+          "type": "string"
+        },
+        "storage": {
+          "type": "object",
+          "properties": {
+            "mountPath": {
+              "type": "string"
+            },
+            "size": {
+              "type": "string"
+            },
+            "storageClassName": {
+              "type": "string"
+            },
+            "retentionPolicy": {
+              "type": "string",
+              "enum": [
+                "retain",
+                "delete",
+                "snapshot"
+              ]
+            },
+            "accessMode": {
+              "type": "string",
+              "enum": [
+                "ReadWriteOnce",
+                "ReadWriteMany"
+              ]
+            },
+            "profile": {
+              "type": "string",
+              "enum": [
+                "generic",
+                "database"
+              ]
+            },
+            "metadata": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "required": [
+        "storageId",
+        "storage"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "storage": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "storage"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "backup_service_storage",
+    "title": "Backup Service Storage",
+    "description": "Queue a backup operation for managed service storage.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "storageId": {
+          "type": "string"
+        },
+        "backupId": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "storageId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "storage": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "storage"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "restore_service_storage",
+    "title": "Restore Service Storage",
+    "description": "Queue a restore operation for managed service storage.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "storageId": {
+          "type": "string"
+        },
+        "backupId": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "storageId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "storage": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "storage"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "delete_service_storage",
+    "title": "Delete Service Storage",
+    "description": "Delete managed service storage and queue the storage teardown workload.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "storageId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "storageId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "storageId": {
+          "type": "string"
+        },
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "storageId",
+        "deleted"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
+    "name": "list_agents",
+    "title": "List Agents",
+    "description": "Retrieve a consolidated list of all agents (host and cluster) connected to the bridge server.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "host",
+                  "cluster"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "disconnected",
+                  "degraded",
+                  "error"
+                ]
+              },
+              "lastSeen": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "stableId": {
+                "type": "string"
+              },
+              "metadata": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "type",
+              "status",
+              "lastSeen"
+            ]
+          }
+        }
+      },
+      "required": [
+        "agents"
+      ]
+    }
+  },
+  {
+    "name": "create_host_onboarding_session",
+    "title": "Create Host Onboarding Session",
+    "description": "Create a short-lived Bridge-backed install command for onboarding a remote Linux host.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "hostName": {
+          "type": "string",
+          "description": "Friendly host name to show in Opute"
+        },
+        "publicBridgeUrl": {
+          "type": "string",
+          "description": "Bridge URL reachable from the remote host"
+        },
+        "expiresInSeconds": {
+          "type": "number",
+          "description": "Token lifetime in seconds, between 300 and 86400"
+        }
+      },
+      "required": [
+        "hostName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "hostAgent": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "installCommand": {
+          "type": "string"
+        },
+        "bridgeUrl": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "hostAgent",
+        "installCommand",
+        "bridgeUrl"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true,
+      "durability": "bridge-managed"
+    }
+  },
+  {
+    "name": "get_host_onboarding_session",
+    "title": "Get Host Onboarding Session",
+    "description": "Fetch live status for a Bridge host onboarding session.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Host onboarding session id"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "hostAgent": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "session"
+      ]
+    },
+    "_meta": {
+      "needsApproval": false,
+      "durability": "bridge-managed"
+    }
+  },
+  {
+    "name": "diagnose_bridge",
+    "title": "Diagnose Bridge",
+    "description": "Probes the local bridge control plane (port 9092) and check its health",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "bridgeProcess": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "running",
+                "stopped"
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "restarted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "bridgePort": {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "number"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "port",
+            "status"
+          ]
+        },
+        "database": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "healthy",
+                "unhealthy"
+              ]
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "lastHeartbeat": {
+          "type": "object",
+          "properties": {
+            "at": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "at"
+          ]
+        },
+        "bridgeStatus": {
+          "type": "string",
+          "enum": [
+            "online",
+            "offline"
+          ]
+        },
+        "checkedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bridgeProcess",
+        "bridgePort",
+        "database",
+        "lastHeartbeat",
+        "bridgeStatus",
+        "checkedAt"
+      ]
+    }
+  },
+  {
+    "name": "recover_bridge",
+    "title": "Recover Bridge",
+    "description": "Attempts to recover the local bridge control plane by restarting the service",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "bridgeProcess": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "running",
+                "stopped"
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "restarted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "bridgePort": {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "number"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "port",
+            "status"
+          ]
+        },
+        "database": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "healthy",
+                "unhealthy"
+              ]
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "lastHeartbeat": {
+          "type": "object",
+          "properties": {
+            "at": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "at"
+          ]
+        },
+        "bridgeStatus": {
+          "type": "string",
+          "enum": [
+            "online",
+            "offline"
+          ]
+        },
+        "checkedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bridgeProcess",
+        "bridgePort",
+        "database",
+        "lastHeartbeat",
+        "bridgeStatus",
+        "checkedAt"
+      ]
+    }
+  }
+]
