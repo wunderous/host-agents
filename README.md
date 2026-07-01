@@ -2,10 +2,14 @@
 
 Go implementation of the Opute host agent (replaces `@opute/mcp-host-agent`).
 
+- **Repository:** https://github.com/opute-io/host-agents (private)
+- **Go module:** `github.com/opute-io/host-agents`
+- **Platform monorepo:** sibling checkout at `../opute-host-agent` when developing against [opute](https://github.com/opute-io/opute)
+
 ## Phases
 
-| Phase | Platform | Provider | Validation |
-| ----- | -------- | -------- | ---------- |
+| Phase | Platform | Provider | Validation (from `opute/`) |
+| ----- | -------- | -------- | --------------------------- |
 | **1** | Linux / WSL | Incus | `bun scripts/validate-go-host-agent-phase1.ts` |
 | **3** | Linux / WSL + dev stack | Incus | `bun scripts/validate-go-host-agent-phase3.ts` |
 
@@ -24,8 +28,44 @@ Or from this directory:
 ```bash
 make build
 make test
-make artifacts   # linux-x64, linux-arm64 .gz
+make artifacts   # host-agent-linux-x64.gz, host-agent-linux-arm64.gz
 ```
+
+Release artifacts match platform onboarding names: `host-agent-linux-x64.gz` and `host-agent-linux-arm64.gz`.
+
+## CI and releases
+
+GitHub Actions:
+
+| Workflow | Trigger | What it does |
+| -------- | ------- | ------------ |
+| **CI** (`.github/workflows/ci.yml`) | PR / push to `main` | `gofmt`, `go vet`, `go test`, `make artifacts` |
+| **Publish** (`.github/workflows/publish.yml`) | push to `main`, `v*` tags, manual | build + upload artifacts; **GitHub Release** on version tags |
+
+Publish a release:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The release attaches both `.gz` binaries. Because the repo is **private**, download with authenticated `gh`:
+
+```bash
+gh release download v0.2.0 --repo opute-io/host-agents
+```
+
+Unauthenticated `curl` to GitHub release URLs returns **404**.
+
+### Verify a release install
+
+```bash
+export GH_TOKEN=$(gh auth token)   # required for private repo
+export RELEASE_TAG=v0.1.0          # optional; defaults to v0.1.0
+bash scripts/verify-release-install.sh
+```
+
+Downloads the release artifact, installs to a temp path, starts the agent, checks `/health`, MCP `initialize` / `tools/list`, and confirms unauthenticated `/mcp` returns **401**.
 
 ## Run (HTTP mode — Phase 1 local testing)
 
@@ -39,6 +79,18 @@ export OPUTE_INFRA_PROVIDER_ID=incus
 ./dist/host-agent-linux-x64
 ```
 
+Call MCP with a Bearer token:
+
+```bash
+curl -H "Authorization: Bearer dev-token" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"client","version":"1.0.0"}}}' \
+  http://127.0.0.1:3004/mcp
+```
+
+`/health` is always open. `/mcp` requires `Authorization: Bearer <token>` when any of these env vars are set: `MCP_AUTH_TOKEN`, `BRIDGE_TOKEN`, `OPUTE_BRIDGE_TOKEN`, `OPUTE_REMOTE_AGENT_AUTH_TOKEN`, `OPUTE_CPC_TOKEN`. Omit all of them only for local dev without auth.
+
 ## Dev stack (Phase 3)
 
 With `bun run dev` in `opute/`:
@@ -47,9 +99,26 @@ With `bun run dev` in `opute/`:
 bun scripts/dev-host-mcp.ts
 ```
 
-Then run `bun scripts/validate-go-host-agent-phase3.ts` from Linux/WSL.
+Then run `bun scripts/validate-go-host-agent-phase3.ts` from Linux/WSL. Default dev token is **`dev-token`** (aligned with port-guard / `BRIDGE_TOKEN` / `OPUTE_CPC_TOKEN` in the opute repo).
+
+## Production install
+
+Remote hosts are onboarded through the Opute platform UI (**Connect Remote Host**). The generated install script:
+
+1. Downloads the binary from the **platform** artifact URL (session + `opit_*` install token) — not directly from GitHub releases
+2. Writes `host-agent.env` with CPC bearer, per-host `opha_*` token, MCP/WS URLs, and `OPUTE_REVERSE_TUNNEL=true`
+3. Starts `opute-host-agent.service` (or user-level equivalent)
+
+GitHub releases are for CI distribution and manual smoke testing. Production credentials are issued by the platform during onboarding.
 
 ## Provider abstraction
 
 The agent uses `internal/provider` for provider ID normalization, CLI `Runtime`, and per-provider tool catalogs (`schemas/incus-tools.json`). Linux-only today (Incus); additional providers can plug in via new catalog JSON and inventory/launch ops without changing the MCP surface.
 
+## Schema export
+
+When tool schemas change in the opute monorepo:
+
+```bash
+cd ../opute && bun scripts/export-host-agent-schemas.ts ../opute-host-agent/schemas
+```
