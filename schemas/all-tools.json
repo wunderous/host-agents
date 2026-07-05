@@ -4230,5 +4230,87 @@
         "checkedAt"
       ]
     }
+  },
+  {
+    "name": "ensure_cloudflared_tunnel",
+    "title": "Ensure Cloudflared Tunnel",
+    "description": "Start or ensure a cloudflared tunnel for a host exposure binding",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "bindingId": { "type": "string" },
+        "hostname": { "type": "string" },
+        "localTarget": { "type": "string" },
+        "runToken": { "type": "string" }
+      },
+      "required": ["bindingId", "localTarget"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "probe_host_exposure",
+    "title": "Probe Host Exposure",
+    "description": "Probe local target and tunnel state for a host exposure binding",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "bindingId": { "type": "string" },
+        "localTarget": { "type": "string" }
+      },
+      "required": ["bindingId", "localTarget"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "remove_host_exposure",
+    "title": "Remove Host Exposure",
+    "description": "Stop tunnel/shim resources for a host exposure binding",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "bindingId": { "type": "string" }
+      },
+      "required": ["bindingId"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "ensure_host_firewall_rule",
+    "title": "Ensure Host Firewall Rule",
+    "description": "Ensure host firewall allows traffic for an exposure binding",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "bindingId": { "type": "string" },
+        "port": { "type": "number" }
+      },
+      "required": ["bindingId", "port"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "configure_host_network",
+    "title": "Configure Host Network",
+    "description": "Configure host network settings for exposure",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
   }
 ]

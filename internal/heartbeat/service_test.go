@@ -23,3 +23,16 @@ func TestParseMcpResponseBodySSE(t *testing.T) {
 		t.Fatalf("expected agentId, got %#v", result)
 	}
 }
+
+func TestBearerTokenForToolPrefersOnboardingTokenForRegister(t *testing.T) {
+	s := &Service{
+		BridgeToken:     "opha_host_token",
+		OnboardingToken: "opit_install_token",
+	}
+	if got := s.bearerTokenForTool("register_host_agent"); got != "opit_install_token" {
+		t.Fatalf("register_host_agent bearer = %q, want opit_install_token", got)
+	}
+	if got := s.bearerTokenForTool("host_agent_heartbeat"); got != "opha_host_token" {
+		t.Fatalf("host_agent_heartbeat bearer = %q, want opha_host_token", got)
+	}
+}

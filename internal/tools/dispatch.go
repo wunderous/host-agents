@@ -128,6 +128,51 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(map[string]any{"released": released, "databaseId": databaseID}, text), nil
 
+	case "ensure_cloudflared_tunnel":
+		parsed := ops.EnsureCloudflaredTunnelArgs{
+			BindingID:   stringField(args, "bindingId"),
+			Hostname:    stringField(args, "hostname"),
+			LocalTarget: stringField(args, "localTarget"),
+			RunToken:    stringField(args, "runToken"),
+		}
+		out, err := svc.EnsureCloudflaredTunnel(parsed)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Tunnel ready for %s", out.Hostname)), nil
+
+	case "probe_host_exposure":
+		parsed := ops.ProbeHostExposureArgs{
+			BindingID:   stringField(args, "bindingId"),
+			LocalTarget: stringField(args, "localTarget"),
+		}
+		out, err := svc.ProbeHostExposure(parsed)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Exposure summary: %s", out.Summary)), nil
+
+	case "remove_host_exposure":
+		parsed := ops.RemoveHostExposureArgs{
+			BindingID: stringField(args, "bindingId"),
+		}
+		out, err := svc.RemoveHostExposure(parsed)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Removed host exposure"), nil
+
+	case "ensure_host_firewall_rule":
+		parsed := ops.EnsureHostFirewallRuleArgs{
+			BindingID: stringField(args, "bindingId"),
+			Port:      intField(args, "port"),
+		}
+		out, err := svc.EnsureHostFirewallRule(parsed)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Firewall rule applied=%v", out.Applied)), nil
+
 	case "create_vm", "provision_vm":
 		parsed := provisionArgs(args)
 		out, err := svc.ProvisionVM(parsed, onData)

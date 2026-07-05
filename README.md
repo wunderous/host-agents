@@ -115,6 +115,11 @@ GitHub releases are for CI distribution and manual smoke testing. Production cre
 
 The agent uses `internal/provider` for provider ID normalization, CLI `Runtime`, and per-provider tool catalogs (`schemas/incus-tools.json`). Linux-only today (Incus); additional providers can plug in via new catalog JSON and inventory/launch ops without changing the MCP surface.
 
+## Documentation
+
+- **[AGENTS.md](AGENTS.md)** — agent-oriented guide (build, exposure, catalog pointers).
+- **[docs/ddns-vs-cloudflare-tunnel.md](docs/ddns-vs-cloudflare-tunnel.md)** — when to use dynamic DNS vs Cloudflare Tunnel; why they conflict on the same hostname; `blog.opute.io` tunnel path.
+
 ## Schema export
 
 When tool schemas change in the opute monorepo:

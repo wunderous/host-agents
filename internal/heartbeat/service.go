@@ -144,17 +144,34 @@ func (s *Service) register() error {
 }
 
 func (s *Service) heartbeat() error {
+	metadata := map[string]any{}
+	if publicIp := PrimaryLANIPv4(); publicIp != "" {
+		metadata["publicIp"] = publicIp
+	}
+	heartbeatPayload := map[string]any{
+		"agentId":            s.AgentID,
+		"sentAt":             time.Now().UTC().Format(time.RFC3339),
+		"fingerprint":        s.Fingerprint.Fingerprint,
+		"fingerprintVersion": s.Fingerprint.FingerprintVersion,
+		"fingerprintSource":  string(s.Fingerprint.FingerprintSource),
+		"connectionState":    "connected",
+	}
+	if len(metadata) > 0 {
+		heartbeatPayload["metadata"] = metadata
+	}
 	_, err := s.callTool("host_agent_heartbeat", map[string]any{
-		"heartbeat": map[string]any{
-			"agentId":            s.AgentID,
-			"sentAt":             time.Now().UTC().Format(time.RFC3339),
-			"fingerprint":        s.Fingerprint.Fingerprint,
-			"fingerprintVersion": s.Fingerprint.FingerprintVersion,
-			"fingerprintSource":  string(s.Fingerprint.FingerprintSource),
-			"connectionState":    "connected",
-		},
+		"heartbeat": heartbeatPayload,
 	})
 	return err
+}
+
+func (s *Service) bearerTokenForTool(name string) string {
+	// Initial registration is scoped to the one-time onboarding install token (opit_*).
+	// Heartbeats and later calls use the per-host MCP bearer (opha_*).
+	if name == "register_host_agent" && s.OnboardingToken != "" {
+		return s.OnboardingToken
+	}
+	return s.BridgeToken
 }
 
 func (s *Service) callTool(name string, args map[string]any) (map[string]any, error) {
@@ -174,7 +191,7 @@ func (s *Service) callTool(name string, args map[string]any) (map[string]any, er
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	req.Header.Set("Authorization", "Bearer "+s.BridgeToken)
+	req.Header.Set("Authorization", "Bearer "+s.bearerTokenForTool(name))
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
