@@ -34,11 +34,11 @@ var CatalogExcludedToolNames = map[string]bool{
 	"get_sql_connector_status":    true,
 	"release_sql_connector":       true,
 	"install_sql_forward_sidecar": true,
-	"ensure_cloudflared_tunnel":     true,
-	"probe_host_exposure":           true,
-	"remove_host_exposure":          true,
-	"ensure_host_firewall_rule":     true,
-	"configure_host_network":        true,
+	"ensure_cloudflared_tunnel":   true,
+	"probe_host_exposure":         true,
+	"remove_host_exposure":        true,
+	"ensure_host_firewall_rule":   true,
+	"configure_host_network":      true,
 }
 
 // IncusOmittedToolNames are not supported on the Incus-only Linux host agent.

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	cloudflaredInstallDir = `C:\ProgramData\opute\cloudflared`
+	cloudflaredInstallDir  = `C:\ProgramData\opute\cloudflared`
 	cloudflaredDownloadURL = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
 )
 
