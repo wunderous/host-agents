@@ -41,6 +41,20 @@ func (s *HostOperationsService) ListVMs(fast bool) (VMListResult, error) {
 	return VMListResult{VMs: vms}, nil
 }
 
+// VMInventoryStats returns running/total VM counts for bridge heartbeat metrics.
+func (s *HostOperationsService) VMInventoryStats() (running int, total int, err error) {
+	result, err := s.ListVMs(true)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, vm := range result.VMs {
+		if strings.EqualFold(vm.Status, "running") {
+			running++
+		}
+	}
+	return running, len(result.VMs), nil
+}
+
 func (s *HostOperationsService) GetVMInfo(vmName string, fast bool) (VMInfo, error) {
 	vmName = strings.TrimSpace(vmName)
 	if vmName == "" {

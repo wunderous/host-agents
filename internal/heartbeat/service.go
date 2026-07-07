@@ -27,6 +27,7 @@ type Service struct {
 	Fingerprint         fingerprint.Identity
 	Interval            time.Duration
 	Logger              *slog.Logger
+	CollectVMStats      CollectVMStats
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -45,6 +46,7 @@ type Options struct {
 	Fingerprint         fingerprint.Identity
 	TestMode            bool
 	Logger              *slog.Logger
+	CollectVMStats      CollectVMStats
 }
 
 func Start(opts Options) *Service {
@@ -69,6 +71,7 @@ func Start(opts Options) *Service {
 		Fingerprint:         opts.Fingerprint,
 		Interval:            interval,
 		Logger:              logger,
+		CollectVMStats:      opts.CollectVMStats,
 		stopCh:              make(chan struct{}),
 	}
 	s.wg.Add(1)
@@ -98,6 +101,9 @@ func (s *Service) loop() {
 			}
 		}
 		backoff = time.Second
+		if err := s.heartbeat(); err != nil {
+			s.Logger.Warn("host_agent_heartbeat failed", "err", err)
+		}
 		ticker := time.NewTicker(s.Interval)
 		for {
 			select {
@@ -134,6 +140,9 @@ func (s *Service) register() error {
 	if s.OnboardingSessionID != "" {
 		metadata["onboardingSessionId"] = s.OnboardingSessionID
 	}
+	if system := systemMetadata(ReadHostSystemStats()); system != nil {
+		metadata["system"] = system
+	}
 	if len(metadata) > 0 {
 		registration["metadata"] = metadata
 	}
@@ -148,6 +157,9 @@ func (s *Service) heartbeat() error {
 	if publicIp := PrimaryLANIPv4(); publicIp != "" {
 		metadata["publicIp"] = publicIp
 	}
+	if system := systemMetadata(ReadHostSystemStats()); system != nil {
+		metadata["system"] = system
+	}
 	heartbeatPayload := map[string]any{
 		"agentId":            s.AgentID,
 		"sentAt":             time.Now().UTC().Format(time.RFC3339),
@@ -159,10 +171,25 @@ func (s *Service) heartbeat() error {
 	if len(metadata) > 0 {
 		heartbeatPayload["metadata"] = metadata
 	}
+	if metrics := s.collectHeartbeatMetrics(); metrics != nil {
+		heartbeatPayload["metrics"] = metrics
+	}
 	_, err := s.callTool("host_agent_heartbeat", map[string]any{
 		"heartbeat": heartbeatPayload,
 	})
 	return err
+}
+
+func (s *Service) collectHeartbeatMetrics() map[string]any {
+	if s.CollectVMStats == nil {
+		return nil
+	}
+	vmStats, err := s.CollectVMStats()
+	if err != nil {
+		s.Logger.Warn("vm capacity collection failed", "err", err)
+		return nil
+	}
+	return vmMetrics(vmStats)
 }
 
 func (s *Service) bearerTokenForTool(name string) string {

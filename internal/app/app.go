@@ -68,6 +68,16 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 			if cfg.TestMode {
 				fp.Fingerprint += ":test"
 			}
+			collectVMStats := func() (heartbeat.HostVMStats, error) {
+				running, total, err := svc.VMInventoryStats()
+				if err != nil {
+					return heartbeat.HostVMStats{}, err
+				}
+				return heartbeat.HostVMStats{
+					RunningVMCount: running,
+					TotalVMCount:   total,
+				}, nil
+			}
 			hb = heartbeat.Start(heartbeat.Options{
 				AgentID:             cfg.RemoteAgentID,
 				MCPURL:              cfg.MCPURL,
@@ -81,6 +91,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				Fingerprint:         fp,
 				TestMode:            cfg.TestMode,
 				Logger:              logger,
+				CollectVMStats:      collectVMStats,
 			})
 		}
 	}
