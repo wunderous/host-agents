@@ -34,7 +34,6 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	_ = toolNames
 
 	svc := ops.NewHostOperationsService(ops.Options{
 		ProviderID: provider.NormalizeProviderID(cfg.ProviderID),
@@ -94,6 +93,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				TestMode:             cfg.TestMode,
 				Logger:               logger,
 				CollectVMStats:       collectVMStats,
+				HostCapabilities:     toolNames,
 			})
 		}
 	}
