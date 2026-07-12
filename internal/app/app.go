@@ -14,6 +14,7 @@ import (
 	"github.com/opute-io/host-agents/internal/fingerprint"
 	"github.com/opute-io/host-agents/internal/heartbeat"
 	"github.com/opute-io/host-agents/internal/hostmcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opute-io/host-agents/internal/ops"
 	"github.com/opute-io/host-agents/internal/provider"
 	"github.com/opute-io/host-agents/internal/tools"
@@ -50,6 +51,8 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		ProviderID: cfg.ProviderID,
 		Ops:        svc,
 		Logger:     logger,
+		Standalone: cfg.AgentMode == "standalone",
+		AllowMutations: cfg.StandaloneAllowMutations,
 	})
 	if err != nil {
 		return err
@@ -59,7 +62,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	defer cancel()
 
 	var hb *heartbeat.Service
-	if cfg.MCPURL != "" && cfg.BridgeToken != "" {
+	if cfg.AgentMode != "standalone" && cfg.MCPURL != "" && cfg.BridgeToken != "" {
 		fp, err := fingerprint.ReadIdentity()
 		if err != nil {
 			logger.Warn("fingerprint unavailable", "err", err)
@@ -96,6 +99,11 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				HostCapabilities:     toolNames,
 			})
 		}
+	}
+
+	if cfg.AgentMode == "standalone" && cfg.TransportMode == "stdio" {
+		logger.Info("standalone stdio mode enabled")
+		return hostServer.MCP().Run(ctx, &mcp.StdioTransport{})
 	}
 
 	if cfg.IsReverseTunnel {

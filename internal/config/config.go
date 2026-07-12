@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -10,6 +11,11 @@ import (
 
 // Config holds host agent runtime configuration from environment variables.
 type Config struct {
+	AgentMode            string
+	TransportMode        string
+	StandaloneStateDir   string
+	StandaloneAllowMutations bool
+	StandaloneAllowShell bool
 	HostMCPPort          int
 	HostMCPBindHost      string
 	IsReverseTunnel      bool
@@ -56,6 +62,11 @@ func Load() Config {
 		healthURL = "http://127.0.0.1:" + envOr("AGENT_PORT", "9091") + "/health"
 	}
 	return Config{
+		AgentMode:            normalizeMode(os.Getenv("OPUTE_AGENT_MODE")),
+		TransportMode:        normalizeTransport(os.Getenv("OPUTE_TRANSPORT")),
+		StandaloneStateDir:   envOr("OPUTE_STANDALONE_STATE_DIR", filepath.Join(userHomeDir(), ".opute", "standalone")),
+		StandaloneAllowMutations: os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
+		StandaloneAllowShell: os.Getenv("OPUTE_STANDALONE_ALLOW_HOST_SHELL") == "true",
 		HostMCPPort:          port,
 		HostMCPBindHost:      bindHost,
 		IsReverseTunnel:      os.Getenv("OPUTE_REVERSE_TUNNEL") == "true",
@@ -72,6 +83,27 @@ func Load() Config {
 		EnvFile:              strings.TrimSpace(os.Getenv("OPUTE_HOST_AGENT_ENV_FILE")),
 		TestMode:             os.Getenv("OPUTE_TEST") == "true" || os.Getenv("NODE_ENV") == "test",
 	}
+}
+
+func normalizeMode(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), "standalone") {
+		return "standalone"
+	}
+	return "platform"
+}
+
+func normalizeTransport(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), "stdio") {
+		return "stdio"
+	}
+	return "http"
+}
+
+func userHomeDir() string {
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		return home
+	}
+	return "."
 }
 
 func envOr(key, fallback string) string {

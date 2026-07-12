@@ -23,6 +23,8 @@ type Server struct {
 	tasks      *tasks.Registry
 	console    *console.Runtime
 	providerID string
+	standalone bool
+	allowMutations bool
 	mu         sync.Mutex
 	toolDefs   []tools.ToolDefinition
 }
@@ -31,6 +33,8 @@ type Options struct {
 	ProviderID string
 	Ops        *ops.HostOperationsService
 	Logger     *slog.Logger
+	Standalone bool
+	AllowMutations bool
 }
 
 func NewServer(opts Options) (*Server, error) {
@@ -68,6 +72,8 @@ func NewServer(opts Options) (*Server, error) {
 		tasks:      tasks.NewRegistry(),
 		console:    console.NewRuntime(),
 		providerID: providerID,
+		standalone: opts.Standalone,
+		allowMutations: opts.AllowMutations,
 		toolDefs:   catalog,
 	}
 	hs.registerTools()
@@ -87,6 +93,10 @@ func (s *Server) AbortAllConsoleStreams() {
 }
 
 func (s *Server) registerTools() {
+	if s.standalone {
+		s.registerStandaloneTools()
+		return
+	}
 	allDefs, err := tools.LoadAllToolDefinitions("all")
 	if err != nil {
 		allDefs = s.toolDefs
@@ -104,6 +114,26 @@ func (s *Server) registerTools() {
 			continue
 		}
 		registered[def.Name] = true
+		s.addRegisteredTool(def)
+	}
+}
+
+func (s *Server) registerStandaloneTools() {
+	defs := tools.StandaloneToolDefinitions()
+	all, err := tools.LoadAllToolDefinitions("all")
+	if err == nil {
+		for _, def := range all {
+			if tools.StandaloneToolNames[def.Name] {
+				defs = append(defs, def)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for _, def := range defs {
+		if seen[def.Name] {
+			continue
+		}
+		seen[def.Name] = true
 		s.addRegisteredTool(def)
 	}
 }
@@ -132,6 +162,29 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 			return tools.ErrorResult(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
 	}
+	if s.standalone && tools.IsStandaloneMutation(name) && !s.allowMutations {
+		return tools.ErrorResult(fmt.Errorf("standalone mutations are disabled; set OPUTE_STANDALONE_ALLOW_MUTATIONS=true")), nil
+	}
+	if s.standalone {
+		switch name {
+		case "list_operations":
+			return structuredResult(s.tasks.List(), ""), nil
+		case "get_operation":
+			id, _ := args["operationId"].(string)
+			rec, ok := s.tasks.Get(id)
+			if !ok {
+				return tools.ErrorResult(fmt.Errorf("operation not found: %s", id)), nil
+			}
+			return structuredResult(s.tasks.ToGetTaskResult(rec), ""), nil
+		case "cancel_operation":
+			id, _ := args["operationId"].(string)
+			rec, ok := s.tasks.Cancel(id)
+			if !ok || rec == nil {
+				return tools.ErrorResult(fmt.Errorf("operation cannot be cancelled: %s", id)), nil
+			}
+			return structuredResult(s.tasks.ToGetTaskResult(rec), ""), nil
+		}
+	}
 	if name == "stream_vm_console" {
 		vmName, _ := args["vmName"].(string)
 		opID, _ := args["operationId"].(string)
@@ -153,6 +206,14 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 	}
 	onData := func(chunk string) {}
 	return tools.DispatchTool(ctx, s.ops, name, args, onData)
+}
+
+func structuredResult(value any, text string) *mcp.CallToolResult {
+	content := []mcp.Content{}
+	if text != "" {
+		content = append(content, &mcp.TextContent{Text: text})
+	}
+	return &mcp.CallToolResult{Content: content, StructuredContent: value}
 }
 
 func hasTaskAugmentation(req *mcp.CallToolRequest) bool {
