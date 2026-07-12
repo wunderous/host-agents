@@ -23,6 +23,7 @@ type Config struct {
 	ProviderID           string
 	OnboardingToken      string
 	OnboardingSessionID  string
+	EnvFile              string
 	TestMode             bool
 }
 
@@ -68,6 +69,7 @@ func Load() Config {
 		ProviderID:           providerID,
 		OnboardingToken:      strings.TrimSpace(os.Getenv("OPUTE_ONBOARDING_TOKEN")),
 		OnboardingSessionID:  strings.TrimSpace(os.Getenv("OPUTE_ONBOARDING_SESSION_ID")),
+		EnvFile:              strings.TrimSpace(os.Getenv("OPUTE_HOST_AGENT_ENV_FILE")),
 		TestMode:             os.Getenv("OPUTE_TEST") == "true" || os.Getenv("NODE_ENV") == "test",
 	}
 }

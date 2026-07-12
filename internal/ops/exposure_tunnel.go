@@ -89,7 +89,7 @@ func (s *HostOperationsService) EnsureCloudflaredTunnel(args EnsureCloudflaredTu
 		return nil, fmt.Errorf("localTarget is required")
 	}
 
-	if exposureShimEnabled() || runtime.GOOS != "windows" {
+	if exposureShimEnabled() {
 		if err := startExposureShim(args.BindingID, args.LocalTarget); err != nil {
 			return nil, err
 		}
@@ -103,18 +103,28 @@ func (s *HostOperationsService) EnsureCloudflaredTunnel(args EnsureCloudflaredTu
 		}, nil
 	}
 
-	if !isWindowsAdmin() {
-		return nil, fmt.Errorf("blocked.admin_required: elevation required for cloudflared service install")
+	if runtime.GOOS == "windows" {
+		if !isWindowsAdmin() {
+			return nil, fmt.Errorf("blocked.admin_required: elevation required for cloudflared service install")
+		}
+
+		result, err := ensureWindowsCloudflaredTunnel(args)
+		if err != nil {
+			return nil, err
+		}
+		if result != nil {
+			return result, nil
+		}
+		return nil, fmt.Errorf("windows cloudflared tunnel is unavailable on this platform")
 	}
 
-	result, err := ensureWindowsCloudflaredTunnel(args)
-	if err != nil {
-		return nil, err
+	if isRunningInWSL() && strings.TrimSpace(args.RunToken) != "" {
+		return ensureWindowsCloudflaredViaWSL(s, args)
 	}
-	if result != nil {
-		return result, nil
-	}
-	return nil, fmt.Errorf("windows cloudflared tunnel is unavailable on this platform")
+
+	return nil, fmt.Errorf(
+		"cloudflared tunnel requires runToken on WSL co-host (Windows cloudflared) or a Windows host agent",
+	)
 }
 
 func (s *HostOperationsService) ProbeHostExposure(args ProbeHostExposureArgs) (*ProbeHostExposureResult, error) {
@@ -163,6 +173,9 @@ func (s *HostOperationsService) ProbeHostExposure(args ProbeHostExposureArgs) (*
 func (s *HostOperationsService) RemoveHostExposure(args RemoveHostExposureArgs) (*RemoveHostExposureResult, error) {
 	stopExposureShim(args.BindingID)
 	_ = stopWindowsCloudflaredTunnel(args.BindingID)
+	if isRunningInWSL() {
+		_ = stopWSLWindowsCloudflaredTunnel(args.BindingID)
+	}
 	return &RemoveHostExposureResult{
 		BindingID: args.BindingID,
 		Removed:   true,
@@ -251,6 +264,9 @@ func isTunnelConnected(bindingID string) bool {
 	}
 	if runtime.GOOS == "windows" {
 		return isWindowsTunnelConnected(bindingID)
+	}
+	if isRunningInWSL() {
+		return isWSLWindowsCloudflaredRunning(bindingID)
 	}
 	return false
 }

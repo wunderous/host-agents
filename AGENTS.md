@@ -20,6 +20,24 @@ The host agent runs **`cloudflared`** and local exposure probes on the **executi
 
 After Go or schema changes: `cd ../opute && bun run build:host-agent`, then restart dev stack (`dev:stack:down && dev:stack:up`).
 
+## Production host on this Windows machine
+
+The production agent runs inside the default WSL2 distro as the persistent user service
+`opute-host-agent.service`; do not start the Windows binary for this deployment. The
+local production CPC companion is `opute-platform-opute-stack.service` (ports `919x`).
+
+```powershell
+wsl -e bash -lc 'systemctl --user start opute-platform-opute-stack.service'
+wsl -e bash -lc 'systemctl --user start opute-host-agent.service'
+wsl -e bash -lc 'systemctl --user is-active opute-host-agent.service; journalctl --user -u opute-host-agent.service -n 20 --no-pager'
+```
+
+Verify a `reverse tunnel connected` log line and that `http://127.0.0.1:9191/health`
+answers from WSL. `opute-host-agent-tunnel-watchdog.timer` should remain active. If
+the agent logs `Unauthorized agent tool 'host_agent_heartbeat'`, treat it as an
+onboarding-token mismatch: `MCP_AUTH_TOKEN` must be the per-host `opha_*` token, not
+the CPC bearer (see `../opute/AGENTS.md`, **Host Agent Registration And Heartbeat**).
+
 ## Provider / catalog
 
 - Provider abstraction: `internal/provider`

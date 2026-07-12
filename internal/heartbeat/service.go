@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -15,38 +17,42 @@ import (
 )
 
 type Service struct {
-	AgentID             string
-	MCPURL              string
-	BridgeToken         string
-	OnboardingToken     string
-	OnboardingSessionID string
-	HostMCPEndpoint     string
-	HostName            string
-	AgentVersion        string
-	ProviderID          string
-	Fingerprint         fingerprint.Identity
-	Interval            time.Duration
-	Logger              *slog.Logger
-	CollectVMStats      CollectVMStats
+	AgentID              string
+	MCPURL               string
+	BridgeToken          string
+	RemoteAgentAuthToken string
+	OnboardingToken      string
+	OnboardingSessionID  string
+	EnvFile              string
+	HostMCPEndpoint      string
+	HostName             string
+	AgentVersion         string
+	ProviderID           string
+	Fingerprint          fingerprint.Identity
+	Interval             time.Duration
+	Logger               *slog.Logger
+	CollectVMStats       CollectVMStats
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
 }
 
 type Options struct {
-	AgentID             string
-	MCPURL              string
-	BridgeToken         string
-	OnboardingToken     string
-	OnboardingSessionID string
-	HostMCPEndpoint     string
-	HostName            string
-	AgentVersion        string
-	ProviderID          string
-	Fingerprint         fingerprint.Identity
-	TestMode            bool
-	Logger              *slog.Logger
-	CollectVMStats      CollectVMStats
+	AgentID              string
+	MCPURL               string
+	BridgeToken          string
+	RemoteAgentAuthToken string
+	OnboardingToken      string
+	OnboardingSessionID  string
+	EnvFile              string
+	HostMCPEndpoint      string
+	HostName             string
+	AgentVersion         string
+	ProviderID           string
+	Fingerprint          fingerprint.Identity
+	TestMode             bool
+	Logger               *slog.Logger
+	CollectVMStats       CollectVMStats
 }
 
 func Start(opts Options) *Service {
@@ -59,20 +65,22 @@ func Start(opts Options) *Service {
 		interval = 10 * time.Second
 	}
 	s := &Service{
-		AgentID:             opts.AgentID,
-		MCPURL:              opts.MCPURL,
-		BridgeToken:         opts.BridgeToken,
-		OnboardingToken:     opts.OnboardingToken,
-		OnboardingSessionID: opts.OnboardingSessionID,
-		HostMCPEndpoint:     opts.HostMCPEndpoint,
-		HostName:            opts.HostName,
-		AgentVersion:        opts.AgentVersion,
-		ProviderID:          opts.ProviderID,
-		Fingerprint:         opts.Fingerprint,
-		Interval:            interval,
-		Logger:              logger,
-		CollectVMStats:      opts.CollectVMStats,
-		stopCh:              make(chan struct{}),
+		AgentID:              opts.AgentID,
+		MCPURL:               opts.MCPURL,
+		BridgeToken:          opts.BridgeToken,
+		RemoteAgentAuthToken: opts.RemoteAgentAuthToken,
+		OnboardingToken:      opts.OnboardingToken,
+		OnboardingSessionID:  opts.OnboardingSessionID,
+		EnvFile:              opts.EnvFile,
+		HostMCPEndpoint:      opts.HostMCPEndpoint,
+		HostName:             opts.HostName,
+		AgentVersion:         opts.AgentVersion,
+		ProviderID:           opts.ProviderID,
+		Fingerprint:          opts.Fingerprint,
+		Interval:             interval,
+		Logger:               logger,
+		CollectVMStats:       opts.CollectVMStats,
+		stopCh:               make(chan struct{}),
 	}
 	s.wg.Add(1)
 	go s.loop()
@@ -103,8 +111,12 @@ func (s *Service) loop() {
 		backoff = time.Second
 		if err := s.heartbeat(); err != nil {
 			s.Logger.Warn("host_agent_heartbeat failed", "err", err)
+			if isAuthorizationError(err) {
+				continue
+			}
 		}
 		ticker := time.NewTicker(s.Interval)
+	heartbeatLoop:
 		for {
 			select {
 			case <-s.stopCh:
@@ -113,9 +125,9 @@ func (s *Service) loop() {
 			case <-ticker.C:
 				if err := s.heartbeat(); err != nil {
 					s.Logger.Warn("host_agent_heartbeat failed", "err", err)
-					if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "404") {
+					if isAuthorizationError(err) {
 						ticker.Stop()
-						break
+						break heartbeatLoop
 					}
 				}
 			}
@@ -146,9 +158,22 @@ func (s *Service) register() error {
 	if len(metadata) > 0 {
 		registration["metadata"] = metadata
 	}
-	_, err := s.callTool("register_host_agent", map[string]any{
+	result, err := s.callTool("register_host_agent", map[string]any{
 		"registration": registration,
 	})
+	if err == nil {
+		s.reconcileAuthToken(result)
+		return nil
+	}
+	if isAuthorizationError(err) && s.RemoteAgentAuthToken != "" && s.RemoteAgentAuthToken != s.BridgeToken {
+		result, fallbackErr := s.callToolWithToken("register_host_agent", map[string]any{
+			"registration": registration,
+		}, s.RemoteAgentAuthToken)
+		if fallbackErr == nil {
+			s.reconcileAuthToken(result)
+			return nil
+		}
+	}
 	return err
 }
 
@@ -174,9 +199,12 @@ func (s *Service) heartbeat() error {
 	if metrics := s.collectHeartbeatMetrics(); metrics != nil {
 		heartbeatPayload["metrics"] = metrics
 	}
-	_, err := s.callTool("host_agent_heartbeat", map[string]any{
+	result, err := s.callTool("host_agent_heartbeat", map[string]any{
 		"heartbeat": heartbeatPayload,
 	})
+	if err == nil {
+		s.reconcileAuthToken(result)
+	}
 	return err
 }
 
@@ -201,7 +229,98 @@ func (s *Service) bearerTokenForTool(name string) string {
 	return s.BridgeToken
 }
 
+func isAuthorizationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "unauthorized") ||
+		strings.Contains(message, "http 401") ||
+		strings.Contains(message, "http 404")
+}
+
+func (s *Service) reconcileAuthToken(result map[string]any) {
+	token := findHostAuthToken(result)
+	if token == "" || token == s.BridgeToken {
+		return
+	}
+	s.BridgeToken = token
+	if s.EnvFile == "" {
+		return
+	}
+	if err := persistAuthToken(s.EnvFile, token); err != nil {
+		s.Logger.Warn("persisted reconciled host token failed", "err", err)
+	}
+}
+
+func findHostAuthToken(value any) string {
+	switch current := value.(type) {
+	case map[string]any:
+		if token, ok := current["authToken"].(string); ok && strings.HasPrefix(token, "opha_") {
+			return token
+		}
+		for _, child := range current {
+			if token := findHostAuthToken(child); token != "" {
+				return token
+			}
+		}
+	case []any:
+		for _, child := range current {
+			if token := findHostAuthToken(child); token != "" {
+				return token
+			}
+		}
+	case string:
+		var decoded any
+		if json.Unmarshal([]byte(current), &decoded) == nil {
+			return findHostAuthToken(decoded)
+		}
+	}
+	return ""
+}
+
+func persistAuthToken(path, token string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(content), "\n")
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(line, "MCP_AUTH_TOKEN=") || strings.HasPrefix(line, "OPUTE_BRIDGE_TOKEN=") || strings.HasPrefix(line, "BRIDGE_TOKEN=") {
+			key := strings.SplitN(line, "=", 2)[0]
+			lines[i] = key + "=" + token
+			found = true
+		}
+	}
+	if !found {
+		lines = append(lines, "MCP_AUTH_TOKEN="+token, "OPUTE_BRIDGE_TOKEN="+token, "BRIDGE_TOKEN="+token)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".host-agent.env.*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.WriteString(strings.Join(lines, "\n")); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}
+
 func (s *Service) callTool(name string, args map[string]any) (map[string]any, error) {
+	return s.callToolWithToken(name, args, s.bearerTokenForTool(name))
+}
+
+func (s *Service) callToolWithToken(name string, args map[string]any, token string) (map[string]any, error) {
 	payload := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -218,7 +337,7 @@ func (s *Service) callTool(name string, args map[string]any) (map[string]any, er
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	req.Header.Set("Authorization", "Bearer "+s.bearerTokenForTool(name))
+	req.Header.Set("Authorization", "Bearer "+token)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err

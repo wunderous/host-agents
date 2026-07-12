@@ -79,19 +79,21 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				}, nil
 			}
 			hb = heartbeat.Start(heartbeat.Options{
-				AgentID:             cfg.RemoteAgentID,
-				MCPURL:              cfg.MCPURL,
-				BridgeToken:         cfg.BridgeToken,
-				OnboardingToken:     cfg.OnboardingToken,
-				OnboardingSessionID: cfg.OnboardingSessionID,
-				HostMCPEndpoint:     endpointFor(cfg),
-				HostName:            hostNameFor(cfg),
-				AgentVersion:        "go-host-agent/1.0.0",
-				ProviderID:          cfg.ProviderID,
-				Fingerprint:         fp,
-				TestMode:            cfg.TestMode,
-				Logger:              logger,
-				CollectVMStats:      collectVMStats,
+				AgentID:              cfg.RemoteAgentID,
+				MCPURL:               cfg.MCPURL,
+				BridgeToken:          cfg.BridgeToken,
+				RemoteAgentAuthToken: cfg.RemoteAgentAuthToken,
+				OnboardingToken:      cfg.OnboardingToken,
+				OnboardingSessionID:  cfg.OnboardingSessionID,
+				EnvFile:              cfg.EnvFile,
+				HostMCPEndpoint:      endpointFor(cfg),
+				HostName:             hostNameFor(cfg),
+				AgentVersion:         "go-host-agent/1.0.0",
+				ProviderID:           cfg.ProviderID,
+				Fingerprint:          fp,
+				TestMode:             cfg.TestMode,
+				Logger:               logger,
+				CollectVMStats:       collectVMStats,
 			})
 		}
 	}

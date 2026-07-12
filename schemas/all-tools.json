@@ -4301,6 +4301,36 @@
     }
   },
   {
+    "name": "ensure_platform_opute_stack",
+    "title": "Ensure Platform Opute Stack",
+    "description": "Start the production-shaped platform.opute.io 919x stack and WSL port forward",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "repoRoot": { "type": "string" }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "provision_platform_opute_tunnel",
+    "title": "Provision Platform Opute Tunnel",
+    "description": "Provision Cloudflare tunnel + DNS for platform.opute.io and write run token",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "repoRoot": { "type": "string" }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
     "name": "configure_host_network",
     "title": "Configure Host Network",
     "description": "Configure host network settings for exposure",

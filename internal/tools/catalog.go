@@ -25,20 +25,22 @@ type catalogMeta struct {
 
 // CatalogExcludedToolNames are omitted from agent-facing tools/list.
 var CatalogExcludedToolNames = map[string]bool{
-	"list_operations":             true,
-	"get_operation":               true,
-	"list_tasks":                  true,
-	"get_task":                    true,
-	"agent_shell":                 true,
-	"ensure_sql_connector":        true,
-	"get_sql_connector_status":    true,
-	"release_sql_connector":       true,
-	"install_sql_forward_sidecar": true,
-	"ensure_cloudflared_tunnel":   true,
-	"probe_host_exposure":         true,
-	"remove_host_exposure":        true,
-	"ensure_host_firewall_rule":   true,
-	"configure_host_network":      true,
+	"list_operations":                 true,
+	"get_operation":                   true,
+	"list_tasks":                      true,
+	"get_task":                        true,
+	"agent_shell":                     true,
+	"ensure_sql_connector":            true,
+	"get_sql_connector_status":        true,
+	"release_sql_connector":           true,
+	"install_sql_forward_sidecar":     true,
+	"ensure_cloudflared_tunnel":       true,
+	"ensure_platform_opute_stack":     true,
+	"provision_platform_opute_tunnel": true,
+	"probe_host_exposure":             true,
+	"remove_host_exposure":            true,
+	"ensure_host_firewall_rule":       true,
+	"configure_host_network":          true,
 }
 
 // IncusOmittedToolNames are not supported on the Incus-only Linux host agent.

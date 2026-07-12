@@ -10,9 +10,9 @@ import (
 
 // HostSystemStats describes static host CPU and memory capacity.
 type HostSystemStats struct {
-	CPUCount          int
-	MemoryTotalBytes  int64
-	MemoryFreeBytes   int64
+	CPUCount         int
+	MemoryTotalBytes int64
+	MemoryFreeBytes  int64
 }
 
 // HostVMStats describes Incus VM inventory totals for heartbeat metrics.

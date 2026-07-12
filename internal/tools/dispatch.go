@@ -141,6 +141,26 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, fmt.Sprintf("Tunnel ready for %s", out.Hostname)), nil
 
+	case "ensure_platform_opute_stack":
+		parsed := ops.EnsurePlatformOputeStackArgs{
+			RepoRoot: stringField(args, "repoRoot"),
+		}
+		out, err := svc.EnsurePlatformOputeStack(parsed)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Platform.opute.io stack is ready on 919x"), nil
+
+	case "provision_platform_opute_tunnel":
+		parsed := ops.ProvisionPlatformOputeTunnelArgs{
+			RepoRoot: stringField(args, "repoRoot"),
+		}
+		out, err := svc.ProvisionPlatformOputeTunnel(parsed)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Provisioned platform.opute.io Cloudflare tunnel"), nil
+
 	case "probe_host_exposure":
 		parsed := ops.ProbeHostExposureArgs{
 			BindingID:   stringField(args, "bindingId"),
