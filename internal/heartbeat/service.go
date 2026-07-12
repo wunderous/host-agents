@@ -32,6 +32,7 @@ type Service struct {
 	Interval             time.Duration
 	Logger               *slog.Logger
 	CollectVMStats       CollectVMStats
+	HostCapabilities     []string
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -53,6 +54,7 @@ type Options struct {
 	TestMode             bool
 	Logger               *slog.Logger
 	CollectVMStats       CollectVMStats
+	HostCapabilities     []string
 }
 
 func Start(opts Options) *Service {
@@ -80,6 +82,7 @@ func Start(opts Options) *Service {
 		Interval:             interval,
 		Logger:               logger,
 		CollectVMStats:       opts.CollectVMStats,
+		HostCapabilities:     opts.HostCapabilities,
 		stopCh:               make(chan struct{}),
 	}
 	s.wg.Add(1)
@@ -147,6 +150,9 @@ func (s *Service) register() error {
 	}
 	if s.ProviderID != "" {
 		registration["providerId"] = s.ProviderID
+	}
+	if len(s.HostCapabilities) > 0 {
+		registration["capabilities"] = s.HostCapabilities
 	}
 	metadata := map[string]any{}
 	if s.OnboardingSessionID != "" {

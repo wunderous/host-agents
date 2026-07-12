@@ -38,6 +38,8 @@ the agent logs `Unauthorized agent tool 'host_agent_heartbeat'`, treat it as an
 onboarding-token mismatch: `MCP_AUTH_TOKEN` must be the per-host `opha_*` token, not
 the CPC bearer (see `../opute/AGENTS.md`, **Host Agent Registration And Heartbeat**).
 
+An explicit `hostId` is the durable execution assignment. The host agent should execute that assignment through the reverse tunnel without requiring control-plane provider rediscovery. Keep guest and provider probes bounded and cancellable so VM provisioning cannot starve heartbeats or operation polling.
+
 ## Provider / catalog
 
 - Provider abstraction: `internal/provider`
