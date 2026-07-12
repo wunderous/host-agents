@@ -45,3 +45,20 @@ An explicit `hostId` is the durable execution assignment. The host agent should 
 - Provider abstraction: `internal/provider`
 - Incus catalog: `schemas/incus-tools.json`; full export: `schemas/all-tools.json`
 - Schema export from monorepo: `cd ../opute && bun scripts/export-host-agent-schemas.ts ../opute-host-agent/schemas`
+
+## Standalone and platform profiles
+
+- Platform mode remains the default and owns registration, heartbeat, reverse-tunnel, and host-dispatch behavior. Preserve explicit `hostId` routing; do not rediscover providers in the execution fast path.
+- Standalone mode is opt-in and must not require Opute Platform, Bridge, onboarding tokens, a reverse tunnel, or `OPUTE_MCP_URL`. Its local tool surface is implemented in `internal/tools/standalone.go`; invalid profile combinations must fail explicitly rather than silently falling back to platform mode.
+- Exposure operations run on the execution host where `localTarget` is reachable. Cloudflare tunnel tokens are sensitive and must not appear in logs, tool results, operation metadata, or metric labels.
+
+## Release and validation
+
+After Go, schema, or host-tool changes:
+
+1. Run `go test ./...`.
+2. From the sibling Opute checkout, run `bun run build:host-agent` and export schemas when catalog changes are involved.
+3. Restart the owning WSL services only through the documented user-systemd path; do not start a second Windows binary for the same host identity.
+4. Verify `opute-host-agent.service` is active, the reverse tunnel is connected, `http://127.0.0.1:9191/health` responds, and the Opute shell canary succeeds with an explicit host and VM fixture.
+
+The production-shaped companion is `opute-platform-opute-stack.service` on the 919x ports. Keep it separate from the Opute dev stack on 909x. A failed heartbeat or tunnel must be diagnosed at the agent/session boundary before changing provider or VM code.
