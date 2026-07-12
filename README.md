@@ -91,6 +91,33 @@ curl -H "Authorization: Bearer dev-token" \
 
 `/health` is always open. `/mcp` requires `Authorization: Bearer <token>` when any of these env vars are set: `MCP_AUTH_TOKEN`, `BRIDGE_TOKEN`, `OPUTE_BRIDGE_TOKEN`, `OPUTE_REMOTE_AGENT_AUTH_TOKEN`, `OPUTE_CPC_TOKEN`. Omit all of them only for local dev without auth.
 
+## VS Code / external MCP configuration
+
+The agent accepts configuration from the process environment, an env file, or repeatable CLI overrides. Precedence is CLI `--env KEY=VALUE`, then variables already present in the process, then values loaded from `--env-file` / `OPUTE_HOST_AGENT_ENV_FILE`.
+
+Prefer VS Code's `env` block for user-owned settings and secrets:
+
+```json
+{
+  "servers": {
+    "opute-host": {
+      "command": "/path/to/opute-host-agent",
+      "args": ["--mode", "standalone", "--transport", "stdio"],
+      "env": {
+        "OPUTE_AGENT_MODE": "standalone",
+        "OPUTE_TRANSPORT": "stdio",
+        "OPUTE_INFRA_PROVIDER_ID": "incus",
+        "OPUTE_STANDALONE_ALLOW_MUTATIONS": "true",
+        "OPUTE_STANDALONE_ALLOW_HOST_SHELL": "true",
+        "CLOUDFLARE_API_TOKEN": "${input:cloudflare-api-token}"
+      }
+    }
+  }
+}
+```
+
+For a reusable local file, use `--env-file C:\path\to\opute-host-agent.env`. For one-off non-secret overrides, use `--env OPUTE_INFRA_PROVIDER_ID=incus --env HOST_MCP_PORT=3004`. Environment variables are inherited by host operations and Cloudflare tooling; never put long-lived secrets directly in command-line arguments because process listings can expose them. A Cloudflare API token configures account/API operations; a Cloudflare Tunnel connection still requires the per-tunnel `runToken` passed to the relevant tunnel tool.
+
 ## Dev stack (Phase 3)
 
 With `bun run dev` in `opute/`:
