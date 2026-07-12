@@ -50,6 +50,7 @@ An explicit `hostId` is the durable execution assignment. The host agent should 
 
 - Platform mode remains the default and owns registration, heartbeat, reverse-tunnel, and host-dispatch behavior. Preserve explicit `hostId` routing; do not rediscover providers in the execution fast path.
 - Standalone mode is opt-in and must not require Opute Platform, Bridge, onboarding tokens, a reverse tunnel, or `OPUTE_MCP_URL`. Its local tool surface is implemented in `internal/tools/standalone.go`; invalid profile combinations must fail explicitly rather than silently falling back to platform mode.
+- User-launched agents may configure settings through inherited environment variables, `--env-file PATH`, or repeatable `--env KEY=VALUE` flags. Precedence is CLI override, existing process environment, then env-file value. Keep secrets such as `CLOUDFLARE_API_TOKEN` in the VS Code `env` block or a permission-protected env file; do not put long-lived tokens in process arguments.
 - Exposure operations run on the execution host where `localTarget` is reachable. Cloudflare tunnel tokens are sensitive and must not appear in logs, tool results, operation metadata, or metric labels.
 
 ## Release and validation
