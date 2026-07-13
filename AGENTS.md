@@ -53,6 +53,17 @@ An explicit `hostId` is the durable execution assignment. The host agent should 
 - User-launched agents may configure settings through inherited environment variables, `--env-file PATH`, or repeatable `--env KEY=VALUE` flags. Precedence is CLI override, existing process environment, then env-file value. Keep secrets such as `CLOUDFLARE_API_TOKEN` in the VS Code `env` block or a permission-protected env file; do not put long-lived tokens in process arguments.
 - Exposure operations run on the execution host where `localTarget` is reachable. Cloudflare tunnel tokens are sensitive and must not appear in logs, tool results, operation metadata, or metric labels.
 
+### Standalone local workflow
+
+- The supported client boundary is MCP stdio. Direct development invocation is `opute-host-agent --mode standalone --transport stdio`; VS Code/Cursor users should use the documented `npx -y @opute/local-host-agent` launcher.
+- Mutations are deliberately disabled unless `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` is set. Host shell and insecure-download behavior are separate opt-ins; never enable them by default in a published client configuration.
+- Long-running mutations (`provision_vm`, `install_k3s`, `install_postgresql`, tunnel creation, and deletion) must return a task/operation immediately. Poll `get_operation`; do not increase the MCP request timeout or synchronously repeat the underlying provider call.
+- The local journal is SQLite-backed and operation state is authoritative for standalone recovery. On restart, previously working operations reconcile to `unknown`; clients must surface that state rather than pretending the work completed.
+- K3s readiness is asynchronous even after the installer exits successfully. Validate both the reported version and `readyNodes == totalNodes` before installing PostgreSQL.
+- PostgreSQL validation is not complete until the deployment has a ready replica and `run_sql` successfully performs a table create/write/read cycle.
+- Quick Tunnel startup must return a public URL only after Cloudflared has published it. The tunnel process must be detached from the MCP request and stopped through `delete_cloudflare_tunnel`.
+- On WSL, validate that the selected `localTarget` is reachable from the Windows Cloudflared process; WSL/Windows localhost forwarding can fail independently of Cloudflare connectivity. Do not call the public tunnel lifecycle green when only Cloudflare reports `connected`.
+
 ## Release and validation
 
 After Go, schema, or host-tool changes:
@@ -61,5 +72,7 @@ After Go, schema, or host-tool changes:
 2. From the sibling Opute checkout, run `bun run build:host-agent` and export schemas when catalog changes are involved.
 3. Restart the owning WSL services only through the documented user-systemd path; do not start a second Windows binary for the same host identity.
 4. Verify `opute-host-agent.service` is active, the reverse tunnel is connected, `http://127.0.0.1:9191/health` responds, and the Opute shell canary succeeds with an explicit host and VM fixture.
+
+For standalone changes, additionally run `go test ./...`, initialize the stdio server without platform credentials, and use disposable names such as `opute-standalone-e2e-*`. Clean those resources through standalone MCP tools and verify `incus list` contains no matching instances; preserve the production VM and platform-shaped services. A partial VM/K3s/DB/tunnel run is evidence for the first successful boundary only, not a green full-lifecycle result.
 
 The production-shaped companion is `opute-platform-opute-stack.service` on the 919x ports. Keep it separate from the Opute dev stack on 909x. A failed heartbeat or tunnel must be diagnosed at the agent/session boundary before changing provider or VM code.

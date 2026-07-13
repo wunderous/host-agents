@@ -11,26 +11,27 @@ import (
 
 // Config holds host agent runtime configuration from environment variables.
 type Config struct {
-	AgentMode            string
-	TransportMode        string
-	StandaloneStateDir   string
-	StandaloneAllowMutations bool
-	StandaloneAllowShell bool
-	HostMCPPort          int
-	HostMCPBindHost      string
-	IsReverseTunnel      bool
-	HostWSURL            string
-	MCPURL               string
-	MCPHealthURL         string
-	RemoteAgentID        string
-	RemoteAgentAuthToken string
-	MCPAuthToken         string
-	BridgeToken          string
-	ProviderID           string
-	OnboardingToken      string
-	OnboardingSessionID  string
-	EnvFile              string
-	TestMode             bool
+	AgentMode                        string
+	TransportMode                    string
+	StandaloneStateDir               string
+	StandaloneAllowMutations         bool
+	StandaloneAllowShell             bool
+	StandaloneAllowInsecureDownloads bool
+	HostMCPPort                      int
+	HostMCPBindHost                  string
+	IsReverseTunnel                  bool
+	HostWSURL                        string
+	MCPURL                           string
+	MCPHealthURL                     string
+	RemoteAgentID                    string
+	RemoteAgentAuthToken             string
+	MCPAuthToken                     string
+	BridgeToken                      string
+	ProviderID                       string
+	OnboardingToken                  string
+	OnboardingSessionID              string
+	EnvFile                          string
+	TestMode                         bool
 }
 
 func Load() Config {
@@ -62,26 +63,27 @@ func Load() Config {
 		healthURL = "http://127.0.0.1:" + envOr("AGENT_PORT", "9091") + "/health"
 	}
 	return Config{
-		AgentMode:            normalizeMode(os.Getenv("OPUTE_AGENT_MODE")),
-		TransportMode:        normalizeTransport(os.Getenv("OPUTE_TRANSPORT")),
-		StandaloneStateDir:   envOr("OPUTE_STANDALONE_STATE_DIR", filepath.Join(userHomeDir(), ".opute", "standalone")),
-		StandaloneAllowMutations: os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
-		StandaloneAllowShell: os.Getenv("OPUTE_STANDALONE_ALLOW_HOST_SHELL") == "true",
-		HostMCPPort:          port,
-		HostMCPBindHost:      bindHost,
-		IsReverseTunnel:      os.Getenv("OPUTE_REVERSE_TUNNEL") == "true",
-		HostWSURL:            wsURL,
-		MCPURL:               mcpURL,
-		MCPHealthURL:         healthURL,
-		RemoteAgentID:        agentID,
-		RemoteAgentAuthToken: tunnelAuth,
-		MCPAuthToken:         mcpAuth,
-		BridgeToken:          firstNonEmpty(os.Getenv("OPUTE_BRIDGE_TOKEN"), os.Getenv("BRIDGE_TOKEN")),
-		ProviderID:           providerID,
-		OnboardingToken:      strings.TrimSpace(os.Getenv("OPUTE_ONBOARDING_TOKEN")),
-		OnboardingSessionID:  strings.TrimSpace(os.Getenv("OPUTE_ONBOARDING_SESSION_ID")),
-		EnvFile:              strings.TrimSpace(os.Getenv("OPUTE_HOST_AGENT_ENV_FILE")),
-		TestMode:             os.Getenv("OPUTE_TEST") == "true" || os.Getenv("NODE_ENV") == "test",
+		AgentMode:                        normalizeMode(os.Getenv("OPUTE_AGENT_MODE")),
+		TransportMode:                    normalizeTransport(os.Getenv("OPUTE_TRANSPORT")),
+		StandaloneStateDir:               envOr("OPUTE_STANDALONE_STATE_DIR", filepath.Join(userHomeDir(), ".opute", "standalone")),
+		StandaloneAllowMutations:         os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
+		StandaloneAllowShell:             os.Getenv("OPUTE_STANDALONE_ALLOW_HOST_SHELL") == "true",
+		StandaloneAllowInsecureDownloads: os.Getenv("OPUTE_STANDALONE_ALLOW_INSECURE_DOWNLOADS") == "true",
+		HostMCPPort:                      port,
+		HostMCPBindHost:                  bindHost,
+		IsReverseTunnel:                  os.Getenv("OPUTE_REVERSE_TUNNEL") == "true",
+		HostWSURL:                        wsURL,
+		MCPURL:                           mcpURL,
+		MCPHealthURL:                     healthURL,
+		RemoteAgentID:                    agentID,
+		RemoteAgentAuthToken:             tunnelAuth,
+		MCPAuthToken:                     mcpAuth,
+		BridgeToken:                      firstNonEmpty(os.Getenv("OPUTE_BRIDGE_TOKEN"), os.Getenv("BRIDGE_TOKEN")),
+		ProviderID:                       providerID,
+		OnboardingToken:                  strings.TrimSpace(os.Getenv("OPUTE_ONBOARDING_TOKEN")),
+		OnboardingSessionID:              strings.TrimSpace(os.Getenv("OPUTE_ONBOARDING_SESSION_ID")),
+		EnvFile:                          strings.TrimSpace(os.Getenv("OPUTE_HOST_AGENT_ENV_FILE")),
+		TestMode:                         os.Getenv("OPUTE_TEST") == "true" || os.Getenv("NODE_ENV") == "test",
 	}
 }
 

@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opute-io/host-agents/internal/config"
 	"github.com/opute-io/host-agents/internal/fingerprint"
 	"github.com/opute-io/host-agents/internal/heartbeat"
 	"github.com/opute-io/host-agents/internal/hostmcp"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opute-io/host-agents/internal/ops"
 	"github.com/opute-io/host-agents/internal/provider"
 	"github.com/opute-io/host-agents/internal/tools"
@@ -37,7 +37,8 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	svc := ops.NewHostOperationsService(ops.Options{
-		ProviderID: provider.NormalizeProviderID(cfg.ProviderID),
+		ProviderID:             provider.NormalizeProviderID(cfg.ProviderID),
+		AllowInsecureDownloads: cfg.AgentMode == "standalone" && cfg.StandaloneAllowInsecureDownloads,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)
 			if err != nil {
@@ -48,11 +49,12 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	})
 
 	hostServer, err := hostmcp.NewServer(hostmcp.Options{
-		ProviderID: cfg.ProviderID,
-		Ops:        svc,
-		Logger:     logger,
-		Standalone: cfg.AgentMode == "standalone",
+		ProviderID:     cfg.ProviderID,
+		Ops:            svc,
+		Logger:         logger,
+		Standalone:     cfg.AgentMode == "standalone",
 		AllowMutations: cfg.StandaloneAllowMutations,
+		StateDir:       cfg.StandaloneStateDir,
 	})
 	if err != nil {
 		return err

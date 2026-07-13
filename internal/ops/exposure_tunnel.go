@@ -20,6 +20,7 @@ type EnsureCloudflaredTunnelArgs struct {
 	Hostname    string
 	LocalTarget string
 	RunToken    string
+	Quick       bool
 }
 
 type EnsureCloudflaredTunnelResult struct {
@@ -29,6 +30,7 @@ type EnsureCloudflaredTunnelResult struct {
 	TunnelStatus   string `json:"tunnelStatus"`
 	ServiceRunning bool   `json:"serviceRunning"`
 	ShimMode       bool   `json:"shimMode,omitempty"`
+	PublicURL      string `json:"publicUrl,omitempty"`
 }
 
 type ProbeHostExposureArgs struct {
@@ -118,8 +120,16 @@ func (s *HostOperationsService) EnsureCloudflaredTunnel(args EnsureCloudflaredTu
 		return nil, fmt.Errorf("windows cloudflared tunnel is unavailable on this platform")
 	}
 
-	if isRunningInWSL() && strings.TrimSpace(args.RunToken) != "" {
-		return ensureWindowsCloudflaredViaWSL(s, args)
+	if isRunningInWSL() {
+		if useNativeWSLCloudflared() {
+			return ensureNativeWSLCloudflared(s, args)
+		}
+		if strings.TrimSpace(args.RunToken) != "" {
+			return ensureWindowsCloudflaredViaWSL(s, args)
+		}
+		if args.Quick {
+			return ensureQuickCloudflaredViaWSL(s, args)
+		}
 	}
 
 	return nil, fmt.Errorf(
@@ -174,6 +184,7 @@ func (s *HostOperationsService) RemoveHostExposure(args RemoveHostExposureArgs) 
 	stopExposureShim(args.BindingID)
 	_ = stopWindowsCloudflaredTunnel(args.BindingID)
 	if isRunningInWSL() {
+		_ = stopNativeWSLCloudflaredTunnel(args.BindingID)
 		_ = stopWSLWindowsCloudflaredTunnel(args.BindingID)
 	}
 	return &RemoveHostExposureResult{
@@ -266,6 +277,9 @@ func isTunnelConnected(bindingID string) bool {
 		return isWindowsTunnelConnected(bindingID)
 	}
 	if isRunningInWSL() {
+		if useNativeWSLCloudflared() && isNativeWSLCloudflaredRunning(bindingID) {
+			return true
+		}
 		return isWSLWindowsCloudflaredRunning(bindingID)
 	}
 	return false

@@ -2,6 +2,7 @@ dist/
 *.exe
 *.test
 *.out
+tmp/e2e-debug.log
 .idea/
 .vscode/
 *.swp

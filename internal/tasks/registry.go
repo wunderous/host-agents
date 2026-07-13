@@ -43,6 +43,7 @@ type Record struct {
 	Logs          []string       `json:"logs,omitempty"`
 	ToolResult    *ToolResult    `json:"-"`
 	resultCh      chan ToolResult
+	cancel        func()
 }
 
 type Registry struct {
@@ -55,6 +56,14 @@ func NewRegistry() *Registry {
 }
 
 func (r *Registry) Create(toolName string, toolArgs map[string]any, ttl time.Duration, description string, metadata map[string]any) *Record {
+	return r.create(toolName, toolArgs, ttl, description, metadata, nil)
+}
+
+func (r *Registry) CreateWithCancel(toolName string, toolArgs map[string]any, ttl time.Duration, description string, metadata map[string]any, cancel func()) *Record {
+	return r.create(toolName, toolArgs, ttl, description, metadata, cancel)
+}
+
+func (r *Registry) create(toolName string, toolArgs map[string]any, ttl time.Duration, description string, metadata map[string]any, cancel func()) *Record {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if ttl <= 0 {
@@ -74,6 +83,7 @@ func (r *Registry) Create(toolName string, toolArgs map[string]any, ttl time.Dur
 		TTL:           int64(ttl / time.Millisecond),
 		PollInterval:  PollIntervalMs,
 		resultCh:      make(chan ToolResult, 1),
+		cancel:        cancel,
 	}
 	r.tasks[id] = rec
 	return rec
@@ -155,6 +165,9 @@ func (r *Registry) Cancel(taskID string) (*Record, bool) {
 	if rec.Status != StatusWorking && rec.Status != StatusInputRequired {
 		return nil, false
 	}
+	if rec.cancel != nil {
+		rec.cancel()
+	}
 	rec.Status = StatusCancelled
 	rec.StatusMessage = "The task was cancelled by request."
 	rec.LastUpdatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -207,6 +220,10 @@ var TaskAwareTools = map[string]bool{
 	"stop_vm":                     true,
 	"restart_vm":                  true,
 	"install_k3s":                 true,
+	"install_postgresql":          true,
+	"delete_postgresql":           true,
+	"create_cloudflare_tunnel":    true,
+	"delete_cloudflare_tunnel":    true,
 	"configure_k3s_load_balancer": true,
 	"configure_k3s_ha_servers":    true,
 	"uninstall_k3s":               true,

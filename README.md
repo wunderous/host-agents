@@ -118,6 +118,8 @@ Prefer VS Code's `env` block for user-owned settings and secrets:
 
 For a reusable local file, use `--env-file C:\path\to\opute-host-agent.env`. For one-off non-secret overrides, use `--env OPUTE_INFRA_PROVIDER_ID=incus --env HOST_MCP_PORT=3004`. Environment variables are inherited by host operations and Cloudflare tooling; never put long-lived secrets directly in command-line arguments because process listings can expose them. A Cloudflare API token configures account/API operations; a Cloudflare Tunnel connection still requires the per-tunnel `runToken` passed to the relevant tunnel tool.
 
+On WSL hosts, set `OPUTE_CLOUDFLARED_MODE=wsl` to run a native Linux `cloudflared` binary beside Incus; optionally set `OPUTE_CLOUDFLARED_BINARY_PATH` to its absolute path. This is useful when the Windows artifact cannot execute or when the tunnel origin is only reachable inside WSL. Leave the mode unset to retain the Windows-cloudflared delegation path.
+
 ## Dev stack (Phase 3)
 
 With `bun run dev` in `opute/`:

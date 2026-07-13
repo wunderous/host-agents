@@ -12,29 +12,32 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opute-io/host-agents/internal/console"
 	"github.com/opute-io/host-agents/internal/ops"
+	"github.com/opute-io/host-agents/internal/state"
 	"github.com/opute-io/host-agents/internal/tasks"
 	"github.com/opute-io/host-agents/internal/tools"
 )
 
 // Server is the host agent MCP server.
 type Server struct {
-	mcpServer  *mcp.Server
-	ops        *ops.HostOperationsService
-	tasks      *tasks.Registry
-	console    *console.Runtime
-	providerID string
-	standalone bool
+	mcpServer      *mcp.Server
+	ops            *ops.HostOperationsService
+	tasks          *tasks.Registry
+	console        *console.Runtime
+	providerID     string
+	standalone     bool
 	allowMutations bool
-	mu         sync.Mutex
-	toolDefs   []tools.ToolDefinition
+	state          *state.Store
+	mu             sync.Mutex
+	toolDefs       []tools.ToolDefinition
 }
 
 type Options struct {
-	ProviderID string
-	Ops        *ops.HostOperationsService
-	Logger     *slog.Logger
-	Standalone bool
+	ProviderID     string
+	Ops            *ops.HostOperationsService
+	Logger         *slog.Logger
+	Standalone     bool
 	AllowMutations bool
+	StateDir       string
 }
 
 func NewServer(opts Options) (*Server, error) {
@@ -67,14 +70,21 @@ func NewServer(opts Options) (*Server, error) {
 		Logger:       opts.Logger,
 	})
 	hs := &Server{
-		mcpServer:  srv,
-		ops:        opts.Ops,
-		tasks:      tasks.NewRegistry(),
-		console:    console.NewRuntime(),
-		providerID: providerID,
-		standalone: opts.Standalone,
+		mcpServer:      srv,
+		ops:            opts.Ops,
+		tasks:          tasks.NewRegistry(),
+		console:        console.NewRuntime(),
+		providerID:     providerID,
+		standalone:     opts.Standalone,
 		allowMutations: opts.AllowMutations,
-		toolDefs:   catalog,
+		toolDefs:       catalog,
+	}
+	if opts.Standalone {
+		store, err := state.Open(opts.StateDir)
+		if err != nil {
+			return nil, err
+		}
+		hs.state = store
 	}
 	hs.registerTools()
 	return hs, nil
@@ -168,9 +178,26 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 	if s.standalone {
 		switch name {
 		case "list_operations":
-			return structuredResult(s.tasks.List(), ""), nil
+			if s.state != nil {
+				limit := intFromAny(args["limit"])
+				operations, err := s.state.List(limit)
+				if err != nil {
+					return tools.ErrorResult(err), nil
+				}
+				return structuredResult(map[string]any{"operations": operations}, ""), nil
+			}
+			return structuredResult(map[string]any{"operations": s.tasks.List()}, ""), nil
 		case "get_operation":
 			id, _ := args["operationId"].(string)
+			if s.state != nil {
+				operation, found, err := s.state.Get(id)
+				if err != nil {
+					return tools.ErrorResult(err), nil
+				}
+				if found {
+					return structuredResult(operation, ""), nil
+				}
+			}
 			rec, ok := s.tasks.Get(id)
 			if !ok {
 				return tools.ErrorResult(fmt.Errorf("operation not found: %s", id)), nil
@@ -178,6 +205,9 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 			return structuredResult(s.tasks.ToGetTaskResult(rec), ""), nil
 		case "cancel_operation":
 			id, _ := args["operationId"].(string)
+			if s.state != nil {
+				_ = s.state.Cancel(id)
+			}
 			rec, ok := s.tasks.Cancel(id)
 			if !ok || rec == nil {
 				return tools.ErrorResult(fmt.Errorf("operation cannot be cancelled: %s", id)), nil
@@ -201,7 +231,7 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		height := intFromAny(args["height"])
 		return s.console.ResizeConsole(opID, width, height)
 	}
-	if tasks.TaskAwareTools[name] && hasTaskAugmentation(req) {
+	if tasks.TaskAwareTools[name] && (hasTaskAugmentation(req) || s.standalone) {
 		return s.createAsyncTask(name, args)
 	}
 	onData := func(chunk string) {}
@@ -233,12 +263,33 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 	if vm, ok := args["vmName"].(string); ok && vm != "" {
 		desc = fmt.Sprintf("Running %s on '%s'...", name, vm)
 	}
-	rec := s.tasks.Create(name, args, time.Hour, desc, nil)
+	taskCtx, cancel := context.WithCancel(context.Background())
+	rec := s.tasks.CreateWithCancel(name, args, time.Hour, desc, nil, cancel)
+	if s.state != nil {
+		_ = s.state.Create(rec.TaskID, name, desc)
+	}
 	go func(taskID string) {
 		onData := func(chunk string) { s.tasks.AppendLog(taskID, chunk) }
-		result, err := tools.DispatchTool(context.Background(), s.ops, name, args, onData)
+		result, err := tools.DispatchTool(taskCtx, s.ops, name, args, onData)
 		if err != nil {
+			if s.state != nil {
+				_ = s.state.Fail(taskID, err.Error())
+			}
 			s.tasks.Fail(taskID, err.Error())
+			return
+		}
+		if result.IsError {
+			message := "operation failed"
+			for _, content := range result.Content {
+				if text, ok := content.(*mcp.TextContent); ok && strings.TrimSpace(text.Text) != "" {
+					message = text.Text
+					break
+				}
+			}
+			if s.state != nil {
+				_ = s.state.Fail(taskID, message)
+			}
+			s.tasks.Fail(taskID, message)
 			return
 		}
 		tr := tasks.ToolResult{StructuredContent: result.StructuredContent, IsError: result.IsError}
@@ -248,6 +299,9 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 			}
 		}
 		s.tasks.Complete(taskID, tr)
+		if s.state != nil {
+			_ = s.state.Complete(taskID, tr)
+		}
 	}(rec.TaskID)
 	return &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: desc}},

@@ -38,6 +38,20 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
+	case "check_local_prerequisites":
+		out, err := svc.CheckLocalPrerequisites()
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "get_local_status":
+		out, err := svc.GetLocalStatus()
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
 	case "get_vm_info":
 		vmName := vmNameFromArgs(args)
 		if vmName == "" {
@@ -134,6 +148,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			Hostname:    stringField(args, "hostname"),
 			LocalTarget: stringField(args, "localTarget"),
 			RunToken:    stringField(args, "runToken"),
+			Quick:       boolField(args, "quick"),
 		}
 		out, err := svc.EnsureCloudflaredTunnel(parsed)
 		if err != nil {
@@ -237,6 +252,14 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, "K3s installation completed."), nil
 
+	case "get_k3s_status":
+		vmName := stringField(args, "vmName")
+		out, err := svc.GetK3sStatus(vmName)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
 	case "uninstall_k3s":
 		parsed := uninstallK3sArgs(args)
 		out, err := svc.UninstallK3s(parsed, onData)
@@ -244,6 +267,66 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, "K3s uninstall completed."), nil
+
+	case "install_postgresql":
+		out, err := svc.InstallPostgreSQL(ops.InstallPostgreSQLArgs{
+			VMName:    stringField(args, "vmName"),
+			Namespace: stringField(args, "namespace"),
+			Database:  stringField(args, "database"),
+			Password:  stringField(args, "password"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "PostgreSQL is ready."), nil
+
+	case "get_postgresql_status":
+		out, err := svc.GetPostgreSQLStatus(stringField(args, "vmName"), stringField(args, "namespace"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "delete_postgresql":
+		out, err := svc.DeletePostgreSQL(stringField(args, "vmName"), stringField(args, "namespace"), onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "PostgreSQL deleted."), nil
+
+	case "run_sql":
+		out, err := svc.RunSQL(stringField(args, "vmName"), stringField(args, "namespace"), stringField(args, "database"), stringField(args, "sql"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "SQL completed."), nil
+
+	case "create_cloudflare_tunnel":
+		out, err := svc.EnsureCloudflaredTunnel(ops.EnsureCloudflaredTunnelArgs{
+			BindingID:   stringField(args, "bindingId"),
+			Hostname:    stringField(args, "hostname"),
+			LocalTarget: stringField(args, "localTarget"),
+			RunToken:    stringField(args, "runToken"),
+			Quick:       boolField(args, "quick"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Cloudflare Tunnel started."), nil
+
+	case "get_cloudflare_tunnel_status":
+		out, err := svc.ProbeHostExposure(ops.ProbeHostExposureArgs{BindingID: stringField(args, "bindingId"), LocalTarget: stringField(args, "localTarget")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "delete_cloudflare_tunnel":
+		out, err := svc.RemoveHostExposure(ops.RemoveHostExposureArgs{BindingID: stringField(args, "bindingId")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Cloudflare Tunnel deleted."), nil
 
 	case "configure_k3s_load_balancer":
 		out, err := svc.ConfigureK3sLoadBalancer(args, onData)
@@ -401,6 +484,11 @@ func vmNameFromArgs(args map[string]any) string {
 func stringField(args map[string]any, key string) string {
 	v, _ := args[key].(string)
 	return strings.TrimSpace(v)
+}
+
+func boolField(args map[string]any, key string) bool {
+	v, _ := args[key].(bool)
+	return v
 }
 
 func intField(args map[string]any, key string) int {

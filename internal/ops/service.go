@@ -68,13 +68,15 @@ type HostOperationsService struct {
 	runtime *provider.Runtime
 	toolsFn func(providerID string) []string
 
-	sqlSupervisor    *sqlConnectorSupervisor
-	guestBridgeRelay *tcpRelayManager
+	sqlSupervisor          *sqlConnectorSupervisor
+	guestBridgeRelay       *tcpRelayManager
+	allowInsecureDownloads bool
 }
 
 type Options struct {
-	ProviderID       provider.ID
-	ToolsForProvider func(providerID string) []string
+	ProviderID             provider.ID
+	ToolsForProvider       func(providerID string) []string
+	AllowInsecureDownloads bool
 }
 
 func NewHostOperationsService(opts Options) *HostOperationsService {
@@ -85,10 +87,11 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		toolsFn = func(string) []string { return nil }
 	}
 	return &HostOperationsService{
-		runtime:          rt,
-		toolsFn:          toolsFn,
-		sqlSupervisor:    newSQLConnectorSupervisor(),
-		guestBridgeRelay: newTCPRelayManager(),
+		runtime:                rt,
+		toolsFn:                toolsFn,
+		sqlSupervisor:          newSQLConnectorSupervisor(),
+		guestBridgeRelay:       newTCPRelayManager(),
+		allowInsecureDownloads: opts.AllowInsecureDownloads,
 	}
 }
 
@@ -309,8 +312,18 @@ func (s *HostOperationsService) InstallK3s(args InstallK3sArgs, onData func(stri
 		target = "vm"
 	}
 	installCmd := "curl -sfL https://get.k3s.io | sh -"
+	if s.allowInsecureDownloads {
+		// Some local VM images do not contain the host's corporate CA. Keep the
+		// weaker TLS behavior explicit and standalone-only; platform mode remains
+		// certificate-verifying by default.
+		installCmd = "curl -k -sfL --retry 4 --retry-delay 2 --retry-connrefused https://get.k3s.io | sed -e 's/curl \\(-\\)/curl -k --retry 4 --retry-delay 2 --retry-connrefused \\1/g' | sh -"
+	}
 	if len(args.InstallArgs) > 0 {
-		installCmd = fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC=%s sh -", shellEscape(strings.Join(args.InstallArgs, " ")))
+		prefix := "curl -sfL https://get.k3s.io |"
+		if s.allowInsecureDownloads {
+			prefix = "curl -k -sfL --retry 4 --retry-delay 2 --retry-connrefused https://get.k3s.io | sed -e 's/curl \\(-\\)/curl -k --retry 4 --retry-delay 2 --retry-connrefused \\1/g' |"
+		}
+		installCmd = fmt.Sprintf("%s INSTALL_K3S_EXEC=%s sh -", prefix, shellEscape(strings.Join(args.InstallArgs, " ")))
 	}
 	if target == "host" {
 		clusterID := strings.TrimSpace(args.ClusterID)
