@@ -16,6 +16,9 @@ func DispatchTool(ctx context.Context, svc *ops.HostOperationsService, name stri
 	if name == "" {
 		return nil, fmt.Errorf("tool name is required")
 	}
+	if err := ctx.Err(); err != nil {
+		return ErrorResult(err), nil
+	}
 
 	result, err := runTool(ctx, svc, name, args, onData)
 	if err != nil {
@@ -246,7 +249,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "install_k3s":
 		parsed := installK3sArgs(args)
-		out, err := svc.InstallK3s(parsed, onData)
+		out, err := svc.InstallK3s(ctx, parsed, onData)
 		if err != nil {
 			return nil, err
 		}

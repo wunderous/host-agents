@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime"
@@ -115,19 +116,34 @@ func (r *Runtime) ReadProviderID() ID { return r.cfg.ProviderID }
 
 // RunProvider runs a provider CLI subcommand.
 func (r *Runtime) RunProvider(args []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	return r.RunProviderContext(context.Background(), args, onData, timeout)
+}
+
+// RunProviderContext runs a provider CLI subcommand with cancellation.
+func (r *Runtime) RunProviderContext(ctx context.Context, args []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
 	argv := append([]string{r.cfg.ProviderBinary}, args...)
-	return hostexec.RunCommand(argv, onData, timeout)
+	return hostexec.RunCommandContext(ctx, argv, onData, timeout)
 }
 
 // RunHost runs a command on the host OS.
 func (r *Runtime) RunHost(command []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
-	return hostexec.RunCommand(command, onData, timeout)
+	return r.RunHostContext(context.Background(), command, onData, timeout)
+}
+
+// RunHostContext runs a command on the host OS with cancellation.
+func (r *Runtime) RunHostContext(ctx context.Context, command []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	return hostexec.RunCommandContext(ctx, command, onData, timeout)
 }
 
 // RunVMExec runs a command inside a VM via provider exec.
 func (r *Runtime) RunVMExec(vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	return r.RunVMExecContext(context.Background(), vmName, guestArgv, onData, timeout)
+}
+
+// RunVMExecContext runs a command inside a VM via provider exec with cancellation.
+func (r *Runtime) RunVMExecContext(ctx context.Context, vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
 	execArgs := append([]string{"exec", vmName, "--"}, guestArgv...)
-	return r.RunProvider(execArgs, onData, timeout)
+	return r.RunProviderContext(ctx, execArgs, onData, timeout)
 }
 
 // NeedsDirectSpawn reports whether provider commands should bypass PTY (JSON / machine-readable).

@@ -131,12 +131,20 @@ func (s *HostOperationsService) hostCommandRunner(command []string, onData func(
 	return s.runtime.RunHost(command, onData, timeout)
 }
 
+func (s *HostOperationsService) hostCommandRunnerContext(ctx context.Context, command []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	return s.runtime.RunHostContext(ctx, command, onData, timeout)
+}
+
 func (s *HostOperationsService) vmExecArgv(vmName string, guestArgv []string) []string {
 	return append([]string{"exec", vmName, "--"}, guestArgv...)
 }
 
 func (s *HostOperationsService) runVMExec(vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
 	return s.commandRunner(s.vmExecArgv(vmName, guestArgv), onData, timeout)
+}
+
+func (s *HostOperationsService) runVMExecContext(ctx context.Context, vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	return s.runtime.RunVMExecContext(ctx, vmName, guestArgv, onData, timeout)
 }
 
 type VMListResult struct {
@@ -306,7 +314,13 @@ type InstallK3sArgs struct {
 	InstallArgs []string `json:"installArgs,omitempty"`
 }
 
-func (s *HostOperationsService) InstallK3s(args InstallK3sArgs, onData func(string)) (map[string]any, error) {
+func (s *HostOperationsService) InstallK3s(ctx context.Context, args InstallK3sArgs, onData func(string)) (map[string]any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	target := strings.TrimSpace(args.Target)
 	if target == "" {
 		target = "vm"
@@ -333,10 +347,13 @@ func (s *HostOperationsService) InstallK3s(args InstallK3sArgs, onData func(stri
 		prep := `if test -x /usr/local/bin/k3s-uninstall.sh; then /usr/local/bin/k3s-uninstall.sh || true; fi
 rm -f /etc/systemd/system/k3s.service.env /etc/systemd/system/k3s.service 2>/dev/null || true
 systemctl daemon-reload 2>/dev/null || true`
-		if _, err := s.hostCommandRunner([]string{"bash", "-lc", prep}, onData, 0); err != nil {
+		if _, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", prep}, onData, 0); err != nil {
 			return nil, err
 		}
-		res, err := s.hostCommandRunner([]string{"bash", "-lc", installCmd}, onData, 0)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		res, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", installCmd}, onData, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -346,7 +363,7 @@ systemctl daemon-reload 2>/dev/null || true`
 		if err := s.waitForSystemdActive("k3s", onData, hostK3sServiceWait); err != nil {
 			return nil, err
 		}
-		ready, err := s.hostCommandRunner([]string{"bash", "-lc", "sudo -n /usr/local/bin/k3s kubectl get nodes -o name"}, onData, defaultDiscoveryTimeout)
+		ready, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", "sudo -n /usr/local/bin/k3s kubectl get nodes -o name"}, onData, defaultDiscoveryTimeout)
 		if err != nil || ready.ExitCode != 0 {
 			return nil, fmt.Errorf("%s", firstNonEmpty(ready.Stderr, ready.Stdout, "K3s API not ready on host"))
 		}
@@ -360,11 +377,17 @@ systemctl daemon-reload 2>/dev/null || true`
 	if err := s.waitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ensureCurl := `if ! command -v curl >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get install -y curl >/dev/null || (apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y curl >/dev/null); fi`
-	if res, err := s.runVMExec(vmName, []string{"bash", "-lc", ensureCurl}, onData, 0); err != nil || res.ExitCode != 0 {
+	if res, err := s.runVMExecContext(ctx, vmName, []string{"bash", "-lc", ensureCurl}, onData, 0); err != nil || res.ExitCode != 0 {
 		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "failed to ensure curl in VM"))
 	}
-	install, err := s.runVMExec(vmName, []string{"bash", "-lc", installCmd}, onData, 15*time.Minute)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	install, err := s.runVMExecContext(ctx, vmName, []string{"bash", "-lc", installCmd}, onData, 15*time.Minute)
 	if err != nil {
 		return nil, err
 	}
