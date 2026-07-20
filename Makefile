@@ -19,7 +19,7 @@ standalone-smoke: build
 	OPUTE_AGENT_MODE=standalone OPUTE_INFRA_PROVIDER_ID=incus OPUTE_STANDALONE_STATE_DIR="$$(mktemp -d)" $(DIST)/$(BINARY) --check
 
 standalone-http-smoke: build
-	OPUTE_STANDALONE_BINARY=$(DIST)/$(BINARY) go test ./test/standalone -run 'TestPackagedShapeStandaloneHTTPContract|TestDeprecatedTransportFlagIsRejectOnly' -count=1
+	OPUTE_STANDALONE_BINARY=$(CURDIR)/$(DIST)/$(BINARY) go test ./test/standalone -count=1
 
 standalone-lifecycle-gate: build-linux-x64
 	go test -tags=integration ./test/live -count=1

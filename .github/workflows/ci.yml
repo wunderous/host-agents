@@ -54,4 +54,4 @@ jobs:
           test -s dist/SHA256SUMS
 
       - name: Standalone Streamable HTTP smoke
-        run: OPUTE_STANDALONE_BINARY=dist/host-agent-linux-x64 go test ./test/standalone -count=1
+        run: OPUTE_STANDALONE_BINARY="${{ github.workspace }}/dist/host-agent-linux-x64" go test ./test/standalone -count=1

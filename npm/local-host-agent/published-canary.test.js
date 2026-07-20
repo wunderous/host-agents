@@ -34,8 +34,8 @@ function cleanEnv(overrides) {
 async function runLauncher(npm, version, cache, npmrc, env, ...args) {
   return await execFileAsync(npm, [
     'exec', '--yes', '--cache', cache, '--userconfig', npmrc,
-    '--package', `${PACKAGE}@${version}`, '--', 'opute-host-agent', ...args,
-  ], { env, timeout: 120_000 })
+    `--package=${PACKAGE}@${version}`, '--', 'opute-host-agent', ...args,
+  ], { cwd: os.tmpdir(), env, timeout: 120_000 })
 }
 
 async function waitHealth(url, timeoutMs = 20_000) {
@@ -57,7 +57,8 @@ async function rpc(url, state, method, params = undefined) {
     'Mcp-Protocol-Version': state.protocolVersion,
   }
   if (state.sessionId) headers['Mcp-Session-Id'] = state.sessionId
-  const body = { jsonrpc: '2.0', id: state.nextId++, method }
+  const body = { jsonrpc: '2.0', method }
+  if (!method.startsWith('notifications/')) body.id = state.nextId++
   if (params !== undefined) body.params = params
   const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
   assert.equal(response.ok, true, `${method} HTTP ${response.status}`)
