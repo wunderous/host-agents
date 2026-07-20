@@ -1,6 +1,6 @@
 {
-  "name": "@opute/local-host-agent",
-  "version": "0.1.0",
+  "name": "@opute/host-agent",
+  "version": "0.1.1",
   "description": "Local Streamable HTTP launcher for the Opute Go host agent",
   "license": "MIT",
   "repository": {
@@ -17,7 +17,7 @@
     "test": "node --test"
   },
   "bin": {
-    "opute-local-host-agent": "index.js"
+    "opute-host-agent": "index.js"
   },
   "files": ["index.js", "package.json", "README.md"],
   "engines": {

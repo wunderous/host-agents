@@ -53,4 +53,4 @@ jobs:
           test -s dist/SHA256SUMS
 
       - name: Standalone Streamable HTTP smoke
-        run: EXPECTED_VERSION=0.1.0 python3 scripts/verify-standalone-http.py dist/host-agent-linux-x64
+        run: EXPECTED_VERSION=0.1.1 python3 scripts/verify-standalone-http.py dist/host-agent-linux-x64

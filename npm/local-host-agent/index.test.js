@@ -194,10 +194,10 @@ test('native Windows fails before attempting an artifact download', { skip: proc
 test('the packed npm tarball launches the verified binary', { skip: process.platform !== 'linux' }, async () => {
   const packageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opute-packed-'))
   await execFileAsync('npm', ['pack', '--pack-destination', packageDir], { cwd: __dirname, timeout: 30_000 })
-  const tarball = path.join(packageDir, `opute-local-host-agent-${packageVersion}.tgz`)
+  const tarball = path.join(packageDir, `opute-host-agent-${packageVersion}.tgz`)
   const installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opute-packed-install-'))
   await execFileAsync('npm', ['install', '--ignore-scripts', '--prefix', installDir, tarball], { timeout: 30_000 })
-  const entry = path.join(installDir, 'node_modules', '@opute', 'local-host-agent', 'index.js')
+  const entry = path.join(installDir, 'node_modules', '@opute', 'host-agent', 'index.js')
   const binary = Buffer.from('#!/bin/sh\nexit 0\n')
   const archive = zlib.gzipSync(binary)
   const checksum = crypto.createHash('sha256').update(archive).digest('hex')

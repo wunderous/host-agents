@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RELEASE_TAG="${RELEASE_TAG:-v0.1.0}"
+RELEASE_TAG="${RELEASE_TAG:-v0.1.1}"
 RELEASE_URL="${RELEASE_URL:-https://github.com/wunderous/host-agents/releases/download/${RELEASE_TAG}/host-agent-linux-x64.gz}"
 CHECKSUM_URL="${CHECKSUM_URL:-https://github.com/wunderous/host-agents/releases/download/${RELEASE_TAG}/SHA256SUMS}"
 INSTALL_ROOT="${INSTALL_ROOT:-/tmp/opute-release-verify-$$}"

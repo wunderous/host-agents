@@ -12,7 +12,7 @@ provider works there end to end.
 
 stdio MCP transport is not supported. Clients configure
 `"type": "http"` with `url: http://127.0.0.1:3014/mcp` after starting the
-agent process (binary or `@opute/local-host-agent`).
+agent process (binary or `@opute/host-agent`).
 
 Standalone must not require Opute Platform, Bridge, onboarding credentials,
 reverse tunneling, or a hosted MCP endpoint. It is read-only by default.
@@ -31,7 +31,7 @@ agent never reports them as completed automatically. Tool schema changes use
 the standalone contract's schema version, and operation-state migrations must
 be explicit and backward compatible before a release.
 
-The working package name is `@opute/local-host-agent`. The repository/module
+The working package name is `@opute/host-agent`. The repository/module
 owner and public visibility must be finalized before publication because the
 current checkout and advertised URLs do not yet agree.
 

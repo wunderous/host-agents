@@ -55,7 +55,7 @@ An explicit `hostId` is the durable execution assignment. The host agent should 
 
 ### Standalone local workflow
 
-- The supported client boundary is MCP Streamable HTTP (default `http://127.0.0.1:3014/mcp`). Direct development invocation is `opute-host-agent --mode standalone --transport http`; VS Code/Cursor users should start `@opute/local-host-agent` (or the binary) and connect with `"type": "http"` + `url`.
+- The supported client boundary is MCP Streamable HTTP (default `http://127.0.0.1:3014/mcp`). Direct development invocation is `opute-host-agent --mode standalone --transport http`; VS Code/Cursor users should start `@opute/host-agent` (or the binary) and connect with `"type": "http"` + `url`.
 - Mutations are deliberately disabled unless `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` is set. Host shell and insecure-download behavior are separate opt-ins; never enable them by default in a published client configuration.
 - Long-running mutations (`provision_vm`, `install_k3s`, `install_postgresql`, tunnel creation, and deletion) must return a task/operation immediately. Poll `get_operation`; do not increase the MCP request timeout or synchronously repeat the underlying provider call.
 - The local journal is SQLite-backed and operation state is authoritative for standalone recovery. On restart, previously working operations reconcile to `unknown`; clients must surface that state rather than pretending the work completed.

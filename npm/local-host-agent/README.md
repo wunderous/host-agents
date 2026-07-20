@@ -1,4 +1,4 @@
-# @opute/local-host-agent
+# @opute/host-agent
 
 Downloads and launches the checksum-verified Opute Go host agent as a local
 **Streamable HTTP** MCP server for VS Code, Claude Desktop, Cursor, and other
@@ -8,12 +8,12 @@ MCP clients.
 
 ```bash
 # Start in the foreground (logs on stderr)
-npx -y @opute/local-host-agent start
+npx -y @opute/host-agent start
 
 # Or run as a background daemon and print the MCP URL
-npx -y @opute/local-host-agent start --background
-npx -y @opute/local-host-agent status
-npx -y @opute/local-host-agent stop
+npx -y @opute/host-agent start --background
+npx -y @opute/host-agent status
+npx -y @opute/host-agent stop
 ```
 
 Point your MCP client at the printed URL (default port **3014**):

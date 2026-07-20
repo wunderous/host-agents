@@ -3,7 +3,7 @@
 BINARY=opute-host-agent
 DIST=dist
 MODULE=github.com/wunderous/host-agents
-VERSION ?= 0.1.0
+VERSION ?= 0.1.1
 LDFLAGS=-s -w -X $(MODULE)/internal/version.Version=$(VERSION)
 
 build:

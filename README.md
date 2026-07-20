@@ -20,8 +20,8 @@ OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone" \
 Or via the npm helper:
 
 ```bash
-npx -y @opute/local-host-agent start --background
-npx -y @opute/local-host-agent url   # http://127.0.0.1:3014/mcp
+npx -y @opute/host-agent start --background
+npx -y @opute/host-agent url   # http://127.0.0.1:3014/mcp
 ```
 
 Recommended client configuration:
@@ -121,7 +121,7 @@ Unauthenticated `curl` to GitHub release URLs returns **404**.
 ### Verify a release install
 
 ```bash
-export RELEASE_TAG=v0.1.0          # optional; defaults to v0.1.0
+export RELEASE_TAG=v0.1.1          # optional; defaults to v0.1.1
 bash scripts/verify-release-install.sh
 ```
 
@@ -173,7 +173,7 @@ HTTP URL. Secrets for mutations belong in the agent process environment (or
 ```bash
 OPUTE_STANDALONE_ALLOW_MUTATIONS=true \
 CLOUDFLARE_API_TOKEN=… \
-npx -y @opute/local-host-agent start --background
+npx -y @opute/host-agent start --background
 ```
 
 For a reusable local file, use `--env-file /path/to/opute-host-agent.env` when

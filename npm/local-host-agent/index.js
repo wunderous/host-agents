@@ -34,7 +34,7 @@ function request(url, redirects = 0) {
     try { parsed = new URL(url) } catch { reject(new Error(`invalid artifact URL: ${url}`)); return }
     const transport = parsed.protocol === 'http:' ? http : parsed.protocol === 'https:' ? https : null
     if (!transport) { reject(new Error(`unsupported artifact URL protocol: ${parsed.protocol}`)); return }
-    const req = transport.get(parsed, { headers: { 'User-Agent': '@opute/local-host-agent' } }, response => {
+    const req = transport.get(parsed, { headers: { 'User-Agent': '@opute/host-agent' } }, response => {
       if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
         response.resume()
         resolve(request(new URL(response.headers.location, parsed).toString(), redirects + 1))
@@ -183,9 +183,17 @@ function healthUrl(host = bindHost(), port = mcpPort()) {
 
 function readDaemonState() {
   try {
-    return JSON.parse(fs.readFileSync(daemonStatePath(), 'utf8'))
-  } catch {
-    return null
+    const raw = fs.readFileSync(daemonStatePath(), 'utf8')
+    const state = JSON.parse(raw)
+    if (!state || typeof state !== 'object' || !Number.isInteger(state.pid)) {
+      return null
+    }
+    return state
+  } catch (error) {
+    if (error && (error.code === 'ENOENT' || error instanceof SyntaxError)) {
+      return null
+    }
+    throw error
   }
 }
 
@@ -211,10 +219,19 @@ function isPidRunning(pid) {
 function probeHealth(url, timeoutMs = 2000) {
   return new Promise(resolve => {
     const req = http.get(url, { timeout: timeoutMs }, response => {
-      let body = ''
-      response.on('data', chunk => { body += chunk })
+      const chunks = []
+      response.on('data', chunk => { chunks.push(chunk) })
       response.on('end', () => {
-        resolve(response.statusCode === 200 && body.includes('"ok"'))
+        if (response.statusCode !== 200) {
+          resolve(false)
+          return
+        }
+        try {
+          const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+          resolve(payload && payload.ok === true)
+        } catch {
+          resolve(false)
+        }
       })
     })
     req.on('timeout', () => { req.destroy(); resolve(false) })
@@ -249,8 +266,6 @@ function buildAgentEnv() {
         || key === 'OPUTE_STANDALONE_ALLOW_MUTATIONS'
         || key === 'OPUTE_STANDALONE_ALLOW_INSECURE_DOWNLOADS'
         || key === 'OPUTE_INFRA_PROVIDER_ID'
-        || key === 'HOST_MCP_PORT'
-        || key === 'HOST_MCP_BIND_HOST'
       ) {
         continue
       }
@@ -266,7 +281,7 @@ function buildAgentEnv() {
 }
 
 function printUsage() {
-  console.log(`Usage: opute-local-host-agent <command>
+  console.log(`Usage: opute-host-agent <command>
 
 Commands:
   start [--background|-d]  Start standalone Streamable HTTP MCP (default: foreground)
@@ -310,7 +325,8 @@ async function startForeground(binary, passthroughArgs) {
 async function startBackground(binary, passthroughArgs) {
   const existing = readDaemonState()
   if (existing && isPidRunning(existing.pid)) {
-    throw new Error(`standalone agent already running (pid ${existing.pid}) at ${existing.url}`)
+    const existingUrl = mcpUrl(existing.host || bindHost(), existing.port || mcpPort())
+    throw new Error(`standalone agent already running (pid ${existing.pid}) at ${existingUrl}`)
   }
   const host = bindHost()
   const port = mcpPort()
@@ -334,8 +350,6 @@ async function startBackground(binary, passthroughArgs) {
     pid: child.pid,
     host,
     port,
-    url,
-    health,
     startedAt: new Date().toISOString(),
     logPath,
   })
@@ -378,8 +392,8 @@ async function cmdStatus() {
   const state = readDaemonState()
   const host = state?.host || bindHost()
   const port = state?.port || mcpPort()
-  const url = state?.url || mcpUrl(host, port)
-  const health = state?.health || healthUrl(host, port)
+  const url = mcpUrl(host, port)
+  const health = healthUrl(host, port)
   const running = state ? isPidRunning(state.pid) : false
   const healthy = await probeHealth(health)
   console.log(JSON.stringify({
@@ -394,7 +408,9 @@ async function cmdStatus() {
 
 async function cmdUrl() {
   const state = readDaemonState()
-  console.log(state?.url || mcpUrl())
+  const host = state?.host || bindHost()
+  const port = state?.port || mcpPort()
+  console.log(mcpUrl(host, port))
   return 0
 }
 
