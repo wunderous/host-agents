@@ -1,21 +1,67 @@
 # @opute/local-host-agent
 
-Launches the checksum-verified Opute Go host agent as a local stdio MCP server for VS Code, Claude Desktop, Cursor, and other MCP clients.
+Downloads and launches the checksum-verified Opute Go host agent as a local
+**Streamable HTTP** MCP server for VS Code, Claude Desktop, Cursor, and other
+MCP clients.
 
-For development, set `OPUTE_HOST_AGENT_BINARY` to a locally built binary. Released packages download the matching versioned artifact and verify it against the release `SHA256SUMS` manifest. `OPUTE_HOST_AGENT_SHA256` may be supplied to pin a development or mirror artifact explicitly.
+## Quick start
 
-Mutating local infrastructure operations are disabled unless the launcher environment contains:
+```bash
+# Start in the foreground (logs on stderr)
+npx -y @opute/local-host-agent start
 
-```text
-OPUTE_STANDALONE_ALLOW_MUTATIONS=true
+# Or run as a background daemon and print the MCP URL
+npx -y @opute/local-host-agent start --background
+npx -y @opute/local-host-agent status
+npx -y @opute/local-host-agent stop
 ```
+
+Point your MCP client at the printed URL (default port **3014**):
+
+```json
+{
+  "servers": {
+    "oputeLocal": {
+      "type": "http",
+      "url": "http://127.0.0.1:3014/mcp"
+    }
+  }
+}
+```
+
+stdio MCP transport is not supported.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `start` | Start standalone Streamable HTTP (foreground by default) |
+| `start --background` / `-d` | Daemonize, write pid state, print MCP URL |
+| `stop` | Stop a background daemon started by this launcher |
+| `status` | JSON status (`running`, `healthy`, `url`) |
+| `url` | Print the MCP URL |
+
+## Environment
+
+| Variable | Purpose |
+|----------|---------|
+| `HOST_MCP_PORT` | Listen port (default `3014`) |
+| `HOST_MCP_BIND_HOST` | Bind host (default `127.0.0.1`) |
+| `OPUTE_HOST_AGENT_BINARY` | Use a local binary instead of downloading a release |
+| `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` | Enable mutating infrastructure tools |
+| `OPUTE_STANDALONE_STATE_DIR` | Local SQLite / operation journal directory |
+
+For development, set `OPUTE_HOST_AGENT_BINARY` to a locally built binary.
+Released packages download the matching versioned artifact and verify it
+against the release `SHA256SUMS` manifest. `OPUTE_HOST_AGENT_SHA256` may be
+supplied to pin a development or mirror artifact explicitly.
 
 The stable MVP claim covers local Incus inspection and VM lifecycle. K3s,
 PostgreSQL, SQL execution, and Cloudflare Tunnel tools are exposed as
 experimental capabilities and require the same explicit mutation opt-in.
 
-The launcher supports Linux x64 and arm64. Native Windows and macOS are not supported by the Incus provider; Windows users should launch the Linux binary inside WSL. The launcher does not install dependencies or run a postinstall hook.
-
-For a local development binary, set `OPUTE_HOST_AGENT_BINARY`. Released
-artifacts are fetched over HTTPS (or an explicitly configured mirror), checked
-against `SHA256SUMS`, cached atomically, and re-verified on every launch.
+The launcher supports Linux x64 and arm64. Native Windows and macOS are not
+supported by the Incus provider; Windows users should run the Linux binary
+inside WSL and connect from the Windows MCP client over HTTP to
+`http://127.0.0.1:3014/mcp` (with WSL port forwarding as needed). The launcher
+does not install dependencies or run a postinstall hook.

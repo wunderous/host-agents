@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "serverName": "host-agent",
   "provider": "incus",
-  "transport": "stdio",
+  "transport": "http",
   "supportedPlatforms": ["linux/amd64", "linux/arm64", "windows-client/wsl"],
   "tools": [
     {"name": "get_host_info", "classification": "read_only", "support": "stable"},

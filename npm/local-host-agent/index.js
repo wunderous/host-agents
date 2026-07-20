@@ -14,6 +14,7 @@ const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 const MAX_BINARY_BYTES = 256 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 15_000
 const LOCK_TIMEOUT_MS = 30_000
+const HEALTH_WAIT_MS = 15_000
 
 function targetName() {
   const platform = process.platform
@@ -21,7 +22,7 @@ function targetName() {
   if (platform === 'linux' && arch === 'x64') return 'linux-x64'
   if (platform === 'linux' && arch === 'arm64') return 'linux-arm64'
   if (platform === 'win32') {
-    throw new Error('native Windows is not supported by the Incus host agent; run the Linux binary inside WSL and configure your MCP client to launch it there')
+    throw new Error('native Windows is not supported by the Incus host agent; run the Linux binary inside WSL and point your MCP client at http://127.0.0.1:3014/mcp')
   }
   throw new Error(`unsupported local host-agent target: ${platform}/${arch}; supported targets are Linux x64 and arm64 (Windows via WSL)`)
 }
@@ -150,27 +151,281 @@ async function resolveChecksum(base, artifactName) {
   throw new Error(`release checksum manifest does not contain ${artifactName}`)
 }
 
-async function main() {
-  const binary = await resolveBinary()
-  const child = spawn(binary, ['--mode=standalone', '--transport=stdio', ...process.argv.slice(2)], {
+function runtimeDir() {
+  return process.env.OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR
+    || path.join(os.homedir(), '.cache', 'opute', 'host-agent', 'standalone')
+}
+
+function daemonStatePath() {
+  return path.join(runtimeDir(), 'daemon.json')
+}
+
+function bindHost() {
+  return (process.env.HOST_MCP_BIND_HOST || '127.0.0.1').trim() || '127.0.0.1'
+}
+
+function mcpPort() {
+  const raw = (process.env.HOST_MCP_PORT || '3014').trim()
+  const port = Number(raw)
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(`invalid HOST_MCP_PORT ${JSON.stringify(raw)}`)
+  }
+  return port
+}
+
+function mcpUrl(host = bindHost(), port = mcpPort()) {
+  return `http://${host}:${port}/mcp`
+}
+
+function healthUrl(host = bindHost(), port = mcpPort()) {
+  return `http://${host}:${port}/health`
+}
+
+function readDaemonState() {
+  try {
+    return JSON.parse(fs.readFileSync(daemonStatePath(), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+function writeDaemonState(state) {
+  fs.mkdirSync(runtimeDir(), { recursive: true, mode: 0o700 })
+  fs.writeFileSync(daemonStatePath(), JSON.stringify(state, null, 2) + '\n', { mode: 0o600 })
+}
+
+function clearDaemonState() {
+  fs.rmSync(daemonStatePath(), { force: true })
+}
+
+function isPidRunning(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function probeHealth(url, timeoutMs = 2000) {
+  return new Promise(resolve => {
+    const req = http.get(url, { timeout: timeoutMs }, response => {
+      let body = ''
+      response.on('data', chunk => { body += chunk })
+      response.on('end', () => {
+        resolve(response.statusCode === 200 && body.includes('"ok"'))
+      })
+    })
+    req.on('timeout', () => { req.destroy(); resolve(false) })
+    req.on('error', () => resolve(false))
+  })
+}
+
+async function waitForHealth(url, timeoutMs = HEALTH_WAIT_MS, failure = null) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const earlyFailure = typeof failure === 'function' ? failure() : null
+    if (earlyFailure) throw new Error(earlyFailure)
+    if (await probeHealth(url)) return
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  throw new Error(`timed out waiting for health at ${url}`)
+}
+
+function buildAgentEnv() {
+  const env = { ...process.env }
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('OPUTE_') || key === 'MCP_AUTH_TOKEN' || key === 'BRIDGE_TOKEN') {
+      // Keep launcher-only and standalone-safe vars.
+      if (
+        key === 'OPUTE_HOST_AGENT_BINARY'
+        || key === 'OPUTE_HOST_AGENT_CACHE_DIR'
+        || key === 'OPUTE_HOST_AGENT_RELEASE_BASE_URL'
+        || key === 'OPUTE_HOST_AGENT_CHECKSUM_URL'
+        || key === 'OPUTE_HOST_AGENT_SHA256'
+        || key === 'OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR'
+        || key === 'OPUTE_STANDALONE_STATE_DIR'
+        || key === 'OPUTE_STANDALONE_ALLOW_MUTATIONS'
+        || key === 'OPUTE_STANDALONE_ALLOW_INSECURE_DOWNLOADS'
+        || key === 'OPUTE_INFRA_PROVIDER_ID'
+        || key === 'HOST_MCP_PORT'
+        || key === 'HOST_MCP_BIND_HOST'
+      ) {
+        continue
+      }
+      delete env[key]
+    }
+  }
+  env.OPUTE_AGENT_MODE = 'standalone'
+  env.OPUTE_TRANSPORT = 'http'
+  env.HOST_MCP_BIND_HOST = bindHost()
+  env.HOST_MCP_PORT = String(mcpPort())
+  if (!env.OPUTE_INFRA_PROVIDER_ID) env.OPUTE_INFRA_PROVIDER_ID = 'incus'
+  return env
+}
+
+function printUsage() {
+  console.log(`Usage: opute-local-host-agent <command>
+
+Commands:
+  start [--background|-d]  Start standalone Streamable HTTP MCP (default: foreground)
+  stop                     Stop a background daemon started by this launcher
+  status                   Show daemon/listener status and MCP URL
+  url                      Print the MCP URL (http://127.0.0.1:3014/mcp by default)
+
+Environment:
+  HOST_MCP_PORT            Listen port (default 3014)
+  HOST_MCP_BIND_HOST       Bind host (default 127.0.0.1)
+  OPUTE_HOST_AGENT_BINARY  Use a local binary instead of downloading a release
+  OPUTE_STANDALONE_ALLOW_MUTATIONS=true  Enable mutating tools
+
+MCP client config:
+  { "type": "http", "url": "http://127.0.0.1:3014/mcp" }
+`)
+}
+
+async function startForeground(binary, passthroughArgs) {
+  const host = bindHost()
+  const port = mcpPort()
+  const url = mcpUrl(host, port)
+  console.error(`starting standalone Streamable HTTP MCP at ${url}`)
+  const child = spawn(binary, ['--mode=standalone', '--transport=http', ...passthroughArgs], {
     stdio: 'inherit',
-    env: { ...process.env, OPUTE_AGENT_MODE: 'standalone', OPUTE_TRANSPORT: 'stdio' },
+    env: buildAgentEnv(),
   })
   let exiting = false
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     process.on(signal, () => { if (!exiting) child.kill(signal) })
   }
-  child.on('error', error => {
-    console.error(`failed to start host agent: ${error.message}`)
-    process.exitCode = 1
-  })
-  child.on('exit', (code, signal) => {
-    exiting = true
-    process.exitCode = code ?? (signal ? 1 : 0)
+  return await new Promise((resolve, reject) => {
+    child.on('error', reject)
+    child.on('exit', (code, signal) => {
+      exiting = true
+      resolve(code ?? (signal ? 1 : 0))
+    })
   })
 }
 
-main().catch(error => {
+async function startBackground(binary, passthroughArgs) {
+  const existing = readDaemonState()
+  if (existing && isPidRunning(existing.pid)) {
+    throw new Error(`standalone agent already running (pid ${existing.pid}) at ${existing.url}`)
+  }
+  const host = bindHost()
+  const port = mcpPort()
+  const url = mcpUrl(host, port)
+  const health = healthUrl(host, port)
+  fs.mkdirSync(runtimeDir(), { recursive: true, mode: 0o700 })
+  const logPath = path.join(runtimeDir(), 'daemon.log')
+  const logFd = fs.openSync(logPath, 'a')
+  const child = spawn(binary, ['--mode=standalone', '--transport=http', ...passthroughArgs], {
+    detached: true,
+    stdio: ['ignore', logFd, logFd],
+    env: buildAgentEnv(),
+  })
+  let spawnError = null
+  let childExit = null
+  child.once('error', error => { spawnError = error })
+  child.once('exit', (code, signal) => { childExit = { code, signal } })
+  child.unref()
+  fs.closeSync(logFd)
+  writeDaemonState({
+    pid: child.pid,
+    host,
+    port,
+    url,
+    health,
+    startedAt: new Date().toISOString(),
+    logPath,
+  })
+  try {
+    await waitForHealth(health, HEALTH_WAIT_MS, () => {
+      if (spawnError) return `child process failed: ${spawnError.message}`
+      if (childExit) return `child process exited before health (code=${childExit.code}, signal=${childExit.signal || 'none'})`
+      return null
+    })
+  } catch (error) {
+    try { process.kill(child.pid, 'SIGTERM') } catch { /* ignore */ }
+    clearDaemonState()
+    throw new Error(`failed to start standalone agent: ${error.message}`)
+  }
+  console.log(url)
+  return 0
+}
+
+async function cmdStop() {
+  const state = readDaemonState()
+  if (!state || !isPidRunning(state.pid)) {
+    clearDaemonState()
+    console.error('standalone agent is not running')
+    return 0
+  }
+  process.kill(state.pid, 'SIGTERM')
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline && isPidRunning(state.pid)) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  if (isPidRunning(state.pid)) {
+    process.kill(state.pid, 'SIGKILL')
+  }
+  clearDaemonState()
+  console.error(`stopped standalone agent (pid ${state.pid})`)
+  return 0
+}
+
+async function cmdStatus() {
+  const state = readDaemonState()
+  const host = state?.host || bindHost()
+  const port = state?.port || mcpPort()
+  const url = state?.url || mcpUrl(host, port)
+  const health = state?.health || healthUrl(host, port)
+  const running = state ? isPidRunning(state.pid) : false
+  const healthy = await probeHealth(health)
+  console.log(JSON.stringify({
+    running,
+    healthy,
+    pid: running ? state.pid : null,
+    url,
+    health,
+  }))
+  return running && healthy ? 0 : 1
+}
+
+async function cmdUrl() {
+  const state = readDaemonState()
+  console.log(state?.url || mcpUrl())
+  return 0
+}
+
+async function main() {
+  const argv = process.argv.slice(2)
+  // Backward-compatible: bare invocation with no args starts foreground (tests + local use).
+  const command = argv[0] && !argv[0].startsWith('-') ? argv[0] : 'start'
+  const rest = command === argv[0] ? argv.slice(1) : argv
+
+  if (command === 'help' || command === '--help' || command === '-h') {
+    printUsage()
+    return 0
+  }
+  if (command === 'stop') return cmdStop()
+  if (command === 'status') return cmdStatus()
+  if (command === 'url') return cmdUrl()
+  if (command !== 'start') {
+    printUsage()
+    throw new Error(`unknown command: ${command}`)
+  }
+
+  const background = rest.includes('--background') || rest.includes('-d')
+  const passthroughArgs = rest.filter(arg => arg !== '--background' && arg !== '-d')
+  const binary = await resolveBinary()
+  if (background) return startBackground(binary, passthroughArgs)
+  return startForeground(binary, passthroughArgs)
+}
+
+main().then(code => {
+  if (typeof code === 'number') process.exitCode = code
+}).catch(error => {
   console.error(error.message)
   process.exitCode = 1
 })

@@ -1,14 +1,20 @@
 # Standalone Open-Source MCP Server MVP Plan
 
-**Status:** Public repository and v0.1.0 GitHub release are live; npm publication and named-client evidence remain  
+**Status:** Public repository and v0.1.0 GitHub release are live; npm publication and named-client evidence remain
 **Last status audit:** 2026-07-19  
 **Estimated completion of plan exit criteria:** ~80%  
 **Repository (local checkout):** `opute-host-agent`  
 **GitHub remote today:** public `wunderous/host-agents`; Go module and release URLs are aligned to `github.com/wunderous/host-agents`  
 **Product name (working):** Opute Local Host Agent  
-**Primary interface:** MCP over stdio  
+**Primary interface:** MCP over Streamable HTTP (default `http://127.0.0.1:3014/mcp`)
+**Amended:** 2026-07-19 — stdio transport removed from the public standalone profile.
 **MVP host:** Linux x86_64 and arm64, including execution inside WSL  
-**Target clients:** Visual Studio Code, Claude Desktop, Cursor, and other standards-compliant stdio MCP clients
+**Target clients:** Visual Studio Code, Claude Desktop, Cursor, and other standards-compliant Streamable HTTP MCP clients
+
+**Transport amendment:** Earlier checklist or historical audit references to
+standalone stdio are superseded. The supported standalone transport is
+Streamable HTTP; CI, lifecycle validation, and the npm launcher must use the
+HTTP listener and the `type: "http"` client shape.
 
 ## 1. Outcome
 
@@ -20,7 +26,7 @@ The MVP is complete when a new user can discover the public repository, install 
 
 ### 2.1 Committed foundation (usable internal preview)
 
-- `--mode standalone --transport stdio` starts an MCP stdio server.
+- `--mode standalone --transport http` starts an MCP Streamable HTTP server on `/mcp`.
 - Standalone mode has an intentionally reduced tool catalog (`internal/tools/standalone.go`) and excludes platform registration, heartbeat, and routing tools at the hostmcp layer.
 - Mutations are disabled by default (`OPUTE_STANDALONE_ALLOW_MUTATIONS=true` required).
 - Long-running standalone mutations return operations and persist state in SQLite.
@@ -43,7 +49,7 @@ The following land (or partially land) the plan’s first slice and parts of M1/
 | Release `SHA256SUMS` | CI + Publish workflows generate manifest; launcher requires checksum by default |
 | OSS stubs | Untracked `LICENSE` (MIT), `SECURITY.md`, `CONTRIBUTING.md` |
 | npm metadata | `repository` / `homepage` / `bugs` / `keywords` on package.json |
-| Standalone contract and diagnostics | Versioned `schemas/standalone-tools.json`, contract validation, `--check`, and Linux-shaped stdio smoke |
+| Standalone contract and diagnostics | Versioned `schemas/standalone-tools.json`, contract validation, `--check`, and Linux-shaped Streamable HTTP smoke |
 | Focused safety/lifecycle gates | Mutation-denial coverage, contract metadata, SQLite restart→`unknown`, idempotent close, launcher cache-integrity tests |
 | Release workflow hardening | npm test/package gate, SBOM upload, artifact provenance attestation, optional public npm publish job |
 
@@ -64,11 +70,11 @@ The repository, tagged GitHub release, and production host are live. The npm pac
 | Milestone | Progress | Summary |
 |-----------|----------|---------|
 | **M0** Contract freeze | ~90% | ADR + versioned catalog/classifications + contract test; npm scope ownership remains |
-| **M1** Strict isolation | ~85% | Validate + version + Close + exact contract metadata + mutation-denial + packaged-shaped stdio smoke; public clean-machine/network-trap evidence remains |
+| **M1** Strict isolation | ~90% | Validate + version + Close + exact contract metadata + mutation-denial + packaged-shaped HTTP smoke; public clean-machine/network-trap evidence remains |
 | **M2** Tool/security contract | ~60% | Canonical artifact, stable/experimental classification, shell removed, destructive policy and redaction boundaries; generated reference docs and full threat-model review remain |
 | **M3** Public distribution | ~85% | Public repo + aligned URLs + v0.1.0 checksums/SBOM/provenance + hardened launcher + unauthenticated release canary; npm publication remains |
 | **M4** Client onboarding | ~35% | VS Code, Claude, Cursor, and WSL-shaped snippets plus protocol-shaped client smoke; real-client matrix remains |
-| **M5** Release gates | ~75% | Go/stdio/npm/unit gates and disposable Incus create/list/inspect/delete gate are green; K3s/PostgreSQL/Cloudflare lifecycle gates remain |
+| **M5** Release gates | ~80% | Go/HTTP/npm/unit gates and disposable Incus create/list/inspect/delete gate are green; K3s/PostgreSQL/Cloudflare lifecycle gates remain |
 | **M6** Publish & observe | ~30% | Public repo/release and production host are live; npm/client/clean-machine canaries remain |
 
 ## 3. Gap Assessment
@@ -101,15 +107,15 @@ Status legend: **Open** · **Partial** · **Done (WT)** · **Done**
 
 6. **Versioning is fragmented.** **Partial**
    - **Done (WT):** single injectable `version.Version` for CLI + MCP (+ heartbeat prefix).
-   - **Done for GitHub artifact:** public `v0.1.0` binary reports `0.1.0` and passes the standalone stdio version check; npm ↔ tag agreement remains blocked by npm publication.
+   - **Done for GitHub artifact:** public `v0.1.0` binary reports `0.1.0` and passes the standalone HTTP version check; npm ↔ tag agreement remains blocked by npm publication.
 
 ### P1 — Product and compatibility gaps
 
 1. **Standalone behavior lacks focused automated coverage.** **Partial**
-   - Added: exact contract/isolation metadata, mutation denial for every mutating tool, stdio framing, Close idempotency, config validation, and operation persistence/restart → `unknown` coverage.
+   - Added: exact contract/isolation metadata, mutation denial for every mutating tool, Streamable HTTP framing, listener shutdown checks, Close idempotency, config validation, and operation persistence/restart → `unknown` coverage.
    - Still missing: shutdown/listener cleanup and an external network trap proving zero CPC contact.
 
-2. **No packaged end-to-end release gate exists.** **Partial** — local npm tarball, exact public-release stdio smoke, and disposable Incus lifecycle gate exist; public npm install remains.
+2. **No packaged end-to-end release gate exists.** **Partial** — local npm tarball, exact public-release Streamable HTTP smoke, and disposable Incus lifecycle gate exist; public npm install remains.
 
 3. **No client compatibility matrix exists.** **Open**
    - Copy/paste snippets now cover VS Code, Claude Desktop, Cursor, and Windows+WSL; real client execution remains untested.
@@ -143,7 +149,7 @@ These are explicitly outside the MVP unless required to satisfy a release-blocki
 ## 4. MVP Product Decisions
 
 1. **Linux is the supported execution environment.** Linux x86_64 and arm64 are first-class. Windows users run the Linux server in WSL; native Windows and macOS launch attempts fail early with a clear supported-platform message. Do not publish a native Windows artifact until a native provider is supported end to end.
-2. **stdio is the public MVP transport.** The existing platform HTTP and reverse-tunnel profiles remain available for Opute, but are not part of the standalone public support promise.
+2. **Streamable HTTP is the public MVP transport.** Platform reverse-tunnel remains available for Opute, but is not part of the standalone public support promise. stdio is not supported.
 3. **Read-only is the secure default.** Mutations require an explicit opt-in. Shell access is either implemented behind its own tested opt-in or removed from standalone documentation/configuration for MVP.
 4. **Incus is the only MVP provider.** Unknown providers are rejected; no silent normalization.
 5. **The npm launcher is the recommended client install path.** Direct GitHub binary downloads remain supported and documented. Both resolve the same tagged version and verified artifact.
@@ -177,7 +183,7 @@ Exit criteria:
 
 E2E validation — **contract fixture gate**:
 
-- Build the release candidate binary, launch it in standalone stdio mode with all platform-related environment variables removed, and capture MCP `initialize` plus `tools/list` into a normalized, versioned fixture.
+- Build the release candidate binary, launch it in standalone Streamable HTTP mode with all platform-related environment variables removed, and capture MCP `initialize` plus `tools/list` into a normalized, versioned fixture.
 - Compare the observed tool names, schemas, mutation classifications, server identity, protocol version, and supported platform metadata with the M0 ADR and canonical catalog proposal.
 - Invoke one representative read-only tool (`check_local_prerequisites`) and one mutation (`create_vm`) with mutations disabled; the read must return a structured result and the mutation must return the documented policy error without creating an Incus resource.
 - Retain redacted request/response evidence and an `incus list` before/after inventory under the CI run artifacts.
@@ -187,7 +193,7 @@ E2E validation — **contract fixture gate**:
 
 **Status:** Implemented in WT; clean-machine evidence remains
 
-**Already satisfied (WT unless noted):** `Config.Validate()`; standalone rejects reverse tunnel + platform settings and non-stdio transport; injectable `--version` / MCP version; SQLite `Close()` on shutdown; exact catalog/metadata and mutation-denial tests; packaged-shaped stdio smoke.
+**Already satisfied (WT unless noted):** `Config.Validate()`; standalone rejects reverse tunnel + platform settings and non-HTTP transport; injectable `--version` / MCP version; SQLite `Close()` on shutdown; exact catalog/metadata and mutation-denial tests; packaged-shaped Streamable HTTP smoke with listener release.
 
 **Still open:** schema migration behavior; guardrails that standalone never initializes heartbeat/registration/tunnel (runtime path exists; **network-trap test does not**); packaged invalid-config matrix; version agreement across npm/tag/artifact on a real public release.
 
@@ -196,7 +202,7 @@ E2E validation — **contract fixture gate**:
 Deliverables:
 
 - Replace silent normalization with explicit validation for mode, transport, provider, state directory, and incompatible flag combinations.
-- Reject standalone + reverse tunnel, standalone + onboarding/platform credentials where ambiguous, platform + stdio, and unsupported native platforms with actionable errors.
+- Reject standalone + reverse tunnel, standalone + onboarding/platform credentials where ambiguous, platform + stdio (must fail closed), and unsupported native platforms with actionable errors.
 - Add a startup/config diagnostic command or `--check` path that validates Incus, state directory permissions, and required binaries without mutating the host.
 - Make server/build version metadata injectable from a single source and expose it through `--version` and MCP server info.
 - Connect `OPUTE_STANDALONE_ALLOW_HOST_SHELL` to a deliberately scoped tool and policy, or remove it entirely from the standalone configuration contract.
@@ -205,7 +211,7 @@ Deliverables:
 
 Exit criteria:
 
-- Invalid and incompatible configurations fail before any listener, stdio protocol output, network connection, or host mutation.
+- Invalid and incompatible configurations fail before any listener, MCP protocol output, network connection, or host mutation.
 - Standalone starts successfully with all Opute platform URLs/tokens unset.
 - A test proves the standalone catalog contains no registration, heartbeat, dispatch, platform, or reverse-tunnel tool.
 - `--version`, npm version, MCP server version, release tag, and artifact version agree.
@@ -213,10 +219,10 @@ Exit criteria:
 E2E validation — **profile-isolation matrix**:
 
 - Run the packaged binary, not `go run`, through a table of valid and invalid startup configurations in a disposable Linux runner.
-- Valid case: start `--mode standalone --transport stdio` with a temporary state directory and no Opute URLs, onboarding tokens, Bridge tokens, CPC tokens, or reverse-tunnel settings; initialize MCP and call `get_local_status`.
-- Invalid cases: unknown mode, unknown transport, unknown provider, standalone plus reverse tunnel, platform plus stdio, unwritable state directory, and native unsupported OS where a runner is available.
+- Valid case: start `--mode standalone --transport http` (default port **3014**) with a temporary state directory and no Opute URLs, onboarding tokens, Bridge tokens, CPC tokens, or reverse-tunnel settings; initialize MCP over Streamable HTTP and call `get_local_status`.
+- Invalid cases: unknown mode, unknown transport (including `stdio`), unknown provider, standalone plus reverse tunnel, platform plus stdio, unwritable state directory, and native unsupported OS where a runner is available.
 - Place a local network trap/fake CPC beside the process and assert the valid standalone run makes zero registration, heartbeat, health, WebSocket, or platform HTTP requests.
-- Terminate the MCP client, verify the child exits cleanly, SQLite can be reopened without recovery errors, and no listener remains bound.
+- Terminate the MCP client / SIGTERM the listener, verify the child exits cleanly, SQLite can be reopened without recovery errors, and no listener remains bound.
 - **Pass condition:** the valid profile completes the read-only MCP flow entirely offline; every invalid profile exits nonzero with its documented diagnostic before emitting MCP protocol output or contacting the trap; all exposed version values match the release tag.
 
 ### M2 — Define and secure the standalone MCP contract
@@ -245,11 +251,11 @@ Exit criteria:
 
 E2E validation — **standalone contract and safety journey**:
 
-- Launch the packaged stdio server against a disposable Incus project and enumerate `tools/list`; validate the live response against the published standalone catalog artifact.
+- Launch the packaged Streamable HTTP server against a disposable Incus project and enumerate `tools/list`; validate the live response against the published standalone catalog artifact.
 - Exercise every read-only tool with valid inputs or a documented prerequisite-not-ready fixture and validate its structured output schema.
 - With mutations disabled, call every tool classified as mutating or destructive and verify uniform denial with no inventory, namespace, tunnel-process, operation, or state changes.
 - With mutations enabled, start one disposable VM operation, poll it through `get_operation`, cancel a second operation, restart the MCP server during a third operation, and verify the documented `completed`, `cancelled`, and `unknown` terminal/recovery behavior.
-- Supply unique canary secrets through PostgreSQL and Cloudflare-shaped inputs using fake/local dependencies; scan stdio output, stderr, SQLite rows, operation results, and retained logs to prove the values are absent.
+- Supply unique canary secrets through PostgreSQL and Cloudflare-shaped inputs using fake/local dependencies; scan HTTP responses, stderr, SQLite rows, operation results, and retained logs to prove the values are absent.
 - Attempt disallowed tunnel targets, oversized SQL, invalid identifiers, malformed schemas, and platform-only tool calls.
 - **Pass condition:** all live inputs/outputs conform to the canonical schemas, policy gates prevent side effects, operation transitions match the contract, secrets are absent from every evidence channel, and unknown/platform tools are rejected.
 
@@ -287,7 +293,7 @@ E2E validation — **public distribution rehearsal**:
 
 - Publish a release candidate to an isolated GitHub prerelease and npm staging tag (for example `next`) using the same workflows and permissions intended for the final release.
 - From clean Linux x86_64 and arm64 environments with no repository checkout or GitHub credentials, install via both `npx -y @opute/local-host-agent@<version>` and direct artifact download.
-- For each path, verify checksum/provenance, run `--version`, initialize over stdio, list tools, call `check_local_prerequisites`, and confirm the artifact, npm, MCP, and CLI versions match.
+- For each path, verify checksum/provenance, run `--version`, initialize over Streamable HTTP, list tools, call `check_local_prerequisites`, and confirm the artifact, npm, MCP, and CLI versions match.
 - Corrupt the cached binary and checksum manifest in separate runs; the launcher must refuse execution or redownload and reverify rather than run corrupted bytes.
 - Simulate a missing architecture artifact, redirect loop, truncated download, concurrent first launch, network timeout, and termination signal; verify bounded failure, atomic cache behavior, and no orphan process.
 - On native Windows and macOS, invoke the package and verify it fails before download with the documented Linux/WSL guidance rather than requesting a nonexistent artifact.
@@ -328,16 +334,16 @@ E2E validation — **real-client compatibility matrix**:
 
 ### M5 — Add standalone release gates and complete an MVP canary
 
-**Status:** Partial; Go, stdio, npm, artifact, SBOM, provenance, and disposable Incus VM lifecycle gates are green; broader experimental lifecycles remain
+**Status:** Partial; Go, HTTP, npm, artifact, SBOM, provenance, and disposable Incus VM lifecycle gates are green; broader experimental lifecycles remain
 
 **Goal:** Prevent the public standalone product from regressing behind platform-focused tests.
 
 Deliverables:
 
-- Add focused unit/integration tests for configuration validation, stdio framing, catalog isolation, read-only defaults, async operations, cancellation, SQLite persistence/restart, graceful shutdown, and secret redaction.
+- Add focused unit/integration tests for configuration validation, Streamable HTTP framing, catalog isolation, read-only defaults, async operations, cancellation, SQLite persistence/restart, graceful shutdown, and secret redaction.
 - Add an npm launcher test suite using a local fake release server so redirects, checksums, cache corruption, concurrency, timeouts, and signal forwarding are deterministic.
 - Add CI jobs for Linux x86_64 and arm64 build/test; run architecture-appropriate smoke tests (native or emulated where reliable).
-- Add a packaged stdio E2E that installs the npm tarball and performs MCP initialize/tools/list/tool-call against the downloaded release binary.
+- Add a packaged Streamable HTTP E2E that installs the npm tarball and performs MCP initialize/tools/list/tool-call against the downloaded release binary.
 - Add a disposable Incus lifecycle gate on a self-hosted Linux runner: prerequisites, create/provision VM, poll operation, inspect/start/stop/restart, delete, and verify no matching resources remain.
 - If K3s/PostgreSQL/Cloudflare remain in the MVP catalog, add their complete disposable lifecycle gates; otherwise mark them experimental and exclude them from the MVP release claim.
 - Keep the existing platform-profile regression suite green to preserve Opute integration.
@@ -352,9 +358,9 @@ Exit criteria:
 E2E validation — **release-candidate lifecycle suite**:
 
 - On an isolated self-hosted Linux runner with a dedicated Incus project, install the exact npm release-candidate tarball and allow mutations only for the test process.
-- Execute the full MVP path solely through MCP stdio: initialize, verify prerequisites, capture empty prefixed inventory, provision a VM, poll the operation, inspect it, start/stop/restart it, install K3s if included in the supported catalog, validate node readiness, install and round-trip PostgreSQL if included, create/probe/delete a Cloudflare Quick Tunnel if included, and cascade cleanup in reverse order.
+- Execute the full MVP path solely through MCP Streamable HTTP: initialize, verify prerequisites, capture empty prefixed inventory, provision a VM, poll the operation, inspect it, start/stop/restart it, install K3s if included in the supported catalog, validate node readiness, install and round-trip PostgreSQL if included, create/probe/delete a Cloudflare Quick Tunnel if included, and cascade cleanup in reverse order.
 - Inject process termination during a separate long-running operation, restart against the same SQLite state, and verify it becomes `unknown`; then clean its infrastructure using supported MCP tools.
-- Run the packaged stdio protocol/compliance suite and npm launcher failure suite against the same artifacts.
+- Run the packaged Streamable HTTP protocol/compliance suite and npm launcher failure suite against the same artifacts.
 - Run the Opute platform-profile regression canary with explicit `hostId` routing to prove shared execution primitives still work without routing standalone state through the control plane.
 - Always execute best-effort cleanup in teardown and retain before/after Incus, Kubernetes namespace, tunnel process, and SQLite operation inventories even on first failure.
 - **Pass condition:** every capability claimed as MVP completes end to end, all operations reach documented states, standalone and platform profiles both pass their gates, and post-run inventories contain no test-prefixed VM, namespace, tunnel, child process, or active operation.
@@ -412,7 +418,7 @@ M2 and M3 can proceed in parallel after M1. M4 depends on both because client do
 - [x] Public repository metadata and module path are final. *(public `wunderous/host-agents`; npm scope authorization remains)*
 - [ ] OSI-compatible license selected and included. *(MIT is present in WT; not committed/tagged)*
 - [ ] Security, contribution, conduct, support, and compatibility policies published. *(files are present in WT; public publication remains)*
-- [x] Standalone mode has no runtime dependency on Opute Platform. *(runtime path and offline stdio smoke; external network-trap evidence remains)*
+- [x] Standalone mode has no runtime dependency on Opute Platform. *(runtime path and offline Streamable HTTP smoke; external network-trap evidence remains)*
 - [x] Unknown/invalid configuration fails explicitly. *(Validate(), `--check`, and invalid-profile unit coverage)*
 - [x] Canonical standalone tool catalog and classifications are versioned. *(generated reference docs remain)*
 - [x] Read-only default and mutation/destructive policies are tested. *(unique-prefix disposable VM lifecycle is green)*
@@ -420,7 +426,7 @@ M2 and M3 can proceed in parallel after M1. M4 depends on both because client do
 - [ ] npm package is publicly installable and verifies binaries by default. *(workflow and local tarball gate are present; npm is not published)*
 - [x] Native Windows/macOS behavior fails early with WSL/Linux guidance; no nonexistent artifacts are advertised. *(native Windows test passes; macOS remains CI-only)*
 - [ ] VS Code, Claude Desktop, and Cursor compatibility is recorded.
-- [x] Packaged stdio and disposable Incus VM lifecycle gates are green. *(cross-compiled stdio and unique-prefix create/list/inspect/delete gate passed; K3s/PostgreSQL/Cloudflare remain experimental)*
+- [x] Packaged Streamable HTTP and disposable Incus VM lifecycle gates are green. *(cross-compiled HTTP and unique-prefix create/list/inspect/delete gate passed; K3s/PostgreSQL/Cloudflare remain experimental)*
 - [ ] Platform mode regression suite remains green.
 - [ ] Public install canaries succeed without Opute credentials. *(GitHub binary canary is green; npm package is not published)*
 
@@ -436,9 +442,9 @@ Start with M0 and the smallest vertical portion of M1/M3:
 | 4 | Remove launcher native Windows artifact path | **Done (WT)** |
 | 5 | Generate release checksums and require them in the launcher | **Done (WT)** |
 | 6 | `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, standalone-first README | **Done (WT)** — policy files and standalone-first onboarding are present; publication remains |
-| 7 | `npm pack` + local packaged-stdio smoke before public npm | **Done (WT)** — npm tarball test plus cross-compiled Linux stdio smoke |
+| 7 | `npm pack` + local packaged Streamable HTTP smoke before public npm | **Done (WT)** — npm tarball test plus cross-compiled Linux HTTP smoke |
 
-This slice resolved the highest-risk mismatch (an installable-looking path that could select a missing artifact or run an unverified download). **Checksum + hardened Linux-only launcher, npm tarball coverage, stdio smoke, and the disposable Incus VM lifecycle gate are green**; public install, npm ownership, and real-client canaries remain before claiming the public release complete.
+This slice resolved the highest-risk mismatch (an installable-looking path that could select a missing artifact or run an unverified download). **Checksum + hardened Linux-only launcher, npm tarball coverage, Streamable HTTP smoke, and the disposable Incus VM lifecycle gate are green**; public install, npm ownership, and real-client canaries remain before claiming the public release complete.
 
 ## 9. Not fully captured (audit notes)
 
@@ -456,7 +462,7 @@ Items the original plan under-specified, or that current work only partially sat
 
 ### 9.3 Catalog isolation test status
 
-- The implementation now validates equality against `schemas/standalone-tools.json`, rejects allowlist drift before startup, attaches classification metadata, and exercises the live stdio catalog against platform/shell leaks.
+- The implementation now validates equality against `schemas/standalone-tools.json`, rejects allowlist drift before startup, attaches classification metadata, and exercises the live Streamable HTTP catalog against platform/shell leaks.
 - **Still not captured:** a retained public release fixture that deeply validates every schema against generated reference documentation.
 
 ### 9.4 Shell flag resolution
@@ -488,7 +494,7 @@ Items the original plan under-specified, or that current work only partially sat
 ### 9.9 Platform coupling and evidence locations
 
 - `tmp/standalone_mcp_e2e.go` and similar local probes are not CI gates.
-- Platform opute lifecycle dogfoods (separate repo) do **not** satisfy standalone packaged stdio / npm install gates.
+- Platform opute lifecycle dogfoods (separate repo) do **not** satisfy standalone packaged Streamable HTTP / npm install gates.
 - **Not captured:** success of Opute control-plane E2E must not be counted as standalone MVP evidence.
 
 ### 9.10 Related plan

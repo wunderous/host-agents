@@ -35,7 +35,13 @@ type Config struct {
 }
 
 func Load() Config {
-	port, _ := strconv.Atoi(envOr("HOST_MCP_PORT", "3004"))
+	mode := normalizeMode(os.Getenv("OPUTE_AGENT_MODE"))
+	defaultPort := "3004"
+	if mode == "standalone" {
+		// Avoid colliding with platform dogfood host on 3004.
+		defaultPort = "3014"
+	}
+	port, _ := strconv.Atoi(envOr("HOST_MCP_PORT", defaultPort))
 	providerID := string(provider.NormalizeProviderID(os.Getenv("OPUTE_INFRA_PROVIDER_ID")))
 	agentID := strings.TrimSpace(os.Getenv("OPUTE_REMOTE_AGENT_ID"))
 	if agentID == "" {
@@ -63,7 +69,7 @@ func Load() Config {
 		healthURL = "http://127.0.0.1:" + envOr("AGENT_PORT", "9091") + "/health"
 	}
 	return Config{
-		AgentMode:                        normalizeMode(os.Getenv("OPUTE_AGENT_MODE")),
+		AgentMode:                        mode,
 		TransportMode:                    normalizeTransport(os.Getenv("OPUTE_TRANSPORT")),
 		StandaloneStateDir:               envOr("OPUTE_STANDALONE_STATE_DIR", filepath.Join(userHomeDir(), ".opute", "standalone")),
 		StandaloneAllowMutations:         os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
@@ -101,15 +107,21 @@ func (c Config) Validate() error {
 		return fmt.Errorf("invalid agent mode %q: expected platform or standalone", c.AgentMode)
 	}
 	rawTransport := strings.TrimSpace(os.Getenv("OPUTE_TRANSPORT"))
-	if rawTransport != "" && !strings.EqualFold(rawTransport, "http") && !strings.EqualFold(rawTransport, "stdio") {
-		return fmt.Errorf("invalid OPUTE_TRANSPORT %q: expected http or stdio", rawTransport)
+	if rawTransport != "" && !strings.EqualFold(rawTransport, "http") {
+		if strings.EqualFold(rawTransport, "stdio") {
+			return fmt.Errorf("invalid OPUTE_TRANSPORT %q: stdio is not supported; use Streamable HTTP (OPUTE_TRANSPORT=http)", rawTransport)
+		}
+		return fmt.Errorf("invalid OPUTE_TRANSPORT %q: expected http", rawTransport)
 	}
 	transport := strings.ToLower(strings.TrimSpace(c.TransportMode))
 	if transport == "" {
 		transport = normalizeTransport(rawTransport)
 	}
-	if transport != "http" && transport != "stdio" {
-		return fmt.Errorf("invalid transport %q: expected http or stdio", c.TransportMode)
+	if transport == "stdio" {
+		return fmt.Errorf("stdio transport is not supported; use Streamable HTTP (OPUTE_TRANSPORT=http)")
+	}
+	if transport != "http" {
+		return fmt.Errorf("invalid transport %q: expected http", c.TransportMode)
 	}
 	rawProvider := strings.TrimSpace(os.Getenv("OPUTE_INFRA_PROVIDER_ID"))
 	providerValue := strings.TrimSpace(c.ProviderID)
@@ -120,9 +132,6 @@ func (c Config) Validate() error {
 		return fmt.Errorf("unsupported provider %q: only incus is supported", providerValue)
 	}
 	if mode == "standalone" {
-		if transport != "stdio" {
-			return fmt.Errorf("standalone mode requires stdio transport")
-		}
 		if c.IsReverseTunnel {
 			return fmt.Errorf("standalone mode cannot use OPUTE_REVERSE_TUNNEL=true")
 		}
@@ -137,9 +146,6 @@ func (c Config) Validate() error {
 			}
 		}
 	}
-	if mode == "platform" && transport == "stdio" {
-		return fmt.Errorf("platform mode does not support stdio transport")
-	}
 	return nil
 }
 
@@ -151,10 +157,12 @@ func normalizeMode(raw string) string {
 }
 
 func normalizeTransport(raw string) string {
-	if strings.EqualFold(strings.TrimSpace(raw), "stdio") {
-		return "stdio"
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	if trimmed == "" || trimmed == "http" {
+		return "http"
 	}
-	return "http"
+	// Preserve unrecognized values so Validate can reject them with a clear error.
+	return trimmed
 }
 
 func userHomeDir() string {

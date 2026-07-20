@@ -55,7 +55,7 @@ An explicit `hostId` is the durable execution assignment. The host agent should 
 
 ### Standalone local workflow
 
-- The supported client boundary is MCP stdio. Direct development invocation is `opute-host-agent --mode standalone --transport stdio`; VS Code/Cursor users should use the documented `npx -y @opute/local-host-agent` launcher.
+- The supported client boundary is MCP Streamable HTTP (default `http://127.0.0.1:3014/mcp`). Direct development invocation is `opute-host-agent --mode standalone --transport http`; VS Code/Cursor users should start `@opute/local-host-agent` (or the binary) and connect with `"type": "http"` + `url`.
 - Mutations are deliberately disabled unless `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` is set. Host shell and insecure-download behavior are separate opt-ins; never enable them by default in a published client configuration.
 - Long-running mutations (`provision_vm`, `install_k3s`, `install_postgresql`, tunnel creation, and deletion) must return a task/operation immediately. Poll `get_operation`; do not increase the MCP request timeout or synchronously repeat the underlying provider call.
 - The local journal is SQLite-backed and operation state is authoritative for standalone recovery. On restart, previously working operations reconcile to `unknown`; clients must surface that state rather than pretending the work completed.
@@ -73,6 +73,6 @@ After Go, schema, or host-tool changes:
 3. Restart the owning WSL services only through the documented user-systemd path; do not start a second Windows binary for the same host identity.
 4. Verify `opute-host-agent.service` is active, the reverse tunnel is connected, `http://127.0.0.1:9191/health` responds, and the Opute shell canary succeeds with an explicit host and VM fixture.
 
-For standalone changes, additionally run `go test ./...`, initialize the stdio server without platform credentials, and use disposable names such as `opute-standalone-e2e-*`. Clean those resources through standalone MCP tools and verify `incus list` contains no matching instances; preserve the production VM and platform-shaped services. A partial VM/K3s/DB/tunnel run is evidence for the first successful boundary only, not a green full-lifecycle result.
+For standalone changes, additionally run `go test ./...`, start the Streamable HTTP server without platform credentials (`scripts/verify-standalone-http.py`), and use disposable names such as `opute-standalone-e2e-*` via `scripts/verify-standalone-lifecycle.py`. Clean those resources through standalone MCP tools and verify `incus list` contains no matching instances; preserve the production VM and platform-shaped services. A partial VM/K3s/DB/tunnel run is evidence for the first successful boundary only, not a green full-lifecycle result.
 
 The production-shaped companion is `opute-platform-opute-stack.service` on the 919x ports. Keep it separate from the Opute dev stack on 909x. A failed heartbeat or tunnel must be diagnosed at the agent/session boundary before changing provider or VM code.

@@ -7,9 +7,9 @@ import (
 	"github.com/wunderous/host-agents/schemas"
 )
 
-// StandaloneToolContract is the versioned public boundary for the stdio
-// profile. The platform catalog is an implementation input, never the source
-// of truth for what a standalone client may see.
+// StandaloneToolContract is the versioned public boundary for the Streamable
+// HTTP standalone profile. The platform catalog is an implementation input,
+// never the source of truth for what a standalone client may see.
 type StandaloneToolContract struct {
 	SchemaVersion     string                        `json:"schemaVersion"`
 	ServerName        string                        `json:"serverName"`
@@ -45,7 +45,7 @@ func ValidateStandaloneToolContract() error {
 	if err != nil {
 		return err
 	}
-	if contract.SchemaVersion == "" || contract.ServerName != "host-agent" || contract.Provider != "incus" || contract.Transport != "stdio" {
+	if contract.SchemaVersion == "" || contract.ServerName != "host-agent" || contract.Provider != "incus" || contract.Transport != "http" {
 		return fmt.Errorf("invalid standalone tool contract metadata")
 	}
 	if len(contract.SupportedPlatform) == 0 {

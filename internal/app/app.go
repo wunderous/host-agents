@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/config"
 	"github.com/wunderous/host-agents/internal/fingerprint"
 	"github.com/wunderous/host-agents/internal/heartbeat"
@@ -107,9 +106,8 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		}
 	}
 
-	if cfg.AgentMode == "standalone" && cfg.TransportMode == "stdio" {
-		logger.Info("standalone stdio mode enabled")
-		return hostServer.MCP().Run(ctx, &mcp.StdioTransport{})
+	if cfg.AgentMode == "standalone" {
+		logger.Info("standalone Streamable HTTP mode enabled", "addr", cfg.HostMCPBindHost, "port", cfg.HostMCPPort)
 	}
 
 	if cfg.IsReverseTunnel {

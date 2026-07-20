@@ -15,7 +15,7 @@ import (
 
 func main() {
 	mode := flag.String("mode", "", "agent mode: platform or standalone")
-	transport := flag.String("transport", "", "transport: http or stdio")
+	transport := flag.String("transport", "", "transport: http (Streamable HTTP; stdio is not supported)")
 	showVersion := flag.Bool("version", false, "print the agent version and exit")
 	check := flag.Bool("check", false, "validate configuration and state access, then exit")
 	envFile := flag.String("env-file", "", "load KEY=VALUE settings from a file")

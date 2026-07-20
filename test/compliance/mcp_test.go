@@ -2,7 +2,10 @@ package compliance_test
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +70,65 @@ func TestMCPInitializeAndGetHostInfo(t *testing.T) {
 	}
 	if res.StructuredContent == nil {
 		t.Fatal("expected structuredContent")
+	}
+}
+
+func TestMCPAuthProtectsMCPButNotHealth(t *testing.T) {
+	hs := newTestServer(t)
+	httpSrv := transport.NewHTTPServer(transport.HTTPOptions{
+		HostServer: hs,
+		BindHost:   "127.0.0.1",
+		Port:       0,
+		AuthTokens: []string{"test-token"},
+	})
+	ts := httptest.NewServer(httpSrv.Handler())
+	defer ts.Close()
+
+	health, err := http.Get(ts.URL + "/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.StatusCode != http.StatusOK {
+		t.Fatalf("health status = %d, want 200", health.StatusCode)
+	}
+	_ = health.Body.Close()
+
+	initialize, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "auth-test", "version": "1"},
+		},
+	})
+	request := func(token string) int {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(string(initialize)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		response, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		return response.StatusCode
+	}
+	if got := request(""); got != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated MCP status = %d, want 401", got)
+	}
+	if got := request("wrong-token"); got != http.StatusUnauthorized {
+		t.Fatalf("wrong-token MCP status = %d, want 401", got)
+	}
+	if got := request("test-token"); got != http.StatusOK {
+		t.Fatalf("authenticated MCP status = %d, want 200", got)
 	}
 }
 

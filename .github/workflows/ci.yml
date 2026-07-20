@@ -52,5 +52,5 @@ jobs:
           sha256sum dist/host-agent-linux-x64.gz dist/host-agent-linux-arm64.gz > dist/SHA256SUMS
           test -s dist/SHA256SUMS
 
-      - name: Standalone stdio smoke
-        run: EXPECTED_VERSION=0.1.0 python3 scripts/verify-standalone-stdio.py dist/host-agent-linux-x64
+      - name: Standalone Streamable HTTP smoke
+        run: EXPECTED_VERSION=0.1.0 python3 scripts/verify-standalone-http.py dist/host-agent-linux-x64

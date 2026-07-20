@@ -1,4 +1,4 @@
-.PHONY: build test standalone-smoke standalone-stdio-smoke standalone-lifecycle-gate npm-test artifacts clean
+.PHONY: build test standalone-smoke standalone-http-smoke standalone-lifecycle-gate npm-test artifacts clean
 
 BINARY=opute-host-agent
 DIST=dist
@@ -16,10 +16,10 @@ npm-test:
 	cd npm/local-host-agent && npm test
 
 standalone-smoke: build
-	OPUTE_AGENT_MODE=standalone OPUTE_TRANSPORT=stdio OPUTE_INFRA_PROVIDER_ID=incus OPUTE_STANDALONE_STATE_DIR="$$(mktemp -d)" $(DIST)/$(BINARY) --check
+	OPUTE_AGENT_MODE=standalone OPUTE_TRANSPORT=http OPUTE_INFRA_PROVIDER_ID=incus OPUTE_STANDALONE_STATE_DIR="$$(mktemp -d)" $(DIST)/$(BINARY) --check
 
-standalone-stdio-smoke: build
-	EXPECTED_VERSION=$(VERSION) python3 scripts/verify-standalone-stdio.py $(DIST)/$(BINARY)
+standalone-http-smoke: build
+	EXPECTED_VERSION=$(VERSION) python3 scripts/verify-standalone-http.py $(DIST)/$(BINARY)
 
 standalone-lifecycle-gate: build-linux-x64
 	python3 scripts/verify-standalone-lifecycle.py $(DIST)/host-agent-linux-x64

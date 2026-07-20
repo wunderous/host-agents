@@ -5,25 +5,33 @@ Go implementation of the Opute host agent (replaces `@opute/mcp-host-agent`).
 ## Standalone local MCP server
 
 The standalone profile is an independently runnable local MCP server for Linux
-with Incus. It uses stdio and does not require Opute Platform, Bridge, an
-onboarding token, or a reverse tunnel. Mutations are denied by default.
+with Incus. It uses **Streamable HTTP** and does not require Opute Platform,
+Bridge, an onboarding token, or a reverse tunnel. Mutations are denied by
+default. Default listen address is `http://127.0.0.1:3014/mcp`.
 
 Run a local build:
 
 ```bash
 OPUTE_INFRA_PROVIDER_ID=incus \
 OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone" \
-./dist/opute-host-agent --mode standalone --transport stdio
+./dist/opute-host-agent --mode standalone --transport http
 ```
 
-Recommended client installation:
+Or via the npm helper:
+
+```bash
+npx -y @opute/local-host-agent start --background
+npx -y @opute/local-host-agent url   # http://127.0.0.1:3014/mcp
+```
+
+Recommended client configuration:
 
 ```json
 {
   "servers": {
     "opute-local": {
-      "command": "npx",
-      "args": ["-y", "@opute/local-host-agent"]
+      "type": "http",
+      "url": "http://127.0.0.1:3014/mcp"
     }
   }
 }
@@ -36,19 +44,19 @@ equivalent `mcpServers` entry:
 {
   "mcpServers": {
     "opute-local": {
-      "command": "npx",
-      "args": ["-y", "@opute/local-host-agent"]
+      "type": "http",
+      "url": "http://127.0.0.1:3014/mcp"
     }
   }
 }
 ```
 
-Add `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` under the client's `env` block
-only when infrastructure changes are intended. On Windows, configure the
-client to invoke `wsl.exe` with `-- bash -lc "exec npx -y
-@opute/local-host-agent"` and keep the state directory inside WSL. A WSL
-environment file can be supplied with the launcher's `--env-file` argument
-when a client supports it.
+Start the agent before connecting the client (`start` / `start --background`).
+Set `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` in the agent process environment
+only when infrastructure changes are intended. On Windows, run the Linux
+binary inside WSL and point the Windows MCP client at the forwarded HTTP URL.
+A WSL environment file can be supplied with the launcher's `--env-file`
+argument when starting the agent.
 
 The safe first run is: `initialize` → `check_local_prerequisites` →
 `get_local_status` → `list_vms`. The stable MVP claim covers Incus inspection
@@ -147,27 +155,35 @@ curl -H "Authorization: Bearer dev-token" \
 
 The agent accepts configuration from the process environment, an env file, or repeatable CLI overrides. Precedence is CLI `--env KEY=VALUE`, then variables already present in the process, then values loaded from `--env-file` / `OPUTE_HOST_AGENT_ENV_FILE`.
 
-Prefer VS Code's `env` block for user-owned settings and secrets:
+Prefer starting the standalone agent separately, then point VS Code at the
+HTTP URL. Secrets for mutations belong in the agent process environment (or
+`--env-file`), not in the MCP client spawn config:
 
 ```json
 {
   "servers": {
-    "opute-host": {
-      "command": "/path/to/opute-host-agent",
-      "args": ["--mode", "standalone", "--transport", "stdio"],
-      "env": {
-        "OPUTE_AGENT_MODE": "standalone",
-        "OPUTE_TRANSPORT": "stdio",
-        "OPUTE_INFRA_PROVIDER_ID": "incus",
-        "OPUTE_STANDALONE_ALLOW_MUTATIONS": "true",
-        "CLOUDFLARE_API_TOKEN": "${input:cloudflare-api-token}"
-      }
+    "opute-local": {
+      "type": "http",
+      "url": "http://127.0.0.1:3014/mcp"
     }
   }
 }
 ```
 
-For a reusable local file, use `--env-file C:\path\to\opute-host-agent.env`. For one-off non-secret overrides, use `--env OPUTE_INFRA_PROVIDER_ID=incus --env HOST_MCP_PORT=3004`. Environment variables are inherited by host operations and Cloudflare tooling; never put long-lived secrets directly in command-line arguments because process listings can expose them. A Cloudflare API token configures account/API operations; a Cloudflare Tunnel connection still requires the per-tunnel `runToken` passed to the relevant tunnel tool.
+```bash
+OPUTE_STANDALONE_ALLOW_MUTATIONS=true \
+CLOUDFLARE_API_TOKEN=… \
+npx -y @opute/local-host-agent start --background
+```
+
+For a reusable local file, use `--env-file /path/to/opute-host-agent.env` when
+starting the binary. For one-off non-secret overrides, use
+`--env OPUTE_INFRA_PROVIDER_ID=incus --env HOST_MCP_PORT=3014`. Environment
+variables are inherited by host operations and Cloudflare tooling; never put
+long-lived secrets directly in command-line arguments because process listings
+can expose them. A Cloudflare API token configures account/API operations; a
+Cloudflare Tunnel connection still requires the per-tunnel `runToken` passed
+to the relevant tunnel tool.
 
 On WSL hosts, set `OPUTE_CLOUDFLARED_MODE=wsl` to run a native Linux `cloudflared` binary beside Incus; optionally set `OPUTE_CLOUDFLARED_BINARY_PATH` to its absolute path. This is useful when the Windows artifact cannot execute or when the tunnel origin is only reachable inside WSL. Leave the mode unset to retain the Windows-cloudflared delegation path.
 
