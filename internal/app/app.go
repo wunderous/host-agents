@@ -106,12 +106,8 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		}
 	}
 
-	if cfg.AgentMode == "standalone" {
-		logger.Info("standalone Streamable HTTP mode enabled", "addr", cfg.HostMCPBindHost, "port", cfg.HostMCPPort)
-	}
-
 	if cfg.IsReverseTunnel {
-		logger.Info("reverse tunnel mode enabled", "agentId", cfg.RemoteAgentID)
+		logger.Info("reverse tunnel mode enabled", "agentId", cfg.RemoteAgentID, "mode", cfg.AgentMode)
 		healthSrv := transport.NewHealthOnlyServer(cfg.HostMCPBindHost, cfg.HostMCPPort, logger)
 		go func() {
 			if err := healthSrv.Start(); err != nil && err != http.ErrServerClosed {
@@ -134,6 +130,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		BindHost:   cfg.HostMCPBindHost,
 		Port:       cfg.HostMCPPort,
 		AuthTokens: cfg.AllowedAuthTokens(),
+		InstanceID: cfg.StandaloneInstanceID,
 		Logger:     logger,
 	})
 	errCh := make(chan error, 1)

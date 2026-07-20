@@ -14,7 +14,8 @@
   },
   "keywords": ["mcp", "model-context-protocol", "incus", "infrastructure", "opute"],
   "scripts": {
-    "test": "node --test"
+    "test": "node --test index.test.js",
+    "test:published-canary": "RUN_PUBLISHED_NPM_CANARY=true node --test published-canary.test.js"
   },
   "bin": {
     "opute-host-agent": "index.js"

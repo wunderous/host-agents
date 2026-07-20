@@ -6,6 +6,7 @@ const path = require('node:path')
 const crypto = require('node:crypto')
 const http = require('node:http')
 const https = require('node:https')
+const net = require('node:net')
 const zlib = require('node:zlib')
 const { spawn } = require('node:child_process')
 
@@ -216,26 +217,52 @@ function isPidRunning(pid) {
   }
 }
 
-function probeHealth(url, timeoutMs = 2000) {
+function readHealth(url, timeoutMs = 2000) {
   return new Promise(resolve => {
     const req = http.get(url, { timeout: timeoutMs }, response => {
       const chunks = []
       response.on('data', chunk => { chunks.push(chunk) })
       response.on('end', () => {
         if (response.statusCode !== 200) {
-          resolve(false)
+          resolve(null)
           return
         }
         try {
-          const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-          resolve(payload && payload.ok === true)
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
         } catch {
-          resolve(false)
+          resolve(null)
         }
       })
     })
-    req.on('timeout', () => { req.destroy(); resolve(false) })
-    req.on('error', () => resolve(false))
+    req.on('timeout', () => { req.destroy(); resolve(null) })
+    req.on('error', () => resolve(null))
+  })
+}
+
+async function probeHealth(url, timeoutMs = 2000) {
+  const payload = await readHealth(url, timeoutMs)
+  return payload?.ok === true
+}
+
+async function probeOwnedHealth(url, instanceId, timeoutMs = 2000) {
+  const payload = await readHealth(url, timeoutMs)
+  return payload?.ok === true && payload.instanceId === instanceId
+}
+
+function probeTcp(host, port, timeoutMs = 500) {
+  return new Promise(resolve => {
+    const socket = net.createConnection({ host, port })
+    let settled = false
+    const finish = value => {
+      if (settled) return
+      settled = true
+      socket.destroy()
+      resolve(value)
+    }
+    socket.once('connect', () => finish(true))
+    socket.once('timeout', () => finish(false))
+    socket.once('error', () => finish(false))
+    socket.setTimeout(timeoutMs)
   })
 }
 
@@ -250,7 +277,18 @@ async function waitForHealth(url, timeoutMs = HEALTH_WAIT_MS, failure = null) {
   throw new Error(`timed out waiting for health at ${url}`)
 }
 
-function buildAgentEnv() {
+async function waitForOwnedHealth(url, instanceId, timeoutMs = HEALTH_WAIT_MS, failure = null) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const earlyFailure = typeof failure === 'function' ? failure() : null
+    if (earlyFailure) throw new Error(earlyFailure)
+    if (await probeOwnedHealth(url, instanceId)) return
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  throw new Error(`timed out waiting for owned health at ${url}`)
+}
+
+function buildAgentEnv(instanceId = '') {
   const env = { ...process.env }
   for (const key of Object.keys(env)) {
     if (key.startsWith('OPUTE_') || key === 'MCP_AUTH_TOKEN' || key === 'BRIDGE_TOKEN') {
@@ -273,7 +311,7 @@ function buildAgentEnv() {
     }
   }
   env.OPUTE_AGENT_MODE = 'standalone'
-  env.OPUTE_TRANSPORT = 'http'
+  if (instanceId) env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID = instanceId
   env.HOST_MCP_BIND_HOST = bindHost()
   env.HOST_MCP_PORT = String(mcpPort())
   if (!env.OPUTE_INFRA_PROVIDER_ID) env.OPUTE_INFRA_PROVIDER_ID = 'incus'
@@ -325,20 +363,32 @@ async function startForeground(binary, passthroughArgs) {
 async function startBackground(binary, passthroughArgs) {
   const existing = readDaemonState()
   if (existing && isPidRunning(existing.pid)) {
-    const existingUrl = mcpUrl(existing.host || bindHost(), existing.port || mcpPort())
-    throw new Error(`standalone agent already running (pid ${existing.pid}) at ${existingUrl}`)
+    const existingHost = existing.host || bindHost()
+    const existingPort = existing.port || mcpPort()
+    const existingUrl = mcpUrl(existingHost, existingPort)
+    const existingHealth = healthUrl(existingHost, existingPort)
+    if (existing.instanceId && await probeOwnedHealth(existingHealth, existing.instanceId)) {
+      console.log(existingUrl)
+      return 0
+    }
+    throw new Error(`cannot prove daemon ownership for live pid ${existing.pid} at ${existingUrl}; refusing to kill it`)
   }
+  if (existing) clearDaemonState()
   const host = bindHost()
   const port = mcpPort()
   const url = mcpUrl(host, port)
   const health = healthUrl(host, port)
+  if (await probeTcp(host, port)) {
+    throw new Error(`port ${port} already in use by another process; stop it or set HOST_MCP_PORT`)
+  }
+  const instanceId = crypto.randomUUID()
   fs.mkdirSync(runtimeDir(), { recursive: true, mode: 0o700 })
   const logPath = path.join(runtimeDir(), 'daemon.log')
   const logFd = fs.openSync(logPath, 'a')
   const child = spawn(binary, ['--mode=standalone', '--transport=http', ...passthroughArgs], {
     detached: true,
     stdio: ['ignore', logFd, logFd],
-    env: buildAgentEnv(),
+    env: buildAgentEnv(instanceId),
   })
   let spawnError = null
   let childExit = null
@@ -350,11 +400,12 @@ async function startBackground(binary, passthroughArgs) {
     pid: child.pid,
     host,
     port,
+    instanceId,
     startedAt: new Date().toISOString(),
     logPath,
   })
   try {
-    await waitForHealth(health, HEALTH_WAIT_MS, () => {
+    await waitForOwnedHealth(health, instanceId, HEALTH_WAIT_MS, () => {
       if (spawnError) return `child process failed: ${spawnError.message}`
       if (childExit) return `child process exited before health (code=${childExit.code}, signal=${childExit.signal || 'none'})`
       return null
@@ -374,6 +425,11 @@ async function cmdStop() {
     clearDaemonState()
     console.error('standalone agent is not running')
     return 0
+  }
+  const host = state.host || bindHost()
+  const port = state.port || mcpPort()
+  if (!state.instanceId || !(await probeOwnedHealth(healthUrl(host, port), state.instanceId))) {
+    throw new Error(`cannot prove daemon ownership for live pid ${state.pid}; refusing to kill it`)
   }
   process.kill(state.pid, 'SIGTERM')
   const deadline = Date.now() + 10_000
@@ -395,7 +451,9 @@ async function cmdStatus() {
   const url = mcpUrl(host, port)
   const health = healthUrl(host, port)
   const running = state ? isPidRunning(state.pid) : false
-  const healthy = await probeHealth(health)
+  const healthy = state?.instanceId
+    ? await probeOwnedHealth(health, state.instanceId)
+    : false
   console.log(JSON.stringify({
     running,
     healthy,

@@ -45,24 +45,24 @@ func TestValidateRejectsUnknownProfileValues(t *testing.T) {
 	t.Setenv("OPUTE_TRANSPORT", "websocket")
 	if err := (Config{}).Validate(); err == nil {
 		t.Fatal("expected invalid transport to fail")
+	} else if !strings.Contains(err.Error(), "Streamable HTTP") {
+		t.Fatalf("transport diagnostic = %q, want Streamable HTTP guidance", err)
 	}
 }
 
 func TestValidateRejectsStandalonePlatformSettings(t *testing.T) {
 	t.Setenv("OPUTE_AGENT_MODE", "standalone")
-	t.Setenv("OPUTE_TRANSPORT", "http")
 	t.Setenv("OPUTE_MCP_URL", "https://mcp.example/mcp")
-	if err := (Config{AgentMode: "standalone", TransportMode: "http"}).Validate(); err == nil {
+	if err := (Config{AgentMode: "standalone"}).Validate(); err == nil {
 		t.Fatal("expected standalone platform URL to fail")
 	}
 }
 
 func TestValidateAcceptsStandaloneHTTPWithoutPlatformSettings(t *testing.T) {
 	t.Setenv("OPUTE_AGENT_MODE", "standalone")
-	t.Setenv("OPUTE_TRANSPORT", "http")
 	t.Setenv("OPUTE_MCP_URL", "")
 	t.Setenv("MCP_AUTH_TOKEN", "")
-	if err := (Config{AgentMode: "standalone", TransportMode: "http"}).Validate(); err != nil {
+	if err := (Config{AgentMode: "standalone"}).Validate(); err != nil {
 		t.Fatalf("expected valid standalone profile: %v", err)
 	}
 }
@@ -70,7 +70,7 @@ func TestValidateAcceptsStandaloneHTTPWithoutPlatformSettings(t *testing.T) {
 func TestValidateRejectsStandaloneStdio(t *testing.T) {
 	t.Setenv("OPUTE_AGENT_MODE", "standalone")
 	t.Setenv("OPUTE_TRANSPORT", "stdio")
-	err := (Config{AgentMode: "standalone", TransportMode: "stdio"}).Validate()
+	err := (Config{AgentMode: "standalone"}).Validate()
 	if err == nil {
 		t.Fatal("expected standalone stdio transport to fail")
 	}
@@ -82,7 +82,7 @@ func TestValidateRejectsStandaloneStdio(t *testing.T) {
 func TestValidateRejectsPlatformStdio(t *testing.T) {
 	t.Setenv("OPUTE_AGENT_MODE", "platform")
 	t.Setenv("OPUTE_TRANSPORT", "stdio")
-	err := (Config{AgentMode: "platform", TransportMode: "stdio"}).Validate()
+	err := (Config{AgentMode: "platform"}).Validate()
 	if err == nil {
 		t.Fatal("expected platform stdio transport to fail")
 	}
@@ -93,9 +93,8 @@ func TestValidateRejectsPlatformStdio(t *testing.T) {
 
 func TestValidateRejectsStandaloneMCPAuthToken(t *testing.T) {
 	t.Setenv("OPUTE_AGENT_MODE", "standalone")
-	t.Setenv("OPUTE_TRANSPORT", "http")
 	t.Setenv("MCP_AUTH_TOKEN", "platform-token")
-	if err := (Config{AgentMode: "standalone", TransportMode: "http"}).Validate(); err == nil {
+	if err := (Config{AgentMode: "standalone"}).Validate(); err == nil {
 		t.Fatal("expected standalone platform auth token to fail")
 	}
 }
@@ -111,9 +110,6 @@ func TestLoadStandaloneDefaultsPort3014(t *testing.T) {
 	cfg := Load()
 	if cfg.HostMCPPort != 3014 {
 		t.Fatalf("standalone default port = %d, want 3014", cfg.HostMCPPort)
-	}
-	if cfg.TransportMode != "http" {
-		t.Fatalf("standalone default transport = %q, want http", cfg.TransportMode)
 	}
 }
 

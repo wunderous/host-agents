@@ -94,6 +94,9 @@ Or from this directory:
 make build
 make test
 make artifacts   # host-agent-linux-x64.gz, host-agent-linux-arm64.gz
+make standalone-http-smoke
+make standalone-lifecycle-gate   # explicit Incus integration gate
+npm --prefix npm/local-host-agent test
 ```
 
 Release artifacts match platform onboarding names: `host-agent-linux-x64.gz` and `host-agent-linux-arm64.gz`.

@@ -16,16 +16,16 @@ npm-test:
 	cd npm/local-host-agent && npm test
 
 standalone-smoke: build
-	OPUTE_AGENT_MODE=standalone OPUTE_TRANSPORT=http OPUTE_INFRA_PROVIDER_ID=incus OPUTE_STANDALONE_STATE_DIR="$$(mktemp -d)" $(DIST)/$(BINARY) --check
+	OPUTE_AGENT_MODE=standalone OPUTE_INFRA_PROVIDER_ID=incus OPUTE_STANDALONE_STATE_DIR="$$(mktemp -d)" $(DIST)/$(BINARY) --check
 
 standalone-http-smoke: build
-	EXPECTED_VERSION=$(VERSION) python3 scripts/verify-standalone-http.py $(DIST)/$(BINARY)
+	OPUTE_STANDALONE_BINARY=$(DIST)/$(BINARY) go test ./test/standalone -run 'TestPackagedShapeStandaloneHTTPContract|TestDeprecatedTransportFlagIsRejectOnly' -count=1
 
 standalone-lifecycle-gate: build-linux-x64
-	python3 scripts/verify-standalone-lifecycle.py $(DIST)/host-agent-linux-x64
+	go test -tags=integration ./test/live -count=1
 
 published-npm-canary:
-	python3 scripts/verify-published-npm.py $(VERSION)
+	cd npm/local-host-agent && PUBLISHED_NPM_VERSION=$(VERSION) npm run test:published-canary
 
 artifacts: build-linux-x64 build-linux-arm64 checksums
 

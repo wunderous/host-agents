@@ -13,10 +13,10 @@ import (
 // Config holds host agent runtime configuration from environment variables.
 type Config struct {
 	AgentMode                        string
-	TransportMode                    string
 	StandaloneStateDir               string
 	StandaloneAllowMutations         bool
 	StandaloneAllowInsecureDownloads bool
+	StandaloneInstanceID             string
 	HostMCPPort                      int
 	HostMCPBindHost                  string
 	IsReverseTunnel                  bool
@@ -70,10 +70,10 @@ func Load() Config {
 	}
 	return Config{
 		AgentMode:                        mode,
-		TransportMode:                    normalizeTransport(os.Getenv("OPUTE_TRANSPORT")),
 		StandaloneStateDir:               envOr("OPUTE_STANDALONE_STATE_DIR", filepath.Join(userHomeDir(), ".opute", "standalone")),
 		StandaloneAllowMutations:         os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
 		StandaloneAllowInsecureDownloads: os.Getenv("OPUTE_STANDALONE_ALLOW_INSECURE_DOWNLOADS") == "true",
+		StandaloneInstanceID:             strings.TrimSpace(os.Getenv("OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID")),
 		HostMCPPort:                      port,
 		HostMCPBindHost:                  bindHost,
 		IsReverseTunnel:                  os.Getenv("OPUTE_REVERSE_TUNNEL") == "true",
@@ -108,20 +108,7 @@ func (c Config) Validate() error {
 	}
 	rawTransport := strings.TrimSpace(os.Getenv("OPUTE_TRANSPORT"))
 	if rawTransport != "" && !strings.EqualFold(rawTransport, "http") {
-		if strings.EqualFold(rawTransport, "stdio") {
-			return fmt.Errorf("invalid OPUTE_TRANSPORT %q: stdio is not supported; use Streamable HTTP (OPUTE_TRANSPORT=http)", rawTransport)
-		}
-		return fmt.Errorf("invalid OPUTE_TRANSPORT %q: expected http", rawTransport)
-	}
-	transport := strings.ToLower(strings.TrimSpace(c.TransportMode))
-	if transport == "" {
-		transport = normalizeTransport(rawTransport)
-	}
-	if transport == "stdio" {
-		return fmt.Errorf("stdio transport is not supported; use Streamable HTTP (OPUTE_TRANSPORT=http)")
-	}
-	if transport != "http" {
-		return fmt.Errorf("invalid transport %q: expected http", c.TransportMode)
+		return fmt.Errorf("invalid OPUTE_TRANSPORT %q: only Streamable HTTP (http) is supported", rawTransport)
 	}
 	rawProvider := strings.TrimSpace(os.Getenv("OPUTE_INFRA_PROVIDER_ID"))
 	providerValue := strings.TrimSpace(c.ProviderID)
@@ -154,15 +141,6 @@ func normalizeMode(raw string) string {
 		return "standalone"
 	}
 	return "platform"
-}
-
-func normalizeTransport(raw string) string {
-	trimmed := strings.ToLower(strings.TrimSpace(raw))
-	if trimmed == "" || trimmed == "http" {
-		return "http"
-	}
-	// Preserve unrecognized values so Validate can reject them with a clear error.
-	return trimmed
 }
 
 func userHomeDir() string {
