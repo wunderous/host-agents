@@ -45,7 +45,7 @@ else
 fi
 [ -s host-agent-linux-x64.gz ] || fail "download empty"
 [ -s SHA256SUMS ] || fail "checksum manifest missing"
-grep -E "[[:space:]]host-agent-linux-x64\.gz$" SHA256SUMS | sha256sum -c - || fail "artifact checksum mismatch"
+awk '$2 ~ /(^|\/)host-agent-linux-x64\.gz$/ { print $1 "  host-agent-linux-x64.gz" }' SHA256SUMS | sha256sum -c - || fail "artifact checksum mismatch"
 pass "artifact checksum"
 
 echo
