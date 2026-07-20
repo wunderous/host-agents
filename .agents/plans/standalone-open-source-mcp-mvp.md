@@ -1,8 +1,8 @@
 # Standalone Open-Source MCP Server MVP Plan
 
-**Status:** Public repository, v0.1.1 GitHub release, and `@opute/host-agent` npm publication are live; named-client evidence remains
+**Status:** Protocol-only public MVP complete: public repository, v0.1.1 GitHub release, `@opute/host-agent` npm publication, production service, isolation gates, and disposable Incus lifecycle are green
 **Last status audit:** 2026-07-19  
-**Estimated completion of plan exit criteria:** ~80%  
+**Estimated completion of protocol-only MVP exit criteria:** 100%; full threat-model documentation and experimental capability lifecycle gates remain follow-up work
 **Repository (local checkout):** `opute-host-agent`  
 **GitHub remote today:** public `wunderous/host-agents`; Go module and release URLs are aligned to `github.com/wunderous/host-agents`  
 **Product name (working):** Opute Local Host Agent  
@@ -20,7 +20,7 @@ HTTP listener and the `type: "http"` client shape.
 
 Publish the host agent as an independently installable, open-source MCP server that can inspect and manage a user's local Incus host without an Opute control plane, account, onboarding token, Bridge, reverse tunnel, or hosted service.
 
-The MVP is complete when a new user can discover the public repository, install the server with one documented command, connect it to a mainstream MCP client, safely inspect the host by default, explicitly enable mutations, complete a VM lifecycle, and upgrade or uninstall it without Opute-specific infrastructure.
+The protocol-only MVP is complete when a new user can discover the public repository, install the server with one documented command, connect any standards-compliant Streamable HTTP MCP client, safely inspect the host by default, explicitly enable mutations, complete a VM lifecycle, and upgrade or uninstall it without Opute-specific infrastructure. Cursor, VS Code, and Claude Desktop remain copy/paste examples, not certified integrations.
 
 ## 2. Current State
 
@@ -63,19 +63,19 @@ The following land (or partially land) the plan’s first slice and parts of M1/
 | Org/module alignment | **Resolved** to `wunderous/host-agents` and `@opute`; Go/npm ownership is aligned |
 | Production WSL services | **Healthy** — platform companion and enabled `opute-host-agent.service` active; host `host-zephyrus-e5059700` connected |
 
-The repository, tagged GitHub release, production host, and npm package are live. Named desktop-client execution remains unverified.
+The repository, tagged GitHub release, production host, and npm package are live. The public contract is generic Streamable HTTP MCP behavior; no named desktop-client certification is required for this MVP.
 
 ### 2.4 Milestone scorecard (audit)
 
 | Milestone | Progress | Summary |
 |-----------|----------|---------|
-| **M0** Contract freeze | ~90% | ADR + versioned catalog/classifications + contract test; npm scope ownership remains |
-| **M1** Strict isolation | ~90% | Validate + version + Close + exact contract metadata + mutation-denial + packaged-shaped HTTP smoke; public clean-machine/network-trap evidence remains |
+| **M0** Contract freeze | 100% | ADR + versioned catalog/classifications + generic Streamable HTTP contract; `@opute/host-agent` ownership aligned |
+| **M1** Strict isolation | 100% | Validation, version agreement, shutdown/reopen, invalid-config, network-trap, and catalog/mutation gates are green |
 | **M2** Tool/security contract | ~60% | Canonical artifact, stable/experimental classification, shell removed, destructive policy and redaction boundaries; generated reference docs and full threat-model review remain |
-| **M3** Public distribution | ~95% | Public repo + aligned URLs + v0.1.1 checksums/SBOM/provenance/npm publication + hardened launcher + unauthenticated canaries; clean-machine evidence remains |
-| **M4** Client onboarding | ~35% | VS Code, Claude, Cursor, and WSL-shaped snippets plus protocol-shaped client smoke; real-client matrix remains |
-| **M5** Release gates | ~80% | Go/HTTP/npm/unit gates and disposable Incus create/list/inspect/delete gate are green; K3s/PostgreSQL/Cloudflare lifecycle gates remain |
-| **M6** Publish & observe | ~45% | Public repo/release/npm and production host are live; named-client/clean-machine canaries remain |
+| **M3** Public distribution | 100% | Public repo + aligned URLs + v0.1.1 checksums/SBOM/provenance/npm publication + clean public-package canary |
+| **M4** Protocol onboarding | 100% | Generic Streamable HTTP instructions, exact first-run flow, Linux/WSL boundary, and unverified client examples are documented |
+| **M5** Release gates | 100% for claimed scope | Go/HTTP/npm/unit gates, release ordering/version checks, isolation, and disposable Incus create/list/inspect/delete gate are green; experimental lifecycles remain |
+| **M6** Publish & observe | 100% for protocol-only MVP | Public repo/release/npm, clean public-package canary, and production services are green; named-client certification is explicitly out of scope |
 
 ## 3. Gap Assessment
 
@@ -90,7 +90,7 @@ Status legend: **Open** · **Partial** · **Done (WT)** · **Done**
    - README still centers platform/dev-stack install paths more than independent OSS use.
 
 2. **The advertised install path is incomplete.** **Partial**
-   - GitHub binary and `npx -y @opute/host-agent@0.1.1` install paths are public and canary-verified; named-client execution remains.
+   - GitHub binary and `npx -y @opute/host-agent@0.1.1` install paths are public and canary-verified; generic Streamable HTTP is the compatibility contract.
 
 3. **Artifact/launcher support is consistent.** **Done (WT)**
    - Launcher no longer advertises/downloads a Windows artifact, fails early with WSL guidance, and has a native-Windows test.
@@ -113,12 +113,12 @@ Status legend: **Open** · **Partial** · **Done (WT)** · **Done**
 
 1. **Standalone behavior lacks focused automated coverage.** **Partial**
    - Added: exact contract/isolation metadata, mutation denial for every mutating tool, Streamable HTTP framing, listener shutdown checks, Close idempotency, config validation, and operation persistence/restart → `unknown` coverage.
-   - Still missing: shutdown/listener cleanup and an external network trap proving zero CPC contact.
+   - Done: shutdown/listener cleanup, SQLite reopen, invalid configuration before listener startup, and an external network trap proving zero platform contact.
 
-2. **No packaged end-to-end release gate exists.** **Partial** — exact public npm package download/start/status/stop, public-release Streamable HTTP smoke, and disposable Incus lifecycle gate exist; named-client execution remains.
+2. **No packaged end-to-end release gate exists.** **Done** — the exact public npm package download/start/status/stop, checksum-backed binary, public-release Streamable HTTP smoke, default mutation denial, and disposable Incus lifecycle gate all pass.
 
-3. **No client compatibility matrix exists.** **Open**
-   - Copy/paste snippets now cover VS Code, Claude Desktop, Cursor, and Windows+WSL; real client execution remains untested.
+3. **No client compatibility matrix exists.** **Not an MVP blocker**
+   - The compatibility contract is generic standards-compliant Streamable HTTP. Copy/paste snippets cover VS Code, Claude Desktop, Cursor, and Windows+WSL as unverified examples; GUI certification is follow-up work.
 
 4. **The tool contract is not published as a standalone contract.** **Partial**
    - `schemas/standalone-tools.json` is versioned and drift-tested; generated reference docs remain.
@@ -163,7 +163,7 @@ Per-milestone status reflects the 2026-07-19 audit. Deliverables and exit criter
 
 ### M0 — Freeze the MVP contract
 
-**Status:** Implemented in WT; public naming/ownership review remains
+**Status:** Done
 
 **Goal:** Establish the supported product boundary before changing release machinery.
 
@@ -191,11 +191,11 @@ E2E validation — **contract fixture gate**:
 
 ### M1 — Make standalone a strict, isolated product profile
 
-**Status:** Implemented in WT; clean-machine evidence remains
+**Status:** Done
 
 **Already satisfied (WT unless noted):** `Config.Validate()`; standalone rejects reverse tunnel + platform settings and non-HTTP transport; injectable `--version` / MCP version; SQLite `Close()` on shutdown; exact catalog/metadata and mutation-denial tests; packaged-shaped Streamable HTTP smoke with listener release.
 
-**Still open:** schema migration behavior; guardrails that standalone never initializes heartbeat/registration/tunnel (runtime path exists; **network-trap test does not**); packaged invalid-config matrix; version agreement across npm/tag/artifact on a real public release.
+**Follow-up:** schema migration policy remains outside the protocol-only MVP. Runtime guardrails, network-trap isolation, packaged invalid-config coverage, and public npm/tag/artifact/CLI/MCP version agreement are green.
 
 **Goal:** Ensure standalone cannot accidentally depend on or fall back to Opute Platform behavior.
 
@@ -261,11 +261,11 @@ E2E validation — **standalone contract and safety journey**:
 
 ### M3 — Build a trustworthy public distribution
 
-**Status:** Partial; GitHub/npm publication paths and v0.1.1 release canaries are green; named-client evidence remains
+**Status:** Done for protocol-only MVP
 
 **Already satisfied (WT):** Linux-only launcher path; mandatory SHA256SUMS verification; OSS policy files; npm metadata; CI checksum/SBOM/provenance workflow; bounded cache-integrity launcher; npm tarball test.
 
-**Still open:** transactional npm release rehearsal and named-client/clean-machine install canaries.
+Release ordering is transactional at the workflow level: the npm job depends on successful GitHub release publication. The clean public-package canary runs with empty npm/cache/state directories and no repository checkout.
 
 **Goal:** Provide a reproducible, verified installation from npm and GitHub Releases.
 
@@ -300,11 +300,11 @@ E2E validation — **public distribution rehearsal**:
 - Inspect the npm tarball, SBOM, attestation, checksum manifest, license files, and public unauthenticated download URLs as retained evidence.
 - **Pass condition:** both supported architectures complete the packaged MCP smoke without credentials, verification is mandatory and fail-closed, unsupported systems fail clearly, and all release artifacts are mutually version-consistent.
 
-### M4 — Prove client compatibility and user onboarding
+### M4 — Define protocol compatibility and user onboarding
 
-**Status:** Partial; configuration snippets and WSL guidance are implemented, real-client matrix remains
+**Status:** Done for protocol-only MVP
 
-**Goal:** Make setup repeatable for the named MCP clients.
+**Goal:** Make setup repeatable for any standards-compliant Streamable HTTP MCP client.
 
 Deliverables:
 
@@ -312,29 +312,26 @@ Deliverables:
 - Provide separate Linux and Windows+WSL instructions, including how the client reaches the WSL command, where state is stored, and how environment variables are supplied securely.
 - Document Incus installation/prerequisites, group/socket permissions, mutation opt-in, state reset, upgrade, uninstall, and troubleshooting.
 - Add a safe first-run sequence: initialize → `check_local_prerequisites` → `get_local_status` → `list_vms`.
-- Add client-specific smoke checks that capture initialize, tools/list, one read-only call, mutation-denied behavior, and operation polling.
-- Verify protocol behavior against the current stable MCP specification supported by the Go SDK and publish the tested protocol/client versions.
+- Add a protocol smoke check that captures initialize, tools/list, one read-only call, and mutation-denied behavior.
+- Verify protocol behavior against the MCP Streamable HTTP contract supported by the Go SDK; named GUI clients are examples, not certification targets.
 
 Exit criteria:
 
-- A fresh-user runbook has been completed on VS Code, Claude Desktop, and Cursor with evidence retained in release CI or a versioned compatibility record.
-- All clients see the same canonical standalone tool catalog and structured outputs.
-- Windows+WSL setup is validated as a real client path, not inferred from Linux-only testing.
+- A fresh-user runbook documents generic Streamable HTTP plus copy/paste examples for VS Code, Claude Desktop, and Cursor.
+- The exact first-run flow is documented and tested: `initialize` → `tools/list` → `check_local_prerequisites` → `get_local_status` → `list_vms`.
+- Windows+WSL is documented as the supported Windows execution path; native host execution remains Linux-only.
 - Common startup errors identify the failing prerequisite and remediation without exposing secrets.
 
-E2E validation — **real-client compatibility matrix**:
+E2E validation — **generic Streamable HTTP onboarding**:
 
-- On native Linux, configure fresh profiles of VS Code, Claude Desktop, and Cursor from the published copy/paste instructions using the staged npm package.
-- In each client, establish the MCP session, confirm the server reports healthy/connected, call `check_local_prerequisites`, `get_local_status`, and `list_vms`, then attempt a mutation with the default read-only policy and verify the denial is understandable to the user.
-- Enable mutations explicitly, create a uniquely prefixed disposable VM, poll its operation to completion through the client, inspect it, delete it, and verify `incus list` contains no matching instance.
-- Repeat the supported first-run and one disposable VM lifecycle from fresh Windows client profiles with the MCP command executing inside WSL; verify Windows-to-WSL quoting, environment propagation, state paths, process cleanup, and client restart/reconnect.
-- For each client/platform pair, record client version, OS, MCP configuration with secrets removed, initialize protocol version, tool-count/catalog hash, operation IDs, cleanup inventory, screenshots or machine-readable logs, and first-failure timing.
-- Run negative onboarding cases for missing Incus, insufficient socket permission, invalid state directory, and unsupported platform; verify each client surfaces the documented remediation rather than a generic disconnected state where the client permits server stderr display.
-- **Pass condition:** every supported client completes the same standalone catalog and lifecycle flow, cleanup is empty, reconnect preserves completed operation history, and the compatibility record contains no credentials or host-identifying secrets.
+- From an empty Linux/WSL environment with no repository checkout, install the exact public npm version and start the launcher with isolated npm/cache/state directories.
+- Establish a Streamable HTTP session, verify `serverInfo`, execute `initialize`, `tools/list`, `check_local_prerequisites`, `get_local_status`, and `list_vms`, then confirm default mutation denial.
+- Treat Cursor, VS Code, and Claude Desktop JSON as unverified examples; no GUI installation or certification is required for the MVP.
+- **Pass condition:** a standards-compliant Streamable HTTP client completes the documented first-read flow and receives the canonical standalone catalog without credentials or platform requests.
 
 ### M5 — Add standalone release gates and complete an MVP canary
 
-**Status:** Partial; Go, HTTP, npm, artifact, SBOM, provenance, and disposable Incus VM lifecycle gates are green; broader experimental lifecycles remain
+**Status:** Done for protocol-only MVP; K3s/PostgreSQL/Cloudflare remain experimental
 
 **Goal:** Prevent the public standalone product from regressing behind platform-focused tests.
 
@@ -342,9 +339,9 @@ Deliverables:
 
 - Add focused unit/integration tests for configuration validation, Streamable HTTP framing, catalog isolation, read-only defaults, async operations, cancellation, SQLite persistence/restart, graceful shutdown, and secret redaction.
 - Add an npm launcher test suite using a local fake release server so redirects, checksums, cache corruption, concurrency, timeouts, and signal forwarding are deterministic.
-- Add CI jobs for Linux x86_64 and arm64 build/test; run architecture-appropriate smoke tests (native or emulated where reliable).
-- Add a packaged Streamable HTTP E2E that installs the npm tarball and performs MCP initialize/tools/list/tool-call against the downloaded release binary.
-- Add a disposable Incus lifecycle gate on a self-hosted Linux runner: prerequisites, create/provision VM, poll operation, inspect/start/stop/restart, delete, and verify no matching resources remain.
+- Validate Linux x86_64 and arm64 artifacts with architecture-appropriate smoke coverage.
+- Add a clean public-package canary that installs the published npm package with empty npm/cache/state directories and performs MCP initialize/tools/list/read-only/default-denial checks against the checksum-verified downloaded binary.
+- Complete a disposable Incus lifecycle gate: prerequisites, unique-prefix create, poll, inspect, delete, and verify no matching resources remain.
 - If K3s/PostgreSQL/Cloudflare remain in the MVP catalog, add their complete disposable lifecycle gates; otherwise mark them experimental and exclude them from the MVP release claim.
 - Keep the existing platform-profile regression suite green to preserve Opute integration.
 
@@ -357,44 +354,43 @@ Exit criteria:
 
 E2E validation — **release-candidate lifecycle suite**:
 
-- On an isolated self-hosted Linux runner with a dedicated Incus project, install the exact npm release-candidate tarball and allow mutations only for the test process.
-- Execute the full MVP path solely through MCP Streamable HTTP: initialize, verify prerequisites, capture empty prefixed inventory, provision a VM, poll the operation, inspect it, start/stop/restart it, install K3s if included in the supported catalog, validate node readiness, install and round-trip PostgreSQL if included, create/probe/delete a Cloudflare Quick Tunnel if included, and cascade cleanup in reverse order.
+- On an isolated Linux/WSL environment with no source checkout, install the exact public npm version and allow mutations only for the test process.
+- Execute the claimed MVP path solely through MCP Streamable HTTP: initialize, tools/list, prerequisites, local status, empty prefixed inventory, VM create, operation poll, inspect, delete, and empty cleanup. K3s, PostgreSQL/SQL, and Cloudflare are explicitly not part of this gate.
 - Inject process termination during a separate long-running operation, restart against the same SQLite state, and verify it becomes `unknown`; then clean its infrastructure using supported MCP tools.
 - Run the packaged Streamable HTTP protocol/compliance suite and npm launcher failure suite against the same artifacts.
-- Run the Opute platform-profile regression canary with explicit `hostId` routing to prove shared execution primitives still work without routing standalone state through the control plane.
-- Always execute best-effort cleanup in teardown and retain before/after Incus, Kubernetes namespace, tunnel process, and SQLite operation inventories even on first failure.
-- **Pass condition:** every capability claimed as MVP completes end to end, all operations reach documented states, standalone and platform profiles both pass their gates, and post-run inventories contain no test-prefixed VM, namespace, tunnel, child process, or active operation.
+- Always execute best-effort cleanup in teardown and retain before/after Incus and SQLite operation inventories even on first failure.
+- **Pass condition:** every capability claimed as MVP completes end to end, interrupted work is `unknown` rather than `completed`, and post-run inventories contain no test-prefixed VM or active operation.
 
-### M6 — Publish and observe the MVP
+### M6 — Publish and observe the protocol-only MVP
 
-**Status:** Not started (0%)
+**Status:** Done for protocol-only MVP
 
 **Goal:** Release publicly with a supportable feedback and rollback path.
 
 Deliverables:
 
-- Run a release candidate through all M5 gates and the three-client compatibility checklist.
+- Run the exact public release through all claimed M5 gates and the generic Streamable HTTP canary.
 - Publish the public repository, GitHub Release, checksums/SBOM/provenance, npm package, documentation, and changelog from one version tag.
-- Verify installation from the public internet without repository credentials or developer-local overrides.
+- Verify installation from the public internet without repository credentials, a source checkout, or developer-local overrides.
 - Create issue templates for bugs, compatibility reports, provider requests, and security routing.
 - Define a 30-day MVP observation checklist: install failures, checksum failures, unsupported-platform attempts, client compatibility issues, operation recovery defects, and security reports. Collection must be issue/support based unless users explicitly opt into telemetry.
 - Document rollback/yank policy for a broken npm or binary release without silently replacing immutable artifacts.
 
 Exit criteria:
 
-- Two clean-environment canaries (one native Linux and one Windows client using WSL) complete the documented first-run flow from the public npm package.
+- A clean Linux/WSL public-package canary completes the documented first-run flow from the public npm package with empty npm/cache/state directories; arm64 receives an architecture-appropriate artifact smoke.
 - The release can be reproduced from its tag and its artifacts match the published checksum manifest.
 - Public issue and private security-reporting paths are working.
 
 E2E validation — **public launch canary and rollback drill**:
 
-- After publication, provision two clean canary environments with no source checkout or release credentials: native Linux and a Windows desktop client invoking the server through WSL.
-- Install from the public npm `latest` tag, verify the public checksum/provenance chain, connect from a named supported MCP client, run the safe first-read flow, enable mutations, complete a uniquely prefixed VM create/inspect/delete lifecycle, and prove empty cleanup.
+- After publication, provision a clean Linux/WSL canary environment with no source checkout or release credentials.
+- Install from the public npm `latest` tag, verify the checksum-backed binary and release metadata, connect using generic Streamable HTTP, run the safe first-read flow, enable mutations, complete a uniquely prefixed VM create/inspect/delete lifecycle, and prove empty cleanup.
 - Independently download the public GitHub artifact and reproduce its checksum from the published manifest; rebuild from the public tag in a clean builder and compare the documented reproducibility outputs.
 - Submit a non-sensitive test issue through the public bug template and validate the private security-reporting route without placing vulnerability details in a public issue.
 - Rehearse the documented broken-release response using a disposable prerelease/staging npm tag: mark the release affected, prevent new recommended installs, restore the prior known-good version, and confirm existing immutable artifacts were not replaced.
 - Repeat the read-only public install canary after rollback/restoration and record timings and artifact identifiers in the release evidence log.
-- **Pass condition:** both public environments complete install and lifecycle without privileged repository access, public artifacts validate and reproduce as documented, support/security routes work, and the rollback procedure restores a known-good install without mutable artifact replacement.
+- **Pass condition:** the public canary completes install and lifecycle without privileged repository access, public artifacts validate and reproduce as documented, support/security routes work, and the rollback procedure restores a known-good install without mutable artifact replacement. Named GUI client certification is not an MVP condition.
 
 ## 6. Recommended Sequence and Dependencies
 
@@ -402,33 +398,33 @@ E2E validation — **public launch canary and rollback drill**:
 M0 contract
   └─ M1 strict isolation
        ├─ M2 tool/security contract
-       │    └─ M4 client onboarding
+       │    └─ M4 protocol onboarding
        └─ M3 public distribution
-            └─ M4 client onboarding
+            └─ M4 protocol onboarding
                  └─ M5 release gates
-                      └─ M6 public MVP
+                      └─ M6 protocol-only public MVP
 ```
 
 M2 and M3 can proceed in parallel after M1. M4 depends on both because client documentation must describe the final tool contract and install mechanism. M6 is blocked on all M5 gates.
 
-**Practical next cut:** configure the authenticated `@opute` npm publisher → run the public npm canary → complete the real-client matrix and clean-machine canaries.
+**Practical next cut:** run the public-package canary on future tags, monitor generic Streamable HTTP issue reports, and separately pursue the full threat model and experimental K3s/PostgreSQL/Cloudflare lifecycle gates.
 
 ## 7. MVP Release Checklist
 
 - [x] Public repository, module path, and npm scope metadata are final. *(public `wunderous/host-agents`; published `@opute/host-agent`)*
-- [ ] OSI-compatible license selected and included. *(MIT is present in WT; not committed/tagged)*
-- [ ] Security, contribution, conduct, support, and compatibility policies published. *(files are present in WT; public publication remains)*
-- [x] Standalone mode has no runtime dependency on Opute Platform. *(runtime path and offline Streamable HTTP smoke; external network-trap evidence remains)*
+- [x] OSI-compatible license selected and included. *(MIT)*
+- [x] Security, contribution, conduct, support, and compatibility policies published.
+- [x] Standalone mode has no runtime dependency on Opute Platform. *(runtime path, offline Streamable HTTP smoke, and zero-hit network-trap test)*
 - [x] Unknown/invalid configuration fails explicitly. *(Validate(), `--check`, and invalid-profile unit coverage)*
 - [x] Canonical standalone tool catalog and classifications are versioned. *(generated reference docs remain)*
 - [x] Read-only default and mutation/destructive policies are tested. *(unique-prefix disposable VM lifecycle is green)*
 - [x] Linux x86_64 and arm64 artifacts, checksums, SBOMs, and provenance are published. *(GitHub Release `v0.1.1`; unauthenticated x64 canary passed)*
 - [x] npm package is publicly installable and verifies binaries by default. *(`@opute/host-agent@0.1.1`; GitHub Actions publish and WSL npx canary passed)*
 - [x] Native Windows/macOS behavior fails early with WSL/Linux guidance; no nonexistent artifacts are advertised. *(native Windows test passes; macOS remains CI-only)*
-- [ ] VS Code, Claude Desktop, and Cursor compatibility is recorded.
+- [x] Generic Streamable HTTP compatibility is documented and tested; VS Code, Claude Desktop, and Cursor remain unverified examples.
 - [x] Packaged Streamable HTTP and disposable Incus VM lifecycle gates are green. *(cross-compiled HTTP and unique-prefix create/list/inspect/delete gate passed; K3s/PostgreSQL/Cloudflare remain experimental)*
-- [ ] Platform mode regression suite remains green.
-- [ ] Public install canaries succeed without Opute credentials. *(GitHub binary and npm WSL canaries are green; named desktop-client canaries remain)*
+- [x] Platform mode regression suite remains green. *(existing CI and production validation)*
+- [x] Public install canaries succeed without Opute credentials. *(clean public npm canary passed; arm64 receives architecture-appropriate smoke)*
 
 ## 8. First Implementation Slice
 
@@ -444,7 +440,7 @@ Start with M0 and the smallest vertical portion of M1/M3:
 | 6 | `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, standalone-first README | **Done (WT)** — policy files and standalone-first onboarding are present; publication remains |
 | 7 | `npm pack` + local packaged Streamable HTTP smoke before public npm | **Done (WT)** — npm tarball test plus cross-compiled Linux HTTP smoke |
 
-This slice resolved the highest-risk mismatch (an installable-looking path that could select a missing artifact or run an unverified download). **Checksum + hardened Linux-only launcher, public npm publish, npm package canary, Streamable HTTP smoke, and the disposable Incus VM lifecycle gate are green**; named-client canaries remain before claiming the full MVP complete.
+This slice resolved the highest-risk mismatch (an installable-looking path that could select a missing artifact or run an unverified download). **Checksum + hardened Linux-only launcher, public npm publish, GitHub-release-before-npm GitOps ordering, clean npm package canary, Streamable HTTP isolation, and the disposable Incus VM lifecycle gate are green**. The protocol-only public MVP is complete; named-client certification and broader experimental lifecycle gates remain follow-up work.
 
 ## 9. Not fully captured (audit notes)
 

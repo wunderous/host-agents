@@ -1,4 +1,4 @@
-.PHONY: build test standalone-smoke standalone-http-smoke standalone-lifecycle-gate npm-test artifacts clean
+.PHONY: build test standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary npm-test artifacts clean
 
 BINARY=opute-host-agent
 DIST=dist
@@ -23,6 +23,9 @@ standalone-http-smoke: build
 
 standalone-lifecycle-gate: build-linux-x64
 	python3 scripts/verify-standalone-lifecycle.py $(DIST)/host-agent-linux-x64
+
+published-npm-canary:
+	python3 scripts/verify-published-npm.py $(VERSION)
 
 artifacts: build-linux-x64 build-linux-arm64 checksums
 

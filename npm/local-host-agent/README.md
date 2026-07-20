@@ -1,8 +1,9 @@
 # @opute/host-agent
 
 Downloads and launches the checksum-verified Opute Go host agent as a local
-**Streamable HTTP** MCP server for VS Code, Claude Desktop, Cursor, and other
-MCP clients.
+**Streamable HTTP** MCP server compatible with standards-compliant MCP
+clients. Cursor, VS Code, and Claude Desktop configurations below are
+copy/paste examples, not named-client certifications.
 
 ## Quick start
 
@@ -30,6 +31,9 @@ Point your MCP client at the printed URL (default port **3014**):
 ```
 
 stdio MCP transport is not supported.
+
+The exact first-run flow is `initialize` → `tools/list` →
+`check_local_prerequisites` → `get_local_status` → `list_vms` (VM inventory).
 
 ## Commands
 
@@ -60,8 +64,8 @@ The stable MVP claim covers local Incus inspection and VM lifecycle. K3s,
 PostgreSQL, SQL execution, and Cloudflare Tunnel tools are exposed as
 experimental capabilities and require the same explicit mutation opt-in.
 
-The launcher supports Linux x64 and arm64. Native Windows and macOS are not
-supported by the Incus provider; Windows users should run the Linux binary
-inside WSL and connect from the Windows MCP client over HTTP to
-`http://127.0.0.1:3014/mcp` (with WSL port forwarding as needed). The launcher
-does not install dependencies or run a postinstall hook.
+The launcher supports Linux x64 and arm64. Native host execution is Linux-only;
+native Windows and macOS are not supported by the Incus provider. Windows users
+should run the Linux binary inside WSL and connect from the Windows MCP client
+over HTTP to `http://127.0.0.1:3014/mcp` (with WSL port forwarding as needed).
+The launcher does not install dependencies or run a postinstall hook.
