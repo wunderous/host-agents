@@ -104,16 +104,23 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rawRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(initializeBody))
-	if err != nil {
-		t.Fatal(err)
-	}
-	rawRequest.Header.Set("Accept", fixture.Accept)
-	rawRequest.Header.Set("Content-Type", "application/json")
-	rawRequest.Header.Set(fixture.ProtocolVersionHeader, fixture.ProtocolVersion)
-	rawResponse, err := http.DefaultClient.Do(rawRequest)
-	if err != nil {
-		t.Fatal(err)
+	var rawResponse *http.Response
+	for {
+		rawRequest, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(initializeBody))
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		rawRequest.Header.Set("Accept", fixture.Accept)
+		rawRequest.Header.Set("Content-Type", "application/json")
+		rawRequest.Header.Set(fixture.ProtocolVersionHeader, fixture.ProtocolVersion)
+		rawResponse, err = http.DefaultClient.Do(rawRequest)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("fixture initialize: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	if rawResponse.StatusCode != http.StatusOK {
 		rawResponse.Body.Close()
