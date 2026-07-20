@@ -4,6 +4,10 @@
   "provider": "incus",
   "transport": "http",
   "supportedPlatforms": ["linux/amd64", "linux/arm64", "windows-client/wsl"],
+  "smoke": {
+    "requiredTools": ["check_local_prerequisites", "get_local_status", "list_vms", "create_vm", "get_operation"],
+    "forbiddenTools": ["register_host_agent", "host_agent_heartbeat", "dispatch_host_operation", "agent_shell"]
+  },
   "tools": [
     {"name": "get_host_info", "classification": "read_only", "support": "stable"},
     {"name": "check_local_prerequisites", "classification": "read_only", "support": "stable"},

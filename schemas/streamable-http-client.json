@@ -1,0 +1,8 @@
+{
+  "accept": "application/json, text/event-stream",
+  "mcpPath": "/mcp",
+  "healthPath": "/health",
+  "sessionHeader": "Mcp-Session-Id",
+  "protocolVersionHeader": "Mcp-Protocol-Version",
+  "protocolVersion": "2024-11-05"
+}

@@ -82,10 +82,9 @@ func TestStandaloneHTTPIsolationAndShutdown(t *testing.T) {
 	port := freeStandalonePort(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, "--mode=standalone", "--transport=http")
+	cmd := exec.CommandContext(ctx, binary, "--mode=standalone")
 	cmd.Env = standaloneCleanEnv(
 		"OPUTE_AGENT_MODE=standalone",
-		"OPUTE_TRANSPORT=http",
 		"OPUTE_INFRA_PROVIDER_ID=incus",
 		"OPUTE_STANDALONE_STATE_DIR="+stateDir,
 		"HOST_MCP_BIND_HOST=127.0.0.1",
@@ -155,10 +154,10 @@ func TestStandaloneInvalidConfigurationExitsBeforeMCP(t *testing.T) {
 		name  string
 		extra []string
 	}{
-		{name: "invalid mode", extra: []string{"OPUTE_AGENT_MODE=standalonee", "OPUTE_TRANSPORT=http"}},
+		{name: "invalid mode", extra: []string{"OPUTE_AGENT_MODE=standalonee"}},
 		{name: "stdio transport", extra: []string{"OPUTE_AGENT_MODE=standalone", "OPUTE_TRANSPORT=stdio"}},
-		{name: "reverse tunnel", extra: []string{"OPUTE_AGENT_MODE=standalone", "OPUTE_TRANSPORT=http", "OPUTE_REVERSE_TUNNEL=true"}},
-		{name: "platform URL", extra: []string{"OPUTE_AGENT_MODE=standalone", "OPUTE_TRANSPORT=http", "OPUTE_MCP_URL=https://platform.example/mcp"}},
+		{name: "reverse tunnel", extra: []string{"OPUTE_AGENT_MODE=standalone", "OPUTE_REVERSE_TUNNEL=true"}},
+		{name: "platform URL", extra: []string{"OPUTE_AGENT_MODE=standalone", "OPUTE_MCP_URL=https://platform.example/mcp"}},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

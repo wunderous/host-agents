@@ -19,6 +19,7 @@ type HTTPServer struct {
 	host       *hostmcp.Server
 	mcpHandler *mcp.StreamableHTTPHandler
 	tokens     []string
+	instanceID string
 	logger     *slog.Logger
 	httpServer *http.Server
 	mu         sync.Mutex
@@ -29,6 +30,7 @@ type HTTPOptions struct {
 	BindHost   string
 	Port       int
 	AuthTokens []string
+	InstanceID string
 	Logger     *slog.Logger
 }
 
@@ -38,9 +40,10 @@ func NewHTTPServer(opts HTTPOptions) *HTTPServer {
 		logger = slog.Default()
 	}
 	h := &HTTPServer{
-		host:   opts.HostServer,
-		tokens: opts.AuthTokens,
-		logger: logger,
+		host:       opts.HostServer,
+		tokens:     opts.AuthTokens,
+		instanceID: opts.InstanceID,
+		logger:     logger,
 	}
 	h.mcpHandler = mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return opts.HostServer.MCP()
@@ -74,7 +77,11 @@ func (h *HTTPServer) Shutdown(ctx context.Context) error {
 
 func (h *HTTPServer) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "isReverseTunnel": false})
+	payload := map[string]any{"ok": true, "isReverseTunnel": false}
+	if h.instanceID != "" {
+		payload["instanceId"] = h.instanceID
+	}
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {

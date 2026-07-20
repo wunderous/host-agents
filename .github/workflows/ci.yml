@@ -49,8 +49,9 @@ jobs:
           test -f dist/host-agent-linux-arm64.gz
           gzip -t dist/host-agent-linux-x64.gz
           gzip -t dist/host-agent-linux-arm64.gz
+          gzip -dc dist/host-agent-linux-x64.gz > dist/host-agent-linux-x64
           sha256sum dist/host-agent-linux-x64.gz dist/host-agent-linux-arm64.gz > dist/SHA256SUMS
           test -s dist/SHA256SUMS
 
       - name: Standalone Streamable HTTP smoke
-        run: EXPECTED_VERSION=0.1.1 python3 scripts/verify-standalone-http.py dist/host-agent-linux-x64
+        run: OPUTE_STANDALONE_BINARY="${{ github.workspace }}/dist/host-agent-linux-x64" go test ./test/standalone -count=1

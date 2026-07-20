@@ -71,7 +71,6 @@ test('downloads, verifies, caches, and re-verifies the release binary', { skip: 
     OPUTE_HOST_AGENT_CACHE_DIR: cacheDir,
     OPUTE_HOST_AGENT_RELEASE_BASE_URL: `http://127.0.0.1:${address.port}`,
     OPUTE_AGENT_MODE: '',
-    OPUTE_TRANSPORT: '',
   }
 
   await execFileAsync(process.execPath, [indexPath, 'start'], { env, timeout: 10_000 })
@@ -135,10 +134,14 @@ fs.writeFileSync(process.env.FAKE_ENV_REPORT, JSON.stringify({
   bridgeToken: process.env.BRIDGE_TOKEN || null,
   reverseTunnel: process.env.OPUTE_REVERSE_TUNNEL || null,
   mode: process.env.OPUTE_AGENT_MODE,
-  transport: process.env.OPUTE_TRANSPORT,
+  transport: process.env.OPUTE_TRANSPORT || null,
+  instanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null,
 }, null, 2))
 const server = http.createServer((request, response) => {
-  if (request.url === '/health') { response.end(JSON.stringify({ ok: true })); return }
+  if (request.url === '/health') {
+    response.end(JSON.stringify({ ok: true, instanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null }))
+    return
+  }
   response.end('{}')
 })
 server.listen(Number(process.env.HOST_MCP_PORT), process.env.HOST_MCP_BIND_HOST)
@@ -162,6 +165,13 @@ process.on('SIGINT', stop)
   }
   const started = await execFileAsync(process.execPath, [indexPath, 'start', '--background'], { env, timeout: 20_000 })
   assert.equal(started.stdout.trim(), `http://127.0.0.1:${port}/mcp`)
+  const daemonStatePath = path.join(runtimeDir, 'daemon.json')
+  const firstState = JSON.parse(fs.readFileSync(daemonStatePath, 'utf8'))
+  const startedAgain = await execFileAsync(process.execPath, [indexPath, 'start', '--background'], { env, timeout: 20_000 })
+  assert.equal(startedAgain.stdout.trim(), started.stdout.trim())
+  const secondState = JSON.parse(fs.readFileSync(daemonStatePath, 'utf8'))
+  assert.equal(secondState.pid, firstState.pid)
+  assert.equal(typeof secondState.instanceId, 'string')
   const status = await execFileAsync(process.execPath, [indexPath, 'status'], { env, timeout: 10_000 })
   const statusJson = JSON.parse(status.stdout)
   assert.equal(statusJson.running, true)
@@ -173,12 +183,52 @@ process.on('SIGINT', stop)
     bridgeToken: null,
     reverseTunnel: null,
     mode: 'standalone',
-    transport: 'http',
+    transport: null,
+    instanceId: secondState.instanceId,
   })
 
   await execFileAsync(process.execPath, [indexPath, 'stop'], { env, timeout: 15_000 })
   await waitForClosed(`http://127.0.0.1:${port}/health`)
   assert.equal(fs.existsSync(path.join(runtimeDir, 'daemon.json')), false)
+})
+
+test('background start refuses a foreign listener without overwriting daemon state', { skip: process.platform !== 'linux' }, async () => {
+  const port = await freePort()
+  const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opute-foreign-runtime-'))
+  const foreign = http.createServer((request, response) => {
+    if (request.url === '/health') response.end(JSON.stringify({ ok: true }))
+    else response.end('foreign')
+  })
+  servers.push(foreign)
+  await new Promise(resolve => foreign.listen(port, '127.0.0.1', resolve))
+  await assert.rejects(
+    execFileAsync(process.execPath, [indexPath, 'start', '--background'], {
+      env: { ...process.env, HOST_MCP_PORT: String(port), OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir },
+      timeout: 10_000,
+    }),
+    error => error.stderr.includes(`port ${port} already in use`)
+  )
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'daemon.json')), false)
+})
+
+test('background start fails closed for a live reused PID', { skip: process.platform !== 'linux' }, async () => {
+  const port = await freePort()
+  const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opute-reused-pid-runtime-'))
+  fs.writeFileSync(path.join(runtimeDir, 'daemon.json'), JSON.stringify({
+    pid: process.pid,
+    host: '127.0.0.1',
+    port,
+    instanceId: 'not-owned',
+  }))
+  await assert.rejects(
+    execFileAsync(process.execPath, [indexPath, 'start', '--background'], {
+      env: { ...process.env, HOST_MCP_PORT: String(port), OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir },
+      timeout: 10_000,
+    }),
+    error => error.stderr.includes('refusing to kill it')
+  )
+  assert.doesNotThrow(() => process.kill(process.pid, 0))
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'daemon.json')), true)
 })
 
 test('native Windows fails before attempting an artifact download', { skip: process.platform !== 'win32' }, async () => {

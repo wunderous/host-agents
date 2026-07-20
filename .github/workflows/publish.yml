@@ -48,6 +48,9 @@ jobs:
       - name: Generate release checksums
         run: sha256sum dist/host-agent-linux-x64.gz dist/host-agent-linux-arm64.gz > dist/SHA256SUMS
 
+      - name: Prepare x64 standalone smoke binary
+        run: gzip -dc dist/host-agent-linux-x64.gz > dist/host-agent-linux-x64
+
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -56,9 +59,7 @@ jobs:
           output-file: dist/sbom.spdx.json
 
       - name: Standalone Streamable HTTP smoke
-        env:
-          EXPECTED_VERSION: ${{ steps.release_version.outputs.version }}
-        run: python3 scripts/verify-standalone-http.py dist/host-agent-linux-x64
+        run: OPUTE_STANDALONE_BINARY="${{ github.workspace }}/dist/host-agent-linux-x64" go test ./test/standalone -count=1
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

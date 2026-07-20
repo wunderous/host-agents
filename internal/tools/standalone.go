@@ -16,7 +16,13 @@ type StandaloneToolContract struct {
 	Provider          string                        `json:"provider"`
 	Transport         string                        `json:"transport"`
 	SupportedPlatform []string                      `json:"supportedPlatforms"`
+	Smoke             StandaloneSmokeContract       `json:"smoke"`
 	Tools             []StandaloneToolContractEntry `json:"tools"`
+}
+
+type StandaloneSmokeContract struct {
+	RequiredTools  []string `json:"requiredTools"`
+	ForbiddenTools []string `json:"forbiddenTools"`
 }
 
 type StandaloneToolContractEntry struct {
@@ -51,6 +57,23 @@ func ValidateStandaloneToolContract() error {
 	if len(contract.SupportedPlatform) == 0 {
 		return fmt.Errorf("standalone tool contract has no supported platforms")
 	}
+	if len(contract.Smoke.RequiredTools) == 0 {
+		return fmt.Errorf("standalone tool contract has no smoke required tools")
+	}
+	seenSmokeRequired := make(map[string]bool, len(contract.Smoke.RequiredTools))
+	for _, name := range contract.Smoke.RequiredTools {
+		if name == "" || seenSmokeRequired[name] {
+			return fmt.Errorf("invalid or duplicate smoke required tool %q", name)
+		}
+		seenSmokeRequired[name] = true
+	}
+	seenSmokeForbidden := make(map[string]bool, len(contract.Smoke.ForbiddenTools))
+	for _, name := range contract.Smoke.ForbiddenTools {
+		if name == "" || seenSmokeForbidden[name] {
+			return fmt.Errorf("invalid or duplicate smoke forbidden tool %q", name)
+		}
+		seenSmokeForbidden[name] = true
+	}
 	seen := make(map[string]bool, len(contract.Tools))
 	for _, entry := range contract.Tools {
 		if entry.Name == "" || seen[entry.Name] {
@@ -72,6 +95,16 @@ func ValidateStandaloneToolContract() error {
 	for name := range StandaloneToolNames {
 		if !seen[name] {
 			return fmt.Errorf("standalone allowlist tool %q is missing from the contract", name)
+		}
+	}
+	for _, name := range contract.Smoke.RequiredTools {
+		if !seen[name] {
+			return fmt.Errorf("smoke required tool %q is missing from the contract", name)
+		}
+	}
+	for _, name := range contract.Smoke.ForbiddenTools {
+		if seen[name] {
+			return fmt.Errorf("smoke forbidden tool %q is present in the contract", name)
 		}
 	}
 	return nil

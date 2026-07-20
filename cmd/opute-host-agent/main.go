@@ -51,8 +51,9 @@ func main() {
 	if *mode != "" {
 		_ = os.Setenv("OPUTE_AGENT_MODE", *mode)
 	}
-	if *transport != "" {
-		_ = os.Setenv("OPUTE_TRANSPORT", *transport)
+	if rawTransport := strings.TrimSpace(*transport); rawTransport != "" && !strings.EqualFold(rawTransport, "http") {
+		fmt.Fprintf(os.Stderr, "invalid --transport %q: only Streamable HTTP (http) is supported\n", rawTransport)
+		os.Exit(2)
 	}
 	if *check {
 		if err := app.Check(); err != nil {
