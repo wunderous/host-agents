@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -30,7 +32,29 @@ jobs:
         run: go test ./...
 
       - name: Build release artifacts
-        run: make artifacts
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+            version="dev-${GITHUB_SHA::12}"
+          fi
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            package_version=$(node -p "require('./npm/local-host-agent/package.json').version")
+            test "$package_version" = "$version"
+          fi
+          make artifacts VERSION="$version"
+
+      - name: Generate release checksums
+        run: sha256sum dist/host-agent-linux-x64.gz dist/host-agent-linux-arm64.gz > dist/SHA256SUMS
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/sbom.spdx.json
+
+      - name: Standalone stdio smoke
+        run: python3 scripts/verify-standalone-stdio.py dist/host-agent-linux-x64
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -40,6 +64,8 @@ jobs:
           path: |
             dist/host-agent-linux-x64.gz
             dist/host-agent-linux-arm64.gz
+            dist/SHA256SUMS
+            dist/sbom.spdx.json
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -58,4 +84,34 @@ jobs:
           files: |
             dist/host-agent-linux-x64.gz
             dist/host-agent-linux-arm64.gz
+            dist/SHA256SUMS
+            dist/sbom.spdx.json
           generate_release_notes: true
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
+  npm:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Test and publish npm launcher
+        working-directory: npm/local-host-agent
+        run: |
+          npm test
+          npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

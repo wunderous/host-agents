@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	hostexec "github.com/opute-io/host-agents/internal/exec"
-	"github.com/opute-io/host-agents/internal/provider"
+	hostexec "github.com/wunderous/host-agents/internal/exec"
+	"github.com/wunderous/host-agents/internal/provider"
 )
 
 const (
@@ -311,6 +311,7 @@ type InstallK3sArgs struct {
 	Target      string   `json:"target,omitempty"`
 	VMName      string   `json:"vmName,omitempty"`
 	ClusterID   string   `json:"clusterId,omitempty"`
+	Version     string   `json:"version,omitempty"`
 	InstallArgs []string `json:"installArgs,omitempty"`
 }
 
@@ -325,20 +326,35 @@ func (s *HostOperationsService) InstallK3s(ctx context.Context, args InstallK3sA
 	if target == "" {
 		target = "vm"
 	}
-	installCmd := "curl -sfL https://get.k3s.io | sh -"
+	// Pin a concrete version by default. update.k3s.io channel resolution often
+	// 404s from guest NAT; the upstream script then treats "stable" as a GitHub
+	// release tag and fails on .../download/stable/sha256sum-amd64.txt.
+	// Download the installer to a file, then run with an explicit env so the
+	// version cannot be lost across pipes / login shells.
+	k3sVersion := strings.TrimSpace(args.Version)
+	if k3sVersion == "" {
+		k3sVersion = "v1.31.8+k3s1"
+	}
+	curlFlags := "-sfL"
 	if s.allowInsecureDownloads {
 		// Some local VM images do not contain the host's corporate CA. Keep the
 		// weaker TLS behavior explicit and standalone-only; platform mode remains
 		// certificate-verifying by default.
-		installCmd = "curl -k -sfL --retry 4 --retry-delay 2 --retry-connrefused https://get.k3s.io | sed -e 's/curl \\(-\\)/curl -k --retry 4 --retry-delay 2 --retry-connrefused \\1/g' | sh -"
+		curlFlags = "-k -sfL --retry 4 --retry-delay 2 --retry-connrefused"
 	}
+	execEnv := ""
 	if len(args.InstallArgs) > 0 {
-		prefix := "curl -sfL https://get.k3s.io |"
-		if s.allowInsecureDownloads {
-			prefix = "curl -k -sfL --retry 4 --retry-delay 2 --retry-connrefused https://get.k3s.io | sed -e 's/curl \\(-\\)/curl -k --retry 4 --retry-delay 2 --retry-connrefused \\1/g' |"
-		}
-		installCmd = fmt.Sprintf("%s INSTALL_K3S_EXEC=%s sh -", prefix, shellEscape(strings.Join(args.InstallArgs, " ")))
+		execEnv = fmt.Sprintf(" INSTALL_K3S_EXEC=%s", shellEscape(strings.Join(args.InstallArgs, " ")))
 	}
+	// Single-line bash -c (not login -lc): Incus/guest argv must not depend on
+	// multiline -c parsing. Echo a pin marker so failures prove this path ran.
+	installCmd := fmt.Sprintf(
+		`echo OPUTE_K3S_PIN=%s && tmp=$(mktemp) && curl %s https://get.k3s.io -o "$tmp" && env INSTALL_K3S_VERSION=%s%s sh "$tmp"; ec=$?; rm -f "$tmp"; exit $ec`,
+		shellEscape(k3sVersion),
+		curlFlags,
+		shellEscape(k3sVersion),
+		execEnv,
+	)
 	if target == "host" {
 		clusterID := strings.TrimSpace(args.ClusterID)
 		if clusterID == "" {
@@ -353,7 +369,7 @@ systemctl daemon-reload 2>/dev/null || true`
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		res, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", installCmd}, onData, 0)
+		res, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-c", installCmd}, onData, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -387,7 +403,7 @@ systemctl daemon-reload 2>/dev/null || true`
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	install, err := s.runVMExecContext(ctx, vmName, []string{"bash", "-lc", installCmd}, onData, 15*time.Minute)
+	install, err := s.runVMExecContext(ctx, vmName, []string{"bash", "-c", installCmd}, onData, 15*time.Minute)
 	if err != nil {
 		return nil, err
 	}

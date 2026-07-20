@@ -2,8 +2,61 @@
 
 Go implementation of the Opute host agent (replaces `@opute/mcp-host-agent`).
 
-- **Repository:** https://github.com/opute-io/host-agents (private)
-- **Go module:** `github.com/opute-io/host-agents`
+## Standalone local MCP server
+
+The standalone profile is an independently runnable local MCP server for Linux
+with Incus. It uses stdio and does not require Opute Platform, Bridge, an
+onboarding token, or a reverse tunnel. Mutations are denied by default.
+
+Run a local build:
+
+```bash
+OPUTE_INFRA_PROVIDER_ID=incus \
+OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone" \
+./dist/opute-host-agent --mode standalone --transport stdio
+```
+
+Recommended client installation:
+
+```json
+{
+  "servers": {
+    "opute-local": {
+      "command": "npx",
+      "args": ["-y", "@opute/local-host-agent"]
+    }
+  }
+}
+```
+
+VS Code uses the `servers` shape above. Claude Desktop and Cursor use this
+equivalent `mcpServers` entry:
+
+```json
+{
+  "mcpServers": {
+    "opute-local": {
+      "command": "npx",
+      "args": ["-y", "@opute/local-host-agent"]
+    }
+  }
+}
+```
+
+Add `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` under the client's `env` block
+only when infrastructure changes are intended. On Windows, configure the
+client to invoke `wsl.exe` with `-- bash -lc "exec npx -y
+@opute/local-host-agent"` and keep the state directory inside WSL. A WSL
+environment file can be supplied with the launcher's `--env-file` argument
+when a client supports it.
+
+The safe first run is: `initialize` → `check_local_prerequisites` →
+`get_local_status` → `list_vms`. The stable MVP claim covers Incus inspection
+and VM lifecycle; K3s, PostgreSQL/SQL, and Cloudflare Tunnel tools are
+experimental until their end-to-end release gates pass.
+
+- **Repository:** https://github.com/wunderous/host-agents
+- **Go module:** `github.com/wunderous/host-agents`
 - **Platform monorepo:** sibling checkout at `../opute-host-agent` when developing against [opute](https://github.com/opute-io/opute)
 
 ## Phases
@@ -49,10 +102,10 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-The release attaches both `.gz` binaries. Because the repo is **private**, download with authenticated `gh`:
+The release attaches both `.gz` binaries and a `SHA256SUMS` manifest. Download from the public GitHub Release or use the npm launcher:
 
 ```bash
-gh release download v0.2.0 --repo opute-io/host-agents
+gh release download v0.2.0 --repo wunderous/host-agents
 ```
 
 Unauthenticated `curl` to GitHub release URLs returns **404**.
@@ -60,12 +113,11 @@ Unauthenticated `curl` to GitHub release URLs returns **404**.
 ### Verify a release install
 
 ```bash
-export GH_TOKEN=$(gh auth token)   # required for private repo
 export RELEASE_TAG=v0.1.0          # optional; defaults to v0.1.0
 bash scripts/verify-release-install.sh
 ```
 
-Downloads the release artifact, installs to a temp path, starts the agent, checks `/health`, MCP `initialize` / `tools/list`, and confirms unauthenticated `/mcp` returns **401**.
+Downloads the release artifact, verifies its checksum, installs to a temp path, starts the agent, checks `/health`, MCP `initialize` / `tools/list`, and confirms unauthenticated `/mcp` returns **401**.
 
 ## Run (HTTP mode — Phase 1 local testing)
 
@@ -108,7 +160,6 @@ Prefer VS Code's `env` block for user-owned settings and secrets:
         "OPUTE_TRANSPORT": "stdio",
         "OPUTE_INFRA_PROVIDER_ID": "incus",
         "OPUTE_STANDALONE_ALLOW_MUTATIONS": "true",
-        "OPUTE_STANDALONE_ALLOW_HOST_SHELL": "true",
         "CLOUDFLARE_API_TOKEN": "${input:cloudflare-api-token}"
       }
     }

@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/opute-io/host-agents/internal/console"
-	"github.com/opute-io/host-agents/internal/ops"
-	"github.com/opute-io/host-agents/internal/state"
-	"github.com/opute-io/host-agents/internal/tasks"
-	"github.com/opute-io/host-agents/internal/tools"
+	"github.com/wunderous/host-agents/internal/console"
+	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/state"
+	"github.com/wunderous/host-agents/internal/tasks"
+	"github.com/wunderous/host-agents/internal/tools"
+	"github.com/wunderous/host-agents/internal/version"
 )
 
 // Server is the host agent MCP server.
@@ -38,6 +39,7 @@ type Options struct {
 	Standalone     bool
 	AllowMutations bool
 	StateDir       string
+	Version        string
 }
 
 func NewServer(opts Options) (*Server, error) {
@@ -47,6 +49,11 @@ func NewServer(opts Options) (*Server, error) {
 	providerID := opts.ProviderID
 	if providerID == "" {
 		providerID = opts.Ops.ReadProviderID()
+	}
+	if opts.Standalone {
+		if err := tools.ValidateStandaloneToolContract(); err != nil {
+			return nil, err
+		}
 	}
 	catalog, err := tools.HostToolDefinitionsForProvider(providerID)
 	if err != nil {
@@ -65,7 +72,11 @@ func NewServer(opts Options) (*Server, error) {
 			},
 		},
 	}
-	srv := mcp.NewServer(&mcp.Implementation{Name: "host-agent", Version: "0.1.0"}, &mcp.ServerOptions{
+	serverVersion := opts.Version
+	if serverVersion == "" {
+		serverVersion = version.Version
+	}
+	srv := mcp.NewServer(&mcp.Implementation{Name: "host-agent", Version: serverVersion}, &mcp.ServerOptions{
 		Capabilities: capabilities,
 		Logger:       opts.Logger,
 	})
@@ -88,6 +99,17 @@ func NewServer(opts Options) (*Server, error) {
 	}
 	hs.registerTools()
 	return hs, nil
+}
+
+// Close releases standalone-owned resources. Platform mode is also safe to
+// close, which keeps shutdown behavior consistent across profiles.
+func (s *Server) Close() error {
+	if s == nil || s.state == nil {
+		return nil
+	}
+	err := s.state.Close()
+	s.state = nil
+	return err
 }
 
 func (s *Server) MCP() *mcp.Server {
@@ -152,6 +174,9 @@ func (s *Server) addRegisteredTool(def tools.ToolDefinition) {
 	tool := &mcp.Tool{
 		Name:        def.Name,
 		Description: def.Description,
+	}
+	if s.standalone {
+		tool.Meta = tools.StandaloneToolMetadata(def.Name)
 	}
 	if def.InputSchema != nil {
 		tool.InputSchema = def.InputSchema

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/opute-io/host-agents/schemas"
+	"github.com/wunderous/host-agents/schemas"
 )
 
 // ToolDefinition mirrors MCP tool metadata from embedded JSON schemas.

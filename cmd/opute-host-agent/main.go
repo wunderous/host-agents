@@ -3,21 +3,29 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 
-	"github.com/opute-io/host-agents/internal/app"
-	"github.com/opute-io/host-agents/internal/config"
+	"github.com/wunderous/host-agents/internal/app"
+	"github.com/wunderous/host-agents/internal/config"
+	"github.com/wunderous/host-agents/internal/version"
 )
 
 func main() {
 	mode := flag.String("mode", "", "agent mode: platform or standalone")
 	transport := flag.String("transport", "", "transport: http or stdio")
+	showVersion := flag.Bool("version", false, "print the agent version and exit")
+	check := flag.Bool("check", false, "validate configuration and state access, then exit")
 	envFile := flag.String("env-file", "", "load KEY=VALUE settings from a file")
 	var envOverrides envFlags
 	flag.Var(&envOverrides, "env", "set a KEY=VALUE environment override; repeatable")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(version.Version)
+		return
+	}
 	resolvedEnvFile := strings.TrimSpace(*envFile)
 	if resolvedEnvFile == "" {
 		resolvedEnvFile = strings.TrimSpace(os.Getenv("OPUTE_HOST_AGENT_ENV_FILE"))
@@ -45,6 +53,14 @@ func main() {
 	}
 	if *transport != "" {
 		_ = os.Setenv("OPUTE_TRANSPORT", *transport)
+	}
+	if *check {
+		if err := app.Check(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println("configuration ok")
+		return
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	if err := app.Run(context.Background(), logger); err != nil {

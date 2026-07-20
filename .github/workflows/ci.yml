@@ -36,6 +36,10 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Test npm launcher
+        working-directory: npm/local-host-agent
+        run: npm test
+
       - name: Build release artifacts
         run: make artifacts
 
@@ -45,3 +49,8 @@ jobs:
           test -f dist/host-agent-linux-arm64.gz
           gzip -t dist/host-agent-linux-x64.gz
           gzip -t dist/host-agent-linux-arm64.gz
+          sha256sum dist/host-agent-linux-x64.gz dist/host-agent-linux-arm64.gz > dist/SHA256SUMS
+          test -s dist/SHA256SUMS
+
+      - name: Standalone stdio smoke
+        run: EXPECTED_VERSION=0.1.0 python3 scripts/verify-standalone-stdio.py dist/host-agent-linux-x64

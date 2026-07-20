@@ -3,7 +3,7 @@ package integration_test
 import (
 	"testing"
 
-	"github.com/opute-io/host-agents/internal/transport"
+	"github.com/wunderous/host-agents/internal/transport"
 )
 
 func TestBuildTunnelURL(t *testing.T) {

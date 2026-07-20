@@ -1,6 +1,6 @@
 # Agent guide — Opute host agent (Go)
 
-Canonical Go host agent for [Opute](https://github.com/opute-io/opute). Module: `github.com/opute-io/host-agents`.
+Canonical Go host agent for [Opute](https://github.com/opute-io/opute). Module: `github.com/wunderous/host-agents`.
 
 ## Quick links
 

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/opute-io/host-agents/internal/tools"
-	"github.com/opute-io/host-agents/schemas"
+	"github.com/wunderous/host-agents/internal/tools"
+	"github.com/wunderous/host-agents/schemas"
 )
 
 func TestIncusCatalogMatchesExportMinusOmitted(t *testing.T) {

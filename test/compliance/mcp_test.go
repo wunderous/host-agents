@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/opute-io/host-agents/internal/hostmcp"
-	"github.com/opute-io/host-agents/internal/ops"
-	"github.com/opute-io/host-agents/internal/provider"
-	"github.com/opute-io/host-agents/internal/tools"
-	"github.com/opute-io/host-agents/internal/transport"
+	"github.com/wunderous/host-agents/internal/hostmcp"
+	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/tools"
+	"github.com/wunderous/host-agents/internal/transport"
 )
 
 func newTestServer(t *testing.T) *hostmcp.Server {

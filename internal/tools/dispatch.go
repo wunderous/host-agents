@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/opute-io/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/ops"
 )
 
 // DispatchTool executes a host MCP tool via HostOperationsService and returns an MCP CallToolResult.

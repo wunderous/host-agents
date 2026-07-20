@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	hostexec "github.com/opute-io/host-agents/internal/exec"
+	hostexec "github.com/wunderous/host-agents/internal/exec"
 )
 
 const (

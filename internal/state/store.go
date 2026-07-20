@@ -7,13 +7,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
 type Store struct {
-	db *sql.DB
+	db        *sql.DB
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func Open(dir string) (*Store, error) {
@@ -49,10 +52,15 @@ func Open(dir string) (*Store, error) {
 }
 
 func (s *Store) Close() error {
-	if s == nil || s.db == nil {
+	if s == nil {
 		return nil
 	}
-	return s.db.Close()
+	s.closeOnce.Do(func() {
+		if s.db != nil {
+			s.closeErr = s.db.Close()
+		}
+	})
+	return s.closeErr
 }
 
 func (s *Store) Create(operationID, toolName, description string) error {

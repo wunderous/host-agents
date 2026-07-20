@@ -2,7 +2,8 @@
 set -euo pipefail
 
 RELEASE_TAG="${RELEASE_TAG:-v0.1.0}"
-RELEASE_URL="${RELEASE_URL:-https://github.com/opute-io/host-agents/releases/download/${RELEASE_TAG}/host-agent-linux-x64.gz}"
+RELEASE_URL="${RELEASE_URL:-https://github.com/wunderous/host-agents/releases/download/${RELEASE_TAG}/host-agent-linux-x64.gz}"
+CHECKSUM_URL="${CHECKSUM_URL:-https://github.com/wunderous/host-agents/releases/download/${RELEASE_TAG}/SHA256SUMS}"
 INSTALL_ROOT="${INSTALL_ROOT:-/tmp/opute-release-verify-$$}"
 INSTALL_DIR="$INSTALL_ROOT/opt/opute"
 CONFIG_DIR="$INSTALL_ROOT/etc/opute"
@@ -34,15 +35,18 @@ echo
 echo "[1/7] Downloading release artifact..."
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   gh release download "$RELEASE_TAG" --repo opute-io/host-agents \
-    --pattern 'host-agent-linux-x64.gz' \
+    --pattern 'host-agent-linux-x64.gz' --pattern 'SHA256SUMS' \
     --dir "$INSTALL_ROOT"
   pass "downloaded via gh release download ($(wc -c < host-agent-linux-x64.gz) bytes)"
-elif curl -sfL "$RELEASE_URL" -o host-agent-linux-x64.gz; then
+elif curl -sfL "$RELEASE_URL" -o host-agent-linux-x64.gz && curl -sfL "$CHECKSUM_URL" -o SHA256SUMS; then
   pass "downloaded via curl ($(wc -c < host-agent-linux-x64.gz) bytes)"
 else
-  fail "download failed (private repo requires gh auth or GH_TOKEN)"
+  fail "download failed (release artifact and checksum manifest are required)"
 fi
 [ -s host-agent-linux-x64.gz ] || fail "download empty"
+[ -s SHA256SUMS ] || fail "checksum manifest missing"
+grep -E "[[:space:]]host-agent-linux-x64\.gz$" SHA256SUMS | sha256sum -c - || fail "artifact checksum mismatch"
+pass "artifact checksum"
 
 echo
 echo "[2/7] Verifying gzip integrity..."

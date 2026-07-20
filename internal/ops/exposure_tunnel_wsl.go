@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	hostexec "github.com/opute-io/host-agents/internal/exec"
+	hostexec "github.com/wunderous/host-agents/internal/exec"
 )
 
 const wslCloudflaredDownloadURL = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"

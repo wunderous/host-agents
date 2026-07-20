@@ -1,4 +1,4 @@
-module github.com/opute-io/host-agents
+module github.com/wunderous/host-agents
 
 go 1.25.4
 

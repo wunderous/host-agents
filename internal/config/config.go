@@ -1,12 +1,13 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/opute-io/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/provider"
 )
 
 // Config holds host agent runtime configuration from environment variables.
@@ -15,7 +16,6 @@ type Config struct {
 	TransportMode                    string
 	StandaloneStateDir               string
 	StandaloneAllowMutations         bool
-	StandaloneAllowShell             bool
 	StandaloneAllowInsecureDownloads bool
 	HostMCPPort                      int
 	HostMCPBindHost                  string
@@ -67,7 +67,6 @@ func Load() Config {
 		TransportMode:                    normalizeTransport(os.Getenv("OPUTE_TRANSPORT")),
 		StandaloneStateDir:               envOr("OPUTE_STANDALONE_STATE_DIR", filepath.Join(userHomeDir(), ".opute", "standalone")),
 		StandaloneAllowMutations:         os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
-		StandaloneAllowShell:             os.Getenv("OPUTE_STANDALONE_ALLOW_HOST_SHELL") == "true",
 		StandaloneAllowInsecureDownloads: os.Getenv("OPUTE_STANDALONE_ALLOW_INSECURE_DOWNLOADS") == "true",
 		HostMCPPort:                      port,
 		HostMCPBindHost:                  bindHost,
@@ -85,6 +84,63 @@ func Load() Config {
 		EnvFile:                          strings.TrimSpace(os.Getenv("OPUTE_HOST_AGENT_ENV_FILE")),
 		TestMode:                         os.Getenv("OPUTE_TEST") == "true" || os.Getenv("NODE_ENV") == "test",
 	}
+}
+
+// Validate rejects ambiguous profile combinations before the agent starts a
+// listener, emits MCP protocol output, or contacts the Opute control plane.
+func (c Config) Validate() error {
+	rawMode := strings.TrimSpace(os.Getenv("OPUTE_AGENT_MODE"))
+	if rawMode != "" && !strings.EqualFold(rawMode, "platform") && !strings.EqualFold(rawMode, "standalone") {
+		return fmt.Errorf("invalid OPUTE_AGENT_MODE %q: expected platform or standalone", rawMode)
+	}
+	mode := strings.ToLower(strings.TrimSpace(c.AgentMode))
+	if mode == "" {
+		mode = normalizeMode(rawMode)
+	}
+	if mode != "platform" && mode != "standalone" {
+		return fmt.Errorf("invalid agent mode %q: expected platform or standalone", c.AgentMode)
+	}
+	rawTransport := strings.TrimSpace(os.Getenv("OPUTE_TRANSPORT"))
+	if rawTransport != "" && !strings.EqualFold(rawTransport, "http") && !strings.EqualFold(rawTransport, "stdio") {
+		return fmt.Errorf("invalid OPUTE_TRANSPORT %q: expected http or stdio", rawTransport)
+	}
+	transport := strings.ToLower(strings.TrimSpace(c.TransportMode))
+	if transport == "" {
+		transport = normalizeTransport(rawTransport)
+	}
+	if transport != "http" && transport != "stdio" {
+		return fmt.Errorf("invalid transport %q: expected http or stdio", c.TransportMode)
+	}
+	rawProvider := strings.TrimSpace(os.Getenv("OPUTE_INFRA_PROVIDER_ID"))
+	providerValue := strings.TrimSpace(c.ProviderID)
+	if rawProvider != "" {
+		providerValue = rawProvider
+	}
+	if providerValue != "" && !strings.EqualFold(providerValue, "incus") {
+		return fmt.Errorf("unsupported provider %q: only incus is supported", providerValue)
+	}
+	if mode == "standalone" {
+		if transport != "stdio" {
+			return fmt.Errorf("standalone mode requires stdio transport")
+		}
+		if c.IsReverseTunnel {
+			return fmt.Errorf("standalone mode cannot use OPUTE_REVERSE_TUNNEL=true")
+		}
+		for _, key := range []string{
+			"OPUTE_MCP_URL", "OPUTE_MCP_HEALTH_URL", "OPUTE_HOST_WS_URL",
+			"OPUTE_ONBOARDING_TOKEN", "OPUTE_ONBOARDING_SESSION_ID",
+			"OPUTE_REMOTE_AGENT_AUTH_TOKEN", "OPUTE_CPC_TOKEN", "OPUTE_BRIDGE_TOKEN", "BRIDGE_TOKEN",
+			"MCP_AUTH_TOKEN",
+		} {
+			if strings.TrimSpace(os.Getenv(key)) != "" {
+				return fmt.Errorf("standalone mode cannot use platform setting %s", key)
+			}
+		}
+	}
+	if mode == "platform" && transport == "stdio" {
+		return fmt.Errorf("platform mode does not support stdio transport")
+	}
+	return nil
 }
 
 func normalizeMode(raw string) string {

@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/opute-io/host-agents/internal/hostmcp"
+	"github.com/wunderous/host-agents/internal/hostmcp"
 )
 
 type wsOutboundTransport struct {

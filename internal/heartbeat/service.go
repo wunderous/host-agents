@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opute-io/host-agents/internal/fingerprint"
+	"github.com/wunderous/host-agents/internal/fingerprint"
 )
 
 type Service struct {

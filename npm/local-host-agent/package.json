@@ -3,6 +3,19 @@
   "version": "0.1.0",
   "description": "Local stdio launcher for the Opute Go host agent",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wunderous/host-agents.git",
+    "directory": "npm/local-host-agent"
+  },
+  "homepage": "https://github.com/wunderous/host-agents#readme",
+  "bugs": {
+    "url": "https://github.com/wunderous/host-agents/issues"
+  },
+  "keywords": ["mcp", "model-context-protocol", "incus", "infrastructure", "opute"],
+  "scripts": {
+    "test": "node --test"
+  },
   "bin": {
     "opute-local-host-agent": "index.js"
   },

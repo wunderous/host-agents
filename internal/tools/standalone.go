@@ -1,5 +1,102 @@
 package tools
 
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/wunderous/host-agents/schemas"
+)
+
+// StandaloneToolContract is the versioned public boundary for the stdio
+// profile. The platform catalog is an implementation input, never the source
+// of truth for what a standalone client may see.
+type StandaloneToolContract struct {
+	SchemaVersion     string                        `json:"schemaVersion"`
+	ServerName        string                        `json:"serverName"`
+	Provider          string                        `json:"provider"`
+	Transport         string                        `json:"transport"`
+	SupportedPlatform []string                      `json:"supportedPlatforms"`
+	Tools             []StandaloneToolContractEntry `json:"tools"`
+}
+
+type StandaloneToolContractEntry struct {
+	Name           string `json:"name"`
+	Classification string `json:"classification"`
+	Support        string `json:"support"`
+}
+
+// LoadStandaloneToolContract reads the checked-in standalone contract.
+func LoadStandaloneToolContract() (StandaloneToolContract, error) {
+	raw, err := schemas.FS.ReadFile("standalone-tools.json")
+	if err != nil {
+		return StandaloneToolContract{}, fmt.Errorf("read standalone tool contract: %w", err)
+	}
+	var contract StandaloneToolContract
+	if err := json.Unmarshal(raw, &contract); err != nil {
+		return StandaloneToolContract{}, fmt.Errorf("parse standalone tool contract: %w", err)
+	}
+	return contract, nil
+}
+
+// ValidateStandaloneToolContract catches accidental catalog drift before a
+// server can expose a changed public surface.
+func ValidateStandaloneToolContract() error {
+	contract, err := LoadStandaloneToolContract()
+	if err != nil {
+		return err
+	}
+	if contract.SchemaVersion == "" || contract.ServerName != "host-agent" || contract.Provider != "incus" || contract.Transport != "stdio" {
+		return fmt.Errorf("invalid standalone tool contract metadata")
+	}
+	if len(contract.SupportedPlatform) == 0 {
+		return fmt.Errorf("standalone tool contract has no supported platforms")
+	}
+	seen := make(map[string]bool, len(contract.Tools))
+	for _, entry := range contract.Tools {
+		if entry.Name == "" || seen[entry.Name] {
+			return fmt.Errorf("invalid or duplicate standalone tool %q", entry.Name)
+		}
+		seen[entry.Name] = true
+		if !StandaloneToolNames[entry.Name] {
+			return fmt.Errorf("contract tool %q is not registered in the standalone allowlist", entry.Name)
+		}
+		if entry.Classification == "" || entry.Support == "" {
+			return fmt.Errorf("standalone tool %q is missing classification or support", entry.Name)
+		}
+		if entry.Classification == "mutation" || entry.Classification == "destructive" || entry.Classification == "credential_bearing" {
+			if !standaloneMutationToolNames[entry.Name] {
+				return fmt.Errorf("contract marks %q as mutating but policy does not", entry.Name)
+			}
+		}
+	}
+	for name := range StandaloneToolNames {
+		if !seen[name] {
+			return fmt.Errorf("standalone allowlist tool %q is missing from the contract", name)
+		}
+	}
+	return nil
+}
+
+// StandaloneToolMetadata returns the public classification metadata attached
+// to a standalone tools/list entry.
+func StandaloneToolMetadata(name string) map[string]any {
+	contract, err := LoadStandaloneToolContract()
+	if err != nil {
+		return nil
+	}
+	for _, entry := range contract.Tools {
+		if entry.Name == name {
+			return map[string]any{
+				"opute": map[string]any{
+					"classification": entry.Classification,
+					"support":        entry.Support,
+				},
+			}
+		}
+	}
+	return nil
+}
+
 // StandaloneToolNames is the intentionally narrow catalog exposed when the
 // agent is used directly by a local MCP client. Platform routing and host
 // onboarding tools are deliberately not part of this surface.
@@ -55,7 +152,7 @@ func IsStandaloneMutation(name string) bool {
 }
 
 func StandaloneToolDefinitions() []ToolDefinition {
-	return []ToolDefinition{
+	defs := []ToolDefinition{
 		{Name: "check_local_prerequisites", Description: "Check local Incus, Kubernetes, PostgreSQL, and Cloudflare prerequisites.", InputSchema: objectSchema(nil, nil)},
 		{Name: "get_local_status", Description: "Return local provider and standalone agent status.", InputSchema: objectSchema(nil, nil)},
 		{Name: "list_operations", Description: "List local standalone operations.", InputSchema: objectSchema(map[string]any{"limit": map[string]any{"type": "integer"}}, nil)},
@@ -86,6 +183,7 @@ func StandaloneToolDefinitions() []ToolDefinition {
 		{Name: "get_cloudflare_tunnel_status", Description: "Inspect a local Cloudflare Tunnel.", InputSchema: objectSchema(map[string]any{"bindingId": map[string]any{"type": "string"}, "localTarget": map[string]any{"type": "string"}}, []string{"bindingId"})},
 		{Name: "delete_cloudflare_tunnel", Description: "Stop a local Cloudflare Tunnel.", InputSchema: objectSchema(map[string]any{"bindingId": map[string]any{"type": "string"}}, []string{"bindingId"})},
 	}
+	return defs
 }
 
 func objectSchema(properties map[string]any, required []string) map[string]any {

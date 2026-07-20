@@ -11,20 +11,22 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/opute-io/host-agents/internal/config"
-	"github.com/opute-io/host-agents/internal/fingerprint"
-	"github.com/opute-io/host-agents/internal/heartbeat"
-	"github.com/opute-io/host-agents/internal/hostmcp"
-	"github.com/opute-io/host-agents/internal/ops"
-	"github.com/opute-io/host-agents/internal/provider"
-	"github.com/opute-io/host-agents/internal/tools"
-	"github.com/opute-io/host-agents/internal/transport"
+	"github.com/wunderous/host-agents/internal/config"
+	"github.com/wunderous/host-agents/internal/fingerprint"
+	"github.com/wunderous/host-agents/internal/heartbeat"
+	"github.com/wunderous/host-agents/internal/hostmcp"
+	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/state"
+	"github.com/wunderous/host-agents/internal/tools"
+	"github.com/wunderous/host-agents/internal/transport"
+	"github.com/wunderous/host-agents/internal/version"
 )
 
 // Run starts the host agent and blocks until shutdown.
 func Run(ctx context.Context, logger *slog.Logger) error {
 	cfg := config.Load()
-	if err := provider.RequireSupportedPlatform(provider.ID(cfg.ProviderID)); err != nil {
+	if err := validateConfig(cfg); err != nil {
 		return err
 	}
 	if logger == nil {
@@ -55,10 +57,12 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		Standalone:     cfg.AgentMode == "standalone",
 		AllowMutations: cfg.StandaloneAllowMutations,
 		StateDir:       cfg.StandaloneStateDir,
+		Version:        version.Version,
 	})
 	if err != nil {
 		return err
 	}
+	defer hostServer.Close()
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -92,7 +96,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				EnvFile:              cfg.EnvFile,
 				HostMCPEndpoint:      endpointFor(cfg),
 				HostName:             hostNameFor(cfg),
-				AgentVersion:         "go-host-agent/1.0.0",
+				AgentVersion:         "go-host-agent/" + version.Version,
 				ProviderID:           cfg.ProviderID,
 				Fingerprint:          fp,
 				TestMode:             cfg.TestMode,
@@ -149,6 +153,31 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		}
 		return err
 	}
+}
+
+// Check validates startup configuration without opening a listener or
+// emitting MCP protocol data. It is intended for installers and client setup
+// diagnostics.
+func Check() error {
+	cfg := config.Load()
+	if err := validateConfig(cfg); err != nil {
+		return err
+	}
+	if cfg.AgentMode == "standalone" {
+		store, err := state.Open(cfg.StandaloneStateDir)
+		if err != nil {
+			return err
+		}
+		return store.Close()
+	}
+	return nil
+}
+
+func validateConfig(cfg config.Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	return provider.RequireSupportedPlatform(provider.ID(cfg.ProviderID))
 }
 
 func endpointFor(cfg config.Config) string {
