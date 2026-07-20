@@ -1,8 +1,8 @@
 # Standalone Open-Source MCP Server MVP Plan
 
-**Status:** Public repository opened; production host and disposable Incus gates are green; release/npm/client publication gates remain  
+**Status:** Public repository and v0.1.0 GitHub release are live; npm publication and named-client evidence remain  
 **Last status audit:** 2026-07-19  
-**Estimated completion of plan exit criteria:** ~70%  
+**Estimated completion of plan exit criteria:** ~80%  
 **Repository (local checkout):** `opute-host-agent`  
 **GitHub remote today:** public `wunderous/host-agents`; Go module and release URLs are aligned to `github.com/wunderous/host-agents`  
 **Product name (working):** Opute Local Host Agent  
@@ -53,10 +53,10 @@ The following land (or partially land) the plan’s first slice and parts of M1/
 |---------|--------|
 | GitHub repo visibility | **Public** (`wunderous/host-agents`) |
 | npm `@opute/local-host-agent` | **Not published** — npm authorization/token is not configured |
-| Public unauthenticated release download | **Available after the first tagged release is pushed** |
+| Public unauthenticated release download | **Live at GitHub Release `v0.1.0`; checksum/HTTP/MCP canary passed** |
 | Org/module alignment | **Resolved** to `wunderous/host-agents`; npm scope authorization remains |
 
-The repository is public and the production host is connected. The npm package and tagged release still require publication; named desktop-client execution remains unverified.
+The repository, tagged GitHub release, and production host are live. The npm package still requires an authenticated `@opute` publisher; named desktop-client execution remains unverified.
 
 ### 2.4 Milestone scorecard (audit)
 
@@ -65,10 +65,10 @@ The repository is public and the production host is connected. The npm package a
 | **M0** Contract freeze | ~90% | ADR + versioned catalog/classifications + contract test; npm scope ownership remains |
 | **M1** Strict isolation | ~85% | Validate + version + Close + exact contract metadata + mutation-denial + packaged-shaped stdio smoke; public clean-machine/network-trap evidence remains |
 | **M2** Tool/security contract | ~60% | Canonical artifact, stable/experimental classification, shell removed, destructive policy and redaction boundaries; generated reference docs and full threat-model review remain |
-| **M3** Public distribution | ~75% | Public repo + aligned URLs + checksums + hardened launcher + SBOM/provenance/npm workflow; tagged release/npm canary remain |
+| **M3** Public distribution | ~85% | Public repo + aligned URLs + v0.1.0 checksums/SBOM/provenance + hardened launcher + unauthenticated release canary; npm publication remains |
 | **M4** Client onboarding | ~35% | VS Code, Claude, Cursor, and WSL-shaped snippets plus protocol-shaped client smoke; real-client matrix remains |
 | **M5** Release gates | ~75% | Go/stdio/npm/unit gates and disposable Incus create/list/inspect/delete gate are green; K3s/PostgreSQL/Cloudflare lifecycle gates remain |
-| **M6** Publish & observe | ~15% | Public repo and production host are live; release/npm/client canaries remain |
+| **M6** Publish & observe | ~30% | Public repo/release and production host are live; npm/client/clean-machine canaries remain |
 
 ## 3. Gap Assessment
 
@@ -83,7 +83,7 @@ Status legend: **Open** · **Partial** · **Done (WT)** · **Done**
    - README still centers platform/dev-stack install paths more than independent OSS use.
 
 2. **The advertised install path is incomplete.** **Partial**
-   - npm package, local tarball gate, and npm provenance workflow exist; `npx -y @opute/local-host-agent` is not publicly available until npm publication.
+   - GitHub binary install is public and canary-verified; npm package, local tarball gate, and npm provenance workflow exist, but `npx -y @opute/local-host-agent` is not publicly available until npm publication.
 
 3. **Artifact/launcher support is consistent.** **Done (WT)**
    - Launcher no longer advertises/downloads a Windows artifact, fails early with WSL guidance, and has a native-Windows test.
@@ -91,7 +91,7 @@ Status legend: **Open** · **Partial** · **Done (WT)** · **Done**
 4. **Downloaded binaries are not verified securely by default.** **Partial**
    - **Done (WT):** `SHA256SUMS` on release artifacts; launcher requires manifest (or explicit `OPUTE_HOST_AGENT_SHA256` pin).
    - **Done in WT:** bounded launcher requests, maximum sizes, atomic cache writes, concurrent cache lock, binary re-verification, SBOM/provenance workflow steps.
-   - Still missing: a public release that proves the path end to end and a clean-machine canary.
+   - **Done:** public `v0.1.0` release canary proves checksum, gzip, ELF, HTTP health, MCP initialize/tools/list, and auth rejection; clean-machine canary remains.
 
 5. **Runtime configuration fails open to defaults.** **Partial**
    - **Done (WT):** explicit `Validate()` for set-but-invalid mode/transport/provider and incompatible standalone/platform combinations.
@@ -100,7 +100,7 @@ Status legend: **Open** · **Partial** · **Done (WT)** · **Done**
 
 6. **Versioning is fragmented.** **Partial**
    - **Done (WT):** single injectable `version.Version` for CLI + MCP (+ heartbeat prefix).
-   - Still missing: npm ↔ tag ↔ artifact ↔ MCP agreement proven on a real release; verification script / default tag alignment with that release.
+   - **Done for GitHub artifact:** public `v0.1.0` binary reports `0.1.0` and passes the standalone stdio version check; npm ↔ tag agreement remains blocked by npm publication.
 
 ### P1 — Product and compatibility gaps
 
@@ -108,7 +108,7 @@ Status legend: **Open** · **Partial** · **Done (WT)** · **Done**
    - Added: exact contract/isolation metadata, mutation denial for every mutating tool, stdio framing, Close idempotency, config validation, and operation persistence/restart → `unknown` coverage.
    - Still missing: shutdown/listener cleanup and an external network trap proving zero CPC contact.
 
-2. **No packaged end-to-end release gate exists.** **Partial** — local npm tarball, cross-compiled stdio smoke, and disposable Incus lifecycle gate exist; public release install remains.
+2. **No packaged end-to-end release gate exists.** **Partial** — local npm tarball, exact public-release stdio smoke, and disposable Incus lifecycle gate exist; public npm install remains.
 
 3. **No client compatibility matrix exists.** **Open**
    - Copy/paste snippets now cover VS Code, Claude Desktop, Cursor, and Windows+WSL; real client execution remains untested.
@@ -254,11 +254,11 @@ E2E validation — **standalone contract and safety journey**:
 
 ### M3 — Build a trustworthy public distribution
 
-**Status:** Partial; workflow, launcher, public repository, and production release path are implemented; publication remains
+**Status:** Partial; GitHub publication path and v0.1.0 release canary are green; npm publication remains
 
 **Already satisfied (WT):** Linux-only launcher path; mandatory SHA256SUMS verification; OSS policy files; npm metadata; CI checksum/SBOM/provenance workflow; bounded cache-integrity launcher; npm tarball test.
 
-**Still open:** committed/tagged release; npm trusted-publishing configuration; transactional release rehearsal; clean-machine install canary.
+**Still open:** npm trusted-publishing configuration, transactional npm release rehearsal, and clean-machine install canary.
 
 **Goal:** Provide a reproducible, verified installation from npm and GitHub Releases.
 
@@ -415,13 +415,13 @@ M2 and M3 can proceed in parallel after M1. M4 depends on both because client do
 - [x] Unknown/invalid configuration fails explicitly. *(Validate(), `--check`, and invalid-profile unit coverage)*
 - [x] Canonical standalone tool catalog and classifications are versioned. *(generated reference docs remain)*
 - [x] Read-only default and mutation/destructive policies are tested. *(full disposable lifecycle remains)*
-- [ ] Linux x86_64 and arm64 artifacts, checksums, SBOMs, and provenance are published. *(workflow is present; tagged release remains)*
+- [x] Linux x86_64 and arm64 artifacts, checksums, SBOMs, and provenance are published. *(GitHub Release `v0.1.0`; unauthenticated x64 canary passed)*
 - [ ] npm package is publicly installable and verifies binaries by default. *(workflow and local tarball gate are present; npm is not published)*
 - [x] Native Windows/macOS behavior fails early with WSL/Linux guidance; no nonexistent artifacts are advertised. *(native Windows test passes; macOS remains CI-only)*
 - [ ] VS Code, Claude Desktop, and Cursor compatibility is recorded.
 - [x] Packaged stdio and disposable Incus VM lifecycle gates are green. *(cross-compiled stdio and unique-prefix create/list/inspect/delete gate passed; K3s/PostgreSQL/Cloudflare remain experimental)*
 - [ ] Platform mode regression suite remains green.
-- [ ] Public install canaries succeed without Opute credentials.
+- [ ] Public install canaries succeed without Opute credentials. *(GitHub binary canary is green; npm package is not published)*
 
 ## 8. First Implementation Slice
 
@@ -477,7 +477,7 @@ Items the original plan under-specified, or that current work only partially sat
 ### 9.7 Version agreement is not proven
 
 - Injected `version.Version` fixes the old hardcoded `1.0.0` heartbeat split **in code**.
-- **Not captured:** until the first tag is published, no release proves npm `package.json` version = git tag = `SHA256SUMS` artifacts = `--version` = MCP `serverInfo.version`.
+- **Captured for GitHub:** `v0.1.0` = package version = artifact build version = `--version` = MCP `serverInfo.version` for the public binary. npm package publication is still absent.
 
 ### 9.8 Checksums ≠ supply-chain completeness
 
