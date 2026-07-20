@@ -1,6 +1,6 @@
 # ADR 0001: Standalone MCP MVP boundary
 
-Status: accepted for the internal release candidate (amended 2026-07-19)
+Status: accepted for the public protocol-only MVP (amended 2026-07-19)
 
 ## Decision
 
@@ -10,7 +10,9 @@ WSL and connect over HTTP to the loopback listener (default port **3014**).
 Native Windows and macOS binaries are intentionally unsupported until the
 provider works there end to end.
 
-stdio MCP transport is not supported. Clients configure
+stdio MCP transport is not supported. The public compatibility contract is
+generic standards-compliant Streamable HTTP; Cursor, VS Code, and Claude
+Desktop snippets are documentation examples, not certification. Clients configure
 `"type": "http"` with `url: http://127.0.0.1:3014/mcp` after starting the
 agent process (binary or `@opute/host-agent`).
 
@@ -31,9 +33,15 @@ agent never reports them as completed automatically. Tool schema changes use
 the standalone contract's schema version, and operation-state migrations must
 be explicit and backward compatible before a release.
 
-The working package name is `@opute/host-agent`. The repository/module
-owner and public visibility must be finalized before publication because the
-current checkout and advertised URLs do not yet agree.
+The public package name is `@opute/host-agent`, published from the public
+`wunderous/host-agents` repository through GitHub Actions. The Go module,
+release artifacts, and npm metadata use the same owner and release version.
+
+The exact first-run flow is `initialize` → `tools/list` →
+`check_local_prerequisites` → `get_local_status` → `list_vms` (VM inventory).
+Native host execution is Linux-only; Windows uses WSL. VM inspection and the
+Incus VM lifecycle are stable MVP features; K3s, PostgreSQL/SQL, and Cloudflare
+Tunnel remain experimental.
 
 ## Consequences
 

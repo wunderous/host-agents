@@ -5,9 +5,10 @@ Go implementation of the Opute host agent (replaces `@opute/mcp-host-agent`).
 ## Standalone local MCP server
 
 The standalone profile is an independently runnable local MCP server for Linux
-with Incus. It uses **Streamable HTTP** and does not require Opute Platform,
-Bridge, an onboarding token, or a reverse tunnel. Mutations are denied by
-default. Default listen address is `http://127.0.0.1:3014/mcp`.
+with Incus. It is compatible with standards-compliant **Streamable HTTP MCP
+clients** and does not require Opute Platform, Bridge, an onboarding token, or
+a reverse tunnel. Mutations are denied by default. Default listen address is
+`http://127.0.0.1:3014/mcp`.
 
 Run a local build:
 
@@ -24,7 +25,7 @@ npx -y @opute/host-agent start --background
 npx -y @opute/host-agent url   # http://127.0.0.1:3014/mcp
 ```
 
-Recommended client configuration:
+Generic Streamable HTTP client configuration:
 
 ```json
 {
@@ -37,8 +38,9 @@ Recommended client configuration:
 }
 ```
 
-VS Code uses the `servers` shape above. Claude Desktop and Cursor use this
-equivalent `mcpServers` entry:
+The following are copy/paste examples for VS Code, Claude Desktop, and Cursor;
+they are unverified configuration examples, not named-client certifications.
+Claude Desktop and Cursor use this equivalent `mcpServers` entry:
 
 ```json
 {
@@ -58,10 +60,12 @@ binary inside WSL and point the Windows MCP client at the forwarded HTTP URL.
 A WSL environment file can be supplied with the launcher's `--env-file`
 argument when starting the agent.
 
-The safe first run is: `initialize` → `check_local_prerequisites` →
-`get_local_status` → `list_vms`. The stable MVP claim covers Incus inspection
+The exact safe first run is: `initialize` → `tools/list` →
+`check_local_prerequisites` → `get_local_status` → `list_vms` (VM inventory).
+The stable MVP claim covers generic Streamable HTTP behavior, Incus inspection,
 and VM lifecycle; K3s, PostgreSQL/SQL, and Cloudflare Tunnel tools are
-experimental until their end-to-end release gates pass.
+experimental until their end-to-end release gates pass. Native host execution
+is Linux-only; Windows users must run the server inside WSL.
 
 - **Repository:** https://github.com/wunderous/host-agents
 - **Go module:** `github.com/wunderous/host-agents`
