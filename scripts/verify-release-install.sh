@@ -34,7 +34,7 @@ cd "$INSTALL_ROOT"
 echo
 echo "[1/7] Downloading release artifact..."
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  gh release download "$RELEASE_TAG" --repo opute-io/host-agents \
+  gh release download "$RELEASE_TAG" --repo wunderous/host-agents \
     --pattern 'host-agent-linux-x64.gz' --pattern 'SHA256SUMS' \
     --dir "$INSTALL_ROOT"
   pass "downloaded via gh release download ($(wc -c < host-agent-linux-x64.gz) bytes)"
