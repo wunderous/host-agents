@@ -55,6 +55,7 @@ The following land (or partially land) the plan’s first slice and parts of M1/
 | npm `@opute/local-host-agent` | **Not published** — npm authorization/token is not configured |
 | Public unauthenticated release download | **Live at GitHub Release `v0.1.0`; checksum/HTTP/MCP canary passed** |
 | Org/module alignment | **Resolved** to `wunderous/host-agents`; npm scope authorization remains |
+| Production WSL services | **Healthy** — platform companion and enabled `opute-host-agent.service` active; host `host-zephyrus-e5059700` connected |
 
 The repository, tagged GitHub release, and production host are live. The npm package still requires an authenticated `@opute` publisher; named desktop-client execution remains unverified.
 
@@ -327,7 +328,7 @@ E2E validation — **real-client compatibility matrix**:
 
 ### M5 — Add standalone release gates and complete an MVP canary
 
-**Status:** Partial; Go, stdio, npm, artifact, SBOM, and provenance gates are implemented, disposable Incus lifecycle remains
+**Status:** Partial; Go, stdio, npm, artifact, SBOM, provenance, and disposable Incus VM lifecycle gates are green; broader experimental lifecycles remain
 
 **Goal:** Prevent the public standalone product from regressing behind platform-focused tests.
 
@@ -404,7 +405,7 @@ M0 contract
 
 M2 and M3 can proceed in parallel after M1. M4 depends on both because client documentation must describe the final tool contract and install mechanism. M6 is blocked on all M5 gates.
 
-**Practical next cut:** commit/push and tag the aligned public checkout → configure the authenticated `@opute` npm publisher → run the public release canary → complete the real-client matrix and clean-machine canaries.
+**Practical next cut:** configure the authenticated `@opute` npm publisher → run the public npm canary → complete the real-client matrix and clean-machine canaries.
 
 ## 7. MVP Release Checklist
 
@@ -414,7 +415,7 @@ M2 and M3 can proceed in parallel after M1. M4 depends on both because client do
 - [x] Standalone mode has no runtime dependency on Opute Platform. *(runtime path and offline stdio smoke; external network-trap evidence remains)*
 - [x] Unknown/invalid configuration fails explicitly. *(Validate(), `--check`, and invalid-profile unit coverage)*
 - [x] Canonical standalone tool catalog and classifications are versioned. *(generated reference docs remain)*
-- [x] Read-only default and mutation/destructive policies are tested. *(full disposable lifecycle remains)*
+- [x] Read-only default and mutation/destructive policies are tested. *(unique-prefix disposable VM lifecycle is green)*
 - [x] Linux x86_64 and arm64 artifacts, checksums, SBOMs, and provenance are published. *(GitHub Release `v0.1.0`; unauthenticated x64 canary passed)*
 - [ ] npm package is publicly installable and verifies binaries by default. *(workflow and local tarball gate are present; npm is not published)*
 - [x] Native Windows/macOS behavior fails early with WSL/Linux guidance; no nonexistent artifacts are advertised. *(native Windows test passes; macOS remains CI-only)*
