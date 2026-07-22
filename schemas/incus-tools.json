@@ -1247,6 +1247,43 @@
     }
   },
   {
+    "name": "ensure_oci_builder",
+    "title": "Ensure OCI image builder",
+    "description": "Ensure a generic host-side OCI image builder is installed and available.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "builder": {
+          "type": "string",
+          "enum": ["auto", "podman", "buildah", "buildkit"]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": ["builder", "path", "available"]
+    }
+  },
+  {
+    "name": "ensure_host_tool",
+    "title": "Ensure generic host tool",
+    "description": "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["tool"],
+      "properties": {
+        "tool": {
+          "type": "string",
+          "enum": ["go", "podman", "buildah", "buildkitd", "cloudflared"]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": ["tool", "path", "available"]
+    }
+  },
+  {
     "name": "ensure_k3d",
     "title": "Ensure k3d",
     "description": "Install k3d CLI on Windows hosts when missing (requires Docker Desktop already installed)",

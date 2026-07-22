@@ -289,7 +289,7 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 		desc = fmt.Sprintf("Running %s on '%s'...", name, vm)
 	}
 	taskCtx, cancel := context.WithCancel(context.Background())
-	rec := s.tasks.CreateWithCancel(name, args, time.Hour, desc, nil, cancel)
+	rec := s.tasks.CreateWithCancel(name, redactTaskArgs(args), time.Hour, desc, nil, cancel)
 	if s.state != nil {
 		_ = s.state.Create(rec.TaskID, name, desc)
 	}
@@ -332,6 +332,37 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 		Content:           []mcp.Content{&mcp.TextContent{Text: desc}},
 		StructuredContent: map[string]any{"taskId": rec.TaskID, "status": rec.Status},
 	}, nil
+}
+
+// redactTaskArgs keeps task inspection useful without retaining credentials or
+// arbitrary manifests in the in-memory task registry. The original arguments
+// remain available only to the running goroutine.
+func redactTaskArgs(args map[string]any) map[string]any {
+	return redactTaskValue(args).(map[string]any)
+}
+
+func redactTaskValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, child := range typed {
+			lower := strings.ToLower(key)
+			if strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "secret") || lower == "manifest" || lower == "sql" {
+				out[key] = "[redacted]"
+				continue
+			}
+			out[key] = redactTaskValue(child)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i, child := range typed {
+			out[i] = redactTaskValue(child)
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 // HandleExtensionMethod serves tasks/* and custom resources/* when go-sdk lacks native task support.

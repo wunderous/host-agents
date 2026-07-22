@@ -90,7 +90,29 @@ func LoadAllToolDefinitions(providerID string) ([]ToolDefinition, error) {
 		return nil, err
 	}
 	defs = appendLocalLLMDefinitions(defs)
+	defs = appendGenericHostDefinitions(defs)
 	return augmentIncusInventoryTools(defs)
+}
+
+func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
+	for _, definition := range defs {
+		if definition.Name == "ensure_oci_builder" {
+			return defs
+		}
+	}
+	return append(defs, ToolDefinition{
+		Name:         "ensure_oci_builder",
+		Title:        "Ensure OCI image builder",
+		Description:  "Ensure a generic host-side OCI image builder is installed and available.",
+		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"builder": map[string]any{"type": "string", "enum": []string{"auto", "podman", "buildah", "buildkit"}}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"builder", "path", "available"}},
+	}, ToolDefinition{
+		Name:         "ensure_host_tool",
+		Title:        "Ensure generic host tool",
+		Description:  "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared"}}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
+	})
 }
 
 func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {

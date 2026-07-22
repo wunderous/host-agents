@@ -9,6 +9,8 @@ import (
 
 type incusProfileDevice struct {
 	Type string `json:"type"`
+	Path string `json:"path,omitempty"`
+	Pool string `json:"pool,omitempty"`
 }
 
 func (s *HostOperationsService) readDefaultProfileDevices() (map[string]incusProfileDevice, error) {
@@ -138,17 +140,28 @@ func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus i
 	}
 
 	instanceDevices := map[string]any{}
-	if profileDevices["root"].Type != "disk" {
+	rootDevice := map[string]any{
+		"type": "disk",
+		"path": "/",
+		"size": disk,
+	}
+	if profileRoot := profileDevices["root"]; profileRoot.Type == "disk" {
+		// Override the profile root size as profiles commonly provide a small
+		// default disk. Preserve an explicitly configured storage pool.
+		if profileRoot.Path != "" {
+			rootDevice["path"] = profileRoot.Path
+		}
+		if profileRoot.Pool != "" {
+			rootDevice["pool"] = profileRoot.Pool
+		}
+		instanceDevices["root"] = rootDevice
+	} else {
 		pool, poolErr := s.resolveDefaultStoragePool()
 		if poolErr != nil {
 			return poolErr
 		}
-		instanceDevices["root"] = map[string]any{
-			"type": "disk",
-			"path": "/",
-			"pool": pool,
-			"size": disk,
-		}
+		rootDevice["pool"] = pool
+		instanceDevices["root"] = rootDevice
 	}
 	if !profileHasNIC(profileDevices) {
 		instanceDevices["eth0"] = map[string]any{
