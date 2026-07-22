@@ -126,11 +126,59 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 		rawResponse.Body.Close()
 		t.Fatalf("fixture initialize status = %d", rawResponse.StatusCode)
 	}
-	if rawResponse.Header.Get(fixture.SessionHeader) == "" {
+	sessionID := rawResponse.Header.Get(fixture.SessionHeader)
+	if sessionID == "" {
 		rawResponse.Body.Close()
 		t.Fatalf("fixture initialize missing %s response header", fixture.SessionHeader)
 	}
 	rawResponse.Body.Close()
+
+	initializedBody, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "method": "notifications/initialized",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initializedRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(initializedBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initializedRequest.Header.Set("Accept", fixture.Accept)
+	initializedRequest.Header.Set("Content-Type", "application/json")
+	initializedRequest.Header.Set(fixture.ProtocolVersionHeader, fixture.ProtocolVersion)
+	initializedRequest.Header.Set(fixture.SessionHeader, sessionID)
+	initializedResponse, err := http.DefaultClient.Do(initializedRequest)
+	if err != nil {
+		t.Fatalf("fixture notifications/initialized: %v", err)
+	}
+	initializedResponse.Body.Close()
+	if initializedResponse.StatusCode != http.StatusOK && initializedResponse.StatusCode != http.StatusAccepted && initializedResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("fixture notifications/initialized status = %d", initializedResponse.StatusCode)
+	}
+
+	listBody, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/list",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(listBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listRequest.Header.Set("Accept", fixture.Accept)
+	listRequest.Header.Set("Content-Type", "application/json")
+	listRequest.Header.Set(fixture.ProtocolVersionHeader, fixture.ProtocolVersion)
+	listRequest.Header.Set(fixture.SessionHeader, sessionID)
+	listResponse, err := http.DefaultClient.Do(listRequest)
+	if err != nil {
+		t.Fatalf("fixture tools/list with session header: %v", err)
+	}
+	if listResponse.StatusCode != http.StatusOK {
+		listResponse.Body.Close()
+		t.Fatalf("fixture tools/list status = %d", listResponse.StatusCode)
+	}
+	listResponse.Body.Close()
 
 	var session *mcp.ClientSession
 	client := mcp.NewClient(&mcp.Implementation{Name: "standalone-contract-test", Version: "1"}, nil)
@@ -174,9 +222,20 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 		}
 	}
 
-	read, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "check_local_prerequisites", Arguments: map[string]any{}})
+	readOnly := ""
+	for _, name := range contract.Smoke.RequiredTools {
+		if name == "create_vm" || name == "get_operation" {
+			continue
+		}
+		readOnly = name
+		break
+	}
+	if readOnly == "" {
+		t.Fatal("standalone smoke.requiredTools has no read-only probe tool")
+	}
+	read, err := session.CallTool(ctx, &mcp.CallToolParams{Name: readOnly, Arguments: map[string]any{}})
 	if err != nil || read == nil || read.IsError || read.StructuredContent == nil {
-		t.Fatalf("read-only prerequisite check failed: result=%+v err=%v", read, err)
+		t.Fatalf("read-only smoke call %s failed: result=%+v err=%v", readOnly, read, err)
 	}
 	denied, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "create_vm", Arguments: map[string]any{"vmName": "opute-standalone-contract-test"}})
 	if err != nil || denied == nil || !denied.IsError {

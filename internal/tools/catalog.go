@@ -89,7 +89,35 @@ func LoadAllToolDefinitions(providerID string) ([]ToolDefinition, error) {
 	if err != nil {
 		return nil, err
 	}
+	defs = appendLocalLLMDefinitions(defs)
 	return augmentIncusInventoryTools(defs)
+}
+
+func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
+	seen := make(map[string]bool, len(defs))
+	for _, d := range defs {
+		seen[d.Name] = true
+	}
+	inputs := map[string]map[string]any{
+		"check_local_llm_prerequisites":       {"type": "object", "properties": map[string]any{}},
+		"list_local_llm_models":               {"type": "object", "properties": map[string]any{"includeChat": map[string]any{"type": "boolean"}}},
+		"probe_local_llm":                     {"type": "object", "properties": map[string]any{"includeChat": map[string]any{"type": "boolean"}}},
+		"install_local_llm_model":             {"type": "object", "required": []string{"modelRef"}, "properties": map[string]any{"modelRef": map[string]any{"type": "string"}}},
+		"start_local_llm_runtime":             {"type": "object", "properties": map[string]any{}},
+		"stop_local_llm_runtime":              {"type": "object", "properties": map[string]any{}},
+		"remove_local_llm_model":              {"type": "object", "required": []string{"modelRef"}, "properties": map[string]any{"modelRef": map[string]any{"type": "string"}, "purge": map[string]any{"type": "boolean"}}},
+		"ensure_local_llm_relay":              {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "allowedSourceIP", "relayToken"}, "properties": map[string]any{}},
+		"remove_local_llm_relay":              {"type": "object", "required": []string{"sessionId"}, "properties": map[string]any{}},
+		"ensure_local_llm_k3s_proxy":          {"type": "object", "required": []string{"vmName", "nodePort", "relayHost", "relayPort", "relayToken", "bearerKey"}, "properties": map[string]any{}},
+		"remove_local_llm_k3s_proxy":          {"type": "object", "required": []string{"vmName"}, "properties": map[string]any{}},
+		"remove_local_llm_cloudflared_tunnel": {"type": "object", "required": []string{"bindingId"}, "properties": map[string]any{}},
+	}
+	for name, schema := range inputs {
+		if !seen[name] {
+			defs = append(defs, ToolDefinition{Name: name, Title: name, Description: "Opute-managed local Ollama operation", InputSchema: schema, OutputSchema: map[string]any{"type": "object"}})
+		}
+	}
+	return defs
 }
 
 func augmentIncusInventoryTools(defs []ToolDefinition) ([]ToolDefinition, error) {

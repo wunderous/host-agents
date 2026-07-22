@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,6 +71,7 @@ type HostOperationsService struct {
 
 	sqlSupervisor          *sqlConnectorSupervisor
 	guestBridgeRelay       *tcpRelayManager
+	localLLMRelay          *localLLMRelayManager
 	allowInsecureDownloads bool
 }
 
@@ -91,6 +93,7 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		toolsFn:                toolsFn,
 		sqlSupervisor:          newSQLConnectorSupervisor(),
 		guestBridgeRelay:       newTCPRelayManager(),
+		localLLMRelay:          newPersistentLocalLLMRelayManager(),
 		allowInsecureDownloads: opts.AllowInsecureDownloads,
 	}
 }
@@ -705,16 +708,46 @@ type RestartHostServiceArgs struct {
 	ServiceName string `json:"serviceName"`
 }
 
+var safeSystemdUnitName = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+$`)
+
+func restartServiceCommand(serviceName string) []string {
+	// The production host agent itself is a systemd *user* unit.  Invoking
+	// plain systemctl from the unprivileged agent asks polkit for interactive
+	// elevation and fails over MCP with “Interactive authentication required”.
+	// Keep system services on the existing system scope, but route Opute-owned
+	// user units through the user manager they actually belong to.
+	if strings.HasPrefix(serviceName, "opute-") {
+		// --no-block is essential when the target is this very host-agent
+		// service: waiting for systemd to finish stopping the process closes the
+		// reverse-tunnel request before the MCP operation can receive a result.
+		return []string{provider.DefaultSystemctlPath, "--user", "--no-block", "restart", serviceName}
+	}
+	return []string{provider.DefaultSystemctlPath, "restart", serviceName}
+}
+
+func serviceStatusCommand(serviceName string) []string {
+	if strings.HasPrefix(serviceName, "opute-") {
+		return []string{provider.DefaultSystemctlPath, "--user", "is-active", serviceName}
+	}
+	return []string{provider.DefaultSystemctlPath, "is-active", serviceName}
+}
+
 func (s *HostOperationsService) RestartHostService(args RestartHostServiceArgs, onData func(string)) (map[string]string, error) {
 	serviceName := strings.TrimSpace(args.ServiceName)
 	if serviceName == "" {
 		return nil, errors.New("serviceName is required")
 	}
-	restart, err := s.hostCommandRunner([]string{provider.DefaultSystemctlPath, "restart", serviceName}, onData, 0)
+	if !safeSystemdUnitName.MatchString(serviceName) {
+		return nil, errors.New("serviceName contains invalid characters")
+	}
+	restart, err := s.hostCommandRunner(restartServiceCommand(serviceName), onData, 0)
 	if err != nil || restart.ExitCode != 0 {
 		return nil, fmt.Errorf("%s", firstNonEmpty(restart.Stderr, restart.Stdout, "failed to restart service"))
 	}
-	verify, err := s.hostCommandRunner([]string{provider.DefaultSystemctlPath, "is-active", serviceName}, onData, 0)
+	if strings.HasPrefix(serviceName, "opute-") {
+		return map[string]string{"serviceName": serviceName, "status": "scheduled"}, nil
+	}
+	verify, err := s.hostCommandRunner(serviceStatusCommand(serviceName), onData, 0)
 	if err != nil || verify.ExitCode != 0 || strings.TrimSpace(verify.Stdout) != "active" {
 		return nil, fmt.Errorf("service '%s' is not active after restart", serviceName)
 	}

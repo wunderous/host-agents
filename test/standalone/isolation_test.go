@@ -16,6 +16,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/state"
+	"github.com/wunderous/host-agents/internal/tools"
 )
 
 func buildStandaloneIsolationBinary(t *testing.T) string {
@@ -108,7 +109,24 @@ func TestStandaloneHTTPIsolationAndShutdown(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	for _, name := range []string{"check_local_prerequisites", "get_local_status", "list_vms"} {
+	contract, err := tools.LoadStandaloneToolContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+	readOnlySmoke := make([]string, 0, 3)
+	for _, name := range contract.Smoke.RequiredTools {
+		if name == "create_vm" || name == "get_operation" {
+			continue
+		}
+		readOnlySmoke = append(readOnlySmoke, name)
+		if len(readOnlySmoke) == 3 {
+			break
+		}
+	}
+	if len(readOnlySmoke) == 0 {
+		t.Fatal("standalone smoke contract has no read-only required tools")
+	}
+	for _, name := range readOnlySmoke {
 		result, callErr := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
 		if callErr != nil || result == nil {
 			t.Fatalf("read-only call %s did not produce an MCP response: result=%+v err=%v", name, result, callErr)

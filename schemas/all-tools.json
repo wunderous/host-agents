@@ -4241,7 +4241,8 @@
         "bindingId": { "type": "string" },
         "hostname": { "type": "string" },
         "localTarget": { "type": "string" },
-        "runToken": { "type": "string" }
+        "runToken": { "type": "string" },
+        "native": { "type": "boolean", "default": false }
       },
       "required": ["bindingId", "localTarget"]
     },
@@ -4334,13 +4335,21 @@
     "name": "configure_host_network",
     "title": "Configure Host Network",
     "description": "Configure host network settings for exposure",
-    "inputSchema": {
-      "type": "object",
-      "additionalProperties": true
-    },
-    "outputSchema": {
-      "type": "object",
-      "additionalProperties": true
-    }
-  }
+    "inputSchema": { "type": "object", "additionalProperties": true },
+    "outputSchema": { "type": "object", "additionalProperties": true }
+  },
+  { "name": "check_local_llm_prerequisites", "title": "Check Local LLM Prerequisites", "description": "Inspect local Ollama runtime prerequisites.", "inputSchema": { "type": "object", "properties": {} }, "outputSchema": { "type": "object" } },
+  { "name": "list_local_llm_models", "title": "List Local LLM Models", "description": "List local Ollama models.", "inputSchema": { "type": "object", "properties": { "includeChat": { "type": "boolean" } } }, "outputSchema": { "type": "object" } },
+  { "name": "probe_local_llm", "title": "Probe Local LLM", "description": "Probe the local Ollama endpoint.", "inputSchema": { "type": "object", "properties": { "includeChat": { "type": "boolean" } } }, "outputSchema": { "type": "object" } },
+  { "name": "install_local_llm_model", "title": "Install Local LLM Model", "description": "Install an Ollama model.", "inputSchema": { "type": "object", "required": ["modelRef"], "properties": { "modelRef": { "type": "string" } } }, "outputSchema": { "type": "object" } },
+  { "name": "start_local_llm_runtime", "title": "Start Local LLM Runtime", "description": "Start Ollama.", "inputSchema": { "type": "object", "properties": {} }, "outputSchema": { "type": "object" } },
+  { "name": "stop_local_llm_runtime", "title": "Stop Local LLM Runtime", "description": "Stop Ollama.", "inputSchema": { "type": "object", "properties": {} }, "outputSchema": { "type": "object" } },
+  { "name": "remove_local_llm_model", "title": "Remove Local LLM Model", "description": "Remove an Ollama model.", "inputSchema": { "type": "object", "required": ["modelRef"], "properties": { "modelRef": { "type": "string" }, "purge": { "type": "boolean" } } }, "outputSchema": { "type": "object" } },
+  { "name": "ensure_local_llm_relay", "title": "Ensure Local LLM Relay", "description": "Start an authenticated local relay.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
+  { "name": "remove_local_llm_relay", "title": "Remove Local LLM Relay", "description": "Remove the local relay.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
+  { "name": "ensure_local_llm_k3s_proxy", "title": "Ensure Local LLM K3s Proxy", "description": "Deploy the K3s proxy.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
+  { "name": "remove_local_llm_relay", "title": "Remove Local LLM Relay", "description": "Remove a local relay.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
+  { "name": "remove_local_llm_k3s_proxy", "title": "Remove Local LLM K3s Proxy", "description": "Remove the K3s proxy.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
+  { "name": "remove_local_llm_cloudflared_tunnel", "title": "Remove Local LLM Cloudflared Tunnel", "description": "Remove the local LLM connector.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
+  { "name": "remove_local_llm_k3s_proxy", "title": "Remove Local LLM K3s Proxy", "description": "Remove the K3s proxy.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } }
 ]

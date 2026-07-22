@@ -60,7 +60,8 @@ func ensureNativeWSLCloudflared(_ *HostOperationsService, args EnsureCloudflared
 		if strings.TrimSpace(args.RunToken) == "" {
 			return nil, fmt.Errorf("runToken is required for named cloudflared tunnel")
 		}
-		command = exec.Command(binary, "tunnel", "run", "--token", args.RunToken)
+		command = exec.Command(binary, "tunnel", "run")
+		command.Env = append(os.Environ(), "TUNNEL_TOKEN="+args.RunToken)
 	}
 	if !args.Quick {
 		command.Stdout = io.Discard

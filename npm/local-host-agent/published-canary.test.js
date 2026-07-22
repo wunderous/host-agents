@@ -9,6 +9,15 @@ const { test } = require('node:test')
 
 const execFileAsync = promisify(execFile)
 const PACKAGE = '@opute/host-agent'
+const STANDALONE_TOOLS_SCHEMA = path.join(__dirname, '..', '..', 'schemas', 'standalone-tools.json')
+
+function loadSmokeContract() {
+  const contract = JSON.parse(fs.readFileSync(STANDALONE_TOOLS_SCHEMA, 'utf8'))
+  const requiredTools = Array.isArray(contract?.smoke?.requiredTools) ? contract.smoke.requiredTools : []
+  const forbiddenTools = Array.isArray(contract?.smoke?.forbiddenTools) ? contract.smoke.forbiddenTools : []
+  assert.ok(requiredTools.length > 0, 'standalone smoke.requiredTools is empty')
+  return { requiredTools, forbiddenTools }
+}
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -148,10 +157,11 @@ test('published npm launcher black-box canary', { skip: process.env.RUN_PUBLISHE
     await rpc(mcp, state, 'notifications/initialized')
     const listed = await rpc(mcp, state, 'tools/list')
     const names = new Set(listed.tools.map(tool => tool.name))
-    for (const name of ['check_local_prerequisites', 'get_local_status', 'list_vms', 'create_vm', 'get_operation']) {
+    const { requiredTools, forbiddenTools } = loadSmokeContract()
+    for (const name of requiredTools) {
       assert.equal(names.has(name), true, `published tools/list missing ${name}`)
     }
-    for (const name of ['register_host_agent', 'host_agent_heartbeat', 'dispatch_host_operation', 'agent_shell']) {
+    for (const name of forbiddenTools) {
       assert.equal(names.has(name), false, `published tools/list leaked ${name}`)
     }
     const denied = await rpc(mcp, state, 'tools/call', { name: 'create_vm', arguments: { vmName: 'opute-published-npm-denied' } })

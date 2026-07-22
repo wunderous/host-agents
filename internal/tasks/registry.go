@@ -234,4 +234,8 @@ var TaskAwareTools = map[string]bool{
 	"install_cluster_agent":       true,
 	"install_host_agent":          true,
 	"restart_cluster_agent":       true,
+	"install_local_llm_model":     true,
+	"start_local_llm_runtime":     true,
+	"stop_local_llm_runtime":      true,
+	"remove_local_llm_model":      true,
 }

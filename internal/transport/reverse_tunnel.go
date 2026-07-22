@@ -119,10 +119,27 @@ func connectOnce(ctx context.Context, host *hostmcp.Server, wsURL, agentID, auth
 		return err
 	}
 
-	<-ctx.Done()
-	_ = session.Close()
-	_ = conn.Close()
-	return ctx.Err()
+	// MCP Connect starts the JSON-RPC reader in the background. Waiting only on
+	// ctx here leaves a dead websocket looking healthy forever after the server
+	// or Cloudflare closes it, so the reconnect loop never runs. Observe the
+	// session termination and return it to RunReverseTunnelLoop; on shutdown,
+	// close the session explicitly to unblock Wait.
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- session.Wait() }()
+	select {
+	case err := <-waitCh:
+		_ = session.Close()
+		_ = conn.Close()
+		if err == nil {
+			return fmt.Errorf("reverse tunnel closed")
+		}
+		return err
+	case <-ctx.Done():
+		_ = session.Close()
+		_ = conn.Close()
+		<-waitCh
+		return ctx.Err()
+	}
 }
 
 func waitForHealth(ctx context.Context, url string, timeout time.Duration) error {

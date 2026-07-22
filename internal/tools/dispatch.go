@@ -55,6 +55,81 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
+	case "check_local_llm_prerequisites":
+		out, err := svc.CheckLocalLLMPrerequisites()
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "list_local_llm_models", "probe_local_llm":
+		if boolField(args, "prerequisites") {
+			out, err := svc.CheckLocalLLMPrerequisites()
+			if err != nil {
+				return nil, err
+			}
+			return structuredResult(out, ""), nil
+		}
+		out, err := svc.ProbeLocalLLM(ctx, boolField(args, "includeChat"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "install_local_llm_model":
+		out, err := svc.InstallLocalLLMModel(ctx, stringField(args, "modelRef"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local Ollama model is ready"), nil
+
+	case "start_local_llm_runtime":
+		out, err := svc.StartLocalLLMRuntime(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local Ollama runtime is ready"), nil
+
+	case "stop_local_llm_runtime":
+		if err := svc.StopLocalLLMRuntime(ctx); err != nil {
+			return nil, err
+		}
+		return structuredResult(map[string]any{"stopped": true}, "Local Ollama runtime stopped"), nil
+
+	case "remove_local_llm_model":
+		if err := svc.RemoveLocalLLMModel(ctx, stringField(args, "modelRef")); err != nil {
+			return nil, err
+		}
+		return structuredResult(map[string]any{"removed": true}, "Local Ollama model removed"), nil
+
+	case "ensure_local_llm_relay":
+		out, err := svc.EnsureLocalLLMRelay(ctx, ops.LocalLLMRelayArgs{SessionID: stringField(args, "sessionId"), ListenHost: stringField(args, "listenHost"), ListenPort: intField(args, "listenPort"), TargetHost: stringField(args, "targetHost"), TargetPort: intField(args, "targetPort"), RelayToken: stringField(args, "relayToken"), AllowedSourceIP: stringField(args, "allowedSourceIP")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local LLM relay is ready"), nil
+
+	case "remove_local_llm_relay":
+		out, err := svc.RemoveLocalLLMRelay(stringField(args, "sessionId"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local LLM relay removed"), nil
+
+	case "ensure_local_llm_k3s_proxy":
+		out, err := svc.EnsureLocalLLMK3sProxy(ops.LocalLLMK3sProxyArgs{VMName: vmNameFromArgs(args), NodePort: intField(args, "nodePort"), RelayHost: stringField(args, "relayHost"), RelayPort: intField(args, "relayPort"), RelayToken: stringField(args, "relayToken"), BearerKey: stringField(args, "bearerKey")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local LLM K3s proxy is ready"), nil
+
+	case "remove_local_llm_k3s_proxy":
+		out, err := svc.RemoveLocalLLMK3sProxy(vmNameFromArgs(args))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local LLM K3s proxy removed"), nil
+
 	case "get_vm_info":
 		vmName := vmNameFromArgs(args)
 		if vmName == "" {
@@ -152,12 +227,20 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			LocalTarget: stringField(args, "localTarget"),
 			RunToken:    stringField(args, "runToken"),
 			Quick:       boolField(args, "quick"),
+			Native:      boolField(args, "native"),
 		}
 		out, err := svc.EnsureCloudflaredTunnel(parsed)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Tunnel ready for %s", out.Hostname)), nil
+
+	case "remove_local_llm_cloudflared_tunnel":
+		out, err := svc.RemoveHostExposure(ops.RemoveHostExposureArgs{BindingID: stringField(args, "bindingId")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local LLM Cloudflare connector removed"), nil
 
 	case "ensure_platform_opute_stack":
 		parsed := ops.EnsurePlatformOputeStackArgs{

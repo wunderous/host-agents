@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !linux
 
 package ops
 
@@ -13,3 +13,11 @@ func stopWindowsCloudflaredTunnel(bindingID string) error {
 func isWindowsTunnelConnected(_ string) bool {
 	return false
 }
+
+func ensureNativeLinuxCloudflared(_ *HostOperationsService, _ EnsureCloudflaredTunnelArgs) (*EnsureCloudflaredTunnelResult, error) {
+	return nil, nil
+}
+
+func isNativeLinuxCloudflaredRunning(_ string) bool { return false }
+
+func stopNativeLinuxCloudflaredTunnel(_ string) error { return nil }
