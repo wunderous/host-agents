@@ -186,6 +186,7 @@ var StandaloneToolNames = map[string]bool{
 	"delete_cloudflared_connector":        true,
 	"ensure_oci_builder":                  true,
 	"ensure_host_tool":                    true,
+	"set_host_service_state":              true,
 	"create_cloudflare_tunnel":            true,
 	"get_cloudflare_tunnel_status":        true,
 	"delete_cloudflare_tunnel":            true,
@@ -215,6 +216,7 @@ var standaloneMutationToolNames = map[string]bool{
 	"delete_cloudflared_connector":        true,
 	"ensure_oci_builder":                  true,
 	"ensure_host_tool":                    true,
+	"set_host_service_state":              true,
 	"create_cloudflare_tunnel":            true,
 	"delete_cloudflare_tunnel":            true,
 	"cancel_operation":                    true,
@@ -284,6 +286,7 @@ func StandaloneToolDefinitions() []ToolDefinition {
 		{Name: "delete_cloudflared_connector", Description: "Delete the in-cluster Cloudflare connector namespace and resources.", InputSchema: objectSchema(map[string]any{"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}}, []string{"vmName"})},
 		{Name: "ensure_oci_builder", Description: "Ensure a generic host-side OCI image builder is installed and available.", InputSchema: objectSchema(map[string]any{"builder": map[string]any{"type": "string", "enum": []string{"auto", "podman", "buildah", "buildkit"}}}, nil)},
 		{Name: "ensure_host_tool", Description: "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.", InputSchema: objectSchema(map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared"}}}, []string{"tool"})},
+		{Name: "set_host_service_state", Description: "Start, stop, restart, enable, or disable a validated host service.", InputSchema: objectSchema(map[string]any{"serviceName": map[string]any{"type": "string", "pattern": "^[A-Za-z0-9_.@:-]+$"}, "state": map[string]any{"type": "string", "enum": []string{"start", "stop", "restart", "enable", "disable"}}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}}}, []string{"serviceName", "state"})},
 		{Name: "create_cloudflare_tunnel", Description: "Start a token-authenticated Cloudflare Tunnel for an allowed local target.", InputSchema: objectSchema(map[string]any{
 			"bindingId":   map[string]any{"type": "string"},
 			"hostname":    map[string]any{"type": "string"},

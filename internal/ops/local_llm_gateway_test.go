@@ -34,10 +34,21 @@ func TestRenderLocalLLMK3sProxyManifest(t *testing.T) {
 	}
 }
 
-func TestRenderLocalLLMK3sProxyManifestRejectsNonGatewayVM(t *testing.T) {
-	args := LocalLLMK3sProxyArgs{VMName: "other-vm", NodePort: 32114, RelayHost: "10.0.0.1", RelayPort: 41114, RelayToken: strings.Repeat("r", 40), BearerKey: strings.Repeat("b", 40)}
-	if _, err := RenderLocalLLMK3sProxyManifest(args); err == nil {
-		t.Fatal("expected dedicated gateway VM ownership rejection")
+func TestRenderLocalLLMK3sProxyManifestAcceptsGenericApplicationNames(t *testing.T) {
+	args := LocalLLMK3sProxyArgs{
+		VMName: "other-vm", Namespace: "app-system", SecretName: "proxy-credentials",
+		ConfigMapName: "proxy-config", DeploymentName: "proxy", ServiceName: "proxy-service",
+		ContainerImage: "registry.local/proxy:dogfood", NodePort: 32114, RelayHost: "10.0.0.1",
+		RelayPort: 41114, RelayToken: strings.Repeat("r", 40), BearerKey: strings.Repeat("b", 40),
+	}
+	manifest, err := RenderLocalLLMK3sProxyManifest(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"name: app-system", "name: proxy-credentials", "name: proxy-service", "registry.local/proxy:dogfood"} {
+		if !strings.Contains(manifest, expected) {
+			t.Fatalf("generic manifest missing %q", expected)
+		}
 	}
 }
 
@@ -142,6 +153,32 @@ func TestLocalLLMRelayRotatesCredentialsForExistingSession(t *testing.T) {
 			t.Fatalf("token %q got status %d, want %d", token[:1], resp.StatusCode, want)
 		}
 		resp.Body.Close()
+	}
+}
+
+func TestLocalLLMRelayReclaimsTrackedStalePort(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer upstream.Close()
+	parts := strings.Split(upstream.Listener.Addr().String(), ":")
+	targetPort, _ := strconv.Atoi(parts[len(parts)-1])
+	m := newLocalLLMRelayManager()
+	first := LocalLLMRelayArgs{SessionID: "stale-relay", ListenHost: "127.0.0.1", ListenPort: 0, TargetHost: "127.0.0.1", TargetPort: targetPort, RelayToken: strings.Repeat("s", 40), AllowedSourceIP: "127.0.0.1"}
+	result, err := m.start(context.Background(), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := result["listenPort"].(int)
+	second := first
+	second.SessionID = "replacement-relay"
+	second.ListenPort = port
+	if _, err := m.start(context.Background(), second); err != nil {
+		t.Fatalf("expected stale relay port to be reclaimed: %v", err)
+	}
+	defer m.stop(second.SessionID)
+	if m.stop(first.SessionID) {
+		t.Fatal("stale relay should already have been reclaimed")
 	}
 }
 

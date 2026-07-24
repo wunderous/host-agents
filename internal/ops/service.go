@@ -708,6 +708,12 @@ type RestartHostServiceArgs struct {
 	ServiceName string `json:"serviceName"`
 }
 
+type SetHostServiceStateArgs struct {
+	ServiceName string `json:"serviceName"`
+	State       string `json:"state"`
+	Scope       string `json:"scope,omitempty"`
+}
+
 var safeSystemdUnitName = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+$`)
 
 func restartServiceCommand(serviceName string) []string {
@@ -752,6 +758,40 @@ func (s *HostOperationsService) RestartHostService(args RestartHostServiceArgs, 
 		return nil, fmt.Errorf("service '%s' is not active after restart", serviceName)
 	}
 	return map[string]string{"serviceName": serviceName, "status": "active"}, nil
+}
+
+// SetHostServiceState provides the generic, approval-gated service lifecycle
+// primitive used by recovery workflows. User scope is the safe default; system
+// scope is explicit and uses non-interactive sudo so MCP cannot hang on a
+// password prompt.
+func (s *HostOperationsService) SetHostServiceState(args SetHostServiceStateArgs, onData func(string)) (map[string]any, error) {
+	serviceName := strings.TrimSpace(args.ServiceName)
+	state := strings.ToLower(strings.TrimSpace(args.State))
+	scope := strings.ToLower(strings.TrimSpace(args.Scope))
+	if serviceName == "" || !safeSystemdUnitName.MatchString(serviceName) {
+		return nil, errors.New("serviceName is required and must be a valid systemd unit name")
+	}
+	if scope == "" {
+		scope = "user"
+	}
+	if scope != "user" && scope != "system" {
+		return nil, errors.New("scope must be user or system")
+	}
+	if state != "start" && state != "stop" && state != "restart" && state != "enable" && state != "disable" {
+		return nil, errors.New("state must be start, stop, restart, enable, or disable")
+	}
+	command := []string{provider.DefaultSystemctlPath}
+	if scope == "user" {
+		command = append(command, "--user")
+	} else {
+		command = append([]string{"sudo", "-n"}, command...)
+	}
+	command = append(command, state, serviceName)
+	result, err := s.hostCommandRunner(command, onData, 0)
+	if err != nil || result.ExitCode != 0 {
+		return nil, fmt.Errorf("service state change failed: %s", firstNonEmpty(result.Stderr, result.Stdout, "command failed"))
+	}
+	return map[string]any{"serviceName": serviceName, "state": state, "scope": scope, "status": "applied"}, nil
 }
 
 func (s *HostOperationsService) EnsureDocker(onData func(string)) (map[string]any, error) {

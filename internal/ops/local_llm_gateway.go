@@ -9,22 +9,32 @@ import (
 )
 
 type LocalLLMRelayArgs struct {
-	SessionID       string
-	ListenHost      string
-	ListenPort      int
-	TargetHost      string
-	TargetPort      int
+	SessionID          string
+	ListenHost         string
+	ListenPort         int
+	TargetHost         string
+	TargetPort         int
+	IncomingToken      string
+	UpstreamToken      string
+	AllowedSourceCIDRs []string
+	// Deprecated compatibility fields. New callers must use the generic fields above.
 	RelayToken      string
 	AllowedSourceIP string
 }
 
 type LocalLLMK3sProxyArgs struct {
-	VMName     string
-	NodePort   int
-	RelayHost  string
-	RelayPort  int
-	RelayToken string
-	BearerKey  string
+	VMName         string
+	Namespace      string
+	SecretName     string
+	ConfigMapName  string
+	DeploymentName string
+	ServiceName    string
+	ContainerImage string
+	NodePort       int
+	RelayHost      string
+	RelayPort      int
+	RelayToken     string
+	BearerKey      string
 }
 
 var safeGatewayIdentifier = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,62}$`)
@@ -40,11 +50,26 @@ func ValidateLocalLLMRelayArgs(args LocalLLMRelayArgs) error {
 	if args.TargetPort < 1 || args.TargetPort > 65535 || args.ListenPort < 0 || args.ListenPort > 65535 {
 		return fmt.Errorf("relay port is invalid")
 	}
-	if net.ParseIP(strings.TrimSpace(args.AllowedSourceIP)) == nil {
-		return fmt.Errorf("allowedSourceIP must be an IP address")
+	if len(args.AllowedSourceCIDRs) == 0 && strings.TrimSpace(args.AllowedSourceIP) != "" {
+		args.AllowedSourceCIDRs = []string{args.AllowedSourceIP + "/32"}
 	}
-	if len(args.RelayToken) < 32 || strings.ContainsAny(args.RelayToken, "\r\n") {
-		return fmt.Errorf("relayToken is invalid")
+	if len(args.AllowedSourceCIDRs) == 0 {
+		return fmt.Errorf("allowedSourceCIDRs is required")
+	}
+	for _, cidr := range args.AllowedSourceCIDRs {
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
+			return fmt.Errorf("allowedSourceCIDRs contains invalid CIDR")
+		}
+	}
+	incoming := strings.TrimSpace(args.IncomingToken)
+	if incoming == "" {
+		incoming = strings.TrimSpace(args.RelayToken)
+	}
+	if len(incoming) < 32 || strings.ContainsAny(incoming, "\r\n") {
+		return fmt.Errorf("incomingToken is invalid")
+	}
+	if strings.ContainsAny(args.UpstreamToken, "\r\n") {
+		return fmt.Errorf("upstreamToken is invalid")
 	}
 	return nil
 }
@@ -65,8 +90,36 @@ func RenderLocalLLMK3sProxyManifestWithSecrets(args LocalLLMK3sProxyArgs) (strin
 }
 
 func RenderLocalLLMK3sProxyManifest(args LocalLLMK3sProxyArgs) (string, error) {
-	if strings.TrimSpace(args.VMName) != "opute-llm-gateway" || !safeGatewayIdentifier.MatchString(strings.ToLower(strings.TrimSpace(args.VMName))) {
+	if !safeGatewayIdentifier.MatchString(strings.ToLower(strings.TrimSpace(args.VMName))) {
 		return "", fmt.Errorf("vmName is invalid")
+	}
+	// Defaults are retained only by the one-release compatibility wrapper.
+	// New application callers supply their own names and image.
+	if args.Namespace == "" {
+		args.Namespace = "opute-llm"
+	}
+	if args.SecretName == "" {
+		args.SecretName = "opute-llm-proxy-credentials"
+	}
+	if args.ConfigMapName == "" {
+		args.ConfigMapName = "opute-llm-proxy-config"
+	}
+	if args.DeploymentName == "" {
+		args.DeploymentName = "opute-llm-proxy"
+	}
+	if args.ServiceName == "" {
+		args.ServiceName = "opute-llm-proxy"
+	}
+	if args.ContainerImage == "" {
+		args.ContainerImage = "nginx:1.27.0"
+	}
+	for name, value := range map[string]string{"namespace": args.Namespace, "secretName": args.SecretName, "configMapName": args.ConfigMapName, "deploymentName": args.DeploymentName, "serviceName": args.ServiceName} {
+		if !safeGatewayIdentifier.MatchString(strings.ToLower(strings.TrimSpace(value))) {
+			return "", fmt.Errorf("%s is invalid", name)
+		}
+	}
+	if strings.ContainsAny(args.ContainerImage, "\r\n") || strings.TrimSpace(args.ContainerImage) == "" {
+		return "", fmt.Errorf("containerImage is invalid")
 	}
 	if args.NodePort < 30000 || args.NodePort > 32767 {
 		return "", fmt.Errorf("nodePort must be in the NodePort range")
@@ -80,13 +133,13 @@ func RenderLocalLLMK3sProxyManifest(args LocalLLMK3sProxyArgs) (string, error) {
 	return fmt.Sprintf(`apiVersion: v1
 kind: Namespace
 metadata:
-  name: opute-llm
+  name: %s
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: opute-llm-proxy-credentials
-  namespace: opute-llm
+  name: %s
+  namespace: %s
 type: Opaque
 stringData:
   relay-token: PLACEHOLDER_RELAY_TOKEN
@@ -95,8 +148,8 @@ stringData:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: opute-llm-proxy-config
-  namespace: opute-llm
+  name: %s
+  namespace: %s
 data:
   nginx.conf.template: |
     events {}
@@ -121,45 +174,45 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: opute-llm-proxy
-  namespace: opute-llm
+  name: %s
+  namespace: %s
 spec:
   replicas: 1
   selector:
-    matchLabels: {app: opute-llm-proxy}
+    matchLabels: {app: %s}
   template:
-    metadata: {labels: {app: opute-llm-proxy}}
+    metadata: {labels: {app: %s}}
     spec:
       containers:
       - name: nginx
-        image: nginx:1.27.0
+        image: %s
         ports: [{containerPort: 8080}]
         env:
         - name: RELAY_TOKEN
-          valueFrom: {secretKeyRef: {name: opute-llm-proxy-credentials, key: relay-token}}
+          valueFrom: {secretKeyRef: {name: %s, key: relay-token}}
         - name: BEARER_KEY
-          valueFrom: {secretKeyRef: {name: opute-llm-proxy-credentials, key: bearer-key}}
+          valueFrom: {secretKeyRef: {name: %s, key: bearer-key}}
         - name: RELAY_HOST
           value: %q
         - name: RELAY_PORT
-          value: %q
+          value: %d
         command: ["/bin/sh", "-c"]
         args: ["envsubst '${RELAY_TOKEN} ${BEARER_KEY} ${RELAY_HOST} ${RELAY_PORT}' < /etc/nginx-template/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"]
         volumeMounts: [{name: nginx-template, mountPath: /etc/nginx-template, readOnly: true}]
         readinessProbe: {httpGet: {path: /healthz, port: 8080}}
-      volumes: [{name: nginx-template, configMap: {name: opute-llm-proxy-config}}]
+      volumes: [{name: nginx-template, configMap: {name: %s}}]
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: opute-llm-proxy
-  namespace: opute-llm
+  name: %s
+  namespace: %s
 spec:
   type: NodePort
-  selector: {app: opute-llm-proxy}
+  selector: {app: %s}
   ports:
   - port: 8080
     targetPort: 8080
     nodePort: %d
-`, args.RelayHost, args.RelayPort, args.NodePort), nil
+`, args.Namespace, args.SecretName, args.Namespace, args.ConfigMapName, args.Namespace, args.DeploymentName, args.Namespace, args.DeploymentName, args.DeploymentName, args.ContainerImage, args.SecretName, args.SecretName, args.RelayHost, args.RelayPort, args.ConfigMapName, args.ServiceName, args.Namespace, args.ServiceName, args.NodePort), nil
 }

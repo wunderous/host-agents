@@ -103,7 +103,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(map[string]any{"removed": true}, "Local Ollama model removed"), nil
 
 	case "ensure_local_llm_relay":
-		out, err := svc.EnsureLocalLLMRelay(ctx, ops.LocalLLMRelayArgs{SessionID: stringField(args, "sessionId"), ListenHost: stringField(args, "listenHost"), ListenPort: intField(args, "listenPort"), TargetHost: stringField(args, "targetHost"), TargetPort: intField(args, "targetPort"), RelayToken: stringField(args, "relayToken"), AllowedSourceIP: stringField(args, "allowedSourceIP")})
+		out, err := svc.EnsureLocalLLMRelay(ctx, ops.LocalLLMRelayArgs{SessionID: stringField(args, "sessionId"), ListenHost: stringField(args, "listenHost"), ListenPort: intField(args, "listenPort"), TargetHost: stringField(args, "targetHost"), TargetPort: intField(args, "targetPort"), IncomingToken: stringField(args, "incomingToken"), UpstreamToken: stringField(args, "upstreamToken"), AllowedSourceCIDRs: stringSliceField(args, "allowedSourceCIDRs"), RelayToken: stringField(args, "relayToken"), AllowedSourceIP: stringField(args, "allowedSourceIP")})
 		if err != nil {
 			return nil, err
 		}
@@ -436,6 +436,13 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, "Cluster agent installed."), nil
 
+	case "restart_cluster_agent":
+		out, err := svc.RestartClusterAgent(vmNameFromArgs(args), onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Cluster agent restarted."), nil
+
 	case "install_helm_chart":
 		parsed := installHelmChartArgs(args)
 		out, err := svc.InstallHelmChart(parsed, onData)
@@ -557,6 +564,13 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Restarted service '%s'.", out["serviceName"])), nil
+
+	case "set_host_service_state":
+		out, err := svc.SetHostServiceState(ops.SetHostServiceStateArgs{ServiceName: stringField(args, "serviceName"), State: stringField(args, "state"), Scope: stringField(args, "scope")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Applied service state '%s' to '%s'.", out["state"], out["serviceName"])), nil
 
 	case "ensure_docker":
 		out, err := svc.EnsureDocker(onData)
@@ -683,6 +697,23 @@ func vmNameFromArgs(args map[string]any) string {
 func stringField(args map[string]any, key string) string {
 	v, _ := args[key].(string)
 	return strings.TrimSpace(v)
+}
+
+func stringSliceField(args map[string]any, key string) []string {
+	values, ok := args[key].([]any)
+	if !ok {
+		if typed, typedOK := args[key].([]string); typedOK {
+			return typed
+		}
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if text, ok := value.(string); ok {
+			result = append(result, text)
+		}
+	}
+	return result
 }
 
 func boolField(args map[string]any, key string) bool {

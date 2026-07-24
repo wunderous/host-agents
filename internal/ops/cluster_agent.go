@@ -310,3 +310,28 @@ func (s *HostOperationsService) InstallClusterAgent(args InstallClusterAgentArgs
 		"arch":        string(arch),
 	}, nil
 }
+
+// RestartClusterAgent restarts the cluster-agent service inside the target VM.
+// The service name is intentionally fixed by the generic cluster-agent
+// contract; callers select only the VM, never an arbitrary guest command.
+func (s *HostOperationsService) RestartClusterAgent(vmName string, onData func(string)) (map[string]any, error) {
+	vmName = strings.TrimSpace(vmName)
+	if vmName == "" {
+		return nil, fmt.Errorf("vmName is required")
+	}
+	res, err := s.runVMExec(vmName, []string{"systemctl", "restart", clusterAgentServiceName}, onData, clusterAgentServiceWait)
+	if err != nil {
+		return nil, err
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "cluster agent restart failed in VM"))
+	}
+	if err := s.waitForVMServiceActive(vmName, clusterAgentServiceName, onData, clusterAgentServiceWait); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"vmName":      vmName,
+		"serviceName": clusterAgentServiceName,
+		"status":      "active",
+	}, nil
+}

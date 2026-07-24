@@ -18,13 +18,14 @@ import (
 )
 
 type localLLMRelaySession struct {
-	id            string
-	server        *http.Server
-	listener      net.Listener
-	allowedSource string
-	token         string
-	listenHost    string
-	listenPort    int
+	id             string
+	server         *http.Server
+	listener       net.Listener
+	allowedSources []*net.IPNet
+	incomingToken  string
+	upstreamToken  string
+	listenHost     string
+	listenPort     int
 }
 
 type localLLMRelayManager struct {
@@ -47,9 +48,14 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 	if err := ValidateLocalLLMRelayArgs(args); err != nil {
 		return nil, err
 	}
+	var stale *localLLMRelaySession
 	m.mu.Lock()
 	if existing := m.sessions[args.SessionID]; existing != nil {
-		if existing.token == args.RelayToken && existing.listenHost == args.ListenHost && (args.ListenPort == 0 || existing.listenPort == args.ListenPort) {
+		incoming := args.IncomingToken
+		if incoming == "" {
+			incoming = args.RelayToken
+		}
+		if existing.incomingToken == incoming && existing.listenHost == args.ListenHost && (args.ListenPort == 0 || existing.listenPort == args.ListenPort) {
 			m.mu.Unlock()
 			return map[string]any{"sessionId": existing.id, "listenHost": existing.listenHost, "listenPort": existing.listenPort, "ready": true}, nil
 		}
@@ -62,16 +68,45 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 			_ = removePersistedLocalLLMRelay(args.SessionID)
 		}
 	} else {
+		// A previous generic exposure may have been removed from the control
+		// plane without removing its persisted relay session. Reclaim a stale
+		// tracked listener when the new desired binding explicitly requests the
+		// same port; otherwise reconciliation fails with EADDRINUSE.
+		for id, existing := range m.sessions {
+			if args.ListenPort != 0 && existing.listenPort == args.ListenPort {
+				stale = existing
+				delete(m.sessions, id)
+				break
+			}
+		}
 		m.mu.Unlock()
 	}
-	target, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", args.TargetPort))
+	if stale != nil {
+		_ = stale.server.Shutdown(ctx)
+		if m.persist {
+			_ = removePersistedLocalLLMRelay(stale.id)
+		}
+	}
+	target, _ := url.Parse(fmt.Sprintf("http://%s:%d", args.TargetHost, args.TargetPort))
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, _ error) {
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil || remoteHost != args.AllowedSourceIP {
+		remoteIP := net.ParseIP(remoteHost)
+		allowed := false
+		for _, source := range args.AllowedSourceCIDRs {
+			_, cidr, parseErr := net.ParseCIDR(strings.TrimSpace(source))
+			if parseErr == nil && remoteIP != nil && cidr.Contains(remoteIP) {
+				allowed = true
+				break
+			}
+		}
+		if len(args.AllowedSourceCIDRs) == 0 && args.AllowedSourceIP != "" && remoteIP != nil {
+			allowed = remoteIP.Equal(net.ParseIP(args.AllowedSourceIP))
+		}
+		if err != nil || !allowed {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -80,12 +115,19 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 			return
 		}
 		auth := r.Header.Get("Authorization")
-		want := "Bearer " + args.RelayToken
+		incoming := args.IncomingToken
+		if incoming == "" {
+			incoming = args.RelayToken
+		}
+		want := "Bearer " + incoming
 		if len(auth) != len(want) || subtle.ConstantTimeCompare([]byte(auth), []byte(want)) != 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		r.Header.Del("Authorization")
+		if strings.TrimSpace(args.UpstreamToken) != "" {
+			r.Header.Set("Authorization", "Bearer "+args.UpstreamToken)
+		}
 		// The public hostname is only for the edge route. Do not forward it as
 		// Ollama's Host header; Ollama rejects requests for that foreign host.
 		r.Host = target.Host
@@ -97,7 +139,17 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 		return nil, err
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	session := &localLLMRelaySession{id: args.SessionID, server: &http.Server{Handler: handler}, listener: ln, allowedSource: args.AllowedSourceIP, token: args.RelayToken, listenHost: listenHost, listenPort: port}
+	allowedSources := make([]*net.IPNet, 0, len(args.AllowedSourceCIDRs))
+	for _, source := range args.AllowedSourceCIDRs {
+		if _, cidr, err := net.ParseCIDR(strings.TrimSpace(source)); err == nil {
+			allowedSources = append(allowedSources, cidr)
+		}
+	}
+	incoming := args.IncomingToken
+	if incoming == "" {
+		incoming = args.RelayToken
+	}
+	session := &localLLMRelaySession{id: args.SessionID, server: &http.Server{Handler: handler}, listener: ln, allowedSources: allowedSources, incomingToken: incoming, upstreamToken: args.UpstreamToken, listenHost: listenHost, listenPort: port}
 	m.mu.Lock()
 	m.sessions[args.SessionID] = session
 	m.mu.Unlock()
@@ -212,7 +264,7 @@ func (s *HostOperationsService) RemoveLocalLLMRelay(id string) (map[string]any, 
 
 func (s *HostOperationsService) EnsureLocalLLMK3sProxy(args LocalLLMK3sProxyArgs, onData func(string)) (map[string]any, error) {
 	vmName := strings.TrimSpace(args.VMName)
-	if vmName != "opute-llm-gateway" {
+	if vmName == "" {
 		return nil, fmt.Errorf("vmName is invalid")
 	}
 	manifest, err := RenderLocalLLMK3sProxyManifestWithSecrets(args)
@@ -232,12 +284,12 @@ func (s *HostOperationsService) EnsureLocalLLMK3sProxy(args LocalLLMK3sProxyArgs
 	if _, err := s.runKubernetesKubectlTimed(vmName, []string{"apply", "-f", tmpFile}, "apply local LLM proxy", 3*time.Minute); err != nil {
 		return nil, err
 	}
-	return map[string]any{"vmName": vmName, "nodePort": args.NodePort, "namespace": "opute-llm", "ready": true}, nil
+	return map[string]any{"vmName": vmName, "nodePort": args.NodePort, "namespace": args.Namespace, "serviceName": args.ServiceName, "ready": true}, nil
 }
 
 func (s *HostOperationsService) RemoveLocalLLMK3sProxy(vmName string) (map[string]any, error) {
 	vmName = strings.TrimSpace(vmName)
-	if vmName != "opute-llm-gateway" || !safeGatewayIdentifier.MatchString(vmName) {
+	if !safeGatewayIdentifier.MatchString(vmName) {
 		return nil, fmt.Errorf("vmName is invalid")
 	}
 	if _, err := s.runKubernetesKubectlTimed(vmName, []string{"delete", "namespace", "opute-llm", "--ignore-not-found=true"}, "remove local LLM proxy", 2*time.Minute); err != nil {

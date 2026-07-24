@@ -1284,6 +1284,21 @@
     }
   },
   {
+    "name": "set_host_service_state",
+    "title": "Set host service state",
+    "description": "Start, stop, restart, enable, or disable a validated host service; user scope is the default.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["serviceName", "state"],
+      "properties": {
+        "serviceName": {"type": "string", "pattern": "^[A-Za-z0-9_.@:-]+$"},
+        "state": {"type": "string", "enum": ["start", "stop", "restart", "enable", "disable"]},
+        "scope": {"type": "string", "enum": ["user", "system"]}
+      }
+    },
+    "outputSchema": {"type": "object", "required": ["serviceName", "state", "scope", "status"]}
+  },
+  {
     "name": "ensure_k3d",
     "title": "Ensure k3d",
     "description": "Install k3d CLI on Windows hosts when missing (requires Docker Desktop already installed)",
@@ -3725,11 +3740,18 @@
   { "name": "start_local_llm_runtime", "title": "Start Local LLM Runtime", "description": "Start Ollama.", "inputSchema": { "type": "object", "properties": {} }, "outputSchema": { "type": "object" } },
   { "name": "stop_local_llm_runtime", "title": "Stop Local LLM Runtime", "description": "Stop Ollama.", "inputSchema": { "type": "object", "properties": {} }, "outputSchema": { "type": "object" } },
   { "name": "remove_local_llm_model", "title": "Remove Local LLM Model", "description": "Remove an Ollama model.", "inputSchema": { "type": "object", "required": ["modelRef"], "properties": { "modelRef": { "type": "string" }, "purge": { "type": "boolean" } } }, "outputSchema": { "type": "object" } },
-  { "name": "ensure_local_llm_relay", "title": "Ensure Local LLM Relay", "description": "Start an authenticated local relay.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
-  { "name": "remove_local_llm_relay", "title": "Remove Local LLM Relay", "description": "Remove the local relay.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
-  { "name": "ensure_local_llm_k3s_proxy", "title": "Ensure Local LLM K3s Proxy", "description": "Deploy the K3s proxy.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
-  { "name": "remove_local_llm_relay", "title": "Remove Local LLM Relay", "description": "Remove a local relay.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
-  { "name": "remove_local_llm_k3s_proxy", "title": "Remove Local LLM K3s Proxy", "description": "Remove the K3s proxy.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
-  { "name": "remove_local_llm_cloudflared_tunnel", "title": "Remove Local LLM Cloudflared Tunnel", "description": "Remove the local LLM connector.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } },
-  { "name": "remove_local_llm_k3s_proxy", "title": "Remove Local LLM K3s Proxy", "description": "Remove the K3s proxy.", "inputSchema": { "type": "object", "additionalProperties": true }, "outputSchema": { "type": "object" } }
+  { "name": "ensure_local_llm_relay", "title": "Ensure Local LLM Relay", "description": "Start an authenticated local relay.", "inputSchema": { "type": "object", "required": ["sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "allowedSourceIP", "relayToken"], "properties": { "sessionId": { "type": "string" }, "listenHost": { "type": "string" }, "listenPort": { "type": "integer" }, "targetHost": { "type": "string" }, "targetPort": { "type": "integer" }, "allowedSourceIP": { "type": "string" }, "relayToken": { "type": "string" } } }, "outputSchema": { "type": "object" } },
+  { "name": "remove_local_llm_relay", "title": "Remove Local LLM Relay", "description": "Remove the local relay.", "inputSchema": { "type": "object", "required": ["sessionId"], "properties": { "sessionId": { "type": "string" } } }, "outputSchema": { "type": "object" } },
+  { "name": "ensure_local_llm_k3s_proxy", "title": "Ensure Local LLM K3s Proxy", "description": "Deploy the compatibility K3s proxy.", "inputSchema": { "type": "object", "required": ["vmName", "nodePort", "relayHost", "relayPort", "relayToken", "bearerKey"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "secretName": { "type": "string" }, "configMapName": { "type": "string" }, "deploymentName": { "type": "string" }, "serviceName": { "type": "string" }, "containerImage": { "type": "string" }, "nodePort": { "type": "integer" }, "relayHost": { "type": "string" }, "relayPort": { "type": "integer" }, "relayToken": { "type": "string" }, "bearerKey": { "type": "string" } } }, "outputSchema": { "type": "object" } },
+  { "name": "remove_local_llm_k3s_proxy", "title": "Remove Local LLM K3s Proxy", "description": "Remove the K3s proxy.", "inputSchema": { "type": "object", "required": ["vmName"], "properties": { "vmName": { "type": "string" } } }, "outputSchema": { "type": "object" } },
+  { "name": "remove_local_llm_cloudflared_tunnel", "title": "Remove Local LLM Cloudflared Tunnel", "description": "Remove the local LLM connector.", "inputSchema": { "type": "object", "required": ["bindingId"], "properties": { "bindingId": { "type": "string" } } }, "outputSchema": { "type": "object" } },
+  { "name": "apply_manifest", "title": "Apply Kubernetes manifest", "description": "Apply a generic Kubernetes manifest to a VM-backed cluster.", "inputSchema": { "type": "object", "required": ["vmName", "manifest"], "properties": { "vmName": { "type": "string" }, "manifest": { "type": "string" } } }, "outputSchema": { "type": "object" } },
+  { "name": "delete_k8s_resource", "title": "Delete Kubernetes resource", "description": "Delete a generic Kubernetes resource from a VM-backed cluster.", "inputSchema": { "type": "object", "required": ["vmName", "kind", "resourceName"], "properties": { "vmName": { "type": "string" }, "kind": { "type": "string" }, "resourceName": { "type": "string" }, "namespace": { "type": "string" } } }, "outputSchema": { "type": "object" } },
+  { "name": "put_k8s_secret", "title": "Put Kubernetes Secret", "description": "Create or replace a generic Kubernetes Secret without returning its values.", "inputSchema": { "type": "object", "required": ["vmName", "name", "data"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "name": { "type": "string" }, "data": { "type": "object", "additionalProperties": { "type": "string" } } } }, "outputSchema": { "type": "object" } },
+  { "name": "install_oci_registry", "title": "Install OCI registry", "description": "Install a generic OCI registry inside a VM-backed Kubernetes cluster.", "inputSchema": { "type": "object", "required": ["vmName"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "name": { "type": "string" }, "image": { "type": "string" }, "storageSize": { "type": "string" }, "storageClass": { "type": "string" }, "nodePort": { "type": "integer" } } }, "outputSchema": { "type": "object" } },
+  { "name": "configure_k3s_registry", "title": "Configure K3s registry", "description": "Configure a K3s cluster to pull images from an OCI registry endpoint.", "inputSchema": { "type": "object", "required": ["vmName", "endpoint"], "properties": { "vmName": { "type": "string" }, "endpoint": { "type": "string" }, "registry": { "type": "string" }, "insecure": { "type": "boolean" } } }, "outputSchema": { "type": "object" } },
+  { "name": "install_cloudflared_connector", "title": "Install Cloudflare connector", "description": "Deploy a token-backed Cloudflare connector inside Kubernetes.", "inputSchema": { "type": "object", "required": ["vmName", "token"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "name": { "type": "string" }, "token": { "type": "string" }, "image": { "type": "string" }, "replicas": { "type": "integer" }, "localTargets": { "type": "array" } } }, "outputSchema": { "type": "object" } },
+  { "name": "delete_cloudflared_connector", "title": "Delete Cloudflare connector", "description": "Delete the in-cluster Cloudflare connector resources.", "inputSchema": { "type": "object", "required": ["vmName"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" } } }, "outputSchema": { "type": "object" } },
+  { "name": "configure_service_domain", "title": "Configure service domain", "description": "Map a Kubernetes Service to a caller-selected hostname through the configured ingress class.", "inputSchema": { "type": "object", "required": ["vmName", "namespace", "ingressName", "hostname", "serviceName", "servicePort"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "ingressName": { "type": "string" }, "hostname": { "type": "string" }, "serviceName": { "type": "string" }, "servicePort": { "type": "integer" }, "ingressClass": { "type": "string" } } }, "outputSchema": { "type": "object" } },
+  { "name": "remove_service_domain", "title": "Remove service domain", "description": "Remove a caller-selected Kubernetes Service domain mapping.", "inputSchema": { "type": "object", "required": ["vmName", "namespace", "ingressName"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "ingressName": { "type": "string" } } }, "outputSchema": { "type": "object" } }
 ]

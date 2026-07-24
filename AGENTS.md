@@ -40,6 +40,22 @@ the CPC bearer (see `../opute/AGENTS.md`, **Host Agent Registration And Heartbea
 
 An explicit `hostId` is the durable execution assignment. The host agent should execute that assignment through the reverse tunnel without requiring control-plane provider rediscovery. Keep guest and provider probes bounded and cancellable so VM provisioning cannot starve heartbeats or operation polling.
 
+When a host is onboarded to a second control plane on the same machine, verify the
+control-plane WebSocket bearer matches the MCP Deployment's `remoteAgentAuthToken`.
+An onboarding session may report connected while `list_vms` remains unavailable if
+the reverse tunnel reaches the MCP endpoint but is rejected at its auth boundary.
+Keep concurrent local-LLM relay instances on distinct configured ports; the agent
+must not assume that a single machine-wide default port is conflict-free.
+Host-agent recovery is driven by the generated onboarding installer; callers must
+stop the managed user service narrowly, not `pkill -f opute-host-agent`, because the
+installer command itself contains that string and can kill its own shell before it
+replaces the service environment.
+
+### Incus/WSL recovery
+
+- `incus list` can report a VM as `RUNNING` while QEMU is still booting or the Incus guest agent is unavailable. Preserve the VM and its disks: use the host-agent `restart_vm` operation (or a clean Incus stop/start), bounded-retry `incus exec <vm> -- true`, and only then probe K3s. Never delete/reprovision solely because an operation reports `VM agent isn't currently running`.
+- During recovery, keep the host-agent reverse tunnel and the 919x MCP owner under the persistent user-systemd/WSL lifecycle. One-shot WSL invocations can race service and session startup; verify the agent heartbeat, local MCP health, guest `exec`, and K3s API separately before declaring the host recovered.
+
 ## Provider / catalog
 
 - Provider abstraction: `internal/provider`
@@ -77,3 +93,9 @@ After Go, schema, or host-tool changes:
 For standalone changes, additionally run the opt-in Go live lifecycle (`go test -tags=integration ./test/live` in WSL with Incus). Use disposable names such as `opute-standalone-e2e-*` / `go-live-*`; clean those resources through standalone MCP tools and verify `incus list` contains no matching instances. The npm launcher is validated with `npm test` (daemon ownership / foreign-port refuse). The published-package canary is opt-in via `npm run test:published-canary` (`RUN_PUBLISHED_NPM_CANARY=true`, Linux only). Preserve the production VM and platform-shaped services. A partial VM/K3s/DB/tunnel run is evidence for the first successful boundary only, not a green full-lifecycle result.
 
 The production-shaped companion is `opute-platform-opute-stack.service` on the 919x ports. Keep it separate from the Opute dev stack on 909x. A failed heartbeat or tunnel must be diagnosed at the agent/session boundary before changing provider or VM code.
+
+## Session learnings
+
+- **Reconcile tracked stale relay listeners by port.** `remove_local_llm_relay` is session-scoped, but persisted legacy sessions may retain a requested port after a publication is removed. `ensure_local_llm_relay` should reclaim a tracked stale listener for the desired port before binding, while still failing for an unrelated external process.
+- **Provisioning storage is a guest-visible invariant.** A successful `provision_vm` result is not enough: validate the requested root size through the generic VM execution path (`lsblk`/`df`) before installing K3s. Profile-provided 10GiB roots can otherwise cause immediate K3s `DiskPressure`; resize/reconcile the Incus device inside the host-agent operation, never with direct host commands.
+- **Guest bootstrap bridge endpoints must be routable.** WSL loopback `:9193` is not reachable from Incus guests. Cluster-agent installation must accept a guest-reachable bridge URL supplied by the control plane and then verify a fresh cluster-agent heartbeat.

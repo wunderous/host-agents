@@ -72,6 +72,10 @@ func (s *HostOperationsService) ApplyManifest(args ApplyManifestArgs, onData fun
 	if manifest == "" {
 		return nil, errors.New("manifest is required")
 	}
+	// Preserve literal dollar signs through shell-oriented MCP/Incus transport.
+	// Application manifests can use __OPUTE_DOLLAR__ as a transport-safe
+	// spelling for Nginx/Kubernetes runtime variables.
+	manifest = strings.ReplaceAll(manifest, "__OPUTE_DOLLAR__", "$")
 	if len(manifest) > 4*1024*1024 {
 		return nil, errors.New("manifest exceeds the 4 MiB limit")
 	}

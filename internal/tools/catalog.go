@@ -95,12 +95,30 @@ func LoadAllToolDefinitions(providerID string) ([]ToolDefinition, error) {
 }
 
 func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
+	needed := map[string]bool{
+		"ensure_oci_builder":            true,
+		"ensure_host_tool":              true,
+		"set_host_service_state":        true,
+		"apply_manifest":                true,
+		"delete_k8s_resource":            true,
+		"put_k8s_secret":                true,
+		"install_oci_registry":          true,
+		"configure_k3s_registry":        true,
+		"install_cloudflared_connector": true,
+		"delete_cloudflared_connector":  true,
+		"configure_service_domain":      true,
+		"remove_service_domain":         true,
+	}
+	seen := make(map[string]bool, len(needed))
 	for _, definition := range defs {
-		if definition.Name == "ensure_oci_builder" {
-			return defs
+		if needed[definition.Name] {
+			seen[definition.Name] = true
 		}
 	}
-	return append(defs, ToolDefinition{
+	if len(seen) == len(needed) {
+		return defs
+	}
+	defs = append(defs, ToolDefinition{
 		Name:         "ensure_oci_builder",
 		Title:        "Ensure OCI image builder",
 		Description:  "Ensure a generic host-side OCI image builder is installed and available.",
@@ -112,7 +130,110 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Description:  "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared"}}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
+	}, ToolDefinition{
+		Name:        "set_host_service_state",
+		Title:       "Set host service state",
+		Description: "Start, stop, restart, enable, or disable a validated host service; user scope is the default.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "state"}, "properties": map[string]any{
+			"serviceName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_.@:-]+$`},
+			"state":       map[string]any{"type": "string", "enum": []string{"start", "stop", "restart", "enable", "disable"}},
+			"scope":       map[string]any{"type": "string", "enum": []string{"user", "system"}},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "state", "scope", "status"}},
+	}, ToolDefinition{
+		Name:        "ensure_host_tool",
+		Title:       "Ensure generic host tool",
+		Description: "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{
+			"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared"}},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
+	}, ToolDefinition{
+		Name:        "apply_manifest",
+		Title:       "Apply Kubernetes manifest",
+		Description: "Apply a generic Kubernetes manifest to a VM-backed cluster.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "manifest"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "manifest": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "delete_k8s_resource",
+		Title:       "Delete Kubernetes resource",
+		Description: "Delete a generic Kubernetes resource from a VM-backed cluster.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "kind", "resourceName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "kind": map[string]any{"type": "string"}, "resourceName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "put_k8s_secret",
+		Title:       "Put Kubernetes Secret",
+		Description: "Create or replace a generic Kubernetes Secret without returning its values.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "name", "data"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "data": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "install_oci_registry",
+		Title:       "Install OCI registry",
+		Description: "Install a generic OCI registry inside a VM-backed Kubernetes cluster.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "storageSize": map[string]any{"type": "string"}, "storageClass": map[string]any{"type": "string"}, "nodePort": map[string]any{"type": "integer"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "configure_k3s_registry",
+		Title:       "Configure K3s registry",
+		Description: "Configure a K3s cluster to pull images from an OCI registry endpoint.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "endpoint"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "endpoint": map[string]any{"type": "string"}, "registry": map[string]any{"type": "string"}, "insecure": map[string]any{"type": "boolean"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "install_cloudflared_connector",
+		Title:       "Install Cloudflare connector",
+		Description: "Deploy a token-backed Cloudflare connector inside Kubernetes.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "token"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "token": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "replicas": map[string]any{"type": "integer"}, "localTargets": map[string]any{"type": "array"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "delete_cloudflared_connector",
+		Title:       "Delete Cloudflare connector",
+		Description: "Delete the in-cluster Cloudflare connector resources.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "configure_service_domain",
+		Title:       "Configure service domain",
+		Description: "Map a Kubernetes Service to a caller-selected hostname through the configured ingress class.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "namespace", "ingressName", "hostname", "serviceName", "servicePort"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "ingressName": map[string]any{"type": "string"}, "hostname": map[string]any{"type": "string"}, "serviceName": map[string]any{"type": "string"}, "servicePort": map[string]any{"type": "integer"}, "ingressClass": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "remove_service_domain",
+		Title:       "Remove service domain",
+		Description: "Remove a caller-selected Kubernetes Service domain mapping.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "namespace", "ingressName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "ingressName": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
 	})
+	// Keep the embedded JSON catalogs authoritative where a definition already
+	// exists, while allowing the Go catalog to fill newly implemented generic
+	// operations until the generated files are refreshed.
+	unique := make([]ToolDefinition, 0, len(defs))
+	seen = make(map[string]bool, len(defs))
+	for _, definition := range defs {
+		if seen[definition.Name] {
+			continue
+		}
+		seen[definition.Name] = true
+		unique = append(unique, definition)
+	}
+	return unique
 }
 
 func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
@@ -128,7 +249,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"start_local_llm_runtime":             {"type": "object", "properties": map[string]any{}},
 		"stop_local_llm_runtime":              {"type": "object", "properties": map[string]any{}},
 		"remove_local_llm_model":              {"type": "object", "required": []string{"modelRef"}, "properties": map[string]any{"modelRef": map[string]any{"type": "string"}, "purge": map[string]any{"type": "boolean"}}},
-		"ensure_local_llm_relay":              {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "allowedSourceIP", "relayToken"}, "properties": map[string]any{}},
+		"ensure_local_llm_relay":              {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "incomingToken", "allowedSourceCIDRs"}, "properties": map[string]any{"upstreamToken": map[string]any{"type": "string"}, "allowedSourceCIDRs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}},
 		"remove_local_llm_relay":              {"type": "object", "required": []string{"sessionId"}, "properties": map[string]any{}},
 		"ensure_local_llm_k3s_proxy":          {"type": "object", "required": []string{"vmName", "nodePort", "relayHost", "relayPort", "relayToken", "bearerKey"}, "properties": map[string]any{}},
 		"remove_local_llm_k3s_proxy":          {"type": "object", "required": []string{"vmName"}, "properties": map[string]any{}},

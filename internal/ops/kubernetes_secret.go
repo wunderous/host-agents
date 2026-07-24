@@ -31,6 +31,15 @@ func (s *HostOperationsService) PutK8sSecret(args PutK8sSecretArgs, onData func(
 	if len(args.Data) == 0 {
 		return nil, errors.New("data is required")
 	}
+	// Secret operations are also used as application bootstrap primitives. Make
+	// them safe when the caller has not yet applied the application's Namespace
+	// manifest; this keeps the generic MCP operation independently usable and
+	// avoids an ordering race between namespace and credential creation.
+	if _, err := s.runKubernetesKubectl(args.VMName, []string{"get", "namespace", namespace}, "check Kubernetes namespace"); err != nil {
+		if _, createErr := s.runKubernetesKubectl(args.VMName, []string{"create", "namespace", namespace}, "create Kubernetes namespace"); createErr != nil {
+			return nil, createErr
+		}
+	}
 	keys := make([]string, 0, len(args.Data))
 	for key := range args.Data {
 		keys = append(keys, key)

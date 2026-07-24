@@ -59,6 +59,7 @@
     {"name": "install_cloudflared_connector", "classification": "credential_bearing", "support": "experimental"},
     {"name": "ensure_oci_builder", "classification": "mutation", "support": "experimental"},
     {"name": "ensure_host_tool", "classification": "mutation", "support": "experimental"},
+    {"name": "set_host_service_state", "classification": "mutation", "support": "experimental"},
     {"name": "delete_cloudflared_connector", "classification": "destructive", "support": "experimental"},
     {"name": "run_sql", "classification": "mutation", "support": "experimental"},
     {"name": "create_cloudflare_tunnel", "classification": "credential_bearing", "support": "experimental"},
