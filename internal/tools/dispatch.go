@@ -142,6 +142,19 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
+	case "discover_cluster_ingress":
+		out, err := svc.DiscoverClusterIngress(ops.DiscoverClusterIngressArgs{
+			VMName:           vmNameFromArgs(args),
+			WebHostname:      stringField(args, "webHostname"),
+			McpHostname:      stringField(args, "mcpHostname"),
+			TraefikNamespace: stringField(args, "traefikNamespace"),
+			TraefikService:   stringField(args, "traefikService"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Discovered cluster ingress endpoints."), nil
+
 	case "agent_shell":
 		command, _ := args["command"].(string)
 		command = strings.TrimSpace(command)
@@ -572,6 +585,30 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, fmt.Sprintf("Applied service state '%s' to '%s'.", out["state"], out["serviceName"])), nil
 
+	case "configure_platform_agent":
+		var restart *bool
+		if raw, ok := args["restart"]; ok {
+			switch typed := raw.(type) {
+			case bool:
+				restart = &typed
+			}
+		}
+		out, err := svc.ConfigurePlatformAgent(ops.ConfigurePlatformAgentArgs{
+			McpURL:               stringField(args, "mcpUrl"),
+			HostWsURL:            stringField(args, "hostWsUrl"),
+			RemoteAgentAuthToken: stringField(args, "remoteAgentAuthToken"),
+			HostAuthToken:        stringField(args, "hostAuthToken"),
+			RemoteAgentID:        stringField(args, "remoteAgentId"),
+			EnvFile:              stringField(args, "envFile"),
+			ServiceName:          stringField(args, "serviceName"),
+			Restart:              restart,
+			McpHealthURL:         stringField(args, "mcpHealthUrl"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Platform agent configuration written."), nil
+
 	case "ensure_docker":
 		out, err := svc.EnsureDocker(onData)
 		if err != nil {
@@ -585,6 +622,39 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, "Host OCI image builder is available."), nil
+
+	case "build_and_push_oci_image":
+		out, err := svc.BuildAndPushOciImage(ops.BuildAndPushOciImageArgs{
+			ContextDir:       stringField(args, "contextDir"),
+			Dockerfile:       stringField(args, "dockerfile"),
+			Image:            stringField(args, "image"),
+			Builder:          stringField(args, "builder"),
+			InsecureRegistry: boolField(args, "insecureRegistry"),
+			Platform:         stringField(args, "platform"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Built and pushed %s.", out["image"])), nil
+
+	case "stage_build_context":
+		files := map[string]string{}
+		if raw, ok := args["files"].(map[string]any); ok {
+			for key, value := range raw {
+				if text, ok := value.(string); ok {
+					files[key] = text
+				}
+			}
+		}
+		out, err := svc.StageBuildContext(ops.StageBuildContextArgs{
+			DestDir:      stringField(args, "destDir"),
+			Files:        files,
+			FileEncoding: stringField(args, "fileEncoding"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Staged %v files into build context.", out["fileCount"])), nil
 
 	case "ensure_host_tool":
 		out, err := svc.EnsureHostTool(ops.EnsureHostToolArgs{Tool: stringField(args, "tool")}, onData)

@@ -9,7 +9,7 @@ import (
 )
 
 func TestValidateOllamaModelRef(t *testing.T) {
-	for _, ref := range []string{"smollm:135m", "llama3.2:1b", "../escape"} {
+	for _, ref := range []string{"smollm:135m", "phi4-mini", "../escape"} {
 		err := ValidateOllamaModelRef(ref)
 		if ref == "../escape" && err == nil {
 			t.Fatalf("expected invalid model ref")
@@ -26,7 +26,15 @@ func TestRenderOllamaSystemdUnit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"OLLAMA_HOST=127.0.0.1:11434", "OLLAMA_NO_CLOUD=1", "ExecStart=/usr/local/bin/ollama serve"} {
+	for _, want := range []string{
+		"OLLAMA_HOST=127.0.0.1:11434",
+		"OLLAMA_NO_CLOUD=1",
+		"CUDA_VISIBLE_DEVICES=0",
+		"NVIDIA_VISIBLE_DEVICES=0",
+		"OLLAMA_INTEL_GPU=false",
+		"LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/lib/ollama/cuda_v12:/usr/local/lib/ollama",
+		"ExecStart=/usr/local/bin/ollama serve",
+	} {
 		if !containsOllama(unit, want) {
 			t.Fatalf("missing %q", want)
 		}

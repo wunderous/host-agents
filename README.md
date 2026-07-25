@@ -38,8 +38,11 @@ Generic Streamable HTTP client configuration:
 }
 ```
 
-The following are copy/paste examples for VS Code, Claude Desktop, and Cursor;
-they are unverified configuration examples, not named-client certifications.
+The following are verified Streamable HTTP MCP client examples for VS Code,
+Claude Desktop, and Cursor (gate: `opute/scripts/validate-standalone-mcp-client.ts`
+→ `tmp/bootstrap-m1/summary.json`). They are not named-product certifications beyond
+that initialize/`tools/list`/read-only tool canary.
+
 Claude Desktop and Cursor use this equivalent `mcpServers` entry:
 
 ```json
@@ -51,6 +54,16 @@ Claude Desktop and Cursor use this equivalent `mcpServers` entry:
     }
   }
 }
+```
+
+Bootstrap helper (WSL, does not touch production `~/.config/opute/host-agent.env`):
+
+```bash
+# from opute checkout
+./scripts/start-standalone-bootstrap-agent.sh
+# then from Windows Cursor, point MCP at http://127.0.0.1:3014/mcp
+# (enable localhostForwarding / WSL portproxy if needed)
+OPUTE_HOST_AGENT_MCP=http://127.0.0.1:3014/mcp bun scripts/validate-standalone-mcp-client.ts
 ```
 
 Start the agent before connecting the client (`start` / `start --background`).

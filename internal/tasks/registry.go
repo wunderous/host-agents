@@ -232,6 +232,8 @@ var TaskAwareTools = map[string]bool{
 	"install_cloudflared_connector": true,
 	"delete_cloudflared_connector":  true,
 	"ensure_oci_builder":            true,
+	"build_and_push_oci_image":      true,
+	"stage_build_context":           true,
 	"ensure_host_tool":              true,
 	"delete_postgresql":             true,
 	"create_cloudflare_tunnel":      true,

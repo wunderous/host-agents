@@ -127,7 +127,16 @@ func (s *HostOperationsService) GetK8sResource(args K8sResourceArgs) (map[string
 	if err := json.Unmarshal([]byte(raw), &object); err != nil {
 		return nil, fmt.Errorf("invalid Kubernetes resource response: %w", err)
 	}
-	return map[string]any{"vmName": vmName, "kind": kind, "resourceName": name, "namespace": strings.TrimSpace(args.Namespace), "resource": object, "json": raw}, nil
+	// Product MCP outputSchema requires `yaml` (JSON is a valid YAML 1.2 subset for objects).
+	return map[string]any{
+		"vmName":       vmName,
+		"kind":         kind,
+		"resourceName": name,
+		"namespace":    strings.TrimSpace(args.Namespace),
+		"resource":     object,
+		"json":         raw,
+		"yaml":         raw,
+	}, nil
 }
 
 func (s *HostOperationsService) GetK8sResourceStatus(args K8sResourceArgs) (map[string]any, error) {

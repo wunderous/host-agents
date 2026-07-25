@@ -1,6 +1,8 @@
 package ops
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -40,8 +42,34 @@ func (s *HostOperationsService) PutK8sSecret(args PutK8sSecretArgs, onData func(
 			return nil, createErr
 		}
 	}
-	keys := make([]string, 0, len(args.Data))
-	for key := range args.Data {
+
+	// Merge with any existing Secret so callers can patch keys without wiping
+	// unrelated bootstrap credentials (cpcToken, mcpAuthToken, …).
+	merged := map[string]string{}
+	if raw, err := s.runKubernetesKubectl(args.VMName, []string{"get", "secret", args.Name, "-n", namespace, "-o", "json"}, "read existing Kubernetes Secret"); err == nil {
+		var object map[string]any
+		if jsonErr := json.Unmarshal([]byte(raw), &object); jsonErr == nil {
+			if data, ok := object["data"].(map[string]any); ok {
+				for key, value := range data {
+					encoded, ok := value.(string)
+					if !ok || encoded == "" {
+						continue
+					}
+					decoded, decErr := base64.StdEncoding.DecodeString(encoded)
+					if decErr != nil {
+						continue
+					}
+					merged[key] = string(decoded)
+				}
+			}
+		}
+	}
+	for key, value := range args.Data {
+		merged[key] = value
+	}
+
+	keys := make([]string, 0, len(merged))
+	for key := range merged {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
@@ -50,7 +78,7 @@ func (s *HostOperationsService) PutK8sSecret(args PutK8sSecretArgs, onData func(
 		if !regexpSecretKey.MatchString(key) {
 			return nil, fmt.Errorf("secret key %q is invalid", key)
 		}
-		command = append(command, "--from-literal="+key+"="+args.Data[key])
+		command = append(command, "--from-literal="+key+"="+merged[key])
 	}
 	// Delete/create avoids kubectl's last-applied annotation, which would retain
 	// the secret payload in object metadata. The operation is intentionally

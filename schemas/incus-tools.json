@@ -1265,6 +1265,39 @@
     }
   },
   {
+    "name": "build_and_push_oci_image",
+    "title": "Build and push OCI image",
+    "description": "Build a generic OCI image from a host-local context directory and push it to a registry.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["contextDir", "image"],
+      "properties": {
+        "contextDir": {"type": "string"},
+        "dockerfile": {"type": "string"},
+        "image": {"type": "string"},
+        "builder": {"type": "string", "enum": ["auto", "podman", "buildah", "buildkit"]},
+        "insecureRegistry": {"type": "boolean"},
+        "platform": {"type": "string"}
+      }
+    },
+    "outputSchema": {"type": "object"}
+  },
+  {
+    "name": "stage_build_context",
+    "title": "Stage build context",
+    "description": "Write a caller-provided build context into an allowlisted host directory for build_and_push_oci_image.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["destDir", "files"],
+      "properties": {
+        "destDir": {"type": "string"},
+        "files": {"type": "object", "additionalProperties": {"type": "string"}},
+        "fileEncoding": {"type": "string", "enum": ["utf8", "base64"]}
+      }
+    },
+    "outputSchema": {"type": "object"}
+  },
+  {
     "name": "ensure_host_tool",
     "title": "Ensure generic host tool",
     "description": "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
@@ -1297,6 +1330,44 @@
       }
     },
     "outputSchema": {"type": "object", "required": ["serviceName", "state", "scope", "status"]}
+  },
+  {
+    "name": "configure_platform_agent",
+    "title": "Configure platform agent",
+    "description": "Write platform-mode host-agent env and optionally restart so the agent reverse-tunnels to a CPC MCP URL.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["mcpUrl", "remoteAgentAuthToken", "hostAuthToken"],
+      "properties": {
+        "mcpUrl": {"type": "string"},
+        "hostWsUrl": {"type": "string"},
+        "remoteAgentAuthToken": {"type": "string"},
+        "hostAuthToken": {"type": "string"},
+        "remoteAgentId": {"type": "string"},
+        "envFile": {"type": "string"},
+        "serviceName": {"type": "string"},
+        "restart": {"type": "boolean"},
+        "mcpHealthUrl": {"type": "string"}
+      }
+    },
+    "outputSchema": {"type": "object"}
+  },
+  {
+    "name": "discover_cluster_ingress",
+    "title": "Discover cluster ingress",
+    "description": "Resolve Traefik/VM bridge endpoints for CPC web and MCP without kubectl port-forward.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["vmName"],
+      "properties": {
+        "vmName": {"type": "string"},
+        "webHostname": {"type": "string"},
+        "mcpHostname": {"type": "string"},
+        "traefikNamespace": {"type": "string"},
+        "traefikService": {"type": "string"}
+      }
+    },
+    "outputSchema": {"type": "object"}
   },
   {
     "name": "ensure_k3d",

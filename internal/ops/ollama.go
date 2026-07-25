@@ -36,14 +36,25 @@ const (
 )
 
 type LocalLLMPrerequisitesResult struct {
-	Supported            bool   `json:"supported"`
-	SystemdUserAvailable bool   `json:"systemdUserAvailable"`
-	Architecture         string `json:"architecture"`
-	CPUCount             int    `json:"cpuCount"`
-	ModelsDirectory      string `json:"modelsDirectory"`
-	MemoryBytes          uint64 `json:"memoryBytes,omitempty"`
-	DiskAvailableBytes   uint64 `json:"diskAvailableBytes,omitempty"`
-	GPU                  string `json:"gpu,omitempty"`
+	Supported              bool     `json:"supported"`
+	SystemdUserAvailable   bool     `json:"systemdUserAvailable"`
+	Architecture           string   `json:"architecture"`
+	CPUCount               int      `json:"cpuCount"`
+	ModelsDirectory        string   `json:"modelsDirectory"`
+	MemoryBytes            uint64   `json:"memoryBytes,omitempty"`
+	DiskAvailableBytes     uint64   `json:"diskAvailableBytes,omitempty"`
+	GPU                    string   `json:"gpu,omitempty"`
+	NvidiaSmiOk            bool     `json:"nvidiaSmiOk"`
+	CudaLibraryPresent     bool     `json:"cudaLibraryPresent"`
+	DxgDevicePresent       bool     `json:"dxgDevicePresent,omitempty"`
+	OllamaBinaryPresent    bool     `json:"ollamaBinaryPresent"`
+	OllamaServiceActive    bool     `json:"ollamaServiceActive"`
+	RuntimeGpuAccelerated  bool     `json:"runtimeGpuAccelerated,omitempty"`
+	RuntimeSizeVramBytes   int64    `json:"runtimeSizeVramBytes,omitempty"`
+	ReadyForInstall        bool     `json:"readyForInstall"`
+	ReadyForGpuInference   bool     `json:"readyForGpuInference"`
+	Blockers               []string `json:"blockers,omitempty"`
+	RemediationHints       []string `json:"remediationHints,omitempty"`
 }
 
 type LocalLLMModelResult struct {
@@ -59,6 +70,9 @@ type LocalLLMProbeResult struct {
 	Models            []LocalLLMModelResult `json:"models"`
 	ChatReady         bool                  `json:"chatReady,omitempty"`
 	OpenAIModelsReady bool                  `json:"openAiModelsReady,omitempty"`
+	GpuAccelerated    bool                  `json:"gpuAccelerated,omitempty"`
+	SizeVramBytes     int64                 `json:"sizeVramBytes,omitempty"`
+	LoadedModel       string                `json:"loadedModel,omitempty"`
 }
 
 var ollamaModelRef = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]*$`)
@@ -114,6 +128,12 @@ func RenderOllamaSystemdUnit(cfg OllamaConfig) (string, error) {
 	if err := ValidateOllamaConfig(cfg); err != nil {
 		return "", err
 	}
+	// Pin CUDA to the first (dedicated) NVIDIA GPU. On ASUS Optimus hosts the
+	// discrete NVIDIA device is the only CUDA target once Eco mode is off; the
+	// AMD iGPU is not exposed to CUDA/WSL, so device 0 is the dGPU. WSL needs
+	// /usr/lib/wsl/lib (Windows NVIDIA driver GPU-PV) on LD_LIBRARY_PATH plus
+	// Ollama's bundled cuda_v12 ggml libs beside the binary tree.
+	libRoot := filepath.Join(filepath.Dir(filepath.Dir(cfg.BinaryPath)), "lib", "ollama")
 	return fmt.Sprintf(`[Unit]
 Description=Opute-managed Ollama runtime
 After=network-online.target
@@ -123,12 +143,16 @@ ExecStart=%s serve
 Environment=OLLAMA_HOST=127.0.0.1:%d
 Environment=OLLAMA_MODELS=%s
 Environment=OLLAMA_NO_CLOUD=1
+Environment=CUDA_VISIBLE_DEVICES=0
+Environment=NVIDIA_VISIBLE_DEVICES=0
+Environment=OLLAMA_INTEL_GPU=false
+Environment=LD_LIBRARY_PATH=/usr/lib/wsl/lib:%s/cuda_v12:%s
 Restart=on-failure
 RestartSec=3
 
 [Install]
 WantedBy=default.target
-`, cfg.BinaryPath, cfg.Port, cfg.ModelsDir), nil
+`, cfg.BinaryPath, cfg.Port, cfg.ModelsDir, libRoot, libRoot), nil
 }
 
 func defaultOllamaConfig() (OllamaConfig, error) {
@@ -153,7 +177,13 @@ func (s *HostOperationsService) CheckLocalLLMPrerequisites() (*LocalLLMPrerequis
 		return nil, err
 	}
 	_, systemdErr := s.hostCommandRunner([]string{"systemctl", "--user", "show-environment"}, nil, 10*time.Second)
-	result := &LocalLLMPrerequisitesResult{Supported: runtime.GOOS == "linux", SystemdUserAvailable: systemdErr == nil, Architecture: runtime.GOARCH, CPUCount: runtime.NumCPU(), ModelsDirectory: cfg.ModelsDir}
+	result := &LocalLLMPrerequisitesResult{
+		Supported:            runtime.GOOS == "linux",
+		SystemdUserAvailable: systemdErr == nil,
+		Architecture:         runtime.GOARCH,
+		CPUCount:             runtime.NumCPU(),
+		ModelsDirectory:      cfg.ModelsDir,
+	}
 	if data, readErr := os.ReadFile("/proc/meminfo"); readErr == nil {
 		for _, line := range strings.Split(string(data), "\n") {
 			fields := strings.Fields(line)
@@ -175,10 +205,96 @@ func (s *HostOperationsService) CheckLocalLLMPrerequisites() (*LocalLLMPrerequis
 			}
 		}
 	}
-	if res, gpuErr := s.hostCommandRunner([]string{"nvidia-smi", "--query-gpu=name", "--format=csv,noheader"}, nil, 5*time.Second); gpuErr == nil && res.ExitCode == 0 {
-		result.GPU = strings.TrimSpace(res.Stdout)
+	if _, err := os.Stat(cfg.BinaryPath); err == nil {
+		result.OllamaBinaryPresent = true
 	}
+	if res, svcErr := s.hostCommandRunner([]string{"systemctl", "--user", "is-active", "opute-ollama.service"}, nil, 5*time.Second); svcErr == nil {
+		result.OllamaServiceActive = strings.TrimSpace(res.Stdout) == "active"
+	}
+	if res, gpuErr := s.hostCommandRunner([]string{"nvidia-smi", "--query-gpu=name", "--format=csv,noheader"}, nil, 5*time.Second); gpuErr == nil && res.ExitCode == 0 {
+		gpuName := strings.TrimSpace(res.Stdout)
+		if gpuName != "" && !strings.Contains(strings.ToLower(gpuName), "failed") {
+			result.GPU = gpuName
+			result.NvidiaSmiOk = true
+		}
+	}
+	result.CudaLibraryPresent = cudaUserLibraryPresent()
+	if _, err := os.Stat("/dev/dxg"); err == nil {
+		result.DxgDevicePresent = true
+	}
+	if result.OllamaServiceActive {
+		if probe, probeErr := s.ProbeLocalLLM(context.Background(), false); probeErr == nil && probe != nil {
+			result.RuntimeGpuAccelerated = probe.GpuAccelerated
+			result.RuntimeSizeVramBytes = probe.SizeVramBytes
+		}
+	}
+	finalizeLocalLLMPrerequisites(result)
 	return result, nil
+}
+
+func cudaUserLibraryPresent() bool {
+	candidates := []string{
+		"/usr/lib/wsl/lib/libcuda.so.1",
+		"/usr/lib/wsl/lib/libcuda.so",
+		"/usr/lib/x86_64-linux-gnu/libcuda.so.1",
+		"/usr/lib64/libcuda.so.1",
+	}
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// finalizeLocalLLMPrerequisites derives readiness flags and user-facing blockers.
+// It never mutates the host GPU/driver stack — operators prepare NVIDIA/Eco/MUX
+// outside Opute; host tools only diagnose and then install/start Ollama.
+func finalizeLocalLLMPrerequisites(result *LocalLLMPrerequisitesResult) {
+	if result == nil {
+		return
+	}
+	result.Blockers = nil
+	result.RemediationHints = nil
+	result.ReadyForInstall = result.Supported && result.SystemdUserAvailable && (result.Architecture == "amd64" || result.Architecture == "arm64")
+	result.ReadyForGpuInference = result.NvidiaSmiOk && result.CudaLibraryPresent
+
+	if !result.Supported {
+		result.Blockers = append(result.Blockers, "Host OS is not Linux. Opute-managed Ollama requires Linux or WSL2.")
+		result.RemediationHints = append(result.RemediationHints, "Run the Opute host agent on Linux or inside WSL2, then retry check_local_llm_prerequisites.")
+	}
+	if result.Supported && !result.SystemdUserAvailable {
+		result.Blockers = append(result.Blockers, "systemd --user is unavailable, so Ollama cannot be installed as an Opute-managed user service.")
+		result.RemediationHints = append(result.RemediationHints, "Enable lingering user systemd (`loginctl enable-linger`) and ensure `systemctl --user` works for the host-agent user.")
+	}
+	if result.Supported && result.Architecture != "amd64" && result.Architecture != "arm64" {
+		result.Blockers = append(result.Blockers, fmt.Sprintf("Unsupported CPU architecture %q for the Opute-managed Ollama package.", result.Architecture))
+	}
+	if !result.NvidiaSmiOk {
+		result.Blockers = append(result.Blockers, "nvidia-smi did not report a usable NVIDIA GPU. GPU-accelerated inference is unavailable until a working NVIDIA driver exposes the discrete GPU to this environment.")
+		result.RemediationHints = append(result.RemediationHints,
+			"Install or repair the NVIDIA driver on the host OS. On WSL2, that is the Windows NVIDIA driver with WSL support (not a separate Linux driver package).",
+			"If this is a laptop with Optimus/MUX/Eco GPU modes, ensure the discrete NVIDIA GPU is powered on (not Eco/disabled), then re-run check_local_llm_prerequisites.",
+		)
+	}
+	if result.NvidiaSmiOk && !result.CudaLibraryPresent {
+		result.Blockers = append(result.Blockers, "NVIDIA GPU is visible to nvidia-smi, but no CUDA user-mode library (libcuda) was found for this process.")
+		result.RemediationHints = append(result.RemediationHints,
+			"On WSL2, confirm /usr/lib/wsl/lib/libcuda.so* exists after installing a current Windows NVIDIA driver; restart WSL if the driver was just installed.",
+			"On native Linux, install the NVIDIA driver/CUDA userspace packages so libcuda.so.1 is on the library path.",
+		)
+	}
+	if result.OllamaServiceActive && result.ReadyForGpuInference && !result.RuntimeGpuAccelerated {
+		result.Blockers = append(result.Blockers, "Ollama is running but reports CPU-only inference (size_vram=0) despite GPU prerequisites looking healthy.")
+		result.RemediationHints = append(result.RemediationHints,
+			"Call start_local_llm_runtime (rewrites the Opute Ollama unit with CUDA pin + WSL library path) after the GPU driver is healthy, then probe_local_llm and confirm sizeVramBytes > 0.",
+		)
+	}
+	if result.ReadyForInstall && !result.ReadyForGpuInference {
+		result.RemediationHints = append(result.RemediationHints,
+			"CPU-only Ollama install/start is still available via install_local_llm_model / start_local_llm_runtime; resolve GPU blockers above for dedicated-GPU acceleration.",
+		)
+	}
 }
 
 func (s *HostOperationsService) InstallLocalLLMModel(ctx context.Context, modelRef string) (*LocalLLMProbeResult, error) {
@@ -324,6 +440,35 @@ func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, includeChat b
 			if chatErr == nil {
 				defer chatResponse.Body.Close()
 				result.ChatReady = chatResponse.StatusCode >= 200 && chatResponse.StatusCode < 300
+			}
+		}
+	}
+	psRequest, psErr := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/api/ps", cfg.Port), nil)
+	if psErr == nil {
+		psResponse, requestErr := (&http.Client{Timeout: 10 * time.Second}).Do(psRequest)
+		if requestErr == nil {
+			defer psResponse.Body.Close()
+			if psResponse.StatusCode == http.StatusOK {
+				var ps struct {
+					Models []struct {
+						Name      string `json:"name"`
+						SizeVRAM  int64  `json:"size_vram"`
+						SizeVram  int64  `json:"sizeVram"`
+					} `json:"models"`
+				}
+				if err := json.NewDecoder(io.LimitReader(psResponse.Body, 1<<20)).Decode(&ps); err == nil {
+					for _, model := range ps.Models {
+						vram := model.SizeVRAM
+						if vram == 0 {
+							vram = model.SizeVram
+						}
+						if vram > result.SizeVramBytes {
+							result.SizeVramBytes = vram
+							result.LoadedModel = model.Name
+						}
+					}
+					result.GpuAccelerated = result.SizeVramBytes > 0
+				}
 			}
 		}
 	}

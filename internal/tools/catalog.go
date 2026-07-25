@@ -97,8 +97,12 @@ func LoadAllToolDefinitions(providerID string) ([]ToolDefinition, error) {
 func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	needed := map[string]bool{
 		"ensure_oci_builder":            true,
+		"build_and_push_oci_image":      true,
+		"stage_build_context":           true,
 		"ensure_host_tool":              true,
 		"set_host_service_state":        true,
+		"configure_platform_agent":      true,
+		"discover_cluster_ingress":      true,
 		"apply_manifest":                true,
 		"delete_k8s_resource":            true,
 		"put_k8s_secret":                true,
@@ -125,6 +129,29 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"builder": map[string]any{"type": "string", "enum": []string{"auto", "podman", "buildah", "buildkit"}}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"builder", "path", "available"}},
 	}, ToolDefinition{
+		Name:        "build_and_push_oci_image",
+		Title:       "Build and push OCI image",
+		Description: "Build a generic OCI image from a host-local context directory and push it to a registry.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"contextDir", "image"}, "properties": map[string]any{
+			"contextDir":       map[string]any{"type": "string"},
+			"dockerfile":       map[string]any{"type": "string"},
+			"image":            map[string]any{"type": "string"},
+			"builder":          map[string]any{"type": "string", "enum": []string{"auto", "podman", "buildah", "buildkit"}},
+			"insecureRegistry": map[string]any{"type": "boolean"},
+			"platform":         map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "stage_build_context",
+		Title:       "Stage build context",
+		Description: "Write a caller-provided build context into an allowlisted host directory for build_and_push_oci_image.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"destDir", "files"}, "properties": map[string]any{
+			"destDir":      map[string]any{"type": "string"},
+			"files":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+			"fileEncoding": map[string]any{"type": "string", "enum": []string{"utf8", "base64"}},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
 		Name:         "ensure_host_tool",
 		Title:        "Ensure generic host tool",
 		Description:  "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
@@ -140,6 +167,34 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"scope":       map[string]any{"type": "string", "enum": []string{"user", "system"}},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "state", "scope", "status"}},
+	}, ToolDefinition{
+		Name:        "configure_platform_agent",
+		Title:       "Configure platform agent",
+		Description: "Write platform-mode host-agent env and optionally restart so the agent reverse-tunnels to a CPC MCP URL.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"mcpUrl", "remoteAgentAuthToken", "hostAuthToken"}, "properties": map[string]any{
+			"mcpUrl":               map[string]any{"type": "string"},
+			"hostWsUrl":            map[string]any{"type": "string"},
+			"remoteAgentAuthToken": map[string]any{"type": "string"},
+			"hostAuthToken":        map[string]any{"type": "string"},
+			"remoteAgentId":        map[string]any{"type": "string"},
+			"envFile":              map[string]any{"type": "string"},
+			"serviceName":          map[string]any{"type": "string"},
+			"restart":              map[string]any{"type": "boolean"},
+			"mcpHealthUrl":         map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "discover_cluster_ingress",
+		Title:       "Discover cluster ingress",
+		Description: "Resolve Traefik/VM bridge endpoints for CPC web and MCP without kubectl port-forward.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
+			"vmName":           map[string]any{"type": "string"},
+			"webHostname":      map[string]any{"type": "string"},
+			"mcpHostname":      map[string]any{"type": "string"},
+			"traefikNamespace": map[string]any{"type": "string"},
+			"traefikService":   map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name:        "ensure_host_tool",
 		Title:       "Ensure generic host tool",
