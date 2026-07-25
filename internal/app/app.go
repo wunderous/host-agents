@@ -105,13 +105,21 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				capabilitySummary = map[string]any{
 					"llm": map[string]any{
 						"ollama": map[string]any{
-							"supported":     prereqs.Supported,
-							"apiBaseUrl":    ops.OllamaLoopbackURL(0),
-							"architectures": []string{prereqs.Architecture},
+							"supported":            prereqs.Supported,
+							"apiBaseUrl":           ops.OllamaLoopbackURL(0),
+							"architectures":        []string{prereqs.Architecture},
+							"readyForInstall":      prereqs.ReadyForInstall,
+							"readyForGpuInference": prereqs.ReadyForGpuInference,
 							"gpu": map[string]any{
-								"available": strings.TrimSpace(prereqs.GPU) != "",
-								"vendor":    strings.TrimSpace(prereqs.GPU),
+								"available":          prereqs.NvidiaSmiOk,
+								"vendor":             strings.TrimSpace(prereqs.GPU),
+								"nvidiaSmiOk":        prereqs.NvidiaSmiOk,
+								"cudaLibraryPresent": prereqs.CudaLibraryPresent,
+								"dxgDevicePresent":   prereqs.DxgDevicePresent,
+								"runtimeAccelerated": prereqs.RuntimeGpuAccelerated,
 							},
+							"blockers":         prereqs.Blockers,
+							"remediationHints": prereqs.RemediationHints,
 						},
 					},
 				}
