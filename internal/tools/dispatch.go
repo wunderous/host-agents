@@ -70,18 +70,60 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			}
 			return structuredResult(out, ""), nil
 		}
-		out, err := svc.ProbeLocalLLM(ctx, boolField(args, "includeChat"))
+		modelRef, err := resolveLocalLLMModelArg(args)
+		if err != nil && stringField(args, "modelRef") == "" && stringField(args, "modelPreset") == "" {
+			modelRef = ""
+			err = nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		out, err := svc.ProbeLocalLLM(ctx, ops.ProbeLocalLLMArgs{
+			IncludeChat: boolField(args, "includeChat"),
+			ModelRef:    modelRef,
+			NumGpu:      optionalIntField(args, "numGpu"),
+			NumCtx:      optionalIntField(args, "numCtx"),
+		})
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, ""), nil
 
 	case "install_local_llm_model":
-		out, err := svc.InstallLocalLLMModel(ctx, stringField(args, "modelRef"))
+		modelRef, err := resolveLocalLLMModelArg(args)
+		if err != nil {
+			return nil, err
+		}
+		out, err := svc.InstallLocalLLMModel(ctx, ops.InstallLocalLLMModelArgs{
+			ModelRef:       modelRef,
+			CreateAs:       stringField(args, "createAs"),
+			NumGpu:         optionalIntField(args, "numGpu"),
+			NumCtx:         optionalIntField(args, "numCtx"),
+			Template:       stringField(args, "template"),
+			TemplatePreset: stringField(args, "templatePreset"),
+		})
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "Local Ollama model is ready"), nil
+
+	case "configure_local_llm_model":
+		modelRef, err := resolveLocalLLMModelArg(args)
+		if err != nil {
+			return nil, err
+		}
+		out, err := svc.ConfigureLocalLLMModel(ctx, ops.ConfigureLocalLLMModelArgs{
+			ModelRef:       modelRef,
+			FromRef:        stringField(args, "fromRef"),
+			NumGpu:         optionalIntField(args, "numGpu"),
+			NumCtx:         optionalIntField(args, "numCtx"),
+			Template:       stringField(args, "template"),
+			TemplatePreset: stringField(args, "templatePreset"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local Ollama model configuration applied"), nil
 
 	case "start_local_llm_runtime":
 		out, err := svc.StartLocalLLMRuntime(ctx)
@@ -97,10 +139,10 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(map[string]any{"stopped": true}, "Local Ollama runtime stopped"), nil
 
 	case "remove_local_llm_model":
-		if err := svc.RemoveLocalLLMModel(ctx, stringField(args, "modelRef")); err != nil {
+		if err := svc.RemoveLocalLLMModel(ctx, stringField(args, "modelRef"), boolField(args, "purge")); err != nil {
 			return nil, err
 		}
-		return structuredResult(map[string]any{"removed": true}, "Local Ollama model removed"), nil
+		return structuredResult(map[string]any{"removed": true, "purged": boolField(args, "purge")}, "Local Ollama model removed"), nil
 
 	case "ensure_local_llm_relay":
 		out, err := svc.EnsureLocalLLMRelay(ctx, ops.LocalLLMRelayArgs{SessionID: stringField(args, "sessionId"), ListenHost: stringField(args, "listenHost"), ListenPort: intField(args, "listenPort"), TargetHost: stringField(args, "targetHost"), TargetPort: intField(args, "targetPort"), IncomingToken: stringField(args, "incomingToken"), UpstreamToken: stringField(args, "upstreamToken"), AllowedSourceCIDRs: stringSliceField(args, "allowedSourceCIDRs"), RelayToken: stringField(args, "relayToken"), AllowedSourceIP: stringField(args, "allowedSourceIP")})
@@ -769,6 +811,10 @@ func stringField(args map[string]any, key string) string {
 	return strings.TrimSpace(v)
 }
 
+func resolveLocalLLMModelArg(args map[string]any) (string, error) {
+	return ops.ResolveLocalLLMModelRef(stringField(args, "modelRef"), stringField(args, "modelPreset"))
+}
+
 func stringSliceField(args map[string]any, key string) []string {
 	values, ok := args[key].([]any)
 	if !ok {
@@ -812,6 +858,17 @@ func intField(args map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+func optionalIntField(args map[string]any, key string) *int {
+	if args == nil {
+		return nil
+	}
+	if _, ok := args[key]; !ok {
+		return nil
+	}
+	v := intField(args, key)
+	return &v
 }
 
 func cloudflaredLocalTargets(value any) []ops.CloudflaredLocalTarget {

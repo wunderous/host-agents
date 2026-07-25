@@ -227,16 +227,30 @@
     "description": "Resolve Traefik/VM bridge endpoints for CPC web and MCP without kubectl port-forward.",
     "inputSchema": {
       "type": "object",
-      "required": ["vmName"],
+      "required": [
+        "vmName"
+      ],
       "properties": {
-        "vmName": {"type": "string"},
-        "webHostname": {"type": "string"},
-        "mcpHostname": {"type": "string"},
-        "traefikNamespace": {"type": "string"},
-        "traefikService": {"type": "string"}
+        "vmName": {
+          "type": "string"
+        },
+        "webHostname": {
+          "type": "string"
+        },
+        "mcpHostname": {
+          "type": "string"
+        },
+        "traefikNamespace": {
+          "type": "string"
+        },
+        "traefikService": {
+          "type": "string"
+        }
       }
     },
-    "outputSchema": {"type": "object"}
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
     "name": "stream_vm_console",
@@ -973,25 +987,54 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": { "type": "string" },
-        "name": { "type": "string" },
-        "chartName": { "type": "string" },
-        "releaseName": { "type": "string" },
-        "chart": { "type": "string" },
-        "chartSource": { "type": "string" },
-        "namespace": { "type": "string" },
-        "repo": { "type": "string" },
-        "values": { "type": "object", "additionalProperties": true }
+        "vmName": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "chartName": {
+          "type": "string"
+        },
+        "releaseName": {
+          "type": "string"
+        },
+        "chart": {
+          "type": "string"
+        },
+        "chartSource": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": true
+        }
       }
     },
     "outputSchema": {
       "type": "object",
       "properties": {
-        "vmName": { "type": "string" },
-        "releaseName": { "type": "string" },
-        "chartSource": { "type": "string" },
-        "namespace": { "type": "string" },
-        "status": { "type": "string" }
+        "vmName": {
+          "type": "string"
+        },
+        "releaseName": {
+          "type": "string"
+        },
+        "chartSource": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
       }
     }
   },
@@ -1002,19 +1045,35 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": { "type": "string" },
-        "name": { "type": "string" },
-        "chartName": { "type": "string" },
-        "releaseName": { "type": "string" },
-        "namespace": { "type": "string" }
+        "vmName": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "chartName": {
+          "type": "string"
+        },
+        "releaseName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        }
       }
     },
     "outputSchema": {
       "type": "object",
       "properties": {
-        "vmName": { "type": "string" },
-        "releaseName": { "type": "string" },
-        "status": { "type": "string" }
+        "vmName": {
+          "type": "string"
+        },
+        "releaseName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
       }
     }
   },
@@ -1822,13 +1881,22 @@
       "properties": {
         "builder": {
           "type": "string",
-          "enum": ["auto", "podman", "buildah", "buildkit"]
+          "enum": [
+            "auto",
+            "podman",
+            "buildah",
+            "buildkit"
+          ]
         }
       }
     },
     "outputSchema": {
       "type": "object",
-      "required": ["builder", "path", "available"]
+      "required": [
+        "builder",
+        "path",
+        "available"
+      ]
     }
   },
   {
@@ -1837,17 +1905,40 @@
     "description": "Build a generic OCI image from a host-local context directory and push it to a registry.",
     "inputSchema": {
       "type": "object",
-      "required": ["contextDir", "image"],
+      "required": [
+        "contextDir",
+        "image"
+      ],
       "properties": {
-        "contextDir": {"type": "string"},
-        "dockerfile": {"type": "string"},
-        "image": {"type": "string"},
-        "builder": {"type": "string", "enum": ["auto", "podman", "buildah", "buildkit"]},
-        "insecureRegistry": {"type": "boolean"},
-        "platform": {"type": "string"}
+        "contextDir": {
+          "type": "string"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "builder": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "podman",
+            "buildah",
+            "buildkit"
+          ]
+        },
+        "insecureRegistry": {
+          "type": "boolean"
+        },
+        "platform": {
+          "type": "string"
+        }
       }
     },
-    "outputSchema": {"type": "object"}
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
     "name": "stage_build_context",
@@ -1855,14 +1946,32 @@
     "description": "Write a caller-provided build context into an allowlisted host directory for build_and_push_oci_image.",
     "inputSchema": {
       "type": "object",
-      "required": ["destDir", "files"],
+      "required": [
+        "destDir",
+        "files"
+      ],
       "properties": {
-        "destDir": {"type": "string"},
-        "files": {"type": "object", "additionalProperties": {"type": "string"}},
-        "fileEncoding": {"type": "string", "enum": ["utf8", "base64"]}
+        "destDir": {
+          "type": "string"
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "fileEncoding": {
+          "type": "string",
+          "enum": [
+            "utf8",
+            "base64"
+          ]
+        }
       }
     },
-    "outputSchema": {"type": "object"}
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
     "name": "ensure_host_tool",
@@ -1870,17 +1979,29 @@
     "description": "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
     "inputSchema": {
       "type": "object",
-      "required": ["tool"],
+      "required": [
+        "tool"
+      ],
       "properties": {
         "tool": {
           "type": "string",
-          "enum": ["go", "podman", "buildah", "buildkitd", "cloudflared"]
+          "enum": [
+            "go",
+            "podman",
+            "buildah",
+            "buildkitd",
+            "cloudflared"
+          ]
         }
       }
     },
     "outputSchema": {
       "type": "object",
-      "required": ["tool", "path", "available"]
+      "required": [
+        "tool",
+        "path",
+        "available"
+      ]
     }
   },
   {
@@ -1889,14 +2010,43 @@
     "description": "Start, stop, restart, enable, or disable a validated host service; user scope is the default.",
     "inputSchema": {
       "type": "object",
-      "required": ["serviceName", "state"],
+      "required": [
+        "serviceName",
+        "state"
+      ],
       "properties": {
-        "serviceName": {"type": "string", "pattern": "^[A-Za-z0-9_.@:-]+$"},
-        "state": {"type": "string", "enum": ["start", "stop", "restart", "enable", "disable"]},
-        "scope": {"type": "string", "enum": ["user", "system"]}
+        "serviceName": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.@:-]+$"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "start",
+            "stop",
+            "restart",
+            "enable",
+            "disable"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ]
+        }
       }
     },
-    "outputSchema": {"type": "object", "required": ["serviceName", "state", "scope", "status"]}
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "serviceName",
+        "state",
+        "scope",
+        "status"
+      ]
+    }
   },
   {
     "name": "configure_platform_agent",
@@ -1904,20 +2054,44 @@
     "description": "Write platform-mode host-agent env and optionally restart so the agent reverse-tunnels to a CPC MCP URL.",
     "inputSchema": {
       "type": "object",
-      "required": ["mcpUrl", "remoteAgentAuthToken", "hostAuthToken"],
+      "required": [
+        "mcpUrl",
+        "remoteAgentAuthToken",
+        "hostAuthToken"
+      ],
       "properties": {
-        "mcpUrl": {"type": "string"},
-        "hostWsUrl": {"type": "string"},
-        "remoteAgentAuthToken": {"type": "string"},
-        "hostAuthToken": {"type": "string"},
-        "remoteAgentId": {"type": "string"},
-        "envFile": {"type": "string"},
-        "serviceName": {"type": "string"},
-        "restart": {"type": "boolean"},
-        "mcpHealthUrl": {"type": "string"}
+        "mcpUrl": {
+          "type": "string"
+        },
+        "hostWsUrl": {
+          "type": "string"
+        },
+        "remoteAgentAuthToken": {
+          "type": "string"
+        },
+        "hostAuthToken": {
+          "type": "string"
+        },
+        "remoteAgentId": {
+          "type": "string"
+        },
+        "envFile": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string"
+        },
+        "restart": {
+          "type": "boolean"
+        },
+        "mcpHealthUrl": {
+          "type": "string"
+        }
       }
     },
-    "outputSchema": {"type": "object"}
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
     "name": "ensure_k3d",
@@ -4361,13 +4535,27 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": { "type": "string" },
-        "hostname": { "type": "string" },
-        "localTarget": { "type": "string" },
-        "runToken": { "type": "string" },
-        "native": { "type": "boolean", "default": false }
+        "bindingId": {
+          "type": "string"
+        },
+        "hostname": {
+          "type": "string"
+        },
+        "localTarget": {
+          "type": "string"
+        },
+        "runToken": {
+          "type": "string"
+        },
+        "native": {
+          "type": "boolean",
+          "default": false
+        }
       },
-      "required": ["bindingId", "localTarget"]
+      "required": [
+        "bindingId",
+        "localTarget"
+      ]
     },
     "outputSchema": {
       "type": "object",
@@ -4381,10 +4569,17 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": { "type": "string" },
-        "localTarget": { "type": "string" }
+        "bindingId": {
+          "type": "string"
+        },
+        "localTarget": {
+          "type": "string"
+        }
       },
-      "required": ["bindingId", "localTarget"]
+      "required": [
+        "bindingId",
+        "localTarget"
+      ]
     },
     "outputSchema": {
       "type": "object",
@@ -4398,9 +4593,13 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": { "type": "string" }
+        "bindingId": {
+          "type": "string"
+        }
       },
-      "required": ["bindingId"]
+      "required": [
+        "bindingId"
+      ]
     },
     "outputSchema": {
       "type": "object",
@@ -4414,10 +4613,17 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": { "type": "string" },
-        "port": { "type": "number" }
+        "bindingId": {
+          "type": "string"
+        },
+        "port": {
+          "type": "number"
+        }
       },
-      "required": ["bindingId", "port"]
+      "required": [
+        "bindingId",
+        "port"
+      ]
     },
     "outputSchema": {
       "type": "object",
@@ -4431,7 +4637,9 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "repoRoot": { "type": "string" }
+        "repoRoot": {
+          "type": "string"
+        }
       }
     },
     "outputSchema": {
@@ -4446,7 +4654,9 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "repoRoot": { "type": "string" }
+        "repoRoot": {
+          "type": "string"
+        }
       }
     },
     "outputSchema": {
@@ -4458,27 +4668,594 @@
     "name": "configure_host_network",
     "title": "Configure Host Network",
     "description": "Configure host network settings for exposure",
-    "inputSchema": { "type": "object", "additionalProperties": true },
-    "outputSchema": { "type": "object", "additionalProperties": true }
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
   },
-  { "name": "check_local_llm_prerequisites", "title": "Check Local LLM Prerequisites", "description": "Inspect local Ollama runtime prerequisites.", "inputSchema": { "type": "object", "properties": {} }, "outputSchema": { "type": "object" } },
-  { "name": "list_local_llm_models", "title": "List Local LLM Models", "description": "List local Ollama models.", "inputSchema": { "type": "object", "properties": { "includeChat": { "type": "boolean" } } }, "outputSchema": { "type": "object" } },
-  { "name": "probe_local_llm", "title": "Probe Local LLM", "description": "Probe the local Ollama endpoint.", "inputSchema": { "type": "object", "properties": { "includeChat": { "type": "boolean" } } }, "outputSchema": { "type": "object" } },
-  { "name": "install_local_llm_model", "title": "Install Local LLM Model", "description": "Install an Ollama model.", "inputSchema": { "type": "object", "required": ["modelRef"], "properties": { "modelRef": { "type": "string" } } }, "outputSchema": { "type": "object" } },
-  { "name": "start_local_llm_runtime", "title": "Start Local LLM Runtime", "description": "Start Ollama.", "inputSchema": { "type": "object", "properties": {} }, "outputSchema": { "type": "object" } },
-  { "name": "stop_local_llm_runtime", "title": "Stop Local LLM Runtime", "description": "Stop Ollama.", "inputSchema": { "type": "object", "properties": {} }, "outputSchema": { "type": "object" } },
-  { "name": "remove_local_llm_model", "title": "Remove Local LLM Model", "description": "Remove an Ollama model.", "inputSchema": { "type": "object", "required": ["modelRef"], "properties": { "modelRef": { "type": "string" }, "purge": { "type": "boolean" } } }, "outputSchema": { "type": "object" } },
-  { "name": "ensure_local_llm_relay", "title": "Ensure Local LLM Relay", "description": "Start an authenticated local relay.", "inputSchema": { "type": "object", "required": ["sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "allowedSourceIP", "relayToken"], "properties": { "sessionId": { "type": "string" }, "listenHost": { "type": "string" }, "listenPort": { "type": "integer" }, "targetHost": { "type": "string" }, "targetPort": { "type": "integer" }, "allowedSourceIP": { "type": "string" }, "relayToken": { "type": "string" } } }, "outputSchema": { "type": "object" } },
-  { "name": "remove_local_llm_relay", "title": "Remove Local LLM Relay", "description": "Remove the local relay.", "inputSchema": { "type": "object", "required": ["sessionId"], "properties": { "sessionId": { "type": "string" } } }, "outputSchema": { "type": "object" } },
-  { "name": "ensure_local_llm_k3s_proxy", "title": "Ensure Local LLM K3s Proxy", "description": "Deploy the compatibility K3s proxy.", "inputSchema": { "type": "object", "required": ["vmName", "nodePort", "relayHost", "relayPort", "relayToken", "bearerKey"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "secretName": { "type": "string" }, "configMapName": { "type": "string" }, "deploymentName": { "type": "string" }, "serviceName": { "type": "string" }, "containerImage": { "type": "string" }, "nodePort": { "type": "integer" }, "relayHost": { "type": "string" }, "relayPort": { "type": "integer" }, "relayToken": { "type": "string" }, "bearerKey": { "type": "string" } } }, "outputSchema": { "type": "object" } },
-  { "name": "remove_local_llm_k3s_proxy", "title": "Remove Local LLM K3s Proxy", "description": "Remove the K3s proxy.", "inputSchema": { "type": "object", "required": ["vmName"], "properties": { "vmName": { "type": "string" } } }, "outputSchema": { "type": "object" } },
-  { "name": "remove_local_llm_cloudflared_tunnel", "title": "Remove Local LLM Cloudflared Tunnel", "description": "Remove the local LLM connector.", "inputSchema": { "type": "object", "required": ["bindingId"], "properties": { "bindingId": { "type": "string" } } }, "outputSchema": { "type": "object" } },
-  { "name": "apply_manifest", "title": "Apply Kubernetes manifest", "description": "Apply a generic Kubernetes manifest to a VM-backed cluster.", "inputSchema": { "type": "object", "required": ["vmName", "manifest"], "properties": { "vmName": { "type": "string" }, "manifest": { "type": "string" } } }, "outputSchema": { "type": "object" } },
-  { "name": "put_k8s_secret", "title": "Put Kubernetes Secret", "description": "Create or replace a generic Kubernetes Secret without returning its values.", "inputSchema": { "type": "object", "required": ["vmName", "name", "data"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "name": { "type": "string" }, "data": { "type": "object", "additionalProperties": { "type": "string" } } } }, "outputSchema": { "type": "object" } },
-  { "name": "install_oci_registry", "title": "Install OCI registry", "description": "Install a generic OCI registry inside a VM-backed Kubernetes cluster.", "inputSchema": { "type": "object", "required": ["vmName"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "name": { "type": "string" }, "image": { "type": "string" }, "storageSize": { "type": "string" }, "storageClass": { "type": "string" }, "nodePort": { "type": "integer" } } }, "outputSchema": { "type": "object" } },
-  { "name": "configure_k3s_registry", "title": "Configure K3s registry", "description": "Configure a K3s cluster to pull images from an OCI registry endpoint.", "inputSchema": { "type": "object", "required": ["vmName", "endpoint"], "properties": { "vmName": { "type": "string" }, "endpoint": { "type": "string" }, "registry": { "type": "string" }, "insecure": { "type": "boolean" } } }, "outputSchema": { "type": "object" } },
-  { "name": "install_cloudflared_connector", "title": "Install Cloudflare connector", "description": "Deploy a token-backed Cloudflare connector inside Kubernetes.", "inputSchema": { "type": "object", "required": ["vmName", "token"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "name": { "type": "string" }, "token": { "type": "string" }, "image": { "type": "string" }, "replicas": { "type": "integer" }, "localTargets": { "type": "array" } } }, "outputSchema": { "type": "object" } },
-  { "name": "delete_cloudflared_connector", "title": "Delete Cloudflare connector", "description": "Delete the in-cluster Cloudflare connector resources.", "inputSchema": { "type": "object", "required": ["vmName"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" } } }, "outputSchema": { "type": "object" } },
-  { "name": "configure_service_domain", "title": "Configure service domain", "description": "Map a Kubernetes Service to a caller-selected hostname through the configured ingress class.", "inputSchema": { "type": "object", "required": ["vmName", "namespace", "ingressName", "hostname", "serviceName", "servicePort"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "ingressName": { "type": "string" }, "hostname": { "type": "string" }, "serviceName": { "type": "string" }, "servicePort": { "type": "integer" }, "ingressClass": { "type": "string" } } }, "outputSchema": { "type": "object" } },
-  { "name": "remove_service_domain", "title": "Remove service domain", "description": "Remove a caller-selected Kubernetes Service domain mapping.", "inputSchema": { "type": "object", "required": ["vmName", "namespace", "ingressName"], "properties": { "vmName": { "type": "string" }, "namespace": { "type": "string" }, "ingressName": { "type": "string" } } }, "outputSchema": { "type": "object" } }
+  {
+    "name": "check_local_llm_prerequisites",
+    "title": "Check Local LLM Prerequisites",
+    "description": "Inspect local Ollama runtime prerequisites.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "list_local_llm_models",
+    "title": "List Local LLM Models",
+    "description": "List local Ollama models.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "includeChat": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "probe_local_llm",
+    "title": "Probe Local LLM",
+    "description": "Probe the local Ollama endpoint; optionally warm-load modelRef or modelPreset (phi|gemma|qwen).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "includeChat": {
+          "type": "boolean"
+        },
+        "modelRef": {
+          "type": "string"
+        },
+        "modelPreset": {
+          "type": "string",
+          "enum": [
+            "phi",
+            "gemma",
+            "qwen"
+          ]
+        },
+        "numGpu": {
+          "type": "integer"
+        },
+        "numCtx": {
+          "type": "integer"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "install_local_llm_model",
+    "title": "Install Local LLM Model",
+    "description": "Install Ollama, pull modelRef or modelPreset (phi|gemma|qwen), optionally createAs with numGpu/numCtx.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "modelRef": {
+          "type": "string"
+        },
+        "modelPreset": {
+          "type": "string",
+          "enum": [
+            "phi",
+            "gemma",
+            "qwen"
+          ]
+        },
+        "numGpu": {
+          "type": "integer"
+        },
+        "numCtx": {
+          "type": "integer"
+        },
+        "createAs": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "configure_local_llm_model",
+    "title": "Configure Local LLM Model",
+    "description": "Create/replace a local Ollama tag with Modelfile parameters (numGpu/numCtx). Pass modelRef or modelPreset.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "modelRef": {
+          "type": "string"
+        },
+        "modelPreset": {
+          "type": "string",
+          "enum": [
+            "phi",
+            "gemma",
+            "qwen"
+          ]
+        },
+        "fromRef": {
+          "type": "string"
+        },
+        "numGpu": {
+          "type": "integer"
+        },
+        "numCtx": {
+          "type": "integer"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "start_local_llm_runtime",
+    "title": "Start Local LLM Runtime",
+    "description": "Start Ollama.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "stop_local_llm_runtime",
+    "title": "Stop Local LLM Runtime",
+    "description": "Stop Ollama.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "remove_local_llm_model",
+    "title": "Remove Local LLM Model",
+    "description": "Remove an Ollama model.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "modelRef"
+      ],
+      "properties": {
+        "modelRef": {
+          "type": "string"
+        },
+        "purge": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "ensure_local_llm_relay",
+    "title": "Ensure Local LLM Relay",
+    "description": "Start an authenticated local relay.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "sessionId",
+        "listenHost",
+        "listenPort",
+        "targetHost",
+        "targetPort",
+        "allowedSourceIP",
+        "relayToken"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "listenHost": {
+          "type": "string"
+        },
+        "listenPort": {
+          "type": "integer"
+        },
+        "targetHost": {
+          "type": "string"
+        },
+        "targetPort": {
+          "type": "integer"
+        },
+        "allowedSourceIP": {
+          "type": "string"
+        },
+        "relayToken": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "remove_local_llm_relay",
+    "title": "Remove Local LLM Relay",
+    "description": "Remove the local relay.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "sessionId"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "ensure_local_llm_k3s_proxy",
+    "title": "Ensure Local LLM K3s Proxy",
+    "description": "Deploy the compatibility K3s proxy.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName",
+        "nodePort",
+        "relayHost",
+        "relayPort",
+        "relayToken",
+        "bearerKey"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "secretName": {
+          "type": "string"
+        },
+        "configMapName": {
+          "type": "string"
+        },
+        "deploymentName": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string"
+        },
+        "containerImage": {
+          "type": "string"
+        },
+        "nodePort": {
+          "type": "integer"
+        },
+        "relayHost": {
+          "type": "string"
+        },
+        "relayPort": {
+          "type": "integer"
+        },
+        "relayToken": {
+          "type": "string"
+        },
+        "bearerKey": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "remove_local_llm_k3s_proxy",
+    "title": "Remove Local LLM K3s Proxy",
+    "description": "Remove the K3s proxy.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "remove_local_llm_cloudflared_tunnel",
+    "title": "Remove Local LLM Cloudflared Tunnel",
+    "description": "Remove the local LLM connector.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "bindingId"
+      ],
+      "properties": {
+        "bindingId": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "apply_manifest",
+    "title": "Apply Kubernetes manifest",
+    "description": "Apply a generic Kubernetes manifest to a VM-backed cluster.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName",
+        "manifest"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "manifest": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "put_k8s_secret",
+    "title": "Put Kubernetes Secret",
+    "description": "Create or replace a generic Kubernetes Secret without returning its values.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName",
+        "name",
+        "data"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "install_oci_registry",
+    "title": "Install OCI registry",
+    "description": "Install a generic OCI registry inside a VM-backed Kubernetes cluster.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "storageSize": {
+          "type": "string"
+        },
+        "storageClass": {
+          "type": "string"
+        },
+        "nodePort": {
+          "type": "integer"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "configure_k3s_registry",
+    "title": "Configure K3s registry",
+    "description": "Configure a K3s cluster to pull images from an OCI registry endpoint.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName",
+        "endpoint"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "registry": {
+          "type": "string"
+        },
+        "insecure": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "install_cloudflared_connector",
+    "title": "Install Cloudflare connector",
+    "description": "Deploy a token-backed Cloudflare connector inside Kubernetes.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName",
+        "token"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "replicas": {
+          "type": "integer"
+        },
+        "localTargets": {
+          "type": "array"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "delete_cloudflared_connector",
+    "title": "Delete Cloudflare connector",
+    "description": "Delete the in-cluster Cloudflare connector resources.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "configure_service_domain",
+    "title": "Configure service domain",
+    "description": "Map a Kubernetes Service to a caller-selected hostname through the configured ingress class.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName",
+        "namespace",
+        "ingressName",
+        "hostname",
+        "serviceName",
+        "servicePort"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "ingressName": {
+          "type": "string"
+        },
+        "hostname": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string"
+        },
+        "servicePort": {
+          "type": "integer"
+        },
+        "ingressClass": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "remove_service_domain",
+    "title": "Remove service domain",
+    "description": "Remove a caller-selected Kubernetes Service domain mapping.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName",
+        "namespace",
+        "ingressName"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "ingressName": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  }
 ]

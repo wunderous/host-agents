@@ -44,6 +44,7 @@ type LocalLLMPrerequisitesResult struct {
 	MemoryBytes            uint64   `json:"memoryBytes,omitempty"`
 	DiskAvailableBytes     uint64   `json:"diskAvailableBytes,omitempty"`
 	GPU                    string   `json:"gpu,omitempty"`
+	GpuMemoryTotalBytes    uint64   `json:"gpuMemoryTotalBytes,omitempty"`
 	NvidiaSmiOk            bool     `json:"nvidiaSmiOk"`
 	CudaLibraryPresent     bool     `json:"cudaLibraryPresent"`
 	DxgDevicePresent       bool     `json:"dxgDevicePresent,omitempty"`
@@ -64,20 +65,84 @@ type LocalLLMModelResult struct {
 }
 
 type LocalLLMProbeResult struct {
-	APIBaseURL        string                `json:"apiBaseUrl"`
-	Version           string                `json:"version,omitempty"`
-	Ready             bool                  `json:"ready"`
-	Models            []LocalLLMModelResult `json:"models"`
-	ChatReady         bool                  `json:"chatReady,omitempty"`
-	OpenAIModelsReady bool                  `json:"openAiModelsReady,omitempty"`
-	GpuAccelerated    bool                  `json:"gpuAccelerated,omitempty"`
-	SizeVramBytes     int64                 `json:"sizeVramBytes,omitempty"`
-	LoadedModel       string                `json:"loadedModel,omitempty"`
+	APIBaseURL         string                `json:"apiBaseUrl"`
+	Version            string                `json:"version,omitempty"`
+	Ready              bool                  `json:"ready"`
+	Models             []LocalLLMModelResult `json:"models"`
+	ChatReady          bool                  `json:"chatReady,omitempty"`
+	OpenAIModelsReady  bool                  `json:"openAiModelsReady,omitempty"`
+	GpuAccelerated     bool                  `json:"gpuAccelerated,omitempty"`
+	SizeVramBytes      int64                 `json:"sizeVramBytes,omitempty"`
+	LoadedModel        string                `json:"loadedModel,omitempty"`
+	LoadError          string                `json:"loadError,omitempty"`
+	RemediationHints   []string              `json:"remediationHints,omitempty"`
+	ContextLength      int                   `json:"contextLength,omitempty"`
+}
+
+// InstallLocalLLMModelArgs pulls an Ollama registry model and optionally creates
+// a durable derived tag with Modelfile parameters (num_gpu / num_ctx). Full GPU
+// offload (numGpu near layer count, e.g. 99) is required for some edge models
+// that abort on hybrid CPU/GPU splits. Callers may pass modelPreset=phi|gemma|qwen
+// or an explicit modelRef. Optional Template / TemplatePreset rewrites the
+// chat TEMPLATE (required for reliable Phi-4-mini tool calls on Ollama).
+type InstallLocalLLMModelArgs struct {
+	ModelRef       string
+	CreateAs       string
+	NumGpu         *int
+	NumCtx         *int
+	Template       string
+	TemplatePreset string
+}
+
+// ConfigureLocalLLMModelArgs creates or replaces a local Ollama model tag from
+// an already-pulled base model without re-downloading blobs.
+type ConfigureLocalLLMModelArgs struct {
+	ModelRef       string
+	FromRef        string
+	NumGpu         *int
+	NumCtx         *int
+	Template       string
+	TemplatePreset string
+}
+
+// ProbeLocalLLMArgs optionally warm-loads a model to verify GPU inference.
+type ProbeLocalLLMArgs struct {
+	IncludeChat bool
+	ModelRef    string
+	NumGpu      *int
+	NumCtx      *int
 }
 
 var ollamaModelRef = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]*$`)
 var sha256Hex = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 var ollamaVersionRef = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+
+// LocalLLMModelPresets maps standard chat presets to Ollama registry refs.
+var LocalLLMModelPresets = map[string]string{
+	"phi":   "phi4-mini",
+	"gemma": "gemma4:e2b",
+	"qwen":  "qwen3.5:2b",
+}
+
+// ResolveLocalLLMModelRef returns modelRef, or expands modelPreset (phi|gemma|qwen).
+func ResolveLocalLLMModelRef(modelRef string, modelPreset string) (string, error) {
+	ref := strings.TrimSpace(modelRef)
+	if ref != "" {
+		if err := ValidateOllamaModelRef(ref); err != nil {
+			return "", err
+		}
+		return ref, nil
+	}
+	preset := strings.ToLower(strings.TrimSpace(modelPreset))
+	if preset == "" {
+		return "", fmt.Errorf("modelRef or modelPreset (phi|gemma|qwen) is required")
+	}
+	resolved, ok := LocalLLMModelPresets[preset]
+	if !ok {
+		return "", fmt.Errorf("unknown modelPreset %q (use phi|gemma|qwen or pass modelRef)", modelPreset)
+	}
+	return resolved, nil
+}
 
 func ValidateOllamaModelRef(ref string) error {
 	ref = strings.TrimSpace(ref)
@@ -211,11 +276,20 @@ func (s *HostOperationsService) CheckLocalLLMPrerequisites() (*LocalLLMPrerequis
 	if res, svcErr := s.hostCommandRunner([]string{"systemctl", "--user", "is-active", "opute-ollama.service"}, nil, 5*time.Second); svcErr == nil {
 		result.OllamaServiceActive = strings.TrimSpace(res.Stdout) == "active"
 	}
-	if res, gpuErr := s.hostCommandRunner([]string{"nvidia-smi", "--query-gpu=name", "--format=csv,noheader"}, nil, 5*time.Second); gpuErr == nil && res.ExitCode == 0 {
-		gpuName := strings.TrimSpace(res.Stdout)
-		if gpuName != "" && !strings.Contains(strings.ToLower(gpuName), "failed") {
-			result.GPU = gpuName
-			result.NvidiaSmiOk = true
+	if res, gpuErr := s.hostCommandRunner([]string{"nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"}, nil, 5*time.Second); gpuErr == nil && res.ExitCode == 0 {
+		line := strings.TrimSpace(strings.Split(res.Stdout, "\n")[0])
+		if line != "" && !strings.Contains(strings.ToLower(line), "failed") {
+			parts := strings.Split(line, ",")
+			gpuName := strings.TrimSpace(parts[0])
+			if gpuName != "" {
+				result.GPU = gpuName
+				result.NvidiaSmiOk = true
+			}
+			if len(parts) >= 2 {
+				if mb, parseErr := strconv.ParseUint(strings.TrimSpace(parts[1]), 10, 64); parseErr == nil && mb > 0 {
+					result.GpuMemoryTotalBytes = mb * 1024 * 1024
+				}
+			}
 		}
 	}
 	result.CudaLibraryPresent = cudaUserLibraryPresent()
@@ -223,7 +297,7 @@ func (s *HostOperationsService) CheckLocalLLMPrerequisites() (*LocalLLMPrerequis
 		result.DxgDevicePresent = true
 	}
 	if result.OllamaServiceActive {
-		if probe, probeErr := s.ProbeLocalLLM(context.Background(), false); probeErr == nil && probe != nil {
+		if probe, probeErr := s.ProbeLocalLLM(context.Background(), ProbeLocalLLMArgs{}); probeErr == nil && probe != nil {
 			result.RuntimeGpuAccelerated = probe.GpuAccelerated
 			result.RuntimeSizeVramBytes = probe.SizeVramBytes
 		}
@@ -290,6 +364,11 @@ func finalizeLocalLLMPrerequisites(result *LocalLLMPrerequisitesResult) {
 			"Call start_local_llm_runtime (rewrites the Opute Ollama unit with CUDA pin + WSL library path) after the GPU driver is healthy, then probe_local_llm and confirm sizeVramBytes > 0.",
 		)
 	}
+	if result.ReadyForGpuInference && result.GpuMemoryTotalBytes > 0 && result.GpuMemoryTotalBytes < 6*1024*1024*1024 {
+		result.RemediationHints = append(result.RemediationHints,
+			"This GPU reports under 6 GiB VRAM. Some large or multimodal models can crash on hybrid CPU/GPU layer splits (GGML_SCHED_MAX_SPLIT_INPUTS). Prefer install_local_llm_model / configure_local_llm_model with numGpu=99 (full GPU offload) and a bounded numCtx, then probe_local_llm with that modelRef. Standard presets: modelPreset=phi|gemma|qwen.",
+		)
+	}
 	if result.ReadyForInstall && !result.ReadyForGpuInference {
 		result.RemediationHints = append(result.RemediationHints,
 			"CPU-only Ollama install/start is still available via install_local_llm_model / start_local_llm_runtime; resolve GPU blockers above for dedicated-GPU acceleration.",
@@ -297,9 +376,14 @@ func finalizeLocalLLMPrerequisites(result *LocalLLMPrerequisitesResult) {
 	}
 }
 
-func (s *HostOperationsService) InstallLocalLLMModel(ctx context.Context, modelRef string) (*LocalLLMProbeResult, error) {
-	if err := ValidateOllamaModelRef(modelRef); err != nil {
+func (s *HostOperationsService) InstallLocalLLMModel(ctx context.Context, args InstallLocalLLMModelArgs) (*LocalLLMProbeResult, error) {
+	if err := ValidateOllamaModelRef(args.ModelRef); err != nil {
 		return nil, err
+	}
+	if args.CreateAs != "" {
+		if err := ValidateOllamaModelRef(args.CreateAs); err != nil {
+			return nil, fmt.Errorf("createAs: %w", err)
+		}
 	}
 	cfg, err := defaultOllamaConfig()
 	if err != nil {
@@ -311,25 +395,249 @@ func (s *HostOperationsService) InstallLocalLLMModel(ctx context.Context, modelR
 	if err := s.startOllama(ctx, cfg); err != nil {
 		return nil, err
 	}
-	reqBody, err := json.Marshal(map[string]any{"name": strings.TrimSpace(modelRef), "stream": false})
+	if err := s.pullOllamaModel(ctx, cfg, args.ModelRef); err != nil {
+		return nil, err
+	}
+	if args.CreateAs != "" || args.NumGpu != nil || args.NumCtx != nil || strings.TrimSpace(args.Template) != "" || strings.TrimSpace(args.TemplatePreset) != "" {
+		createName := strings.TrimSpace(args.CreateAs)
+		if createName == "" {
+			createName = strings.TrimSpace(args.ModelRef)
+		}
+		if err := s.createOllamaModel(ctx, cfg, ConfigureLocalLLMModelArgs{
+			ModelRef:       createName,
+			FromRef:        strings.TrimSpace(args.ModelRef),
+			NumGpu:         args.NumGpu,
+			NumCtx:         args.NumCtx,
+			Template:       args.Template,
+			TemplatePreset: args.TemplatePreset,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	probeModel := strings.TrimSpace(args.CreateAs)
+	if probeModel == "" {
+		probeModel = strings.TrimSpace(args.ModelRef)
+	}
+	return s.ProbeLocalLLM(ctx, ProbeLocalLLMArgs{ModelRef: probeModel, NumGpu: args.NumGpu, NumCtx: args.NumCtx, IncludeChat: true})
+}
+
+func (s *HostOperationsService) ConfigureLocalLLMModel(ctx context.Context, args ConfigureLocalLLMModelArgs) (*LocalLLMProbeResult, error) {
+	if err := ValidateOllamaModelRef(args.ModelRef); err != nil {
+		return nil, err
+	}
+	from := strings.TrimSpace(args.FromRef)
+	if from == "" {
+		from = strings.TrimSpace(args.ModelRef)
+	}
+	if err := ValidateOllamaModelRef(from); err != nil {
+		return nil, fmt.Errorf("fromRef: %w", err)
+	}
+	cfg, err := defaultOllamaConfig()
 	if err != nil {
 		return nil, err
 	}
+	if err := s.ensureOllamaInstalled(ctx, cfg); err != nil {
+		return nil, err
+	}
+	if err := s.startOllama(ctx, cfg); err != nil {
+		return nil, err
+	}
+	args.FromRef = from
+	if err := s.createOllamaModel(ctx, cfg, args); err != nil {
+		return nil, err
+	}
+	return s.ProbeLocalLLM(ctx, ProbeLocalLLMArgs{ModelRef: strings.TrimSpace(args.ModelRef), NumGpu: args.NumGpu, NumCtx: args.NumCtx, IncludeChat: true})
+}
+
+func (s *HostOperationsService) pullOllamaModel(ctx context.Context, cfg OllamaConfig, modelRef string) error {
+	reqBody, err := json.Marshal(map[string]any{"name": strings.TrimSpace(modelRef), "stream": false})
+	if err != nil {
+		return err
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/api/pull", cfg.Port), strings.NewReader(string(reqBody)))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	response, err := (&http.Client{Timeout: 30 * time.Minute}).Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("pull Ollama model: %w", err)
+		return fmt.Errorf("pull Ollama model: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-		return nil, fmt.Errorf("pull Ollama model: status %d", response.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return fmt.Errorf("pull Ollama model: status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
 	}
-	return s.ProbeLocalLLM(ctx, false)
+	return nil
+}
+
+// OllamaChatToolTemplatePresets are known-good chat TEMPLATEs for tool calling.
+// Stock Ollama phi4-mini ships a broken tool template; "phi-functools" is the
+// Microsoft PhiCookBook template that emits native tool_calls.
+var OllamaChatToolTemplatePresets = map[string]string{
+	"phi-functools": phiFunctoolsChatTemplate,
+}
+
+// Microsoft Phi-4-mini function-calling template (functools[...]) for Ollama.
+const phiFunctoolsChatTemplate = `{{- if .Messages }}
+{{- if or .System .Tools }}<|system|>
+
+{{ if .System }}{{ .System }}
+{{- end }}
+In addition to plain text responses, you can chose to call one or more of the provided functions.
+
+Use the following rule to decide when to call a function:
+ * if the response can be generated from your internal knowledge (e.g., as in the case of queries like "What is the capital of Poland?"), do so
+ * if you need external information that can be obtained by calling one or more of the provided functions, generate a function calls
+
+If you decide to call functions:
+ * prefix function calls with functools marker (no closing marker required)
+ * all function calls should be generated in a single JSON list formatted as functools[{"name": [function name], "arguments": [function arguments as JSON]}, ...]
+ * follow the provided JSON schema. Do not hallucinate arguments or values. Do to blindly copy values from the provided samples
+ * respect the argument type formatting. E.g., if the type if number and format is float, write value 7 as 7.0
+ * make sure you pick the right functions that match the user intent
+
+Available functions as JSON spec:
+{{- if .Tools }}
+{{ .Tools }}
+{{- end }}<|end|>
+{{- end }}
+{{- range .Messages }}
+{{- if ne .Role "system" }}<|{{ .Role }}|>
+{{- if and .Content (eq .Role "tools") }}
+
+{"result": {{ .Content }}}
+{{- else if .Content }}
+
+{{ .Content }}
+{{- else if .ToolCalls }}
+
+functools[
+{{- range .ToolCalls }}{{ "{" }}"name": "{{ .Function.Name }}", "arguments": {{ .Function.Arguments }}{{ "}" }}
+{{- end }}]
+{{- end }}<|end|>
+{{- end }}
+{{- end }}<|assistant|>
+
+{{ else }}
+{{- if .System }}<|system|>
+
+{{ .System }}<|end|>{{ end }}{{ if .Prompt }}<|user|>
+
+{{ .Prompt }}<|end|>{{ end }}<|assistant|>
+
+{{ end }}{{ .Response }}{{ if .Response }}<|user|>{{ end }}
+`
+
+func resolveOllamaChatTemplate(template string, templatePreset string) (string, error) {
+	raw := strings.TrimSpace(template)
+	if raw != "" {
+		if strings.Contains(raw, `"""`) {
+			return "", fmt.Errorf("template must not contain triple quotes")
+		}
+		if len(raw) > 64*1024 {
+			return "", fmt.Errorf("template exceeds 64 KiB")
+		}
+		return raw, nil
+	}
+	preset := strings.ToLower(strings.TrimSpace(templatePreset))
+	if preset == "" {
+		return "", nil
+	}
+	resolved, ok := OllamaChatToolTemplatePresets[preset]
+	if !ok {
+		return "", fmt.Errorf("unknown templatePreset %q (use phi-functools or pass template)", templatePreset)
+	}
+	return resolved, nil
+}
+
+func renderOllamaModelfile(fromRef string, numGpu *int, numCtx *int, template string) (string, error) {
+	if err := ValidateOllamaModelRef(fromRef); err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "FROM %s\n", strings.TrimSpace(fromRef))
+	if numGpu != nil {
+		if *numGpu < 0 || *numGpu > 999 {
+			return "", fmt.Errorf("numGpu must be between 0 and 999")
+		}
+		fmt.Fprintf(&b, "PARAMETER num_gpu %d\n", *numGpu)
+	}
+	if numCtx != nil {
+		if *numCtx < 128 || *numCtx > 262144 {
+			return "", fmt.Errorf("numCtx must be between 128 and 262144")
+		}
+		fmt.Fprintf(&b, "PARAMETER num_ctx %d\n", *numCtx)
+	}
+	if strings.TrimSpace(template) != "" {
+		fmt.Fprintf(&b, "TEMPLATE \"\"\"\n%s\n\"\"\"\n", template)
+	}
+	return b.String(), nil
+}
+
+func (s *HostOperationsService) createOllamaModel(ctx context.Context, cfg OllamaConfig, args ConfigureLocalLLMModelArgs) error {
+	template, err := resolveOllamaChatTemplate(args.Template, args.TemplatePreset)
+	if err != nil {
+		return err
+	}
+	fromRef := strings.TrimSpace(args.FromRef)
+	if fromRef == "" {
+		fromRef = strings.TrimSpace(args.ModelRef)
+	}
+	if err := ValidateOllamaModelRef(fromRef); err != nil {
+		return fmt.Errorf("fromRef: %w", err)
+	}
+	if err := ValidateOllamaModelRef(args.ModelRef); err != nil {
+		return err
+	}
+
+	// Ollama ≥0.6 /api/create no longer accepts a Modelfile blob; it wants
+	// structured from/template/parameters (CLI `ollama create -f` still parses
+	// Modelfiles locally).
+	payload := map[string]any{
+		"model":  strings.TrimSpace(args.ModelRef),
+		"from":   fromRef,
+		"stream": false,
+	}
+	parameters := map[string]any{}
+	if args.NumGpu != nil {
+		if *args.NumGpu < 0 || *args.NumGpu > 999 {
+			return fmt.Errorf("numGpu must be between 0 and 999")
+		}
+		parameters["num_gpu"] = *args.NumGpu
+	}
+	if args.NumCtx != nil {
+		if *args.NumCtx < 128 || *args.NumCtx > 262144 {
+			return fmt.Errorf("numCtx must be between 128 and 262144")
+		}
+		parameters["num_ctx"] = *args.NumCtx
+	}
+	if len(parameters) > 0 {
+		payload["parameters"] = parameters
+	}
+	if strings.TrimSpace(template) != "" {
+		payload["template"] = template
+	}
+
+	reqBody, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/api/create", cfg.Port), strings.NewReader(string(reqBody)))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := (&http.Client{Timeout: 10 * time.Minute}).Do(request)
+	if err != nil {
+		return fmt.Errorf("create Ollama model: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return fmt.Errorf("create Ollama model: status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func (s *HostOperationsService) StartLocalLLMRuntime(ctx context.Context) (*LocalLLMProbeResult, error) {
@@ -343,7 +651,7 @@ func (s *HostOperationsService) StartLocalLLMRuntime(ctx context.Context) (*Loca
 	if err := s.startOllama(ctx, cfg); err != nil {
 		return nil, err
 	}
-	return s.ProbeLocalLLM(ctx, false)
+	return s.ProbeLocalLLM(ctx, ProbeLocalLLMArgs{})
 }
 
 func (s *HostOperationsService) StopLocalLLMRuntime(ctx context.Context) error {
@@ -351,14 +659,34 @@ func (s *HostOperationsService) StopLocalLLMRuntime(ctx context.Context) error {
 	return err
 }
 
-func (s *HostOperationsService) RemoveLocalLLMModel(ctx context.Context, modelRef string) error {
-	if err := ValidateOllamaModelRef(modelRef); err != nil {
-		return err
-	}
+func (s *HostOperationsService) RemoveLocalLLMModel(ctx context.Context, modelRef string, purge bool) error {
 	cfg, err := defaultOllamaConfig()
 	if err != nil {
 		return err
 	}
+	if purge {
+		probe, probeErr := s.ProbeLocalLLM(ctx, ProbeLocalLLMArgs{})
+		if probeErr == nil && probe != nil {
+			for _, model := range probe.Models {
+				_ = s.deleteOllamaModel(ctx, cfg, model.Name)
+			}
+		}
+		// Best-effort wipe of leftover blobs/manifests under the managed models dir.
+		if err := os.RemoveAll(cfg.ModelsDir); err != nil {
+			return fmt.Errorf("purge Ollama models directory: %w", err)
+		}
+		if err := os.MkdirAll(cfg.ModelsDir, 0700); err != nil {
+			return fmt.Errorf("recreate Ollama models directory: %w", err)
+		}
+		return nil
+	}
+	if err := ValidateOllamaModelRef(modelRef); err != nil {
+		return err
+	}
+	return s.deleteOllamaModel(ctx, cfg, modelRef)
+}
+
+func (s *HostOperationsService) deleteOllamaModel(ctx context.Context, cfg OllamaConfig, modelRef string) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, fmt.Sprintf("http://127.0.0.1:%d/api/delete", cfg.Port), strings.NewReader(fmt.Sprintf(`{"name":%q}`, strings.TrimSpace(modelRef))))
 	if err != nil {
 		return err
@@ -375,7 +703,7 @@ func (s *HostOperationsService) RemoveLocalLLMModel(ctx context.Context, modelRe
 	return nil
 }
 
-func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, includeChat bool) (*LocalLLMProbeResult, error) {
+func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, args ProbeLocalLLMArgs) (*LocalLLMProbeResult, error) {
 	cfg, err := defaultOllamaConfig()
 	if err != nil {
 		return nil, err
@@ -431,7 +759,46 @@ func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, includeChat b
 			result.OpenAIModelsReady = openAIResponse.StatusCode == http.StatusOK
 		}
 	}
-	if includeChat && result.Ready && len(result.Models) > 0 {
+
+	warmModel := strings.TrimSpace(args.ModelRef)
+	if warmModel == "" && args.IncludeChat && len(result.Models) > 0 {
+		warmModel = result.Models[0].Name
+	}
+	if warmModel != "" {
+		options := map[string]any{"num_predict": 8}
+		if args.NumGpu != nil {
+			options["num_gpu"] = *args.NumGpu
+		}
+		if args.NumCtx != nil {
+			options["num_ctx"] = *args.NumCtx
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"model":   warmModel,
+			"stream":  false,
+			"think":   false,
+			"messages": []map[string]string{{"role": "user", "content": "Reply with one word: ready"}},
+			"options": options,
+		})
+		chatRequest, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/api/chat", cfg.Port), strings.NewReader(string(payload)))
+		if requestErr == nil {
+			chatRequest.Header.Set("Content-Type", "application/json")
+			chatResponse, chatErr := (&http.Client{Timeout: 3 * time.Minute}).Do(chatRequest)
+			if chatErr != nil {
+				result.LoadError = chatErr.Error()
+			} else {
+				defer chatResponse.Body.Close()
+				body, _ := io.ReadAll(io.LimitReader(chatResponse.Body, 1<<20))
+				if chatResponse.StatusCode >= 200 && chatResponse.StatusCode < 300 {
+					result.ChatReady = true
+				} else {
+					result.LoadError = strings.TrimSpace(string(body))
+					if result.LoadError == "" {
+						result.LoadError = fmt.Sprintf("chat status %d", chatResponse.StatusCode)
+					}
+				}
+			}
+		}
+	} else if args.IncludeChat && result.Ready && len(result.Models) > 0 {
 		payload, _ := json.Marshal(map[string]any{"model": result.Models[0].Name, "messages": []map[string]string{{"role": "user", "content": "Reply with one word: ready"}}, "stream": false, "options": map[string]any{"num_predict": 8}})
 		chatRequest, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", cfg.Port), strings.NewReader(string(payload)))
 		if requestErr == nil {
@@ -443,6 +810,7 @@ func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, includeChat b
 			}
 		}
 	}
+
 	psRequest, psErr := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/api/ps", cfg.Port), nil)
 	if psErr == nil {
 		psResponse, requestErr := (&http.Client{Timeout: 10 * time.Second}).Do(psRequest)
@@ -451,9 +819,10 @@ func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, includeChat b
 			if psResponse.StatusCode == http.StatusOK {
 				var ps struct {
 					Models []struct {
-						Name      string `json:"name"`
-						SizeVRAM  int64  `json:"size_vram"`
-						SizeVram  int64  `json:"sizeVram"`
+						Name          string `json:"name"`
+						SizeVRAM      int64  `json:"size_vram"`
+						SizeVram      int64  `json:"sizeVram"`
+						ContextLength int    `json:"context_length"`
 					} `json:"models"`
 				}
 				if err := json.NewDecoder(io.LimitReader(psResponse.Body, 1<<20)).Decode(&ps); err == nil {
@@ -465,6 +834,7 @@ func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, includeChat b
 						if vram > result.SizeVramBytes {
 							result.SizeVramBytes = vram
 							result.LoadedModel = model.Name
+							result.ContextLength = model.ContextLength
 						}
 					}
 					result.GpuAccelerated = result.SizeVramBytes > 0
@@ -472,7 +842,32 @@ func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, includeChat b
 			}
 		}
 	}
+	result.RemediationHints = remediationHintsForLocalLLMProbe(result)
 	return result, nil
+}
+
+func remediationHintsForLocalLLMProbe(result *LocalLLMProbeResult) []string {
+	if result == nil {
+		return nil
+	}
+	var hints []string
+	errText := strings.ToLower(result.LoadError)
+	if strings.Contains(errText, "ggml_sched_max_split_inputs") || strings.Contains(errText, "n_inputs") {
+		hints = append(hints,
+			"Model load crashed on a hybrid CPU/GPU scheduler split. Re-run configure_local_llm_model (or install_local_llm_model with createAs) using numGpu=99 for full discrete-GPU offload and a bounded numCtx, then probe_local_llm with that modelRef.",
+		)
+	}
+	if result.LoadError != "" && result.SizeVramBytes == 0 {
+		hints = append(hints,
+			"Call check_local_llm_prerequisites and resolve nvidia-smi / libcuda blockers on the host OS before retrying. Opute does not install NVIDIA drivers or change laptop Eco/MUX modes.",
+		)
+	}
+	if result.Ready && result.LoadedModel != "" && !result.GpuAccelerated {
+		hints = append(hints,
+			"A model is loaded with size_vram=0 (CPU path). Prefer a derived tag with PARAMETER num_gpu set high enough to keep layers on the discrete GPU.",
+		)
+	}
+	return hints
 }
 
 func (s *HostOperationsService) ensureOllamaInstalled(ctx context.Context, cfg OllamaConfig) error {

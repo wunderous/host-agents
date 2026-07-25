@@ -44,6 +44,18 @@ func newPersistentLocalLLMRelayManager() *localLLMRelayManager {
 	return manager
 }
 
+// closeLocalLLMRelaySession frees the TCP port immediately. Shutdown alone can
+// race Serve's exit and leave EADDRINUSE for a reclaiming bind on the same port.
+func closeLocalLLMRelaySession(session *localLLMRelaySession) {
+	if session == nil {
+		return
+	}
+	if session.listener != nil {
+		_ = session.listener.Close()
+	}
+	_ = session.server.Close()
+}
+
 func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs) (map[string]any, error) {
 	if err := ValidateLocalLLMRelayArgs(args); err != nil {
 		return nil, err
@@ -63,7 +75,7 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 		// listener so the next public request is checked against the new token.
 		delete(m.sessions, args.SessionID)
 		m.mu.Unlock()
-		_ = existing.server.Shutdown(ctx)
+		closeLocalLLMRelaySession(existing)
 		if m.persist {
 			_ = removePersistedLocalLLMRelay(args.SessionID)
 		}
@@ -82,7 +94,7 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 		m.mu.Unlock()
 	}
 	if stale != nil {
-		_ = stale.server.Shutdown(ctx)
+		closeLocalLLMRelaySession(stale)
 		if m.persist {
 			_ = removePersistedLocalLLMRelay(stale.id)
 		}
@@ -156,7 +168,7 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 	go func() { _ = session.server.Serve(ln) }()
 	if m.persist {
 		if err := persistLocalLLMRelayArgs(args); err != nil {
-			_ = session.server.Shutdown(context.Background())
+			closeLocalLLMRelaySession(session)
 			m.mu.Lock()
 			delete(m.sessions, args.SessionID)
 			m.mu.Unlock()
@@ -177,7 +189,7 @@ func (m *localLLMRelayManager) stop(id string) bool {
 		}
 		return false
 	}
-	_ = session.server.Shutdown(context.Background())
+	closeLocalLLMRelaySession(session)
 	if m.persist {
 		_ = removePersistedLocalLLMRelay(id)
 	}

@@ -16,6 +16,7 @@
     {"name": "list_local_llm_models", "classification": "read_only", "support": "experimental"},
     {"name": "probe_local_llm", "classification": "read_only", "support": "experimental"},
     {"name": "install_local_llm_model", "classification": "mutation", "support": "experimental"},
+    {"name": "configure_local_llm_model", "classification": "mutation", "support": "experimental"},
     {"name": "start_local_llm_runtime", "classification": "mutation", "support": "experimental"},
     {"name": "stop_local_llm_runtime", "classification": "mutation", "support": "experimental"},
     {"name": "remove_local_llm_model", "classification": "destructive", "support": "experimental"},
