@@ -23,20 +23,22 @@ After Go or schema changes: `cd ../opute && bun run build:host-agent`, then rest
 ## Production host on this Windows machine
 
 The production agent runs inside the default WSL2 distro as the persistent user service
-`opute-host-agent.service`; do not start the Windows binary for this deployment. The
-local production CPC companion is `opute-platform-opute-stack.service` (ports `919x`).
+`opute-host-agent.service`; do not start the Windows binary for this deployment. Public
+CPC is the dogfood **K3s** cell (`mcp.opute.io` / `platform.opute.io`). The optional
+local WSL CPC (`opute-platform-opute-stack.service` on `:919x`) is **retired/masked**
+on this workstation — do not start it to recover public edge.
 
 ```powershell
-wsl -e bash -lc 'systemctl --user start opute-platform-opute-stack.service'
 wsl -e bash -lc 'systemctl --user start opute-host-agent.service'
 wsl -e bash -lc 'systemctl --user is-active opute-host-agent.service; journalctl --user -u opute-host-agent.service -n 20 --no-pager'
 ```
 
-Verify a `reverse tunnel connected` log line and that `http://127.0.0.1:9191/health`
-answers from WSL. `opute-host-agent-tunnel-watchdog.timer` should remain active. If
-the agent logs `Unauthorized agent tool 'host_agent_heartbeat'`, treat it as an
-onboarding-token mismatch: `MCP_AUTH_TOKEN` must be the per-host `opha_*` token, not
-the CPC bearer (see `../opute/AGENTS.md`, **Host Agent Registration And Heartbeat**).
+Verify a `reverse tunnel connected` log line and that `https://mcp.opute.io/health`
+answers. Keep `OPUTE_HOST_WS_URL=wss://mcp.opute.io` and
+`OPUTE_MCP_URL=https://mcp.opute.io/mcp`. `opute-host-agent-tunnel-watchdog.timer`
+should remain active. If the agent logs `Unauthorized agent tool 'host_agent_heartbeat'`,
+treat it as an onboarding-token mismatch: `MCP_AUTH_TOKEN` must be the per-host
+`opha_*` token, not the CPC bearer (see `../opute/AGENTS.md`, **Host Agent Registration And Heartbeat**).
 
 An explicit `hostId` is the durable execution assignment. The host agent should execute that assignment through the reverse tunnel without requiring control-plane provider rediscovery. Keep guest and provider probes bounded and cancellable so VM provisioning cannot starve heartbeats or operation polling.
 
@@ -54,7 +56,7 @@ replaces the service environment.
 ### Incus/WSL recovery
 
 - `incus list` can report a VM as `RUNNING` while QEMU is still booting or the Incus guest agent is unavailable. Preserve the VM and its disks: use the host-agent `restart_vm` operation (or a clean Incus stop/start), bounded-retry `incus exec <vm> -- true`, and only then probe K3s. Never delete/reprovision solely because an operation reports `VM agent isn't currently running`.
-- During recovery, keep the host-agent reverse tunnel and the 919x MCP owner under the persistent user-systemd/WSL lifecycle. One-shot WSL invocations can race service and session startup; verify the agent heartbeat, local MCP health, guest `exec`, and K3s API separately before declaring the host recovered.
+- During recovery, keep the host-agent reverse tunnel under the persistent user-systemd/WSL lifecycle and confirm public MCP (`mcp.opute.io`) separately from any optional local CPC. One-shot WSL invocations can race service and session startup; verify the agent heartbeat, public MCP health, guest `exec`, and K3s API separately before declaring the host recovered.
 
 ## Provider / catalog
 
@@ -92,7 +94,7 @@ After Go, schema, or host-tool changes:
 
 For standalone changes, additionally run the opt-in Go live lifecycle (`go test -tags=integration ./test/live` in WSL with Incus). Use disposable names such as `opute-standalone-e2e-*` / `go-live-*`; clean those resources through standalone MCP tools and verify `incus list` contains no matching instances. The npm launcher is validated with `npm test` (daemon ownership / foreign-port refuse). The published-package canary is opt-in via `npm run test:published-canary` (`RUN_PUBLISHED_NPM_CANARY=true`, Linux only). Preserve the production VM and platform-shaped services. A partial VM/K3s/DB/tunnel run is evidence for the first successful boundary only, not a green full-lifecycle result.
 
-The production-shaped companion is `opute-platform-opute-stack.service` on the 919x ports. Keep it separate from the Opute dev stack on 909x. A failed heartbeat or tunnel must be diagnosed at the agent/session boundary before changing provider or VM code.
+The optional production-shaped local CPC companion is `opute-platform-opute-stack.service` on the 919x ports (separate from the Opute dev stack on 909x). On this workstation that unit is **retired/masked** and public CPC is the dogfood K3s cell — diagnose failed heartbeat/tunnel against `mcp.opute.io` and the host-agent session before changing provider or VM code.
 
 ## Session learnings
 
