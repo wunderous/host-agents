@@ -1,0 +1,19 @@
+{
+  "recordedAt": "2026-07-21T14:07:30Z",
+  "loop": "standalone-http-full-validation",
+  "tiers": {
+    "go_config_contract_standalone_wsl": { "exitCode": 0, "passes": 2 },
+    "npm_launcher_unit": { "exitCode": 0, "pass": 12, "skip": 1, "passes": 2 },
+    "go_live_incus_lifecycle": { "exitCode": 0 },
+    "published_npm_canary": { "exitCode": 0 },
+    "r0b_local_919x": { "exitCode": 0, "hostId": "host-zephyrus-e5059700", "probe": "ready" },
+    "r0b_public_platform_opute_io": { "exitCode": 0, "hostId": "host-zephyrus-e5059700", "probe": "ready", "passes": 2 },
+    "platform_lifecycle_919x": {
+      "exitCode": 0,
+      "hostId": "host-zephyrus-e5059700",
+      "evidence": "tmp/platform-opute-io/lifecycle/lifecycle-2026-07-21T13-59-07-066Z.json",
+      "elapsedMs": 455239
+    }
+  },
+  "status": "validation_complete"
+}

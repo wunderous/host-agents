@@ -13,6 +13,31 @@ func PrimaryLANIPv4() string {
 	return primaryLANIPv4Unix()
 }
 
+// IncusBridgeIPv4 returns the first usable address on the Incus bridge. It is
+// published as host metadata so a gateway VM can be admitted to the narrow
+// relay listener without binding the relay to every host interface.
+func IncusBridgeIPv4() string {
+	iface, err := net.InterfaceByName("incusbr0")
+	if err != nil || iface.Flags&net.FlagUp == 0 {
+		return ""
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return ""
+	}
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip := ipNet.IP.To4()
+		if ip != nil && !ip.IsLoopback() {
+			return ip.String()
+		}
+	}
+	return ""
+}
+
 func primaryLANIPv4Unix() string {
 	ifaces, err := net.Interfaces()
 	if err != nil {

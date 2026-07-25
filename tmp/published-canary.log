@@ -1,0 +1,15 @@
+TAP version 13
+# Subtest: published npm launcher black-box canary
+ok 1 - published npm launcher black-box canary
+  ---
+  duration_ms: 28568.771153
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 29097.622446

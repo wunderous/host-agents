@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,6 +71,7 @@ type HostOperationsService struct {
 
 	sqlSupervisor          *sqlConnectorSupervisor
 	guestBridgeRelay       *tcpRelayManager
+	localLLMRelay          *localLLMRelayManager
 	allowInsecureDownloads bool
 }
 
@@ -91,6 +93,7 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		toolsFn:                toolsFn,
 		sqlSupervisor:          newSQLConnectorSupervisor(),
 		guestBridgeRelay:       newTCPRelayManager(),
+		localLLMRelay:          newPersistentLocalLLMRelayManager(),
 		allowInsecureDownloads: opts.AllowInsecureDownloads,
 	}
 }
@@ -705,20 +708,90 @@ type RestartHostServiceArgs struct {
 	ServiceName string `json:"serviceName"`
 }
 
+type SetHostServiceStateArgs struct {
+	ServiceName string `json:"serviceName"`
+	State       string `json:"state"`
+	Scope       string `json:"scope,omitempty"`
+}
+
+var safeSystemdUnitName = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+$`)
+
+func restartServiceCommand(serviceName string) []string {
+	// The production host agent itself is a systemd *user* unit.  Invoking
+	// plain systemctl from the unprivileged agent asks polkit for interactive
+	// elevation and fails over MCP with “Interactive authentication required”.
+	// Keep system services on the existing system scope, but route Opute-owned
+	// user units through the user manager they actually belong to.
+	if strings.HasPrefix(serviceName, "opute-") {
+		// --no-block is essential when the target is this very host-agent
+		// service: waiting for systemd to finish stopping the process closes the
+		// reverse-tunnel request before the MCP operation can receive a result.
+		return []string{provider.DefaultSystemctlPath, "--user", "--no-block", "restart", serviceName}
+	}
+	return []string{provider.DefaultSystemctlPath, "restart", serviceName}
+}
+
+func serviceStatusCommand(serviceName string) []string {
+	if strings.HasPrefix(serviceName, "opute-") {
+		return []string{provider.DefaultSystemctlPath, "--user", "is-active", serviceName}
+	}
+	return []string{provider.DefaultSystemctlPath, "is-active", serviceName}
+}
+
 func (s *HostOperationsService) RestartHostService(args RestartHostServiceArgs, onData func(string)) (map[string]string, error) {
 	serviceName := strings.TrimSpace(args.ServiceName)
 	if serviceName == "" {
 		return nil, errors.New("serviceName is required")
 	}
-	restart, err := s.hostCommandRunner([]string{provider.DefaultSystemctlPath, "restart", serviceName}, onData, 0)
+	if !safeSystemdUnitName.MatchString(serviceName) {
+		return nil, errors.New("serviceName contains invalid characters")
+	}
+	restart, err := s.hostCommandRunner(restartServiceCommand(serviceName), onData, 0)
 	if err != nil || restart.ExitCode != 0 {
 		return nil, fmt.Errorf("%s", firstNonEmpty(restart.Stderr, restart.Stdout, "failed to restart service"))
 	}
-	verify, err := s.hostCommandRunner([]string{provider.DefaultSystemctlPath, "is-active", serviceName}, onData, 0)
+	if strings.HasPrefix(serviceName, "opute-") {
+		return map[string]string{"serviceName": serviceName, "status": "scheduled"}, nil
+	}
+	verify, err := s.hostCommandRunner(serviceStatusCommand(serviceName), onData, 0)
 	if err != nil || verify.ExitCode != 0 || strings.TrimSpace(verify.Stdout) != "active" {
 		return nil, fmt.Errorf("service '%s' is not active after restart", serviceName)
 	}
 	return map[string]string{"serviceName": serviceName, "status": "active"}, nil
+}
+
+// SetHostServiceState provides the generic, approval-gated service lifecycle
+// primitive used by recovery workflows. User scope is the safe default; system
+// scope is explicit and uses non-interactive sudo so MCP cannot hang on a
+// password prompt.
+func (s *HostOperationsService) SetHostServiceState(args SetHostServiceStateArgs, onData func(string)) (map[string]any, error) {
+	serviceName := strings.TrimSpace(args.ServiceName)
+	state := strings.ToLower(strings.TrimSpace(args.State))
+	scope := strings.ToLower(strings.TrimSpace(args.Scope))
+	if serviceName == "" || !safeSystemdUnitName.MatchString(serviceName) {
+		return nil, errors.New("serviceName is required and must be a valid systemd unit name")
+	}
+	if scope == "" {
+		scope = "user"
+	}
+	if scope != "user" && scope != "system" {
+		return nil, errors.New("scope must be user or system")
+	}
+	if state != "start" && state != "stop" && state != "restart" && state != "enable" && state != "disable" {
+		return nil, errors.New("state must be start, stop, restart, enable, or disable")
+	}
+	command := []string{provider.DefaultSystemctlPath}
+	if scope == "user" {
+		command = append(command, "--user")
+	} else {
+		command = append([]string{"sudo", "-n"}, command...)
+	}
+	command = append(command, state, serviceName)
+	result, err := s.hostCommandRunner(command, onData, 0)
+	if err != nil || result.ExitCode != 0 {
+		return nil, fmt.Errorf("service state change failed: %s", firstNonEmpty(result.Stderr, result.Stdout, "command failed"))
+	}
+	return map[string]any{"serviceName": serviceName, "state": state, "scope": scope, "status": "applied"}, nil
 }
 
 func (s *HostOperationsService) EnsureDocker(onData func(string)) (map[string]any, error) {

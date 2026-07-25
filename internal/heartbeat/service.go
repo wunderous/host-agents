@@ -33,6 +33,7 @@ type Service struct {
 	Logger               *slog.Logger
 	CollectVMStats       CollectVMStats
 	HostCapabilities     []string
+	CapabilitySummary    map[string]any
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -55,6 +56,7 @@ type Options struct {
 	Logger               *slog.Logger
 	CollectVMStats       CollectVMStats
 	HostCapabilities     []string
+	CapabilitySummary    map[string]any
 }
 
 func Start(opts Options) *Service {
@@ -62,7 +64,9 @@ func Start(opts Options) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	interval := 60 * time.Second
+	// Stay comfortably inside the control-plane liveness window so one
+	// transient reverse-tunnel/edge response cannot make a healthy host stale.
+	interval := 30 * time.Second
 	if opts.TestMode {
 		interval = 10 * time.Second
 	}
@@ -83,6 +87,7 @@ func Start(opts Options) *Service {
 		Logger:               logger,
 		CollectVMStats:       opts.CollectVMStats,
 		HostCapabilities:     opts.HostCapabilities,
+		CapabilitySummary:    opts.CapabilitySummary,
 		stopCh:               make(chan struct{}),
 	}
 	s.wg.Add(1)
@@ -154,6 +159,9 @@ func (s *Service) register() error {
 	if len(s.HostCapabilities) > 0 {
 		registration["capabilities"] = s.HostCapabilities
 	}
+	if len(s.CapabilitySummary) > 0 {
+		registration["capabilitySummary"] = s.CapabilitySummary
+	}
 	metadata := map[string]any{}
 	if s.OnboardingSessionID != "" {
 		metadata["onboardingSessionId"] = s.OnboardingSessionID
@@ -188,6 +196,9 @@ func (s *Service) heartbeat() error {
 	if publicIp := PrimaryLANIPv4(); publicIp != "" {
 		metadata["publicIp"] = publicIp
 	}
+	if bridgeIp := IncusBridgeIPv4(); bridgeIp != "" {
+		metadata["incusBridgeIp"] = bridgeIp
+	}
 	if system := systemMetadata(ReadHostSystemStats()); system != nil {
 		metadata["system"] = system
 	}
@@ -198,6 +209,9 @@ func (s *Service) heartbeat() error {
 		"fingerprintVersion": s.Fingerprint.FingerprintVersion,
 		"fingerprintSource":  string(s.Fingerprint.FingerprintSource),
 		"connectionState":    "connected",
+	}
+	if len(s.CapabilitySummary) > 0 {
+		heartbeatPayload["capabilitySummary"] = s.CapabilitySummary
 	}
 	if len(metadata) > 0 {
 		heartbeatPayload["metadata"] = metadata

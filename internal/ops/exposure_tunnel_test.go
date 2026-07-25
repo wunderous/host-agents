@@ -44,3 +44,10 @@ func TestProbeHostExposureReadyWithShim(t *testing.T) {
 		t.Fatalf("expected ready, got %s", probeOut.Summary)
 	}
 }
+
+func TestEnsureCloudflaredTunnelRejectsUnsafeOrigin(t *testing.T) {
+	svc := NewHostOperationsService(Options{ProviderID: "incus"})
+	if _, err := svc.EnsureCloudflaredTunnel(EnsureCloudflaredTunnelArgs{BindingID: "binding", Hostname: "llm.example.com", LocalTarget: "file:///tmp/token", RunToken: "token"}); err == nil {
+		t.Fatal("expected non-HTTP origin rejection")
+	}
+}

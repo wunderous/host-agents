@@ -55,6 +55,123 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
+	case "check_local_llm_prerequisites":
+		out, err := svc.CheckLocalLLMPrerequisites()
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "list_local_llm_models", "probe_local_llm":
+		if boolField(args, "prerequisites") {
+			out, err := svc.CheckLocalLLMPrerequisites()
+			if err != nil {
+				return nil, err
+			}
+			return structuredResult(out, ""), nil
+		}
+		modelRef, err := resolveLocalLLMModelArg(args)
+		if err != nil && stringField(args, "modelRef") == "" && stringField(args, "modelPreset") == "" {
+			modelRef = ""
+			err = nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		out, err := svc.ProbeLocalLLM(ctx, ops.ProbeLocalLLMArgs{
+			IncludeChat: boolField(args, "includeChat"),
+			ModelRef:    modelRef,
+			NumGpu:      optionalIntField(args, "numGpu"),
+			NumCtx:      optionalIntField(args, "numCtx"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "install_local_llm_model":
+		modelRef, err := resolveLocalLLMModelArg(args)
+		if err != nil {
+			return nil, err
+		}
+		out, err := svc.InstallLocalLLMModel(ctx, ops.InstallLocalLLMModelArgs{
+			ModelRef:       modelRef,
+			CreateAs:       stringField(args, "createAs"),
+			NumGpu:         optionalIntField(args, "numGpu"),
+			NumCtx:         optionalIntField(args, "numCtx"),
+			Template:       stringField(args, "template"),
+			TemplatePreset: stringField(args, "templatePreset"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local Ollama model is ready"), nil
+
+	case "configure_local_llm_model":
+		modelRef, err := resolveLocalLLMModelArg(args)
+		if err != nil {
+			return nil, err
+		}
+		out, err := svc.ConfigureLocalLLMModel(ctx, ops.ConfigureLocalLLMModelArgs{
+			ModelRef:       modelRef,
+			FromRef:        stringField(args, "fromRef"),
+			NumGpu:         optionalIntField(args, "numGpu"),
+			NumCtx:         optionalIntField(args, "numCtx"),
+			Template:       stringField(args, "template"),
+			TemplatePreset: stringField(args, "templatePreset"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local Ollama model configuration applied"), nil
+
+	case "start_local_llm_runtime":
+		out, err := svc.StartLocalLLMRuntime(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local Ollama runtime is ready"), nil
+
+	case "stop_local_llm_runtime":
+		if err := svc.StopLocalLLMRuntime(ctx); err != nil {
+			return nil, err
+		}
+		return structuredResult(map[string]any{"stopped": true}, "Local Ollama runtime stopped"), nil
+
+	case "remove_local_llm_model":
+		if err := svc.RemoveLocalLLMModel(ctx, stringField(args, "modelRef"), boolField(args, "purge")); err != nil {
+			return nil, err
+		}
+		return structuredResult(map[string]any{"removed": true, "purged": boolField(args, "purge")}, "Local Ollama model removed"), nil
+
+	case "ensure_local_llm_relay":
+		out, err := svc.EnsureLocalLLMRelay(ctx, ops.LocalLLMRelayArgs{SessionID: stringField(args, "sessionId"), ListenHost: stringField(args, "listenHost"), ListenPort: intField(args, "listenPort"), TargetHost: stringField(args, "targetHost"), TargetPort: intField(args, "targetPort"), IncomingToken: stringField(args, "incomingToken"), UpstreamToken: stringField(args, "upstreamToken"), AllowedSourceCIDRs: stringSliceField(args, "allowedSourceCIDRs"), RelayToken: stringField(args, "relayToken"), AllowedSourceIP: stringField(args, "allowedSourceIP")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local LLM relay is ready"), nil
+
+	case "remove_local_llm_relay":
+		out, err := svc.RemoveLocalLLMRelay(stringField(args, "sessionId"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local LLM relay removed"), nil
+
+	case "ensure_local_llm_k3s_proxy":
+		out, err := svc.EnsureLocalLLMK3sProxy(ops.LocalLLMK3sProxyArgs{VMName: vmNameFromArgs(args), NodePort: intField(args, "nodePort"), RelayHost: stringField(args, "relayHost"), RelayPort: intField(args, "relayPort"), RelayToken: stringField(args, "relayToken"), BearerKey: stringField(args, "bearerKey")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local LLM K3s proxy is ready"), nil
+
+	case "remove_local_llm_k3s_proxy":
+		out, err := svc.RemoveLocalLLMK3sProxy(vmNameFromArgs(args))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local LLM K3s proxy removed"), nil
+
 	case "get_vm_info":
 		vmName := vmNameFromArgs(args)
 		if vmName == "" {
@@ -66,6 +183,19 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, ""), nil
+
+	case "discover_cluster_ingress":
+		out, err := svc.DiscoverClusterIngress(ops.DiscoverClusterIngressArgs{
+			VMName:           vmNameFromArgs(args),
+			WebHostname:      stringField(args, "webHostname"),
+			McpHostname:      stringField(args, "mcpHostname"),
+			TraefikNamespace: stringField(args, "traefikNamespace"),
+			TraefikService:   stringField(args, "traefikService"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Discovered cluster ingress endpoints."), nil
 
 	case "agent_shell":
 		command, _ := args["command"].(string)
@@ -152,12 +282,20 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			LocalTarget: stringField(args, "localTarget"),
 			RunToken:    stringField(args, "runToken"),
 			Quick:       boolField(args, "quick"),
+			Native:      boolField(args, "native"),
 		}
 		out, err := svc.EnsureCloudflaredTunnel(parsed)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Tunnel ready for %s", out.Hostname)), nil
+
+	case "remove_local_llm_cloudflared_tunnel":
+		out, err := svc.RemoveHostExposure(ops.RemoveHostExposureArgs{BindingID: stringField(args, "bindingId")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local LLM Cloudflare connector removed"), nil
 
 	case "ensure_platform_opute_stack":
 		parsed := ops.EnsurePlatformOputeStackArgs{
@@ -353,6 +491,13 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, "Cluster agent installed."), nil
 
+	case "restart_cluster_agent":
+		out, err := svc.RestartClusterAgent(vmNameFromArgs(args), onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Cluster agent restarted."), nil
+
 	case "install_helm_chart":
 		parsed := installHelmChartArgs(args)
 		out, err := svc.InstallHelmChart(parsed, onData)
@@ -369,6 +514,105 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, fmt.Sprintf("HelmChart '%s' deleted.", parsed.ReleaseName)), nil
 
+	case "apply_manifest":
+		out, err := svc.ApplyManifest(ops.ApplyManifestArgs{VMName: vmNameFromArgs(args), Manifest: stringField(args, "manifest")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Kubernetes manifest applied."), nil
+
+	case "put_k8s_secret":
+		data := map[string]string{}
+		if raw, ok := args["data"].(map[string]any); ok {
+			for key, value := range raw {
+				if text, ok := value.(string); ok {
+					data[key] = text
+				}
+			}
+		}
+		out, err := svc.PutK8sSecret(ops.PutK8sSecretArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Data: data}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Kubernetes Secret configured."), nil
+
+	case "get_k8s_resource":
+		out, err := svc.GetK8sResource(ops.K8sResourceArgs{VMName: vmNameFromArgs(args), Kind: stringField(args, "kind"), ResourceKind: stringField(args, "resourceKind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "delete_k8s_resource":
+		out, err := svc.DeleteK8sResource(ops.K8sResourceArgs{VMName: vmNameFromArgs(args), Kind: stringField(args, "kind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Kubernetes resource deleted."), nil
+
+	case "get_k8s_resource_status":
+		out, err := svc.GetK8sResourceStatus(ops.K8sResourceArgs{VMName: vmNameFromArgs(args), Kind: stringField(args, "kind"), ResourceKind: stringField(args, "resourceKind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "install_oci_registry":
+		out, err := svc.InstallOCIRegistry(ops.InstallOCIRegistryArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Image: stringField(args, "image"), StorageSize: stringField(args, "storageSize"), StorageClass: stringField(args, "storageClass"), NodePort: intField(args, "nodePort")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "OCI registry deployment initiated."), nil
+
+	case "get_oci_registry_status":
+		out, err := svc.GetOCIRegistryStatus(ops.InstallOCIRegistryArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Name: stringField(args, "name")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "delete_oci_registry":
+		out, err := svc.DeleteOCIRegistry(ops.InstallOCIRegistryArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "OCI registry deleted."), nil
+
+	case "configure_k3s_registry":
+		out, err := svc.ConfigureK3sRegistry(ops.ConfigureK3sRegistryArgs{VMName: vmNameFromArgs(args), Endpoint: stringField(args, "endpoint"), Registry: stringField(args, "registry"), Insecure: boolField(args, "insecure")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "K3s registry configuration applied."), nil
+
+	case "configure_service_domain":
+		out, err := svc.ConfigureServiceDomain(ops.ConfigureServiceDomainArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), IngressName: stringField(args, "ingressName"), Hostname: stringField(args, "hostname"), ServiceName: stringField(args, "serviceName"), ServicePort: intField(args, "servicePort"), IngressClass: stringField(args, "ingressClass")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Service domain mapping configured."), nil
+
+	case "remove_service_domain":
+		out, err := svc.RemoveServiceDomain(ops.ConfigureServiceDomainArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), IngressName: stringField(args, "ingressName")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Service domain mapping removed."), nil
+
+	case "install_cloudflared_connector":
+		out, err := svc.InstallCloudflaredConnector(ops.InstallCloudflaredConnectorArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Token: stringField(args, "token"), Image: stringField(args, "image"), Replicas: intField(args, "replicas"), LocalTargets: cloudflaredLocalTargets(args["localTargets"])}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "In-cluster Cloudflare connector deployment initiated."), nil
+
+	case "delete_cloudflared_connector":
+		out, err := svc.DeleteCloudflaredConnector(ops.InstallCloudflaredConnectorArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "In-cluster Cloudflare connector deleted."), nil
+
 	case "restart_host_service":
 		out, err := svc.RestartHostService(ops.RestartHostServiceArgs{ServiceName: stringField(args, "serviceName")}, onData)
 		if err != nil {
@@ -376,12 +620,90 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, fmt.Sprintf("Restarted service '%s'.", out["serviceName"])), nil
 
+	case "set_host_service_state":
+		out, err := svc.SetHostServiceState(ops.SetHostServiceStateArgs{ServiceName: stringField(args, "serviceName"), State: stringField(args, "state"), Scope: stringField(args, "scope")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Applied service state '%s' to '%s'.", out["state"], out["serviceName"])), nil
+
+	case "configure_platform_agent":
+		var restart *bool
+		if raw, ok := args["restart"]; ok {
+			switch typed := raw.(type) {
+			case bool:
+				restart = &typed
+			}
+		}
+		out, err := svc.ConfigurePlatformAgent(ops.ConfigurePlatformAgentArgs{
+			McpURL:               stringField(args, "mcpUrl"),
+			HostWsURL:            stringField(args, "hostWsUrl"),
+			RemoteAgentAuthToken: stringField(args, "remoteAgentAuthToken"),
+			HostAuthToken:        stringField(args, "hostAuthToken"),
+			RemoteAgentID:        stringField(args, "remoteAgentId"),
+			EnvFile:              stringField(args, "envFile"),
+			ServiceName:          stringField(args, "serviceName"),
+			Restart:              restart,
+			McpHealthURL:         stringField(args, "mcpHealthUrl"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Platform agent configuration written."), nil
+
 	case "ensure_docker":
 		out, err := svc.EnsureDocker(onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "Docker daemon is running."), nil
+
+	case "ensure_oci_builder":
+		out, err := svc.EnsureOciBuilder(ops.EnsureOciBuilderArgs{Builder: stringField(args, "builder")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Host OCI image builder is available."), nil
+
+	case "build_and_push_oci_image":
+		out, err := svc.BuildAndPushOciImage(ops.BuildAndPushOciImageArgs{
+			ContextDir:       stringField(args, "contextDir"),
+			Dockerfile:       stringField(args, "dockerfile"),
+			Image:            stringField(args, "image"),
+			Builder:          stringField(args, "builder"),
+			InsecureRegistry: boolField(args, "insecureRegistry"),
+			Platform:         stringField(args, "platform"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Built and pushed %s.", out["image"])), nil
+
+	case "stage_build_context":
+		files := map[string]string{}
+		if raw, ok := args["files"].(map[string]any); ok {
+			for key, value := range raw {
+				if text, ok := value.(string); ok {
+					files[key] = text
+				}
+			}
+		}
+		out, err := svc.StageBuildContext(ops.StageBuildContextArgs{
+			DestDir:      stringField(args, "destDir"),
+			Files:        files,
+			FileEncoding: stringField(args, "fileEncoding"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Staged %v files into build context.", out["fileCount"])), nil
+
+	case "ensure_host_tool":
+		out, err := svc.EnsureHostTool(ops.EnsureHostToolArgs{Tool: stringField(args, "tool")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Generic host tool is available."), nil
 
 	case "ensure_k3d":
 		out, err := svc.EnsureK3d(onData)
@@ -489,6 +811,27 @@ func stringField(args map[string]any, key string) string {
 	return strings.TrimSpace(v)
 }
 
+func resolveLocalLLMModelArg(args map[string]any) (string, error) {
+	return ops.ResolveLocalLLMModelRef(stringField(args, "modelRef"), stringField(args, "modelPreset"))
+}
+
+func stringSliceField(args map[string]any, key string) []string {
+	values, ok := args[key].([]any)
+	if !ok {
+		if typed, typedOK := args[key].([]string); typedOK {
+			return typed
+		}
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if text, ok := value.(string); ok {
+			result = append(result, text)
+		}
+	}
+	return result
+}
+
 func boolField(args map[string]any, key string) bool {
 	v, _ := args[key].(bool)
 	return v
@@ -515,6 +858,33 @@ func intField(args map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+func optionalIntField(args map[string]any, key string) *int {
+	if args == nil {
+		return nil
+	}
+	if _, ok := args[key]; !ok {
+		return nil
+	}
+	v := intField(args, key)
+	return &v
+}
+
+func cloudflaredLocalTargets(value any) []ops.CloudflaredLocalTarget {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	targets := make([]ops.CloudflaredLocalTarget, 0, len(items))
+	for _, item := range items {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		targets = append(targets, ops.CloudflaredLocalTarget{LocalPort: intField(obj, "localPort"), Target: stringField(obj, "target")})
+	}
+	return targets
 }
 
 func provisionArgs(args map[string]any) ops.ProvisionVMArgs {

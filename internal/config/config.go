@@ -42,29 +42,29 @@ func Load() Config {
 		defaultPort = "3014"
 	}
 	port, _ := strconv.Atoi(envOr("HOST_MCP_PORT", defaultPort))
-	providerID := string(provider.NormalizeProviderID(os.Getenv("OPUTE_INFRA_PROVIDER_ID")))
-	agentID := strings.TrimSpace(os.Getenv("OPUTE_REMOTE_AGENT_ID"))
+	providerID := string(provider.NormalizeProviderID(envValue("OPUTE_INFRA_PROVIDER_ID")))
+	agentID := strings.TrimSpace(envValue("OPUTE_REMOTE_AGENT_ID"))
 	if agentID == "" {
 		agentID = "local-bridge-host"
 	}
-	mcpAuth := strings.TrimSpace(os.Getenv("MCP_AUTH_TOKEN"))
+	mcpAuth := strings.TrimSpace(envValue("MCP_AUTH_TOKEN"))
 	tunnelAuth := firstNonEmpty(
-		os.Getenv("OPUTE_REMOTE_AGENT_AUTH_TOKEN"),
-		os.Getenv("OPUTE_CPC_TOKEN"),
+		envValue("OPUTE_REMOTE_AGENT_AUTH_TOKEN"),
+		envValue("OPUTE_CPC_TOKEN"),
 	)
 	if tunnelAuth == "" && mcpAuth != "" && !strings.HasPrefix(mcpAuth, "opha_") {
 		tunnelAuth = mcpAuth
 	}
 	if tunnelAuth == "" {
-		tunnelAuth = firstNonEmpty(os.Getenv("OPUTE_BRIDGE_TOKEN"), os.Getenv("BRIDGE_TOKEN"))
+		tunnelAuth = firstNonEmpty(envValue("OPUTE_BRIDGE_TOKEN"), envValue("BRIDGE_TOKEN"))
 	}
 	bindHost := envOr("HOST_MCP_BIND_HOST", "127.0.0.1")
 	wsURL := envOr("OPUTE_HOST_WS_URL", "ws://"+bindHost+":9091")
-	mcpURL := strings.TrimSpace(os.Getenv("OPUTE_MCP_URL"))
+	mcpURL := strings.TrimSpace(envValue("OPUTE_MCP_URL"))
 	if mcpURL == "" {
 		mcpURL = "http://127.0.0.1:9091/mcp"
 	}
-	healthURL := strings.TrimSpace(os.Getenv("OPUTE_MCP_HEALTH_URL"))
+	healthURL := strings.TrimSpace(envValue("OPUTE_MCP_HEALTH_URL"))
 	if healthURL == "" {
 		healthURL = "http://127.0.0.1:" + envOr("AGENT_PORT", "9091") + "/health"
 	}
@@ -73,7 +73,7 @@ func Load() Config {
 		StandaloneStateDir:               envOr("OPUTE_STANDALONE_STATE_DIR", filepath.Join(userHomeDir(), ".opute", "standalone")),
 		StandaloneAllowMutations:         os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
 		StandaloneAllowInsecureDownloads: os.Getenv("OPUTE_STANDALONE_ALLOW_INSECURE_DOWNLOADS") == "true",
-		StandaloneInstanceID:             strings.TrimSpace(os.Getenv("OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID")),
+		StandaloneInstanceID:             strings.TrimSpace(envValue("OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID")),
 		HostMCPPort:                      port,
 		HostMCPBindHost:                  bindHost,
 		IsReverseTunnel:                  os.Getenv("OPUTE_REVERSE_TUNNEL") == "true",
@@ -83,11 +83,11 @@ func Load() Config {
 		RemoteAgentID:                    agentID,
 		RemoteAgentAuthToken:             tunnelAuth,
 		MCPAuthToken:                     mcpAuth,
-		BridgeToken:                      firstNonEmpty(os.Getenv("OPUTE_BRIDGE_TOKEN"), os.Getenv("BRIDGE_TOKEN")),
+		BridgeToken:                      firstNonEmpty(envValue("OPUTE_BRIDGE_TOKEN"), envValue("BRIDGE_TOKEN")),
 		ProviderID:                       providerID,
-		OnboardingToken:                  strings.TrimSpace(os.Getenv("OPUTE_ONBOARDING_TOKEN")),
-		OnboardingSessionID:              strings.TrimSpace(os.Getenv("OPUTE_ONBOARDING_SESSION_ID")),
-		EnvFile:                          strings.TrimSpace(os.Getenv("OPUTE_HOST_AGENT_ENV_FILE")),
+		OnboardingToken:                  strings.TrimSpace(envValue("OPUTE_ONBOARDING_TOKEN")),
+		OnboardingSessionID:              strings.TrimSpace(envValue("OPUTE_ONBOARDING_SESSION_ID")),
+		EnvFile:                          strings.TrimSpace(envValue("OPUTE_HOST_AGENT_ENV_FILE")),
 		TestMode:                         os.Getenv("OPUTE_TEST") == "true" || os.Getenv("NODE_ENV") == "test",
 	}
 }
@@ -151,10 +151,24 @@ func userHomeDir() string {
 }
 
 func envOr(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+	if v := strings.TrimSpace(envValue(key)); v != "" {
 		return v
 	}
 	return fallback
+}
+
+// envValue accepts both ordinary systemd EnvironmentFile values and values
+// emitted by shell-quoting helpers. Some existing installations contain
+// literal surrounding quotes; keeping them makes URL health probes and
+// reverse-tunnel dialing fail before the agent can reconnect.
+func envValue(key string) string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if len(value) >= 2 {
+		if (value[0] == '\'' && value[len(value)-1] == '\'') || (value[0] == '"' && value[len(value)-1] == '"') {
+			return strings.TrimSpace(value[1 : len(value)-1])
+		}
+	}
+	return value
 }
 
 func firstNonEmpty(values ...string) string {

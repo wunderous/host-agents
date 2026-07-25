@@ -1,0 +1,122 @@
+=== 1 config + contract ===
+ok  	github.com/wunderous/host-agents/internal/config	0.022s
+ok  	github.com/wunderous/host-agents/test/contract	1.998s
+CONFIG_CONTRACT_OK
+=== 2 standalone (build + OPUTE_STANDALONE_BINARY) ===
+ok  	github.com/wunderous/host-agents/test/standalone	19.812s
+STANDALONE_ARTIFACT_OK
+=== 3 npm launcher ===
+
+> @opute/host-agent@0.1.1 test
+> node --test index.test.js
+
+TAP version 13
+# Subtest: downloads, verifies, caches, and re-verifies the release binary
+ok 1 - downloads, verifies, caches, and re-verifies the release binary
+  ---
+  duration_ms: 1459.585874
+  ...
+# Subtest: missing local binary fails closed before a listener is claimed
+ok 2 - missing local binary fails closed before a listener is claimed
+  ---
+  duration_ms: 501.048204
+  ...
+# Subtest: url prints the default Streamable HTTP endpoint
+ok 3 - url prints the default Streamable HTTP endpoint
+  ---
+  duration_ms: 421.962051
+  ...
+# Subtest: background daemon start/status/stop owns its listener and strips platform credentials
+ok 4 - background daemon start/status/stop owns its listener and strips platform credentials
+  ---
+  duration_ms: 2464.124464
+  ...
+# Subtest: background start refuses a foreign listener without overwriting daemon state
+ok 5 - background start refuses a foreign listener without overwriting daemon state
+  ---
+  duration_ms: 993.808856
+  ...
+# Subtest: background start fails closed for a live reused PID
+ok 6 - background start fails closed for a live reused PID
+  ---
+  duration_ms: 1052.755209
+  ...
+# Subtest: background start clears a dead pid when the port is free
+ok 7 - background start clears a dead pid when the port is free
+  ---
+  duration_ms: 1400.722547
+  ...
+# Subtest: background start refuses a dead pid when a foreign listener holds the port
+ok 8 - background start refuses a dead pid when a foreign listener holds the port
+  ---
+  duration_ms: 675.410425
+  ...
+# Subtest: stop refuses a live reused PID without ownership
+ok 9 - stop refuses a live reused PID without ownership
+  ---
+  duration_ms: 455.938847
+  ...
+# Subtest: background start uses stored owned endpoint when daemon state points at another port
+ok 10 - background start uses stored owned endpoint when daemon state points at another port
+  ---
+  duration_ms: 2517.938942
+  ...
+# Subtest: background start fails closed when a foreign listener claims the port after preflight
+ok 11 - background start fails closed when a foreign listener claims the port after preflight
+  ---
+  duration_ms: 941.214609
+  ...
+# Subtest: native Windows fails before attempting an artifact download
+ok 12 - native Windows fails before attempting an artifact download # SKIP
+  ---
+  duration_ms: 0.8015
+  ...
+# Subtest: the packed npm tarball launches the verified binary
+ok 13 - the packed npm tarball launches the verified binary
+  ---
+  duration_ms: 4987.582274
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 18384.735092
+NPM_OK
+=== 4 published canary ===
+TAP version 13
+# Subtest: published npm launcher black-box canary
+ok 1 - published npm launcher black-box canary
+  ---
+  duration_ms: 33381.744087
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 33995.922609
+PUBLISHED_CANARY_OK
+=== 5 live lifecycle ===
+ok  	github.com/wunderous/host-agents/test/live	11.135s
+LIVE_OK
+=== 6 strict opute parity ===
+bun test v1.3.14 (0d9b296a)
+
+mcps/packages/shared/src/streamable-http-client.test.ts:
+(pass) buildMcpHttpHeaders > includes required Accept header [5.14ms]
+(pass) buildMcpHttpHeaders > adds Authorization when token is provided [0.15ms]
+(pass) host-agent Streamable HTTP contract > matches the sibling host-agent fixture when available [17.84ms]
+
+ 3 pass
+ 0 fail
+ 7 expect() calls
+Ran 3 tests across 1 file. [6.16s]
+PARITY_OK
+VALIDATE_ALL_FIVE_EXIT:0

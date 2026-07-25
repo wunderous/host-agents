@@ -89,7 +89,271 @@ func LoadAllToolDefinitions(providerID string) ([]ToolDefinition, error) {
 	if err != nil {
 		return nil, err
 	}
+	defs = appendLocalLLMDefinitions(defs)
+	defs = appendGenericHostDefinitions(defs)
 	return augmentIncusInventoryTools(defs)
+}
+
+func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
+	needed := map[string]bool{
+		"ensure_oci_builder":            true,
+		"build_and_push_oci_image":      true,
+		"stage_build_context":           true,
+		"ensure_host_tool":              true,
+		"set_host_service_state":        true,
+		"configure_platform_agent":      true,
+		"discover_cluster_ingress":      true,
+		"apply_manifest":                true,
+		"delete_k8s_resource":            true,
+		"put_k8s_secret":                true,
+		"install_oci_registry":          true,
+		"configure_k3s_registry":        true,
+		"install_cloudflared_connector": true,
+		"delete_cloudflared_connector":  true,
+		"configure_service_domain":      true,
+		"remove_service_domain":         true,
+	}
+	seen := make(map[string]bool, len(needed))
+	for _, definition := range defs {
+		if needed[definition.Name] {
+			seen[definition.Name] = true
+		}
+	}
+	if len(seen) == len(needed) {
+		return defs
+	}
+	defs = append(defs, ToolDefinition{
+		Name:         "ensure_oci_builder",
+		Title:        "Ensure OCI image builder",
+		Description:  "Ensure a generic host-side OCI image builder is installed and available.",
+		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"builder": map[string]any{"type": "string", "enum": []string{"auto", "podman", "buildah", "buildkit"}}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"builder", "path", "available"}},
+	}, ToolDefinition{
+		Name:        "build_and_push_oci_image",
+		Title:       "Build and push OCI image",
+		Description: "Build a generic OCI image from a host-local context directory and push it to a registry.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"contextDir", "image"}, "properties": map[string]any{
+			"contextDir":       map[string]any{"type": "string"},
+			"dockerfile":       map[string]any{"type": "string"},
+			"image":            map[string]any{"type": "string"},
+			"builder":          map[string]any{"type": "string", "enum": []string{"auto", "podman", "buildah", "buildkit"}},
+			"insecureRegistry": map[string]any{"type": "boolean"},
+			"platform":         map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "stage_build_context",
+		Title:       "Stage build context",
+		Description: "Write a caller-provided build context into an allowlisted host directory for build_and_push_oci_image.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"destDir", "files"}, "properties": map[string]any{
+			"destDir":      map[string]any{"type": "string"},
+			"files":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+			"fileEncoding": map[string]any{"type": "string", "enum": []string{"utf8", "base64"}},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:         "ensure_host_tool",
+		Title:        "Ensure generic host tool",
+		Description:  "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared"}}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
+	}, ToolDefinition{
+		Name:        "set_host_service_state",
+		Title:       "Set host service state",
+		Description: "Start, stop, restart, enable, or disable a validated host service; user scope is the default.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "state"}, "properties": map[string]any{
+			"serviceName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_.@:-]+$`},
+			"state":       map[string]any{"type": "string", "enum": []string{"start", "stop", "restart", "enable", "disable"}},
+			"scope":       map[string]any{"type": "string", "enum": []string{"user", "system"}},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "state", "scope", "status"}},
+	}, ToolDefinition{
+		Name:        "configure_platform_agent",
+		Title:       "Configure platform agent",
+		Description: "Write platform-mode host-agent env and optionally restart so the agent reverse-tunnels to a CPC MCP URL.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"mcpUrl", "remoteAgentAuthToken", "hostAuthToken"}, "properties": map[string]any{
+			"mcpUrl":               map[string]any{"type": "string"},
+			"hostWsUrl":            map[string]any{"type": "string"},
+			"remoteAgentAuthToken": map[string]any{"type": "string"},
+			"hostAuthToken":        map[string]any{"type": "string"},
+			"remoteAgentId":        map[string]any{"type": "string"},
+			"envFile":              map[string]any{"type": "string"},
+			"serviceName":          map[string]any{"type": "string"},
+			"restart":              map[string]any{"type": "boolean"},
+			"mcpHealthUrl":         map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "discover_cluster_ingress",
+		Title:       "Discover cluster ingress",
+		Description: "Resolve Traefik/VM bridge endpoints for CPC web and MCP without kubectl port-forward.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
+			"vmName":           map[string]any{"type": "string"},
+			"webHostname":      map[string]any{"type": "string"},
+			"mcpHostname":      map[string]any{"type": "string"},
+			"traefikNamespace": map[string]any{"type": "string"},
+			"traefikService":   map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "ensure_host_tool",
+		Title:       "Ensure generic host tool",
+		Description: "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{
+			"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared"}},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
+	}, ToolDefinition{
+		Name:        "apply_manifest",
+		Title:       "Apply Kubernetes manifest",
+		Description: "Apply a generic Kubernetes manifest to a VM-backed cluster.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "manifest"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "manifest": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "delete_k8s_resource",
+		Title:       "Delete Kubernetes resource",
+		Description: "Delete a generic Kubernetes resource from a VM-backed cluster.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "kind", "resourceName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "kind": map[string]any{"type": "string"}, "resourceName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "put_k8s_secret",
+		Title:       "Put Kubernetes Secret",
+		Description: "Create or replace a generic Kubernetes Secret without returning its values.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "name", "data"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "data": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "install_oci_registry",
+		Title:       "Install OCI registry",
+		Description: "Install a generic OCI registry inside a VM-backed Kubernetes cluster.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "storageSize": map[string]any{"type": "string"}, "storageClass": map[string]any{"type": "string"}, "nodePort": map[string]any{"type": "integer"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "configure_k3s_registry",
+		Title:       "Configure K3s registry",
+		Description: "Configure a K3s cluster to pull images from an OCI registry endpoint.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "endpoint"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "endpoint": map[string]any{"type": "string"}, "registry": map[string]any{"type": "string"}, "insecure": map[string]any{"type": "boolean"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "install_cloudflared_connector",
+		Title:       "Install Cloudflare connector",
+		Description: "Deploy a token-backed Cloudflare connector inside Kubernetes.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "token"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "token": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "replicas": map[string]any{"type": "integer"}, "localTargets": map[string]any{"type": "array"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "delete_cloudflared_connector",
+		Title:       "Delete Cloudflare connector",
+		Description: "Delete the in-cluster Cloudflare connector resources.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "configure_service_domain",
+		Title:       "Configure service domain",
+		Description: "Map a Kubernetes Service to a caller-selected hostname through the configured ingress class.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "namespace", "ingressName", "hostname", "serviceName", "servicePort"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "ingressName": map[string]any{"type": "string"}, "hostname": map[string]any{"type": "string"}, "serviceName": map[string]any{"type": "string"}, "servicePort": map[string]any{"type": "integer"}, "ingressClass": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "remove_service_domain",
+		Title:       "Remove service domain",
+		Description: "Remove a caller-selected Kubernetes Service domain mapping.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "namespace", "ingressName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "ingressName": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	})
+	// Keep the embedded JSON catalogs authoritative where a definition already
+	// exists, while allowing the Go catalog to fill newly implemented generic
+	// operations until the generated files are refreshed.
+	unique := make([]ToolDefinition, 0, len(defs))
+	seen = make(map[string]bool, len(defs))
+	for _, definition := range defs {
+		if seen[definition.Name] {
+			continue
+		}
+		seen[definition.Name] = true
+		unique = append(unique, definition)
+	}
+	return unique
+}
+
+func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
+	seen := make(map[string]bool, len(defs))
+	for _, d := range defs {
+		seen[d.Name] = true
+	}
+	inputs := map[string]map[string]any{
+		"check_local_llm_prerequisites": {"type": "object", "properties": map[string]any{}},
+		"list_local_llm_models":         {"type": "object", "properties": map[string]any{"includeChat": map[string]any{"type": "boolean"}}},
+		"probe_local_llm": {"type": "object", "properties": map[string]any{
+			"includeChat": map[string]any{"type": "boolean"},
+			"modelRef":    map[string]any{"type": "string"},
+			"modelPreset": map[string]any{"type": "string", "enum": []string{"phi", "gemma", "qwen"}},
+			"numGpu":      map[string]any{"type": "integer"},
+			"numCtx":      map[string]any{"type": "integer"},
+		}},
+		"install_local_llm_model": {"type": "object", "properties": map[string]any{
+			"modelRef":        map[string]any{"type": "string"},
+			"modelPreset":     map[string]any{"type": "string", "enum": []string{"phi", "gemma", "qwen"}},
+			"createAs":        map[string]any{"type": "string"},
+			"numGpu":          map[string]any{"type": "integer"},
+			"numCtx":          map[string]any{"type": "integer"},
+			"template":        map[string]any{"type": "string"},
+			"templatePreset":  map[string]any{"type": "string", "enum": []string{"phi-functools"}},
+		}},
+		"configure_local_llm_model": {"type": "object", "properties": map[string]any{
+			"modelRef":       map[string]any{"type": "string"},
+			"modelPreset":    map[string]any{"type": "string", "enum": []string{"phi", "gemma", "qwen"}},
+			"fromRef":        map[string]any{"type": "string"},
+			"numGpu":         map[string]any{"type": "integer"},
+			"numCtx":         map[string]any{"type": "integer"},
+			"template":       map[string]any{"type": "string"},
+			"templatePreset": map[string]any{"type": "string", "enum": []string{"phi-functools"}},
+		}},
+		"start_local_llm_runtime": {"type": "object", "properties": map[string]any{}},
+		"stop_local_llm_runtime":  {"type": "object", "properties": map[string]any{}},
+		"remove_local_llm_model":  {"type": "object", "required": []string{"modelRef"}, "properties": map[string]any{"modelRef": map[string]any{"type": "string"}, "purge": map[string]any{"type": "boolean"}}},
+		"ensure_local_llm_relay":              {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "incomingToken", "allowedSourceCIDRs"}, "properties": map[string]any{"upstreamToken": map[string]any{"type": "string"}, "allowedSourceCIDRs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}},
+		"remove_local_llm_relay":              {"type": "object", "required": []string{"sessionId"}, "properties": map[string]any{}},
+		"ensure_local_llm_k3s_proxy":          {"type": "object", "required": []string{"vmName", "nodePort", "relayHost", "relayPort", "relayToken", "bearerKey"}, "properties": map[string]any{}},
+		"remove_local_llm_k3s_proxy":          {"type": "object", "required": []string{"vmName"}, "properties": map[string]any{}},
+		"remove_local_llm_cloudflared_tunnel": {"type": "object", "required": []string{"bindingId"}, "properties": map[string]any{}},
+	}
+	for name, schema := range inputs {
+		if !seen[name] {
+			desc := "Opute-managed local Ollama operation"
+			switch name {
+			case "check_local_llm_prerequisites":
+				desc = "Inspect local Ollama install readiness and GPU/CUDA diagnostics (blockers + remediationHints; does not install NVIDIA drivers)."
+			case "install_local_llm_model":
+				desc = "Install Ollama with the CUDA-pinned systemd unit, pull modelRef or modelPreset (phi|gemma|qwen), and optionally createAs with numGpu/numCtx (full GPU offload)."
+			case "configure_local_llm_model":
+				desc = "Create/replace a local Ollama tag FROM an already-pulled model with Modelfile parameters (numGpu/numCtx). Pass modelRef or modelPreset. Does not re-download."
+			case "start_local_llm_runtime":
+				desc = "Start/restart the local Ollama runtime with the Opute-managed CUDA-pinned systemd unit."
+			case "probe_local_llm":
+				desc = "Probe local Ollama readiness; optionally warm-load modelRef or modelPreset and report loadError/remediationHints plus GPU sizeVramBytes."
+			case "remove_local_llm_model":
+				desc = "Remove a local Ollama model. Set purge=true to delete all managed models and wipe the models directory."
+			}
+			defs = append(defs, ToolDefinition{Name: name, Title: name, Description: desc, InputSchema: schema, OutputSchema: map[string]any{"type": "object"}})
+		}
+	}
+	return defs
 }
 
 func augmentIncusInventoryTools(defs []ToolDefinition) ([]ToolDefinition, error) {

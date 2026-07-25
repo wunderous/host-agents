@@ -40,6 +40,22 @@ the CPC bearer (see `../opute/AGENTS.md`, **Host Agent Registration And Heartbea
 
 An explicit `hostId` is the durable execution assignment. The host agent should execute that assignment through the reverse tunnel without requiring control-plane provider rediscovery. Keep guest and provider probes bounded and cancellable so VM provisioning cannot starve heartbeats or operation polling.
 
+When a host is onboarded to a second control plane on the same machine, verify the
+control-plane WebSocket bearer matches the MCP Deployment's `remoteAgentAuthToken`.
+An onboarding session may report connected while `list_vms` remains unavailable if
+the reverse tunnel reaches the MCP endpoint but is rejected at its auth boundary.
+Keep concurrent local-LLM relay instances on distinct configured ports; the agent
+must not assume that a single machine-wide default port is conflict-free.
+Host-agent recovery is driven by the generated onboarding installer; callers must
+stop the managed user service narrowly, not `pkill -f opute-host-agent`, because the
+installer command itself contains that string and can kill its own shell before it
+replaces the service environment.
+
+### Incus/WSL recovery
+
+- `incus list` can report a VM as `RUNNING` while QEMU is still booting or the Incus guest agent is unavailable. Preserve the VM and its disks: use the host-agent `restart_vm` operation (or a clean Incus stop/start), bounded-retry `incus exec <vm> -- true`, and only then probe K3s. Never delete/reprovision solely because an operation reports `VM agent isn't currently running`.
+- During recovery, keep the host-agent reverse tunnel and the 919x MCP owner under the persistent user-systemd/WSL lifecycle. One-shot WSL invocations can race service and session startup; verify the agent heartbeat, local MCP health, guest `exec`, and K3s API separately before declaring the host recovered.
+
 ## Provider / catalog
 
 - Provider abstraction: `internal/provider`
@@ -55,7 +71,8 @@ An explicit `hostId` is the durable execution assignment. The host agent should 
 
 ### Standalone local workflow
 
-- The supported client boundary is standards-compliant MCP Streamable HTTP (default `http://127.0.0.1:3014/mcp`). Direct development invocation is `opute-host-agent --mode standalone --transport http`; clients should start `@opute/host-agent` (or the binary) and connect with `"type": "http"` + `url`. Cursor, VS Code, and Claude examples are unverified documentation snippets, not certifications.
+- The supported client boundary is standards-compliant MCP Streamable HTTP only (default `http://127.0.0.1:3014/mcp`). **`stdio` is rejected** (`OPUTE_TRANSPORT` / `--transport` accept only `http`). Direct development invocation is `opute-host-agent --mode standalone --transport http`; the npm launcher (`@opute/host-agent`) daemon commands are `start` / `stop` / `status` / `url` over HTTP. Clients connect with `"type": "http"` + `url`. Cursor, VS Code, and Claude examples are unverified documentation snippets, not certifications.
+- Standalone catalog + smoke lists are owned by **`schemas/standalone-tools.json`** (`tools`, `smoke.requiredTools`, `smoke.forbiddenTools`). Wire client headers live in **`schemas/streamable-http-client.json`**. Do not hardcode those lists in Go or Node tests.
 - Mutations are deliberately disabled unless `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` is set. Host shell and insecure-download behavior are separate opt-ins; never enable them by default in a published client configuration.
 - Long-running mutations (`provision_vm`, `install_k3s`, `install_postgresql`, tunnel creation, and deletion) must return a task/operation immediately. Poll `get_operation`; do not increase the MCP request timeout or synchronously repeat the underlying provider call.
 - The local journal is SQLite-backed and operation state is authoritative for standalone recovery. On restart, previously working operations reconcile to `unknown`; clients must surface that state rather than pretending the work completed.
@@ -68,11 +85,18 @@ An explicit `hostId` is the durable execution assignment. The host agent should 
 
 After Go, schema, or host-tool changes:
 
-1. Run `go test ./...`.
-2. From the sibling Opute checkout, run `bun run build:host-agent` and export schemas when catalog changes are involved.
+1. Run Linux-gated Go tests **inside WSL with a native Linux `go`** (user-local tarball under `~/.local/go-toolchain` is fine). **Anti-pattern:** relying on Windows `go.exe` leaked onto the WSL PATH via `/mnt/c/Program Files/Go/bin` — that builds `GOOS=windows` and causes `test/standalone` to skip (`runtime.GOOS != "linux"`) or fail. Prefer `go test ./internal/config ./test/contract ./test/standalone -count=1` in WSL over Windows cross-compile + Python HTTP smoke.
+2. From the sibling Opute checkout, run `bun run build:host-agent` and export schemas when catalog changes are involved. Keep Accept/header parity with Opute via `OPUTE_REQUIRE_HOST_AGENT_SCHEMA=true bun test mcps/packages/shared/src/streamable-http-client.test.ts`.
 3. Restart the owning WSL services only through the documented user-systemd path; do not start a second Windows binary for the same host identity.
 4. Verify `opute-host-agent.service` is active, the reverse tunnel is connected, `http://127.0.0.1:9191/health` responds, and the Opute shell canary succeeds with an explicit host and VM fixture.
 
-For standalone changes, additionally run `go test ./...`, the artifact-aware Go smoke (`OPUTE_STANDALONE_BINARY=dist/host-agent-linux-x64 go test ./test/standalone`), and the opt-in Go live lifecycle (`go test -tags=integration ./test/live`). Use disposable names such as `opute-standalone-e2e-*`; clean those resources through standalone MCP tools and verify `incus list` contains no matching instances. The npm launcher is validated with `npm test`, and the published-package canary is opt-in via `npm run test:published-canary`. Preserve the production VM and platform-shaped services. A partial VM/K3s/DB/tunnel run is evidence for the first successful boundary only, not a green full-lifecycle result.
+For standalone changes, additionally run the opt-in Go live lifecycle (`go test -tags=integration ./test/live` in WSL with Incus). Use disposable names such as `opute-standalone-e2e-*` / `go-live-*`; clean those resources through standalone MCP tools and verify `incus list` contains no matching instances. The npm launcher is validated with `npm test` (daemon ownership / foreign-port refuse). The published-package canary is opt-in via `npm run test:published-canary` (`RUN_PUBLISHED_NPM_CANARY=true`, Linux only). Preserve the production VM and platform-shaped services. A partial VM/K3s/DB/tunnel run is evidence for the first successful boundary only, not a green full-lifecycle result.
 
 The production-shaped companion is `opute-platform-opute-stack.service` on the 919x ports. Keep it separate from the Opute dev stack on 909x. A failed heartbeat or tunnel must be diagnosed at the agent/session boundary before changing provider or VM code.
+
+## Session learnings
+
+- **Reconcile tracked stale relay listeners by port.** `remove_local_llm_relay` is session-scoped, but persisted legacy sessions may retain a requested port after a publication is removed. `ensure_local_llm_relay` should reclaim a tracked stale listener for the desired port before binding, while still failing for an unrelated external process.
+- **Provisioning storage is a guest-visible invariant.** A successful `provision_vm` result is not enough: validate the requested root size through the generic VM execution path (`lsblk`/`df`) before installing K3s. Profile-provided 10GiB roots can otherwise cause immediate K3s `DiskPressure`; resize/reconcile the Incus device inside the host-agent operation, never with direct host commands.
+- **Guest bootstrap bridge endpoints must be routable.** WSL loopback `:9193` is not reachable from Incus guests. Cluster-agent installation must accept a guest-reachable bridge URL supplied by the control plane and then verify a fresh cluster-agent heartbeat.
+- **Ollama systemd unit must pin the discrete CUDA GPU.** `RenderOllamaSystemdUnit` sets `CUDA_VISIBLE_DEVICES=0`, `NVIDIA_VISIBLE_DEVICES=0`, `OLLAMA_INTEL_GPU=false`, and `LD_LIBRARY_PATH` including `/usr/lib/wsl/lib` plus the tree’s `lib/ollama/cuda_v12` (Windows NVIDIA driver via WSL GPU-PV). `install_local_llm_model` / `start_local_llm_runtime` rewrite that unit every start. **Model tags for low-VRAM GPUs:** `install_local_llm_model` accepts `createAs`/`numGpu`/`numCtx` (Modelfile `PARAMETER num_gpu` / `num_ctx`); `configure_local_llm_model` creates a derived tag without re-pull. Prefer `numGpu=99` for full dGPU offload when hybrid splits crash (`GGML_SCHED_MAX_SPLIT_INPUTS`). **Diagnostics only for host GPU prep:** `check_local_llm_prerequisites` returns `readyForInstall`, `readyForGpuInference`, `blockers`, and `remediationHints` (driver / Eco-MUX / missing libcuda / low VRAM) — never installs NVIDIA drivers or changes laptop GPU modes. Proof after operator prep: `probe_local_llm` `gpuAccelerated` / `sizeVramBytes > 0`; warm-load via `modelRef` surfaces `loadError` + remediation. **Anti-pattern:** shipping a unit with only `OLLAMA_HOST`/`OLLAMA_MODELS` and declaring GPU ready because `libcuda.so` exists while `size_vram` stays `0`; leaving bare registry tags that hybrid-split on ≤6GiB VRAM. Regression: `internal/ops/ollama_test.go` (`TestRenderOllamaSystemdUnit`, `TestFinalizeLocalLLMPrerequisitesGpuBlockers`, Modelfile/remediation tests).

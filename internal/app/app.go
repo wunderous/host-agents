@@ -85,6 +85,45 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 					TotalVMCount:   total,
 				}, nil
 			}
+			hostCapabilities := append([]string(nil), toolNames...)
+			seenLLM := false
+			for _, name := range hostCapabilities {
+				if name == "llm.ollama" {
+					seenLLM = true
+					break
+				}
+			}
+			if !seenLLM {
+				hostCapabilities = append(hostCapabilities, "llm.ollama")
+			}
+			// Advertise the host-local runtime envelope during registration and
+			// heartbeat so the control plane can reject unsupported work before
+			// queueing a mutation. This is deliberately capability metadata only;
+			// installation and model state remain owned by host operations.
+			var capabilitySummary map[string]any
+			if prereqs, prereqErr := svc.CheckLocalLLMPrerequisites(); prereqErr == nil && prereqs != nil {
+				capabilitySummary = map[string]any{
+					"llm": map[string]any{
+						"ollama": map[string]any{
+							"supported":            prereqs.Supported,
+							"apiBaseUrl":           ops.OllamaLoopbackURL(0),
+							"architectures":        []string{prereqs.Architecture},
+							"readyForInstall":      prereqs.ReadyForInstall,
+							"readyForGpuInference": prereqs.ReadyForGpuInference,
+							"gpu": map[string]any{
+								"available":          prereqs.NvidiaSmiOk,
+								"vendor":             strings.TrimSpace(prereqs.GPU),
+								"nvidiaSmiOk":        prereqs.NvidiaSmiOk,
+								"cudaLibraryPresent": prereqs.CudaLibraryPresent,
+								"dxgDevicePresent":   prereqs.DxgDevicePresent,
+								"runtimeAccelerated": prereqs.RuntimeGpuAccelerated,
+							},
+							"blockers":         prereqs.Blockers,
+							"remediationHints": prereqs.RemediationHints,
+						},
+					},
+				}
+			}
 			hb = heartbeat.Start(heartbeat.Options{
 				AgentID:              cfg.RemoteAgentID,
 				MCPURL:               cfg.MCPURL,
@@ -101,7 +140,8 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				TestMode:             cfg.TestMode,
 				Logger:               logger,
 				CollectVMStats:       collectVMStats,
-				HostCapabilities:     toolNames,
+				HostCapabilities:     hostCapabilities,
+				CapabilitySummary:    capabilitySummary,
 			})
 		}
 	}

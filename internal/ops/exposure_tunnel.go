@@ -21,6 +21,7 @@ type EnsureCloudflaredTunnelArgs struct {
 	LocalTarget string
 	RunToken    string
 	Quick       bool
+	Native      bool
 }
 
 type EnsureCloudflaredTunnelResult struct {
@@ -84,8 +85,18 @@ func exposureShimEnabled() bool {
 }
 
 func (s *HostOperationsService) EnsureCloudflaredTunnel(args EnsureCloudflaredTunnelArgs) (*EnsureCloudflaredTunnelResult, error) {
-	if strings.TrimSpace(args.BindingID) == "" {
+	if strings.TrimSpace(args.BindingID) == "" || strings.ContainsAny(args.BindingID, "\r\n\x00") {
 		return nil, fmt.Errorf("bindingId is required")
+	}
+	if strings.TrimSpace(args.Hostname) == "" || strings.ContainsAny(args.Hostname, "\r\n\x00") {
+		return nil, fmt.Errorf("hostname is required")
+	}
+	target, parseErr := url.ParseRequestURI(strings.TrimSpace(args.LocalTarget))
+	if parseErr != nil || target.Host == "" || (target.Scheme != "http" && target.Scheme != "https") || strings.ContainsAny(args.LocalTarget, "\r\n\x00") {
+		return nil, fmt.Errorf("localTarget must be an HTTP(S) URL")
+	}
+	if !args.Quick && (strings.TrimSpace(args.RunToken) == "" || strings.ContainsAny(args.RunToken, "\r\n\x00")) {
+		return nil, fmt.Errorf("runToken is invalid")
 	}
 	if strings.TrimSpace(args.LocalTarget) == "" {
 		return nil, fmt.Errorf("localTarget is required")
@@ -121,8 +132,8 @@ func (s *HostOperationsService) EnsureCloudflaredTunnel(args EnsureCloudflaredTu
 	}
 
 	if isRunningInWSL() {
-		if useNativeWSLCloudflared() {
-			return ensureNativeWSLCloudflared(s, args)
+		if args.Native || useNativeWSLCloudflared() {
+			return ensureNativeLinuxCloudflared(s, args)
 		}
 		if strings.TrimSpace(args.RunToken) != "" {
 			return ensureWindowsCloudflaredViaWSL(s, args)
@@ -130,6 +141,9 @@ func (s *HostOperationsService) EnsureCloudflaredTunnel(args EnsureCloudflaredTu
 		if args.Quick {
 			return ensureQuickCloudflaredViaWSL(s, args)
 		}
+	}
+	if runtime.GOOS == "linux" {
+		return ensureNativeLinuxCloudflared(s, args)
 	}
 
 	return nil, fmt.Errorf(
@@ -183,7 +197,11 @@ func (s *HostOperationsService) ProbeHostExposure(args ProbeHostExposureArgs) (*
 func (s *HostOperationsService) RemoveHostExposure(args RemoveHostExposureArgs) (*RemoveHostExposureResult, error) {
 	stopExposureShim(args.BindingID)
 	_ = stopWindowsCloudflaredTunnel(args.BindingID)
+	if runtime.GOOS == "linux" && !isRunningInWSL() {
+		_ = stopNativeLinuxCloudflaredTunnel(args.BindingID)
+	}
 	if isRunningInWSL() {
+		_ = stopNativeLinuxCloudflaredTunnel(args.BindingID)
 		_ = stopNativeWSLCloudflaredTunnel(args.BindingID)
 		_ = stopWSLWindowsCloudflaredTunnel(args.BindingID)
 	}
@@ -277,10 +295,13 @@ func isTunnelConnected(bindingID string) bool {
 		return isWindowsTunnelConnected(bindingID)
 	}
 	if isRunningInWSL() {
-		if useNativeWSLCloudflared() && isNativeWSLCloudflaredRunning(bindingID) {
+		if isNativeLinuxCloudflaredRunning(bindingID) {
 			return true
 		}
 		return isWSLWindowsCloudflaredRunning(bindingID)
+	}
+	if runtime.GOOS == "linux" {
+		return isNativeLinuxCloudflaredRunning(bindingID)
 	}
 	return false
 }

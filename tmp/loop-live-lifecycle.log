@@ -1,0 +1,8 @@
+=== live lifecycle ===
+=== RUN   TestLiveGetHostInfoIncus
+--- PASS: TestLiveGetHostInfoIncus (0.13s)
+=== RUN   TestLiveVMCreateListDelete
+--- PASS: TestLiveVMCreateListDelete (14.63s)
+PASS
+ok  	github.com/wunderous/host-agents/test/live	14.790s
+LIVE_EXIT:0

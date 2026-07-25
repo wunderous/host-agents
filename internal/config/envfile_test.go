@@ -121,3 +121,17 @@ func TestLoadPlatformDefaultsPort3004(t *testing.T) {
 		t.Fatalf("platform default port = %d, want 3004", cfg.HostMCPPort)
 	}
 }
+
+func TestLoadNormalizesQuotedPlatformURLs(t *testing.T) {
+	t.Setenv("OPUTE_AGENT_MODE", "platform")
+	t.Setenv("OPUTE_MCP_URL", "https://mcp.example/mcp")
+	t.Setenv("OPUTE_HOST_WS_URL", "wss://mcp.example")
+	t.Setenv("OPUTE_MCP_HEALTH_URL", "'https://mcp.example/health'")
+	cfg := Load()
+	if cfg.MCPHealthURL != "https://mcp.example/health" {
+		t.Fatalf("health URL = %q", cfg.MCPHealthURL)
+	}
+	if cfg.HostWSURL != "wss://mcp.example" {
+		t.Fatalf("websocket URL = %q", cfg.HostWSURL)
+	}
+}

@@ -9,6 +9,8 @@ import (
 
 type incusProfileDevice struct {
 	Type string `json:"type"`
+	Path string `json:"path,omitempty"`
+	Pool string `json:"pool,omitempty"`
 }
 
 func (s *HostOperationsService) readDefaultProfileDevices() (map[string]incusProfileDevice, error) {
@@ -138,17 +140,28 @@ func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus i
 	}
 
 	instanceDevices := map[string]any{}
-	if profileDevices["root"].Type != "disk" {
+	rootDevice := map[string]any{
+		"type": "disk",
+		"path": "/",
+		"size": disk,
+	}
+	if profileRoot := profileDevices["root"]; profileRoot.Type == "disk" {
+		// Override the profile root size as profiles commonly provide a small
+		// default disk. Preserve an explicitly configured storage pool.
+		if profileRoot.Path != "" {
+			rootDevice["path"] = profileRoot.Path
+		}
+		if profileRoot.Pool != "" {
+			rootDevice["pool"] = profileRoot.Pool
+		}
+		instanceDevices["root"] = rootDevice
+	} else {
 		pool, poolErr := s.resolveDefaultStoragePool()
 		if poolErr != nil {
 			return poolErr
 		}
-		instanceDevices["root"] = map[string]any{
-			"type": "disk",
-			"path": "/",
-			"pool": pool,
-			"size": disk,
-		}
+		rootDevice["pool"] = pool
+		instanceDevices["root"] = rootDevice
 	}
 	if !profileHasNIC(profileDevices) {
 		instanceDevices["eth0"] = map[string]any{
@@ -173,6 +186,26 @@ func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus i
 	}
 	if create.ExitCode != 0 {
 		return fmt.Errorf("incus create %q: %s", vmName, firstNonEmpty(create.Stderr, create.Stdout, "failed to create VM"))
+	}
+	// Incus profiles may provide a small root disk for VMs. Apply the caller's
+	// requested size explicitly after creation so the provisioning contract is
+	// reflected by the guest-visible block device rather than only inventory.
+	// There is no /device/{name} endpoint — patch the instance devices map.
+	resizePayload, resizeMarshalErr := json.Marshal(map[string]any{
+		"devices": map[string]any{
+			"root": rootDevice,
+		},
+	})
+	if resizeMarshalErr != nil {
+		return resizeMarshalErr
+	}
+	instancePath := fmt.Sprintf("/1.0/instances/%s", urlPathEscape(vmName))
+	resize, err := s.commandRunner([]string{"query", "-X", "PATCH", "--wait", instancePath, "-d", string(resizePayload)}, onData, timeout)
+	if err != nil {
+		return err
+	}
+	if resize.ExitCode != 0 {
+		return fmt.Errorf("incus resize root disk %q: %s", vmName, firstNonEmpty(resize.Stderr, resize.Stdout, "failed to resize root disk"))
 	}
 
 	startBody := `{"action":"start","force":false,"stateful":false}`

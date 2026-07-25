@@ -38,7 +38,8 @@ func ensureWindowsCloudflaredTunnel(args EnsureCloudflaredTunnelArgs) (*EnsureCl
 		return nil, err
 	}
 
-	cmd := exec.Command(binaryPath, "tunnel", "run", "--token", args.RunToken)
+	cmd := exec.Command(binaryPath, "tunnel", "run")
+	cmd.Env = append(os.Environ(), "TUNNEL_TOKEN="+args.RunToken)
 	cmd.Dir = cloudflaredInstallDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	if err := cmd.Start(); err != nil {
@@ -75,6 +76,14 @@ func isWindowsTunnelConnected(bindingID string) bool {
 	windowsTunnelMu.Unlock()
 	return cmd != nil && cmd.Process != nil
 }
+
+func ensureNativeLinuxCloudflared(_ *HostOperationsService, _ EnsureCloudflaredTunnelArgs) (*EnsureCloudflaredTunnelResult, error) {
+	return nil, nil
+}
+
+func isNativeLinuxCloudflaredRunning(_ string) bool { return false }
+
+func stopNativeLinuxCloudflaredTunnel(_ string) error { return nil }
 
 func ensureCloudflaredBinary() (string, error) {
 	if err := os.MkdirAll(cloudflaredInstallDir, 0o755); err != nil {
