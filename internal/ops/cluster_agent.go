@@ -311,6 +311,31 @@ func (s *HostOperationsService) InstallClusterAgent(args InstallClusterAgentArgs
 	}, nil
 }
 
+// RestartCluster restarts the K3s systemd unit inside the target VM and waits
+// until the service is active again. Callers select only the VM — never an
+// arbitrary guest command.
+func (s *HostOperationsService) RestartCluster(vmName string, onData func(string)) (map[string]any, error) {
+	vmName = strings.TrimSpace(vmName)
+	if vmName == "" {
+		return nil, fmt.Errorf("vmName is required")
+	}
+	res, err := s.runVMExec(vmName, []string{"systemctl", "restart", "k3s"}, onData, 2*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "k3s restart failed in VM"))
+	}
+	if err := s.waitForVMServiceActive(vmName, "k3s", onData, 5*time.Minute); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"vmName":      vmName,
+		"serviceName": "k3s",
+		"status":      "active",
+	}, nil
+}
+
 // RestartClusterAgent restarts the cluster-agent service inside the target VM.
 // The service name is intentionally fixed by the generic cluster-agent
 // contract; callers select only the VM, never an arbitrary guest command.

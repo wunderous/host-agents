@@ -30,6 +30,8 @@ var CatalogExcludedToolNames = map[string]bool{
 	"list_tasks":                      true,
 	"get_task":                        true,
 	"agent_shell":                     true,
+	// Guest exec lives in the vm-exec static MCP for CPC-local cells, but tunnel hosts
+	"exec_command":                    true,
 	"ensure_sql_connector":            true,
 	"get_sql_connector_status":        true,
 	"release_sql_connector":           true,
@@ -329,8 +331,14 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"remove_local_llm_model":  {"type": "object", "required": []string{"modelRef"}, "properties": map[string]any{"modelRef": map[string]any{"type": "string"}, "purge": map[string]any{"type": "boolean"}}},
 		"ensure_local_llm_relay":              {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "incomingToken", "allowedSourceCIDRs"}, "properties": map[string]any{"upstreamToken": map[string]any{"type": "string"}, "allowedSourceCIDRs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}},
 		"remove_local_llm_relay":              {"type": "object", "required": []string{"sessionId"}, "properties": map[string]any{}},
-		"ensure_local_llm_k3s_proxy":          {"type": "object", "required": []string{"vmName", "nodePort", "relayHost", "relayPort", "relayToken", "bearerKey"}, "properties": map[string]any{}},
-		"remove_local_llm_k3s_proxy":          {"type": "object", "required": []string{"vmName"}, "properties": map[string]any{}},
+		"ensure_local_llm_k3s_proxy": {"type": "object", "required": []string{"vmName", "nodePort", "relayHost", "relayPort", "relayToken", "bearerKey"}, "properties": map[string]any{
+			"namespace": map[string]any{"type": "string"}, "secretName": map[string]any{"type": "string"},
+			"configMapName": map[string]any{"type": "string"}, "deploymentName": map[string]any{"type": "string"},
+			"serviceName": map[string]any{"type": "string"}, "containerImage": map[string]any{"type": "string"},
+		}},
+		"remove_local_llm_k3s_proxy": {"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
+			"namespace": map[string]any{"type": "string"},
+		}},
 		"remove_local_llm_cloudflared_tunnel": {"type": "object", "required": []string{"bindingId"}, "properties": map[string]any{}},
 	}
 	for name, schema := range inputs {

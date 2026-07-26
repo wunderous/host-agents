@@ -299,13 +299,21 @@ func (s *HostOperationsService) EnsureLocalLLMK3sProxy(args LocalLLMK3sProxyArgs
 	return map[string]any{"vmName": vmName, "nodePort": args.NodePort, "namespace": args.Namespace, "serviceName": args.ServiceName, "ready": true}, nil
 }
 
-func (s *HostOperationsService) RemoveLocalLLMK3sProxy(vmName string) (map[string]any, error) {
+func (s *HostOperationsService) RemoveLocalLLMK3sProxy(vmName, namespace string) (map[string]any, error) {
 	vmName = strings.TrimSpace(vmName)
 	if !safeGatewayIdentifier.MatchString(vmName) {
 		return nil, fmt.Errorf("vmName is invalid")
 	}
-	if _, err := s.runKubernetesKubectlTimed(vmName, []string{"delete", "namespace", "opute-llm", "--ignore-not-found=true"}, "remove local LLM proxy", 2*time.Minute); err != nil {
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		// Legacy one-release default for callers that still omit namespace.
+		namespace = "opute-llm"
+	}
+	if !safeGatewayIdentifier.MatchString(strings.ToLower(namespace)) {
+		return nil, fmt.Errorf("namespace is invalid")
+	}
+	if _, err := s.runKubernetesKubectlTimed(vmName, []string{"delete", "namespace", namespace, "--ignore-not-found=true"}, "remove local LLM proxy", 2*time.Minute); err != nil {
 		return nil, err
 	}
-	return map[string]any{"vmName": vmName, "removed": true}, nil
+	return map[string]any{"vmName": vmName, "namespace": namespace, "removed": true}, nil
 }

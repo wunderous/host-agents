@@ -159,14 +159,27 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "Local LLM relay removed"), nil
 
 	case "ensure_local_llm_k3s_proxy":
-		out, err := svc.EnsureLocalLLMK3sProxy(ops.LocalLLMK3sProxyArgs{VMName: vmNameFromArgs(args), NodePort: intField(args, "nodePort"), RelayHost: stringField(args, "relayHost"), RelayPort: intField(args, "relayPort"), RelayToken: stringField(args, "relayToken"), BearerKey: stringField(args, "bearerKey")}, onData)
+		out, err := svc.EnsureLocalLLMK3sProxy(ops.LocalLLMK3sProxyArgs{
+			VMName:         vmNameFromArgs(args),
+			Namespace:      stringField(args, "namespace"),
+			SecretName:     stringField(args, "secretName"),
+			ConfigMapName:  stringField(args, "configMapName"),
+			DeploymentName: stringField(args, "deploymentName"),
+			ServiceName:    stringField(args, "serviceName"),
+			ContainerImage: stringField(args, "containerImage"),
+			NodePort:       intField(args, "nodePort"),
+			RelayHost:      stringField(args, "relayHost"),
+			RelayPort:      intField(args, "relayPort"),
+			RelayToken:     stringField(args, "relayToken"),
+			BearerKey:      stringField(args, "bearerKey"),
+		}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "Local LLM K3s proxy is ready"), nil
 
 	case "remove_local_llm_k3s_proxy":
-		out, err := svc.RemoveLocalLLMK3sProxy(vmNameFromArgs(args))
+		out, err := svc.RemoveLocalLLMK3sProxy(vmNameFromArgs(args), stringField(args, "namespace"))
 		if err != nil {
 			return nil, err
 		}
@@ -490,6 +503,13 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, "Cluster agent installed."), nil
+
+	case "restart_cluster":
+		out, err := svc.RestartCluster(vmNameFromArgs(args), onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "K3s cluster restarted."), nil
 
 	case "restart_cluster_agent":
 		out, err := svc.RestartClusterAgent(vmNameFromArgs(args), onData)
