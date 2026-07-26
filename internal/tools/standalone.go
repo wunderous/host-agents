@@ -31,6 +31,15 @@ type StandaloneToolContractEntry struct {
 	Support        string `json:"support"`
 }
 
+func IsValidStandaloneSupportLevel(support string) bool {
+	switch support {
+	case "stable", "experimental", "legacy":
+		return true
+	default:
+		return false
+	}
+}
+
 // LoadStandaloneToolContract reads the checked-in standalone contract.
 func LoadStandaloneToolContract() (StandaloneToolContract, error) {
 	raw, err := schemas.FS.ReadFile("standalone-tools.json")
@@ -85,6 +94,9 @@ func ValidateStandaloneToolContract() error {
 		}
 		if entry.Classification == "" || entry.Support == "" {
 			return fmt.Errorf("standalone tool %q is missing classification or support", entry.Name)
+		}
+		if !IsValidStandaloneSupportLevel(entry.Support) {
+			return fmt.Errorf("standalone tool %q has invalid support level %q", entry.Name, entry.Support)
 		}
 		if entry.Classification == "mutation" || entry.Classification == "destructive" || entry.Classification == "credential_bearing" {
 			if !standaloneMutationToolNames[entry.Name] {

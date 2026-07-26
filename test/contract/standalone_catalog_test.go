@@ -18,7 +18,7 @@ func TestStandaloneCatalogMatchesVersionedContract(t *testing.T) {
 		t.Fatalf("contract has %d tools, allowlist has %d", len(contract.Tools), len(tools.StandaloneToolNames))
 	}
 	for _, entry := range contract.Tools {
-		if entry.Support != "stable" && entry.Support != "experimental" {
+		if !tools.IsValidStandaloneSupportLevel(entry.Support) {
 			t.Fatalf("tool %q has invalid support level %q", entry.Name, entry.Support)
 		}
 	}
