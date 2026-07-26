@@ -63,6 +63,7 @@ replaces the service environment.
 - Provider abstraction: `internal/provider`
 - Incus catalog: `schemas/incus-tools.json`; full export: `schemas/all-tools.json`
 - Schema export from monorepo: `cd ../opute && bun scripts/export-host-agent-schemas.ts ../opute-host-agent/schemas`
+- **`LoadAllToolDefinitions` reads `incus-tools.json` only (do not regress).** Tools that live only in `all-tools.json` (CPC moved some locals to vm-exec) are **not** registered for `tools/call` unless listed in **`CatalogExcludedToolNames`** in `internal/tools/catalog.go` (loaded via `LoadCatalogExcludedDispatchToolDefinitions`). **Symptom:** tunnel/`tools/call` returns unknown tool for `exec_command` while the name appears in `all-tools.json`. **Proper pattern:** add the local name to `CatalogExcludedToolNames`, rebuild/install the Linux binary, restart `opute-host-agent.service`. **Anti-pattern:** fixing only the Opute TypeScript catalog or assuming `all-tools.json` alone registers dispatch.
 
 ## Standalone and platform profiles
 
