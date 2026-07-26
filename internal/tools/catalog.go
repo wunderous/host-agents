@@ -304,7 +304,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"probe_local_llm": {"type": "object", "properties": map[string]any{
 			"includeChat": map[string]any{"type": "boolean"},
 			"modelRef":    map[string]any{"type": "string"},
-			"modelPreset": map[string]any{"type": "string", "enum": []string{"phi", "gemma", "qwen"}},
+			"modelPreset": map[string]any{"type": "string", "enum": []string{"gemma", "qwen"}},
 			"numGpu":      map[string]any{"type": "integer"},
 			"numCtx":      map[string]any{"type": "integer"},
 		}},
@@ -314,21 +314,19 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"modelVariant":    map[string]any{"type": "string"},
 			"installSource":   map[string]any{"type": "string"},
 			"modelRef":        map[string]any{"type": "string"},
-			"modelPreset":     map[string]any{"type": "string", "enum": []string{"phi", "gemma", "qwen"}},
+			"modelPreset":     map[string]any{"type": "string", "enum": []string{"gemma", "qwen"}},
 			"createAs":        map[string]any{"type": "string"},
 			"numGpu":          map[string]any{"type": "integer"},
 			"numCtx":          map[string]any{"type": "integer"},
-			"template":        map[string]any{"type": "string"},
-			"templatePreset":  map[string]any{"type": "string", "enum": []string{"phi-functools"}},
+			"template":     map[string]any{"type": "string"},
 		}},
 		"configure_local_llm_model": {"type": "object", "properties": map[string]any{
-			"modelRef":       map[string]any{"type": "string"},
-			"modelPreset":    map[string]any{"type": "string", "enum": []string{"phi", "gemma", "qwen"}},
-			"fromRef":        map[string]any{"type": "string"},
-			"numGpu":         map[string]any{"type": "integer"},
-			"numCtx":         map[string]any{"type": "integer"},
-			"template":       map[string]any{"type": "string"},
-			"templatePreset": map[string]any{"type": "string", "enum": []string{"phi-functools"}},
+			"modelRef":    map[string]any{"type": "string"},
+			"modelPreset": map[string]any{"type": "string", "enum": []string{"gemma", "qwen"}},
+			"fromRef":     map[string]any{"type": "string"},
+			"numGpu":      map[string]any{"type": "integer"},
+			"numCtx":      map[string]any{"type": "integer"},
+			"template":    map[string]any{"type": "string"},
 		}},
 		"start_local_llm_runtime": {"type": "object", "properties": map[string]any{}},
 		"stop_local_llm_runtime":  {"type": "object", "properties": map[string]any{}},
@@ -352,7 +350,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			case "check_local_llm_prerequisites":
 				desc = "Inspect local Ollama install readiness and GPU/CUDA diagnostics (blockers + remediationHints; does not install NVIDIA drivers)."
 			case "install_local_llm_model":
-				desc = "Install Ollama with the CUDA-pinned systemd unit, pull modelRef or modelPreset (phi|gemma|qwen), and optionally createAs with numGpu/numCtx (full GPU offload)."
+				desc = "Install Ollama with the CUDA-pinned systemd unit, pull modelRef or modelPreset (gemma|qwen), and optionally createAs with numGpu/numCtx (full GPU offload)."
 			case "configure_local_llm_model":
 				desc = "Create/replace a local Ollama tag FROM an already-pulled model with Modelfile parameters (numGpu/numCtx). Pass modelRef or modelPreset. Does not re-download."
 			case "start_local_llm_runtime":

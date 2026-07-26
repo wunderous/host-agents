@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
-	"strings"
 	"testing"
 )
 
 func TestValidateOllamaModelRef(t *testing.T) {
-	for _, ref := range []string{"smollm:135m", "phi4-mini", "../escape"} {
+	for _, ref := range []string{"smollm:135m", "qwen3.5:2b", "../escape"} {
 		err := ValidateOllamaModelRef(ref)
 		if ref == "../escape" && err == nil {
 			t.Fatalf("expected invalid model ref")
@@ -164,11 +163,11 @@ func TestProbeLocalLLMWithFakeOllamaHTTP(t *testing.T) {
 }
 
 func TestResolveLocalLLMModelRef(t *testing.T) {
-	got, err := ResolveLocalLLMModelRef("", "phi")
-	if err != nil || got != "phi4-mini" {
-		t.Fatalf("phi preset: got %q err=%v", got, err)
+	got, err := ResolveLocalLLMModelRef("", "qwen")
+	if err != nil || got != "qwen3.5:2b" {
+		t.Fatalf("qwen preset: got %q err=%v", got, err)
 	}
-	got, err = ResolveLocalLLMModelRef("custom:tag", "phi")
+	got, err = ResolveLocalLLMModelRef("custom:tag", "qwen")
 	if err != nil || got != "custom:tag" {
 		t.Fatalf("modelRef should win: got %q err=%v", got, err)
 	}
@@ -183,11 +182,11 @@ func TestResolveLocalLLMModelRef(t *testing.T) {
 func TestRenderOllamaModelfileGpuCtx(t *testing.T) {
 	gpu := 99
 	ctx := 4096
-	got, err := renderOllamaModelfile("phi4-mini", &gpu, &ctx, "")
+	got, err := renderOllamaModelfile("qwen3.5:2b", &gpu, &ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"FROM phi4-mini", "PARAMETER num_gpu 99", "PARAMETER num_ctx 4096"} {
+	for _, want := range []string{"FROM qwen3.5:2b", "PARAMETER num_gpu 99", "PARAMETER num_ctx 4096"} {
 		if !containsOllama(got, want) {
 			t.Fatalf("missing %q in %q", want, got)
 		}
@@ -195,16 +194,16 @@ func TestRenderOllamaModelfileGpuCtx(t *testing.T) {
 	if _, err := renderOllamaModelfile("../escape", &gpu, nil, ""); err == nil {
 		t.Fatal("expected invalid fromRef rejection")
 	}
-	tpl, err := resolveOllamaChatTemplate("", "phi-functools")
-	if err != nil || !strings.Contains(tpl, "functools") {
-		t.Fatalf("phi-functools template: err=%v len=%d", err, len(tpl))
+	tpl, err := resolveOllamaChatTemplate("custom template body")
+	if err != nil || tpl != "custom template body" {
+		t.Fatalf("custom template: err=%v tpl=%q", err, tpl)
 	}
-	withTpl, err := renderOllamaModelfile("phi4-mini", &gpu, &ctx, tpl)
+	withTpl, err := renderOllamaModelfile("qwen3.5:2b", &gpu, &ctx, tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsOllama(withTpl, "TEMPLATE") || !containsOllama(withTpl, "functools") {
-		t.Fatalf("expected TEMPLATE with functools, got %q", withTpl[:min(200, len(withTpl))])
+	if !containsOllama(withTpl, "TEMPLATE") || !containsOllama(withTpl, "custom template body") {
+		t.Fatalf("expected TEMPLATE with custom body, got %q", withTpl[:min(200, len(withTpl))])
 	}
 }
 

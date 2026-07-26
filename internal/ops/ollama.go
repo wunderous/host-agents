@@ -82,27 +82,24 @@ type LocalLLMProbeResult struct {
 // InstallLocalLLMModelArgs pulls an Ollama registry model and optionally creates
 // a durable derived tag with Modelfile parameters (num_gpu / num_ctx). Full GPU
 // offload (numGpu near layer count, e.g. 99) is required for some edge models
-// that abort on hybrid CPU/GPU splits. Callers may pass modelPreset=phi|gemma|qwen
-// or an explicit modelRef. Optional Template / TemplatePreset rewrites the
-// chat TEMPLATE (required for reliable Phi-4-mini tool calls on Ollama).
+// that abort on hybrid CPU/GPU splits. Callers may pass modelPreset=gemma|qwen
+// or an explicit modelRef. Optional Template rewrites the chat TEMPLATE.
 type InstallLocalLLMModelArgs struct {
-	ModelRef       string
-	CreateAs       string
-	NumGpu         *int
-	NumCtx         *int
-	Template       string
-	TemplatePreset string
+	ModelRef string
+	CreateAs string
+	NumGpu   *int
+	NumCtx   *int
+	Template string
 }
 
 // ConfigureLocalLLMModelArgs creates or replaces a local Ollama model tag from
 // an already-pulled base model without re-downloading blobs.
 type ConfigureLocalLLMModelArgs struct {
-	ModelRef       string
-	FromRef        string
-	NumGpu         *int
-	NumCtx         *int
-	Template       string
-	TemplatePreset string
+	ModelRef string
+	FromRef  string
+	NumGpu   *int
+	NumCtx   *int
+	Template string
 }
 
 // ProbeLocalLLMArgs optionally warm-loads a model to verify GPU inference.
@@ -119,7 +116,6 @@ var ollamaVersionRef = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // LocalLLMModelPresets maps standard chat presets to Ollama registry refs.
 var LocalLLMModelPresets = map[string]string{
-	"phi":   "phi4-mini",
 	"gemma": "gemma4:e2b",
 	"qwen":  "qwen3.5:2b",
 }
@@ -148,7 +144,7 @@ func (s *HostOperationsService) requireGpuInferenceReady() error {
 		return err
 	}
 	if prereqs == nil || !prereqs.ReadyForGpuInference {
-		return fmt.Errorf("GPU inference is required for Opute local LLM models (phi, gemma, qwen); resolve check_local_llm_prerequisites blockers before install or start")
+		return fmt.Errorf("GPU inference is required for Opute local LLM models (gemma, qwen); resolve check_local_llm_prerequisites blockers before install or start")
 	}
 	if prereqs.OllamaServiceActive && !prereqs.RuntimeGpuAccelerated {
 		return fmt.Errorf("Ollama is running on CPU (size_vram=0); call start_local_llm_runtime after the discrete GPU is healthy, then probe_local_llm and confirm sizeVramBytes > 0")
@@ -156,7 +152,7 @@ func (s *HostOperationsService) requireGpuInferenceReady() error {
 	return nil
 }
 
-// ResolveLocalLLMModelRef returns modelRef, or expands modelPreset (phi|gemma|qwen).
+// ResolveLocalLLMModelRef returns modelRef, or expands modelPreset (gemma|qwen).
 func ResolveLocalLLMModelRef(modelRef string, modelPreset string) (string, error) {
 	ref := strings.TrimSpace(modelRef)
 	if ref != "" {
@@ -167,11 +163,11 @@ func ResolveLocalLLMModelRef(modelRef string, modelPreset string) (string, error
 	}
 	preset := strings.ToLower(strings.TrimSpace(modelPreset))
 	if preset == "" {
-		return "", fmt.Errorf("modelRef or modelPreset (phi|gemma|qwen) is required")
+		return "", fmt.Errorf("modelRef or modelPreset (gemma|qwen) is required")
 	}
 	resolved, ok := LocalLLMModelPresets[preset]
 	if !ok {
-		return "", fmt.Errorf("unknown modelPreset %q (use phi|gemma|qwen or pass modelRef)", modelPreset)
+		return "", fmt.Errorf("unknown modelPreset %q (use gemma|qwen or pass modelRef)", modelPreset)
 	}
 	return resolved, nil
 }
@@ -398,11 +394,11 @@ func finalizeLocalLLMPrerequisites(result *LocalLLMPrerequisitesResult) {
 	}
 	if result.ReadyForGpuInference && result.GpuMemoryTotalBytes > 0 && result.GpuMemoryTotalBytes < 6*1024*1024*1024 {
 		result.RemediationHints = append(result.RemediationHints,
-			"This GPU reports under 6 GiB VRAM. Some large or multimodal models can crash on hybrid CPU/GPU layer splits (GGML_SCHED_MAX_SPLIT_INPUTS). Use install_local_llm_model / configure_local_llm_model with numGpu=99 (full GPU offload) and a bounded numCtx, then probe_local_llm with that modelRef. Standard presets: modelPreset=phi|gemma|qwen.",
+			"This GPU reports under 6 GiB VRAM. Some large or multimodal models can crash on hybrid CPU/GPU layer splits (GGML_SCHED_MAX_SPLIT_INPUTS). Use install_local_llm_model / configure_local_llm_model with numGpu=99 (full GPU offload) and a bounded numCtx, then probe_local_llm with that modelRef. Standard presets: modelPreset=gemma|qwen.",
 		)
 	}
 	if !result.ReadyForGpuInference {
-		result.Blockers = append(result.Blockers, "GPU inference prerequisites are not satisfied. Opute chat models (phi, gemma, qwen) run exclusively on the discrete GPU.")
+		result.Blockers = append(result.Blockers, "GPU inference prerequisites are not satisfied. Opute chat models (gemma, qwen) run exclusively on the discrete GPU.")
 	}
 }
 
@@ -435,18 +431,17 @@ func (s *HostOperationsService) InstallLocalLLMModel(ctx context.Context, args I
 	if err := s.pullOllamaModel(ctx, cfg, args.ModelRef); err != nil {
 		return nil, err
 	}
-	if args.CreateAs != "" || args.NumGpu != nil || args.NumCtx != nil || strings.TrimSpace(args.Template) != "" || strings.TrimSpace(args.TemplatePreset) != "" {
+	if args.CreateAs != "" || args.NumGpu != nil || args.NumCtx != nil || strings.TrimSpace(args.Template) != "" {
 		createName := strings.TrimSpace(args.CreateAs)
 		if createName == "" {
 			createName = strings.TrimSpace(args.ModelRef)
 		}
 		if err := s.createOllamaModel(ctx, cfg, ConfigureLocalLLMModelArgs{
-			ModelRef:       createName,
-			FromRef:        strings.TrimSpace(args.ModelRef),
-			NumGpu:         args.NumGpu,
-			NumCtx:         args.NumCtx,
-			Template:       args.Template,
-			TemplatePreset: args.TemplatePreset,
+			ModelRef: createName,
+			FromRef:  strings.TrimSpace(args.ModelRef),
+			NumGpu:   args.NumGpu,
+			NumCtx:   args.NumCtx,
+			Template: args.Template,
 		}); err != nil {
 			return nil, err
 		}
@@ -515,84 +510,18 @@ func (s *HostOperationsService) pullOllamaModel(ctx context.Context, cfg OllamaC
 	return nil
 }
 
-// OllamaChatToolTemplatePresets are known-good chat TEMPLATEs for tool calling.
-// Stock Ollama phi4-mini ships a broken tool template; "phi-functools" is the
-// Microsoft PhiCookBook template that emits native tool_calls.
-var OllamaChatToolTemplatePresets = map[string]string{
-	"phi-functools": phiFunctoolsChatTemplate,
-}
-
-// Microsoft Phi-4-mini function-calling template (functools[...]) for Ollama.
-const phiFunctoolsChatTemplate = `{{- if .Messages }}
-{{- if or .System .Tools }}<|system|>
-
-{{ if .System }}{{ .System }}
-{{- end }}
-In addition to plain text responses, you can chose to call one or more of the provided functions.
-
-Use the following rule to decide when to call a function:
- * if the response can be generated from your internal knowledge (e.g., as in the case of queries like "What is the capital of Poland?"), do so
- * if you need external information that can be obtained by calling one or more of the provided functions, generate a function calls
-
-If you decide to call functions:
- * prefix function calls with functools marker (no closing marker required)
- * all function calls should be generated in a single JSON list formatted as functools[{"name": [function name], "arguments": [function arguments as JSON]}, ...]
- * follow the provided JSON schema. Do not hallucinate arguments or values. Do to blindly copy values from the provided samples
- * respect the argument type formatting. E.g., if the type if number and format is float, write value 7 as 7.0
- * make sure you pick the right functions that match the user intent
-
-Available functions as JSON spec:
-{{- if .Tools }}
-{{ .Tools }}
-{{- end }}<|end|>
-{{- end }}
-{{- range .Messages }}
-{{- if ne .Role "system" }}<|{{ .Role }}|>
-{{- if and .Content (eq .Role "tools") }}
-
-{"result": {{ .Content }}}
-{{- else if .Content }}
-
-{{ .Content }}
-{{- else if .ToolCalls }}
-
-functools[
-{{- range .ToolCalls }}{{ "{" }}"name": "{{ .Function.Name }}", "arguments": {{ .Function.Arguments }}{{ "}" }}
-{{- end }}]
-{{- end }}<|end|>
-{{- end }}
-{{- end }}<|assistant|>
-
-{{ else }}
-{{- if .System }}<|system|>
-
-{{ .System }}<|end|>{{ end }}{{ if .Prompt }}<|user|>
-
-{{ .Prompt }}<|end|>{{ end }}<|assistant|>
-
-{{ end }}{{ .Response }}{{ if .Response }}<|user|>{{ end }}
-`
-
-func resolveOllamaChatTemplate(template string, templatePreset string) (string, error) {
+func resolveOllamaChatTemplate(template string) (string, error) {
 	raw := strings.TrimSpace(template)
-	if raw != "" {
-		if strings.Contains(raw, `"""`) {
-			return "", fmt.Errorf("template must not contain triple quotes")
-		}
-		if len(raw) > 64*1024 {
-			return "", fmt.Errorf("template exceeds 64 KiB")
-		}
-		return raw, nil
-	}
-	preset := strings.ToLower(strings.TrimSpace(templatePreset))
-	if preset == "" {
+	if raw == "" {
 		return "", nil
 	}
-	resolved, ok := OllamaChatToolTemplatePresets[preset]
-	if !ok {
-		return "", fmt.Errorf("unknown templatePreset %q (use phi-functools or pass template)", templatePreset)
+	if strings.Contains(raw, `"""`) {
+		return "", fmt.Errorf("template must not contain triple quotes")
 	}
-	return resolved, nil
+	if len(raw) > 64*1024 {
+		return "", fmt.Errorf("template exceeds 64 KiB")
+	}
+	return raw, nil
 }
 
 func renderOllamaModelfile(fromRef string, numGpu *int, numCtx *int, template string) (string, error) {
@@ -620,7 +549,7 @@ func renderOllamaModelfile(fromRef string, numGpu *int, numCtx *int, template st
 }
 
 func (s *HostOperationsService) createOllamaModel(ctx context.Context, cfg OllamaConfig, args ConfigureLocalLLMModelArgs) error {
-	template, err := resolveOllamaChatTemplate(args.Template, args.TemplatePreset)
+	template, err := resolveOllamaChatTemplate(args.Template)
 	if err != nil {
 		return err
 	}
@@ -916,7 +845,7 @@ func remediationHintsForLocalLLMProbe(result *LocalLLMProbeResult) []string {
 	}
 	if result.Ready && result.LoadedModel != "" && !result.GpuAccelerated {
 		hints = append(hints,
-			"Model is loaded on CPU (size_vram=0). Opute supports GPU-only inference for phi/gemma/qwen — enable the discrete GPU, restart opute-ollama.service, and re-run with numGpu=99.",
+			"Model is loaded on CPU (size_vram=0). Opute supports GPU-only inference for gemma/qwen — enable the discrete GPU, restart opute-ollama.service, and re-run with numGpu=99.",
 		)
 	}
 	return hints

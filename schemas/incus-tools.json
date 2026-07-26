@@ -3964,7 +3964,7 @@
   {
     "name": "probe_local_llm",
     "title": "Probe Local LLM",
-    "description": "Probe the local Ollama endpoint; optionally warm-load modelRef or modelPreset (phi|gemma|qwen).",
+    "description": "Probe the local Ollama endpoint; optionally warm-load modelRef or modelPreset (gemma|qwen).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3977,7 +3977,6 @@
         "modelPreset": {
           "type": "string",
           "enum": [
-            "phi",
             "gemma",
             "qwen"
           ]
@@ -3997,7 +3996,7 @@
   {
     "name": "install_local_llm_model",
     "title": "Install Local LLM Model",
-    "description": "Install Ollama, pull modelRef or modelPreset (phi|gemma|qwen), optionally createAs with numGpu/numCtx.",
+    "description": "Install Ollama, pull modelRef or modelPreset (gemma|qwen), optionally createAs with numGpu/numCtx.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4007,7 +4006,6 @@
         "modelPreset": {
           "type": "string",
           "enum": [
-            "phi",
             "gemma",
             "qwen"
           ]
@@ -4040,7 +4038,6 @@
         "modelPreset": {
           "type": "string",
           "enum": [
-            "phi",
             "gemma",
             "qwen"
           ]

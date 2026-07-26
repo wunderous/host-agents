@@ -110,12 +110,11 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		out, err := svc.InstallLocalLLMModel(ctx, ops.InstallLocalLLMModelArgs{
-			ModelRef:       modelRef,
-			CreateAs:       stringField(args, "createAs"),
-			NumGpu:         optionalIntField(args, "numGpu"),
-			NumCtx:         optionalIntField(args, "numCtx"),
-			Template:       stringField(args, "template"),
-			TemplatePreset: stringField(args, "templatePreset"),
+			ModelRef: modelRef,
+			CreateAs: stringField(args, "createAs"),
+			NumGpu:   optionalIntField(args, "numGpu"),
+			NumCtx:   optionalIntField(args, "numCtx"),
+			Template: stringField(args, "template"),
 		})
 		if err != nil {
 			return nil, err
@@ -128,12 +127,11 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		out, err := svc.ConfigureLocalLLMModel(ctx, ops.ConfigureLocalLLMModelArgs{
-			ModelRef:       modelRef,
-			FromRef:        stringField(args, "fromRef"),
-			NumGpu:         optionalIntField(args, "numGpu"),
-			NumCtx:         optionalIntField(args, "numCtx"),
-			Template:       stringField(args, "template"),
-			TemplatePreset: stringField(args, "templatePreset"),
+			ModelRef: modelRef,
+			FromRef:  stringField(args, "fromRef"),
+			NumGpu:   optionalIntField(args, "numGpu"),
+			NumCtx:   optionalIntField(args, "numCtx"),
+			Template: stringField(args, "template"),
 		})
 		if err != nil {
 			return nil, err
