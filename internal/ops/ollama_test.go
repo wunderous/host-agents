@@ -51,8 +51,8 @@ func TestFinalizeLocalLLMPrerequisitesGpuBlockers(t *testing.T) {
 		CudaLibraryPresent:   false,
 	}
 	finalizeLocalLLMPrerequisites(result)
-	if !result.ReadyForInstall {
-		t.Fatal("expected readyForInstall when Linux+systemd+arch are ok")
+	if result.ReadyForInstall {
+		t.Fatal("expected readyForInstall false without nvidia/cuda")
 	}
 	if result.ReadyForGpuInference {
 		t.Fatal("expected readyForGpuInference false without nvidia/cuda")
@@ -86,6 +86,22 @@ func TestFinalizeLocalLLMPrerequisitesGpuBlockers(t *testing.T) {
 	}
 	if !foundRestart {
 		t.Fatalf("expected CPU-only runtime blocker, got %#v", result.Blockers)
+	}
+	if !result.ReadyForInstall {
+		t.Fatal("expected readyForInstall when GPU prerequisites are satisfied")
+	}
+}
+
+func TestValidateGpuOffloadLayersRejectsCpuOnly(t *testing.T) {
+	zero := 0
+	if err := validateGpuOffloadLayers(&zero); err == nil {
+		t.Fatal("expected numGpu=0 rejection")
+	}
+	if err := validateGpuOffloadLayers(withDefaultFullGpuOffload(nil)); err != nil {
+		t.Fatalf("expected default full offload to pass: %v", err)
+	}
+	if got := withDefaultFullGpuOffload(nil); got == nil || *got != localLLMFullGpuOffloadLayers {
+		t.Fatalf("expected default num_gpu %d, got %#v", localLLMFullGpuOffloadLayers, got)
 	}
 }
 

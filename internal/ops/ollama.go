@@ -124,6 +124,38 @@ var LocalLLMModelPresets = map[string]string{
 	"qwen":  "qwen3.5:2b",
 }
 
+// localLLMFullGpuOffloadLayers requests full discrete-GPU offload for chat models.
+const localLLMFullGpuOffloadLayers = 99
+
+func withDefaultFullGpuOffload(numGpu *int) *int {
+	if numGpu != nil {
+		return numGpu
+	}
+	value := localLLMFullGpuOffloadLayers
+	return &value
+}
+
+func validateGpuOffloadLayers(numGpu *int) error {
+	if numGpu != nil && *numGpu == 0 {
+		return fmt.Errorf("numGpu=0 (CPU inference) is not supported for Opute local LLM models; discrete GPU offload is required")
+	}
+	return nil
+}
+
+func (s *HostOperationsService) requireGpuInferenceReady() error {
+	prereqs, err := s.CheckLocalLLMPrerequisites()
+	if err != nil {
+		return err
+	}
+	if prereqs == nil || !prereqs.ReadyForGpuInference {
+		return fmt.Errorf("GPU inference is required for Opute local LLM models (phi, gemma, qwen); resolve check_local_llm_prerequisites blockers before install or start")
+	}
+	if prereqs.OllamaServiceActive && !prereqs.RuntimeGpuAccelerated {
+		return fmt.Errorf("Ollama is running on CPU (size_vram=0); call start_local_llm_runtime after the discrete GPU is healthy, then probe_local_llm and confirm sizeVramBytes > 0")
+	}
+	return nil
+}
+
 // ResolveLocalLLMModelRef returns modelRef, or expands modelPreset (phi|gemma|qwen).
 func ResolveLocalLLMModelRef(modelRef string, modelPreset string) (string, error) {
 	ref := strings.TrimSpace(modelRef)
@@ -330,8 +362,8 @@ func finalizeLocalLLMPrerequisites(result *LocalLLMPrerequisitesResult) {
 	}
 	result.Blockers = nil
 	result.RemediationHints = nil
-	result.ReadyForInstall = result.Supported && result.SystemdUserAvailable && (result.Architecture == "amd64" || result.Architecture == "arm64")
 	result.ReadyForGpuInference = result.NvidiaSmiOk && result.CudaLibraryPresent
+	result.ReadyForInstall = result.Supported && result.SystemdUserAvailable && (result.Architecture == "amd64" || result.Architecture == "arm64") && result.ReadyForGpuInference
 
 	if !result.Supported {
 		result.Blockers = append(result.Blockers, "Host OS is not Linux. Opute-managed Ollama requires Linux or WSL2.")
@@ -345,7 +377,7 @@ func finalizeLocalLLMPrerequisites(result *LocalLLMPrerequisitesResult) {
 		result.Blockers = append(result.Blockers, fmt.Sprintf("Unsupported CPU architecture %q for the Opute-managed Ollama package.", result.Architecture))
 	}
 	if !result.NvidiaSmiOk {
-		result.Blockers = append(result.Blockers, "nvidia-smi did not report a usable NVIDIA GPU. GPU-accelerated inference is unavailable until a working NVIDIA driver exposes the discrete GPU to this environment.")
+		result.Blockers = append(result.Blockers, "nvidia-smi did not report a usable NVIDIA GPU. Opute local LLM models require discrete GPU inference; CPU-only Ollama is not supported.")
 		result.RemediationHints = append(result.RemediationHints,
 			"Install or repair the NVIDIA driver on the host OS. On WSL2, that is the Windows NVIDIA driver with WSL support (not a separate Linux driver package).",
 			"If this is a laptop with Optimus/MUX/Eco GPU modes, ensure the discrete NVIDIA GPU is powered on (not Eco/disabled), then re-run check_local_llm_prerequisites.",
@@ -366,17 +398,22 @@ func finalizeLocalLLMPrerequisites(result *LocalLLMPrerequisitesResult) {
 	}
 	if result.ReadyForGpuInference && result.GpuMemoryTotalBytes > 0 && result.GpuMemoryTotalBytes < 6*1024*1024*1024 {
 		result.RemediationHints = append(result.RemediationHints,
-			"This GPU reports under 6 GiB VRAM. Some large or multimodal models can crash on hybrid CPU/GPU layer splits (GGML_SCHED_MAX_SPLIT_INPUTS). Prefer install_local_llm_model / configure_local_llm_model with numGpu=99 (full GPU offload) and a bounded numCtx, then probe_local_llm with that modelRef. Standard presets: modelPreset=phi|gemma|qwen.",
+			"This GPU reports under 6 GiB VRAM. Some large or multimodal models can crash on hybrid CPU/GPU layer splits (GGML_SCHED_MAX_SPLIT_INPUTS). Use install_local_llm_model / configure_local_llm_model with numGpu=99 (full GPU offload) and a bounded numCtx, then probe_local_llm with that modelRef. Standard presets: modelPreset=phi|gemma|qwen.",
 		)
 	}
-	if result.ReadyForInstall && !result.ReadyForGpuInference {
-		result.RemediationHints = append(result.RemediationHints,
-			"CPU-only Ollama install/start is still available via install_local_llm_model / start_local_llm_runtime; resolve GPU blockers above for dedicated-GPU acceleration.",
-		)
+	if !result.ReadyForGpuInference {
+		result.Blockers = append(result.Blockers, "GPU inference prerequisites are not satisfied. Opute chat models (phi, gemma, qwen) run exclusively on the discrete GPU.")
 	}
 }
 
 func (s *HostOperationsService) InstallLocalLLMModel(ctx context.Context, args InstallLocalLLMModelArgs) (*LocalLLMProbeResult, error) {
+	if err := s.requireGpuInferenceReady(); err != nil {
+		return nil, err
+	}
+	if err := validateGpuOffloadLayers(args.NumGpu); err != nil {
+		return nil, err
+	}
+	args.NumGpu = withDefaultFullGpuOffload(args.NumGpu)
 	if err := ValidateOllamaModelRef(args.ModelRef); err != nil {
 		return nil, err
 	}
@@ -422,6 +459,13 @@ func (s *HostOperationsService) InstallLocalLLMModel(ctx context.Context, args I
 }
 
 func (s *HostOperationsService) ConfigureLocalLLMModel(ctx context.Context, args ConfigureLocalLLMModelArgs) (*LocalLLMProbeResult, error) {
+	if err := s.requireGpuInferenceReady(); err != nil {
+		return nil, err
+	}
+	if err := validateGpuOffloadLayers(args.NumGpu); err != nil {
+		return nil, err
+	}
+	args.NumGpu = withDefaultFullGpuOffload(args.NumGpu)
 	if err := ValidateOllamaModelRef(args.ModelRef); err != nil {
 		return nil, err
 	}
@@ -600,12 +644,11 @@ func (s *HostOperationsService) createOllamaModel(ctx context.Context, cfg Ollam
 		"stream": false,
 	}
 	parameters := map[string]any{}
-	if args.NumGpu != nil {
-		if *args.NumGpu < 0 || *args.NumGpu > 999 {
-			return fmt.Errorf("numGpu must be between 0 and 999")
-		}
-		parameters["num_gpu"] = *args.NumGpu
+	numGpu := withDefaultFullGpuOffload(args.NumGpu)
+	if *numGpu < 1 || *numGpu > 999 {
+		return fmt.Errorf("numGpu must be between 1 and 999")
 	}
+	parameters["num_gpu"] = *numGpu
 	if args.NumCtx != nil {
 		if *args.NumCtx < 128 || *args.NumCtx > 262144 {
 			return fmt.Errorf("numCtx must be between 128 and 262144")
@@ -641,6 +684,9 @@ func (s *HostOperationsService) createOllamaModel(ctx context.Context, cfg Ollam
 }
 
 func (s *HostOperationsService) StartLocalLLMRuntime(ctx context.Context) (*LocalLLMProbeResult, error) {
+	if err := s.requireGpuInferenceReady(); err != nil {
+		return nil, err
+	}
 	cfg, err := defaultOllamaConfig()
 	if err != nil {
 		return nil, err
@@ -766,9 +812,8 @@ func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, args ProbeLoc
 	}
 	if warmModel != "" {
 		options := map[string]any{"num_predict": 8}
-		if args.NumGpu != nil {
-			options["num_gpu"] = *args.NumGpu
-		}
+		numGpu := withDefaultFullGpuOffload(args.NumGpu)
+		options["num_gpu"] = *numGpu
 		if args.NumCtx != nil {
 			options["num_ctx"] = *args.NumCtx
 		}
@@ -842,6 +887,13 @@ func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, args ProbeLoc
 			}
 		}
 	}
+	if warmModel != "" && result.ChatReady && !result.GpuAccelerated {
+		result.Ready = false
+		result.ChatReady = false
+		if result.LoadError == "" {
+			result.LoadError = "model loaded with size_vram=0 (CPU path); Opute local LLM models require discrete GPU inference"
+		}
+	}
 	result.RemediationHints = remediationHintsForLocalLLMProbe(result)
 	return result, nil
 }
@@ -864,7 +916,7 @@ func remediationHintsForLocalLLMProbe(result *LocalLLMProbeResult) []string {
 	}
 	if result.Ready && result.LoadedModel != "" && !result.GpuAccelerated {
 		hints = append(hints,
-			"A model is loaded with size_vram=0 (CPU path). Prefer a derived tag with PARAMETER num_gpu set high enough to keep layers on the discrete GPU.",
+			"Model is loaded on CPU (size_vram=0). Opute supports GPU-only inference for phi/gemma/qwen — enable the discrete GPU, restart opute-ollama.service, and re-run with numGpu=99.",
 		)
 	}
 	return hints
