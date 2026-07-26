@@ -59,7 +59,7 @@ func TestValidateLocalLLMRelayRejectsUnspecifiedListener(t *testing.T) {
 	}
 }
 
-func TestLocalLLMRelayRequiresSourceAndBearerAndOnlyForwardsV1(t *testing.T) {
+func TestLocalLLMRelayRequiresSourceAndBearerAndForwardsV1AndApi(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Host == "public.example" {
 			t.Fatalf("public Host header leaked to upstream: %s", r.Host)
@@ -80,8 +80,18 @@ func TestLocalLLMRelayRequiresSourceAndBearerAndOnlyForwardsV1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected /api denial, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected /api bearer denial, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	reqApi, _ := http.NewRequest(http.MethodGet, base+"/api/tags", nil)
+	reqApi.Header.Set("Authorization", "Bearer "+strings.Repeat("r", 40))
+	resp, err = http.DefaultClient.Do(reqApi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected forwarded /api request, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 	req, _ := http.NewRequest(http.MethodGet, base+"/v1/models", nil)

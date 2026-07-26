@@ -122,7 +122,10 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		if !strings.HasPrefix(r.URL.Path, "/v1/") && r.URL.Path != "/v1" {
+		// Forward OpenAI-compatible /v1 and native Ollama /api (required by ai-sdk-ollama in-cluster chat).
+		allowedPath := strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/v1" ||
+			strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api"
+		if !allowedPath {
 			http.NotFound(w, r)
 			return
 		}
