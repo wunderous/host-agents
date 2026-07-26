@@ -309,6 +309,10 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"numCtx":      map[string]any{"type": "integer"},
 		}},
 		"install_local_llm_model": {"type": "object", "properties": map[string]any{
+			"runtime":         map[string]any{"type": "string", "enum": []string{"ollama", "litert-lm"}},
+			"modelFamily":     map[string]any{"type": "string"},
+			"modelVariant":    map[string]any{"type": "string"},
+			"installSource":   map[string]any{"type": "string"},
 			"modelRef":        map[string]any{"type": "string"},
 			"modelPreset":     map[string]any{"type": "string", "enum": []string{"phi", "gemma", "qwen"}},
 			"createAs":        map[string]any{"type": "string"},

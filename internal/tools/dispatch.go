@@ -90,6 +90,21 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "install_local_llm_model":
+		runtime := strings.ToLower(strings.TrimSpace(stringField(args, "runtime")))
+		if runtime == "litert-lm" {
+			modelRef, err := resolveLocalLLMModelArg(args)
+			if err != nil {
+				return nil, err
+			}
+			out, err := svc.InstallLiteRTLMModel(ctx, ops.InstallLiteRTLMModelArgs{
+				ModelRef:        modelRef,
+				HuggingFaceRepo: stringField(args, "installSource"),
+			})
+			if err != nil {
+				return nil, err
+			}
+			return structuredResult(out, "LiteRT-LM model runtime is ready"), nil
+		}
 		modelRef, err := resolveLocalLLMModelArg(args)
 		if err != nil {
 			return nil, err
