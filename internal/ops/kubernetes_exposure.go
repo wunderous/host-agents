@@ -94,6 +94,12 @@ func (s *HostOperationsService) InstallCloudflaredConnector(args InstallCloudfla
 	if strings.TrimSpace(args.VMName) == "" || strings.TrimSpace(args.Token) == "" {
 		return nil, errors.New("vmName and token are required")
 	}
+	// The connector is a Kubernetes Deployment, but Kubernetes cannot restore
+	// it until the backing Incus VM and K3s come back. Make the VM lifecycle
+	// durable even when this connector is installed on an existing VM.
+	if err := s.ensureIncusVMAutostart(args.VMName); err != nil {
+		return nil, fmt.Errorf("enable VM autostart: %w", err)
+	}
 	namespace := defaultString(args.Namespace, "edge-system")
 	name := defaultString(args.Name, "cloudflared")
 	image := defaultString(args.Image, "cloudflare/cloudflared:2025.7.0")

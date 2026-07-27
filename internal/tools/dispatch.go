@@ -41,6 +41,37 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
+	case "list_clusters":
+		fast, _ := args["fast"].(bool)
+		out, err := svc.ListClusters(fast)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "get_cluster_details":
+		vmName := vmNameFromArgs(args)
+		if vmName == "" {
+			return nil, fmt.Errorf("vmName is required")
+		}
+		fast, _ := args["fast"].(bool)
+		out, err := svc.GetClusterDetails(vmName, fast)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "get_cluster_runtime_details":
+		vmName := vmNameFromArgs(args)
+		if vmName == "" {
+			return nil, fmt.Errorf("vmName is required")
+		}
+		out, err := svc.GetClusterRuntimeDetails(vmName)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
 	case "check_local_prerequisites":
 		out, err := svc.CheckLocalPrerequisites()
 		if err != nil {

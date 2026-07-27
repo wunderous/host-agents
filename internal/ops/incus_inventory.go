@@ -4,15 +4,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
+const oputeK3sInstalledLabel = "user.opute.k3s_installed"
+
 type incusListItem struct {
-	Name   string         `json:"name"`
-	Status string         `json:"status"`
-	Type   string         `json:"type"`
-	State  map[string]any `json:"state,omitempty"`
+	Name            string                    `json:"name"`
+	Status          string                    `json:"status"`
+	Type            string                    `json:"type"`
+	Config          map[string]string         `json:"config,omitempty"`
+	ExpandedConfig  map[string]string         `json:"expanded_config,omitempty"`
+	Devices         map[string]map[string]any `json:"devices,omitempty"`
+	ExpandedDevices map[string]map[string]any `json:"expanded_devices,omitempty"`
+	State           map[string]any            `json:"state,omitempty"`
 }
 
 type incusInstanceState struct {
@@ -98,33 +106,273 @@ func (s *HostOperationsService) listIncusVirtualMachines() ([]incusListItem, err
 
 func (s *HostOperationsService) mapIncusListItem(item incusListItem, fast bool) (VMInfo, error) {
 	status := mapIncusStatus(item.Status)
-	agentReady := false
+	var agentReady *bool
 	if status == "running" && !fast {
-		agentReady = s.probeIncusAgent(item.Name)
+		ready := s.probeIncusAgent(item.Name)
+		agentReady = &ready
 	}
-	info := VMInfo{
-		Name:       item.Name,
-		Status:     status,
-		State:      map[string]any{"incusStatus": item.Status},
-		IPv4:       extractIPv4FromState(item.State),
-		Release:    "unknown",
-		ProviderID: "incus",
-		AgentReady: agentReady,
+	k3sInstalled := resolveK3sInstalledFromLabel(item)
+	if k3sInstalled == nil && status == "running" && !fast && agentReady != nil && *agentReady {
+		installed := s.probeK3sInstalled(item.Name)
+		k3sInstalled = &installed
+		if installed {
+			_ = s.setIncusInstanceConfig(item.Name, oputeK3sInstalledLabel, "true")
+		}
 	}
+	info := buildVMInfoFromIncusListItem(item, agentReady, k3sInstalled)
 	if fast && len(info.IPv4) == 0 && status == "running" {
 		if ips, err := s.readIncusInstanceIPv4(item.Name); err == nil {
-			info.IPv4 = ips
+			info.IPv4 = normalizeClusterIpv4(ips)
 		}
 	}
 	if !fast {
 		if ips, err := s.readIncusInstanceIPv4(item.Name); err == nil {
-			info.IPv4 = ips
+			info.IPv4 = normalizeClusterIpv4(ips)
+		}
+		if info.CPUs == nil && agentReady != nil && *agentReady {
+			if cpus, err := s.readGuestCpuCount(item.Name); err == nil && cpus > 0 {
+				info.CPUs = &cpus
+			}
 		}
 	}
 	if info.IPv4 == nil {
 		info.IPv4 = []string{}
 	}
 	return info, nil
+}
+
+func resolveK3sInstalledFromLabel(item incusListItem) *bool {
+	switch pickIncusConfigValue(item, oputeK3sInstalledLabel) {
+	case "true":
+		installed := true
+		return &installed
+	case "false":
+		notInstalled := false
+		return &notInstalled
+	default:
+		return nil
+	}
+}
+
+func buildVMInfoFromIncusListItem(item incusListItem, agentReady *bool, k3sInstalled *bool) VMInfo {
+	cpus := extractIncusCPUCount(item)
+	memory := extractIncusMemory(item)
+	disk := extractIncusDisk(item)
+	info := VMInfo{
+		Name:       item.Name,
+		Status:     mapIncusStatus(item.Status),
+		State:      map[string]any{"incusStatus": item.Status},
+		IPv4:       normalizeClusterIpv4(extractIPv4FromState(item.State)),
+		Release:    extractIncusRelease(item),
+		ProviderID: "incus",
+		Memory:     memory,
+		Disk:       disk,
+		AgentReady: agentReady,
+		K3sInstalled: k3sInstalled,
+	}
+	if cpus > 0 {
+		info.CPUs = &cpus
+	}
+	// List/get inventory must stay chat- and UI-safe: top-level ipv4 already
+	// carries addresses. Dumping Incus state.network (every veth + counters)
+	// blows LLM context and stalls public chat list_vms turns on finishReason=length.
+	return info
+}
+
+func pickIncusConfigValue(item incusListItem, key string) string {
+	if item.Config != nil {
+		if value := strings.TrimSpace(item.Config[key]); value != "" {
+			return value
+		}
+	}
+	if item.ExpandedConfig != nil {
+		if value := strings.TrimSpace(item.ExpandedConfig[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func extractIncusCPUCount(item incusListItem) int {
+	raw := pickIncusConfigValue(item, "limits.cpu")
+	if raw == "" {
+		return 0
+	}
+	cpus, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || cpus <= 0 {
+		return 0
+	}
+	return cpus
+}
+
+func extractIncusRelease(item incusListItem) string {
+	if release := pickIncusConfigValue(item, "image.release"); release != "" {
+		return release
+	}
+	return "unknown"
+}
+
+func normalizeIncusMemory(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasSuffix(lower, "gib") || strings.HasSuffix(lower, "mib") || strings.HasSuffix(lower, "tib") {
+		return trimmed
+	}
+	if strings.HasSuffix(lower, "gb") {
+		num := strings.TrimSpace(trimmed[:len(trimmed)-2])
+		if parsed, err := strconv.ParseFloat(num, 64); err == nil {
+			if parsed == float64(int64(parsed)) {
+				return fmt.Sprintf("%dGiB", int64(parsed))
+			}
+			return fmt.Sprintf("%dMiB", int64(parsed*1024))
+		}
+	}
+	if strings.HasSuffix(lower, "mb") {
+		num := strings.TrimSpace(trimmed[:len(trimmed)-2])
+		if parsed, err := strconv.ParseFloat(num, 64); err == nil {
+			return fmt.Sprintf("%dMiB", int64(parsed))
+		}
+	}
+	if matched := strings.TrimSuffix(lower, "g"); matched != lower {
+		if parsed, err := strconv.ParseFloat(strings.TrimSpace(trimmed[:len(trimmed)-1]), 64); err == nil {
+			if parsed == float64(int64(parsed)) {
+				return fmt.Sprintf("%dGiB", int64(parsed))
+			}
+			return fmt.Sprintf("%dMiB", int64(parsed*1024))
+		}
+	}
+	if matched := strings.TrimSuffix(lower, "m"); matched != lower {
+		if parsed, err := strconv.ParseFloat(strings.TrimSpace(trimmed[:len(trimmed)-1]), 64); err == nil {
+			return fmt.Sprintf("%dMiB", int64(parsed))
+		}
+	}
+	return trimmed
+}
+
+func extractIncusMemory(item incusListItem) string {
+	if memory := normalizeIncusMemory(pickIncusConfigValue(item, "limits.memory")); memory != "" {
+		return memory
+	}
+	if item.State == nil {
+		return ""
+	}
+	memoryState, ok := item.State["memory"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	return formatIncusBytes(memoryState["usage"])
+}
+
+func extractIncusDisk(item incusListItem) string {
+	if disk := strings.TrimSpace(pickIncusConfigValue(item, "limits.disk")); disk != "" {
+		return disk
+	}
+	if size := extractIncusRootDeviceSize(item.Devices); size != "" {
+		return size
+	}
+	if size := extractIncusRootDeviceSize(item.ExpandedDevices); size != "" {
+		return size
+	}
+	if item.State == nil {
+		return ""
+	}
+	diskState, ok := item.State["disk"].(map[string]any)
+	if !ok || diskState == nil {
+		return ""
+	}
+	root, ok := diskState["root"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	return formatIncusBytes(root["usage"])
+}
+
+func extractIncusRootDeviceSize(devices map[string]map[string]any) string {
+	if devices == nil {
+		return ""
+	}
+	root, ok := devices["root"]
+	if !ok {
+		return ""
+	}
+	typeName, _ := root["type"].(string)
+	if !strings.EqualFold(strings.TrimSpace(typeName), "disk") {
+		return ""
+	}
+	switch size := root["size"].(type) {
+	case string:
+		return strings.TrimSpace(size)
+	case float64:
+		if size > 0 {
+			return formatIncusBytes(size)
+		}
+	case json.Number:
+		if parsed, err := size.Float64(); err == nil && parsed > 0 {
+			return formatIncusBytes(parsed)
+		}
+	}
+	return ""
+}
+
+func formatIncusBytes(value any) string {
+	var bytes float64
+	switch typed := value.(type) {
+	case float64:
+		bytes = typed
+	case int:
+		bytes = float64(typed)
+	case int64:
+		bytes = float64(typed)
+	case json.Number:
+		parsed, err := typed.Float64()
+		if err != nil {
+			return ""
+		}
+		bytes = parsed
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		if err != nil {
+			return ""
+		}
+		bytes = parsed
+	default:
+		return ""
+	}
+	if bytes <= 0 {
+		return ""
+	}
+	const kib = 1024.0
+	const mib = kib * 1024
+	const gib = mib * 1024
+	if bytes >= gib {
+		asGiB := bytes / gib
+		if asGiB == float64(int64(asGiB)) {
+			return fmt.Sprintf("%dGiB", int64(asGiB))
+		}
+		return fmt.Sprintf("%dMiB", int64(bytes/mib))
+	}
+	if bytes >= mib {
+		return fmt.Sprintf("%dMiB", int64(bytes/mib))
+	}
+	return fmt.Sprintf("%dB", int64(bytes))
+}
+
+func (s *HostOperationsService) readGuestCpuCount(vmName string) (int, error) {
+	res, err := s.commandRunner([]string{"exec", vmName, "--", "nproc"}, nil, 15*time.Second)
+	if err != nil {
+		return 0, err
+	}
+	if res.ExitCode != 0 {
+		return 0, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "nproc failed"))
+	}
+	cpus, err := strconv.Atoi(strings.TrimSpace(res.Stdout))
+	if err != nil || cpus <= 0 {
+		return 0, fmt.Errorf("invalid nproc output %q", strings.TrimSpace(res.Stdout))
+	}
+	return cpus, nil
 }
 
 func isIncusVirtualMachine(typeName string) bool {
@@ -143,6 +391,46 @@ func mapIncusStatus(status string) string {
 	default:
 		return strings.ToLower(strings.TrimSpace(status))
 	}
+}
+
+func getIpPreferenceScore(ip string) int {
+	normalized := strings.TrimSpace(strings.ToLower(ip))
+	switch normalized {
+	case "127.0.0.1", "::1", "localhost":
+		return 100
+	default:
+		if strings.HasPrefix(normalized, "10.42.") || strings.HasPrefix(normalized, "10.43.") || strings.HasPrefix(normalized, "fd42:") {
+			return 80
+		}
+		if strings.HasPrefix(normalized, "10.") || strings.HasPrefix(normalized, "192.168.") || strings.HasPrefix(normalized, "172.") {
+			return 40
+		}
+		return 0
+	}
+}
+
+func normalizeClusterIpv4(ips []string) []string {
+	if len(ips) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]bool, len(ips))
+	unique := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		trimmed := strings.TrimSpace(ip)
+		if trimmed == "" || seen[trimmed] {
+			continue
+		}
+		seen[trimmed] = true
+		unique = append(unique, trimmed)
+	}
+	sort.Slice(unique, func(i, j int) bool {
+		scoreDiff := getIpPreferenceScore(unique[i]) - getIpPreferenceScore(unique[j])
+		if scoreDiff != 0 {
+			return scoreDiff < 0
+		}
+		return unique[i] < unique[j]
+	})
+	return unique
 }
 
 func extractIPv4FromState(state map[string]any) []string {
@@ -225,4 +513,21 @@ func (s *HostOperationsService) waitForIncusAgent(vmName string, timeout time.Du
 func (s *HostOperationsService) probeIncusAgent(vmName string) bool {
 	res, err := s.commandRunner([]string{"exec", vmName, "--", "true"}, nil, 15*time.Second)
 	return err == nil && res.ExitCode == 0
+}
+
+func (s *HostOperationsService) probeK3sInstalled(vmName string) bool {
+	script := "test -x /usr/local/bin/k3s && systemctl is-active k3s >/dev/null 2>&1 && printf installed"
+	res, err := s.commandRunner([]string{"exec", vmName, "--", "/bin/sh", "-lc", script}, nil, 15*time.Second)
+	return err == nil && res.ExitCode == 0 && strings.TrimSpace(res.Stdout) == "installed"
+}
+
+func (s *HostOperationsService) setIncusInstanceConfig(vmName, key, value string) error {
+	res, err := s.commandRunner([]string{"config", "set", vmName, key, value}, nil, defaultDiscoveryTimeout)
+	if err != nil {
+		return err
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "incus config set failed"))
+	}
+	return nil
 }

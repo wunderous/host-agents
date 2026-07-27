@@ -164,7 +164,8 @@ type VMInfo struct {
 	CPUs       *int           `json:"cpus,omitempty"`
 	Memory     string         `json:"memory,omitempty"`
 	Disk       string         `json:"disk,omitempty"`
-	AgentReady bool           `json:"agentReady,omitempty"`
+	AgentReady   *bool `json:"agentReady,omitempty"`
+	K3sInstalled *bool `json:"k3sInstalled,omitempty"`
 }
 
 // --- VM lifecycle ---
@@ -393,6 +394,12 @@ systemctl daemon-reload 2>/dev/null || true`
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
 	}
+	// Repair older/provisioned VMs too.  A platform service installed into a
+	// VM that predates the boot-autostart contract must still survive the next
+	// host restart.
+	if err := s.ensureIncusVMAutostart(vmName); err != nil {
+		return nil, fmt.Errorf("enable VM autostart: %w", err)
+	}
 	if err := s.waitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {
 		return nil, err
 	}
@@ -416,6 +423,7 @@ systemctl daemon-reload 2>/dev/null || true`
 	if err := s.waitForVMServiceActive(vmName, "k3s", onData, 5*time.Minute); err != nil {
 		return nil, err
 	}
+	_ = s.setIncusInstanceConfig(vmName, oputeK3sInstalledLabel, "true")
 	return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "active", "target": "vm"}, nil
 }
 

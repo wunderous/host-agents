@@ -49,6 +49,7 @@ var CatalogExcludedToolNames = map[string]bool{
 var IncusOmittedToolNames = map[string]bool{
 	"ensure_k3d":                     true,
 	"switch_infrastructure_provider": true,
+	"list_vm_network_devices":        true,
 }
 
 // OmittedToolPrefixes filter bridge-backed tool families not implemented in the Go host agent.

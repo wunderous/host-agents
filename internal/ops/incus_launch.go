@@ -2,6 +2,7 @@ package ops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -133,10 +134,7 @@ func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus i
 		"type":     "virtual-machine",
 		"profiles": []string{"default"},
 		"source":   resolveIncusImageSource(normalizedImage),
-		"config": map[string]string{
-			"limits.cpu":    fmt.Sprintf("%d", cpus),
-			"limits.memory": memory,
-		},
+		"config":   incusVMConfig(cpus, memory),
 	}
 
 	instanceDevices := map[string]any{}
@@ -218,4 +216,27 @@ func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus i
 		return fmt.Errorf("incus start %q: %s", vmName, firstNonEmpty(start.Stderr, start.Stdout, "failed to start VM"))
 	}
 	return nil
+}
+
+func incusVMConfig(cpus int, memory string) map[string]string {
+	return map[string]string{
+		"limits.cpu":    fmt.Sprintf("%d", cpus),
+		"limits.memory": memory,
+		// K3s workloads are durable Kubernetes resources, but they cannot
+		// recover after a host restart if the Incus VM remains stopped.
+		// Persist the VM's boot policy as part of provisioning rather than
+		// relying on an operator to start it manually after every reboot.
+		"boot.autostart": "true",
+	}
+}
+
+// ensureIncusVMAutostart repairs existing instances while keeping the
+// restart invariant in one place. New instances receive the same setting in
+// incusVMConfig during creation.
+func (s *HostOperationsService) ensureIncusVMAutostart(vmName string) error {
+	vmName = strings.TrimSpace(vmName)
+	if vmName == "" {
+		return errors.New("vmName is required")
+	}
+	return s.setIncusInstanceConfig(vmName, "boot.autostart", "true")
 }
