@@ -25,11 +25,11 @@ type catalogMeta struct {
 
 // CatalogExcludedToolNames are omitted from agent-facing tools/list.
 var CatalogExcludedToolNames = map[string]bool{
-	"list_operations":                 true,
-	"get_operation":                   true,
-	"list_tasks":                      true,
-	"get_task":                        true,
-	"agent_shell":                     true,
+	"list_operations": true,
+	"get_operation":   true,
+	"list_tasks":      true,
+	"get_task":        true,
+	"agent_shell":     true,
 	// Guest exec lives in the vm-exec static MCP for CPC-local cells, but tunnel hosts
 	"exec_command":                    true,
 	"ensure_sql_connector":            true,
@@ -107,7 +107,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"configure_platform_agent":      true,
 		"discover_cluster_ingress":      true,
 		"apply_manifest":                true,
-		"delete_k8s_resource":            true,
+		"delete_k8s_resource":           true,
 		"put_k8s_secret":                true,
 		"install_oci_registry":          true,
 		"configure_k3s_registry":        true,
@@ -310,16 +310,16 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"numCtx":      map[string]any{"type": "integer"},
 		}},
 		"install_local_llm_model": {"type": "object", "properties": map[string]any{
-			"runtime":         map[string]any{"type": "string", "enum": []string{"ollama", "litert-lm"}},
-			"modelFamily":     map[string]any{"type": "string"},
-			"modelVariant":    map[string]any{"type": "string"},
-			"installSource":   map[string]any{"type": "string"},
-			"modelRef":        map[string]any{"type": "string"},
-			"modelPreset":     map[string]any{"type": "string", "enum": []string{"gemma", "qwen"}},
-			"createAs":        map[string]any{"type": "string"},
-			"numGpu":          map[string]any{"type": "integer"},
-			"numCtx":          map[string]any{"type": "integer"},
-			"template":     map[string]any{"type": "string"},
+			"runtime":       map[string]any{"type": "string", "enum": []string{"ollama", "litert-lm"}},
+			"modelFamily":   map[string]any{"type": "string"},
+			"modelVariant":  map[string]any{"type": "string"},
+			"installSource": map[string]any{"type": "string"},
+			"modelRef":      map[string]any{"type": "string"},
+			"modelPreset":   map[string]any{"type": "string", "enum": []string{"gemma", "qwen"}},
+			"createAs":      map[string]any{"type": "string"},
+			"numGpu":        map[string]any{"type": "integer"},
+			"numCtx":        map[string]any{"type": "integer"},
+			"template":      map[string]any{"type": "string"},
 		}},
 		"configure_local_llm_model": {"type": "object", "properties": map[string]any{
 			"modelRef":    map[string]any{"type": "string"},
@@ -332,8 +332,8 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"start_local_llm_runtime": {"type": "object", "properties": map[string]any{}},
 		"stop_local_llm_runtime":  {"type": "object", "properties": map[string]any{}},
 		"remove_local_llm_model":  {"type": "object", "required": []string{"modelRef"}, "properties": map[string]any{"modelRef": map[string]any{"type": "string"}, "purge": map[string]any{"type": "boolean"}}},
-		"ensure_local_llm_relay":              {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "incomingToken", "allowedSourceCIDRs"}, "properties": map[string]any{"upstreamToken": map[string]any{"type": "string"}, "allowedSourceCIDRs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}},
-		"remove_local_llm_relay":              {"type": "object", "required": []string{"sessionId"}, "properties": map[string]any{}},
+		"ensure_local_llm_relay":  {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "incomingToken", "allowedSourceCIDRs"}, "properties": map[string]any{"upstreamToken": map[string]any{"type": "string"}, "allowedSourceCIDRs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}},
+		"remove_local_llm_relay":  {"type": "object", "required": []string{"sessionId"}, "properties": map[string]any{}},
 		"ensure_local_llm_k3s_proxy": {"type": "object", "required": []string{"vmName", "nodePort", "relayHost", "relayPort", "relayToken", "bearerKey"}, "properties": map[string]any{
 			"namespace": map[string]any{"type": "string"}, "secretName": map[string]any{"type": "string"},
 			"configMapName": map[string]any{"type": "string"}, "deploymentName": map[string]any{"type": "string"},
@@ -351,7 +351,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			case "check_local_llm_prerequisites":
 				desc = "Inspect local Ollama install readiness and GPU/CUDA diagnostics (blockers + remediationHints; does not install NVIDIA drivers)."
 			case "install_local_llm_model":
-				desc = "Install Ollama with the CUDA-pinned systemd unit, pull modelRef or modelPreset (gemma|qwen), and optionally createAs with numGpu/numCtx (full GPU offload)."
+				desc = "Install an Opute-managed Ollama or LiteRT-LM runtime and model. LiteRT-LM is allowlisted to Gemma 4 E2B from Hugging Face."
 			case "configure_local_llm_model":
 				desc = "Create/replace a local Ollama tag FROM an already-pulled model with Modelfile parameters (numGpu/numCtx). Pass modelRef or modelPreset. Does not re-download."
 			case "start_local_llm_runtime":
