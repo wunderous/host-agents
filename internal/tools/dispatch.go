@@ -86,6 +86,56 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
+	case "install_incus_stack":
+		out, err := svc.InstallIncusStack(ops.InstallIncusStackArgs{
+			IncusPackage: stringField(args, "incusPackage"), QemuPackage: stringField(args, "qemuPackage"),
+			GPUPackages:  stringSliceField(args, "gpuPackages"),
+			IncusChannel: stringField(args, "incusChannel"), IncusVersion: stringField(args, "incusVersion"),
+			InstallQEMU: boolField(args, "installQemu"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Incus virtualization prerequisites installed"), nil
+
+	case "probe_incus_gpu":
+		out, err := svc.ProbeIncusGPU(args)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Incus GPU capability report generated"), nil
+
+	case "provision_container":
+		nesting := optionalBoolField(args, "nesting")
+		out, err := svc.ProvisionContainer(ops.ProvisionContainerArgs{
+			ContainerName: stringField(args, "containerName"),
+			Image:         stringField(args, "image"),
+			Disk:          stringField(args, "disk"),
+			GPU:           boolField(args, "gpu"),
+			WSLGpuLibs:    boolField(args, "wslGpuLibs"),
+			Nesting:       nesting,
+			Port:          intField(args, "port"),
+			ModelVolume:   stringField(args, "modelVolume"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		payload := map[string]any{
+			"containerName": out.ContainerName,
+			"vmName":        out.ContainerName,
+			"image":         out.Image,
+			"status":        out.Status,
+			"instanceType":  out.InstanceType,
+		}
+		return structuredResult(payload, fmt.Sprintf("Provisioned Incus container '%s'.", out.ContainerName)), nil
+
+	case "probe_gpu_container":
+		out, err := svc.ProbeGPUContainer(onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "System container GPU capability report generated"), nil
+
 	case "check_local_llm_prerequisites":
 		out, err := svc.CheckLocalLLMPrerequisites()
 		if err != nil {
@@ -121,21 +171,6 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "install_local_llm_model":
-		runtime := strings.ToLower(strings.TrimSpace(stringField(args, "runtime")))
-		if runtime == "litert-lm" {
-			modelRef, err := resolveLocalLLMModelArg(args)
-			if err != nil {
-				return nil, err
-			}
-			out, err := svc.InstallLiteRTLMModel(ctx, ops.InstallLiteRTLMModelArgs{
-				ModelRef:        modelRef,
-				HuggingFaceRepo: stringField(args, "installSource"),
-			})
-			if err != nil {
-				return nil, err
-			}
-			return structuredResult(out, "LiteRT-LM model runtime is ready"), nil
-		}
 		modelRef, err := resolveLocalLLMModelArg(args)
 		if err != nil {
 			return nil, err
@@ -709,6 +744,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			ServiceName:          stringField(args, "serviceName"),
 			Restart:              restart,
 			McpHealthURL:         stringField(args, "mcpHealthUrl"),
+			McpRouteHost:         stringField(args, "mcpRouteHost"),
 		}, onData)
 		if err != nil {
 			return nil, err
@@ -768,6 +804,30 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, "Generic host tool is available."), nil
+
+	case "render_helm_template":
+		out, err := svc.RenderHelmTemplate(ops.RenderHelmTemplateArgs{
+			ChartPath:   stringField(args, "chartPath"),
+			ReleaseName: stringField(args, "releaseName"),
+			ValuesFiles: stringSliceField(args, "valuesFiles"),
+			Set:         stringSliceField(args, "set"),
+			Namespace:   stringField(args, "namespace"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Helm chart rendered."), nil
+
+	case "prepare_host_agent_artifacts":
+		out, err := svc.PrepareHostAgentArtifacts(ops.PrepareHostAgentArtifactsArgs{
+			SourceDir: stringField(args, "sourceDir"),
+			DestDir:   stringField(args, "destDir"),
+			Archs:     stringSliceField(args, "archs"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Host-agent build artifacts are ready."), nil
 
 	case "ensure_k3d":
 		out, err := svc.EnsureK3d(onData)
@@ -932,6 +992,17 @@ func optionalIntField(args map[string]any, key string) *int {
 		return nil
 	}
 	v := intField(args, key)
+	return &v
+}
+
+func optionalBoolField(args map[string]any, key string) *bool {
+	if args == nil {
+		return nil
+	}
+	if _, ok := args[key]; !ok {
+		return nil
+	}
+	v := boolField(args, key)
 	return &v
 }
 

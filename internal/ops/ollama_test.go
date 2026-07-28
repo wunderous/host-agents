@@ -5,11 +5,28 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"os/exec"
+	"strconv"
 	"testing"
+	"time"
 )
 
+func TestOllamaTarExtractArgsPreferUnzstd(t *testing.T) {
+	args := ollamaTarExtractArgs("/tmp/ollama.tar.zst", "/tmp/root")
+	if _, err := exec.LookPath("unzstd"); err == nil {
+		if args[2] != "--use-compress-program=unzstd" {
+			t.Fatalf("expected unzstd compressor, got %v", args)
+		}
+		return
+	}
+	if args[2] != "--zstd" {
+		t.Fatalf("expected --zstd fallback, got %v", args)
+	}
+}
+
 func TestValidateOllamaModelRef(t *testing.T) {
-	for _, ref := range []string{"smollm:135m", "qwen3.5:2b", "../escape"} {
+	for _, ref := range []string{"smollm:135m", "qwen3.5:2b", "ibm/granite4.1:3b", "../escape"} {
 		err := ValidateOllamaModelRef(ref)
 		if ref == "../escape" && err == nil {
 			t.Fatalf("expected invalid model ref")
@@ -17,6 +34,28 @@ func TestValidateOllamaModelRef(t *testing.T) {
 		if ref != "../escape" && err != nil {
 			t.Fatalf("%s: %v", ref, err)
 		}
+	}
+}
+
+func TestOllamaReachable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	_, portStr, err := net.SplitHostPort(server.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("split host port: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("parse port: %v", err)
+	}
+	if !ollamaReachable(context.Background(), port, 2*time.Second) {
+		t.Fatal("expected ollama reachable")
 	}
 }
 
@@ -72,6 +111,7 @@ func TestFinalizeLocalLLMPrerequisitesGpuBlockers(t *testing.T) {
 	result.NvidiaSmiOk = true
 	result.CudaLibraryPresent = true
 	result.OllamaServiceActive = true
+	result.RuntimeLoadedModel = "qwen3.5:2b"
 	result.RuntimeGpuAccelerated = false
 	finalizeLocalLLMPrerequisites(result)
 	if !result.ReadyForGpuInference {

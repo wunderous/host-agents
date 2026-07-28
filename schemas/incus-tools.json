@@ -701,6 +701,9 @@
     "outputSchema": {
       "type": "object",
       "properties": {
+        "taskId": {
+          "type": "string"
+        },
         "vmName": {
           "type": "string"
         },
@@ -711,17 +714,9 @@
           ]
         },
         "status": {
-          "type": "string",
-          "enum": [
-            "active"
-          ]
+          "type": "string"
         }
-      },
-      "required": [
-        "vmName",
-        "serviceName",
-        "status"
-      ]
+      }
     },
     "execution": {
       "taskSupport": "optional"
@@ -4540,5 +4535,33 @@
     "outputSchema": {
       "type": "object"
     }
+  },
+  {
+    "name": "install_incus_stack",
+    "title": "Install Incus virtualization stack",
+    "description": "Install or upgrade Incus, QEMU, virglrenderer, and explicitly requested GPU container prerequisites.",
+    "inputSchema": {"type":"object","properties":{"incusPackage":{"type":"string"},"qemuPackage":{"type":"string"},"gpuPackages":{"type":"array","items":{"type":"string"}}}},
+    "outputSchema": {"type":"object"}
+  },
+  {
+    "name": "probe_incus_gpu",
+    "title": "Probe Incus GPU capability",
+    "description": "Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.",
+    "inputSchema": {"type":"object"},
+    "outputSchema": {"type":"object"}
+  },
+  {
+    "name": "provision_container",
+    "title": "Provision Incus system container",
+    "description": "Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.",
+    "inputSchema": {"type":"object","required":["containerName"],"properties":{"containerName":{"type":"string"},"image":{"type":"string"},"disk":{"type":"string"},"gpu":{"type":"boolean"},"wslGpuLibs":{"type":"boolean"},"nesting":{"type":"boolean"},"port":{"type":"integer"},"modelVolume":{"type":"string"}}},
+    "outputSchema": {"type":"object"}
+  },
+  {
+    "name": "probe_gpu_container",
+    "title": "Probe system container GPU",
+    "description": "Launch a disposable Incus system container, probe GPU visibility and NVML, then delete it.",
+    "inputSchema": {"type":"object"},
+    "outputSchema": {"type":"object"}
   }
 ]

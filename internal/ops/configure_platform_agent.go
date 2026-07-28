@@ -23,6 +23,7 @@ type ConfigurePlatformAgentArgs struct {
 	ServiceName          string `json:"serviceName,omitempty"`
 	Restart              *bool  `json:"restart,omitempty"`
 	McpHealthURL         string `json:"mcpHealthUrl,omitempty"`
+	McpRouteHost         string `json:"mcpRouteHost,omitempty"`
 }
 
 // ConfigurePlatformAgent writes platform-mode settings into the host-agent env
@@ -72,6 +73,15 @@ func (s *HostOperationsService) ConfigurePlatformAgent(args ConfigurePlatformAge
 		return nil, fmt.Errorf("create env directory: %w", err)
 	}
 
+	mcpRouteHost := strings.TrimSpace(args.McpRouteHost)
+	if mcpRouteHost == "" {
+		if parsedMcp, err := url.Parse(mcpURL); err == nil {
+			if host := parsedMcp.Hostname(); host != "" {
+				mcpRouteHost = host
+			}
+		}
+	}
+
 	assignments := map[string]string{
 		"OPUTE_AGENT_MODE":              "platform",
 		"OPUTE_REVERSE_TUNNEL":          "true",
@@ -82,6 +92,9 @@ func (s *HostOperationsService) ConfigurePlatformAgent(args ConfigurePlatformAge
 		"MCP_AUTH_TOKEN":                hostAuth,
 		"OPUTE_BRIDGE_TOKEN":            hostAuth,
 		"BRIDGE_TOKEN":                  hostAuth,
+	}
+	if mcpRouteHost != "" {
+		assignments["OPUTE_MCP_ROUTE_HOST"] = mcpRouteHost
 	}
 	if remoteID := strings.TrimSpace(args.RemoteAgentID); remoteID != "" {
 		assignments["OPUTE_REMOTE_AGENT_ID"] = remoteID
@@ -178,6 +191,7 @@ func upsertEnvFile(path string, assignments map[string]string) error {
 		"OPUTE_MCP_URL",
 		"OPUTE_HOST_WS_URL",
 		"OPUTE_MCP_HEALTH_URL",
+		"OPUTE_MCP_ROUTE_HOST",
 		"OPUTE_REMOTE_AGENT_AUTH_TOKEN",
 		"OPUTE_REMOTE_AGENT_ID",
 		"MCP_AUTH_TOKEN",

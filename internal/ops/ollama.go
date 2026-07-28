@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -52,6 +53,7 @@ type LocalLLMPrerequisitesResult struct {
 	OllamaServiceActive    bool     `json:"ollamaServiceActive"`
 	RuntimeGpuAccelerated  bool     `json:"runtimeGpuAccelerated,omitempty"`
 	RuntimeSizeVramBytes   int64    `json:"runtimeSizeVramBytes,omitempty"`
+	RuntimeLoadedModel     string   `json:"runtimeLoadedModel,omitempty"`
 	ReadyForInstall        bool     `json:"readyForInstall"`
 	ReadyForGpuInference   bool     `json:"readyForGpuInference"`
 	Blockers               []string `json:"blockers,omitempty"`
@@ -146,7 +148,7 @@ func (s *HostOperationsService) requireGpuInferenceReady() error {
 	if prereqs == nil || !prereqs.ReadyForGpuInference {
 		return fmt.Errorf("GPU inference is required for Opute local LLM models (gemma, qwen); resolve check_local_llm_prerequisites blockers before install or start")
 	}
-	if prereqs.OllamaServiceActive && !prereqs.RuntimeGpuAccelerated {
+	if prereqs.OllamaServiceActive && prereqs.RuntimeLoadedModel != "" && !prereqs.RuntimeGpuAccelerated {
 		return fmt.Errorf("Ollama is running on CPU (size_vram=0); call start_local_llm_runtime after the discrete GPU is healthy, then probe_local_llm and confirm sizeVramBytes > 0")
 	}
 	return nil
@@ -304,7 +306,7 @@ func (s *HostOperationsService) CheckLocalLLMPrerequisites() (*LocalLLMPrerequis
 	if res, svcErr := s.hostCommandRunner([]string{"systemctl", "--user", "is-active", "opute-ollama.service"}, nil, 5*time.Second); svcErr == nil {
 		result.OllamaServiceActive = strings.TrimSpace(res.Stdout) == "active"
 	}
-	if res, gpuErr := s.hostCommandRunner([]string{"nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"}, nil, 5*time.Second); gpuErr == nil && res.ExitCode == 0 {
+	if res, gpuErr := s.hostCommandRunner(append(nvidiaSmiCommand(), "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"), nil, 5*time.Second); gpuErr == nil && res.ExitCode == 0 {
 		line := strings.TrimSpace(strings.Split(res.Stdout, "\n")[0])
 		if line != "" && !strings.Contains(strings.ToLower(line), "failed") {
 			parts := strings.Split(line, ",")
@@ -328,10 +330,18 @@ func (s *HostOperationsService) CheckLocalLLMPrerequisites() (*LocalLLMPrerequis
 		if probe, probeErr := s.ProbeLocalLLM(context.Background(), ProbeLocalLLMArgs{}); probeErr == nil && probe != nil {
 			result.RuntimeGpuAccelerated = probe.GpuAccelerated
 			result.RuntimeSizeVramBytes = probe.SizeVramBytes
+			result.RuntimeLoadedModel = probe.LoadedModel
 		}
 	}
 	finalizeLocalLLMPrerequisites(result)
 	return result, nil
+}
+
+func nvidiaSmiCommand() []string {
+	if _, err := os.Stat("/usr/lib/wsl/lib/nvidia-smi"); err == nil {
+		return []string{"/usr/lib/wsl/lib/nvidia-smi"}
+	}
+	return []string{"nvidia-smi"}
 }
 
 func cudaUserLibraryPresent() bool {
@@ -386,7 +396,7 @@ func finalizeLocalLLMPrerequisites(result *LocalLLMPrerequisitesResult) {
 			"On native Linux, install the NVIDIA driver/CUDA userspace packages so libcuda.so.1 is on the library path.",
 		)
 	}
-	if result.OllamaServiceActive && result.ReadyForGpuInference && !result.RuntimeGpuAccelerated {
+	if result.OllamaServiceActive && result.ReadyForGpuInference && result.RuntimeLoadedModel != "" && !result.RuntimeGpuAccelerated {
 		result.Blockers = append(result.Blockers, "Ollama is running but reports CPU-only inference (size_vram=0) despite GPU prerequisites looking healthy.")
 		result.RemediationHints = append(result.RemediationHints,
 			"Call start_local_llm_runtime (rewrites the Opute Ollama unit with CUDA pin + WSL library path) after the GPU driver is healthy, then probe_local_llm and confirm sizeVramBytes > 0.",
@@ -851,6 +861,41 @@ func remediationHintsForLocalLLMProbe(result *LocalLLMProbeResult) []string {
 	return hints
 }
 
+func zstdExtractorAvailable() bool {
+	for _, name := range []string{"zstd", "unzstd"} {
+		if _, err := exec.LookPath(name); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func ensureZstdForOllamaExtract(ctx context.Context) error {
+	if zstdExtractorAvailable() {
+		return nil
+	}
+	if _, err := exec.LookPath("apt-get"); err != nil {
+		return fmt.Errorf("zstd or unzstd is required to extract the Ollama archive; install the zstd package through the host OS package manager")
+	}
+	if err := runPrivilegedPackageCommand(ctx, "apt-get", "update"); err != nil {
+		return fmt.Errorf("install zstd prerequisite: %w", err)
+	}
+	if err := runPrivilegedPackageCommand(ctx, "apt-get", "install", "-y", "zstd"); err != nil {
+		return fmt.Errorf("install zstd package: %w", err)
+	}
+	if !zstdExtractorAvailable() {
+		return fmt.Errorf("zstd package installed but zstd/unzstd still not in PATH")
+	}
+	return nil
+}
+
+func ollamaTarExtractArgs(archivePath, rootDir string) []string {
+	if _, err := exec.LookPath("unzstd"); err == nil {
+		return []string{"tar", "--no-same-owner", "--use-compress-program=unzstd", "-xf", archivePath, "-C", rootDir}
+	}
+	return []string{"tar", "--no-same-owner", "--zstd", "-xf", archivePath, "-C", rootDir}
+}
+
 func (s *HostOperationsService) ensureOllamaInstalled(ctx context.Context, cfg OllamaConfig) error {
 	if _, err := os.Stat(cfg.BinaryPath); err == nil {
 		return nil
@@ -892,12 +937,22 @@ func (s *HostOperationsService) ensureOllamaInstalled(ctx context.Context, cfg O
 		_ = os.Remove(archivePath)
 		return fmt.Errorf("Ollama checksum verification failed")
 	}
-	res, err := s.hostCommandRunnerContext(ctx, []string{"tar", "--no-same-owner", "--use-compress-program=unzstd", "-xf", archivePath, "-C", rootDir}, nil, 5*time.Minute)
+	if err := ensureZstdForOllamaExtract(ctx); err != nil {
+		return err
+	}
+	res, err := s.hostCommandRunnerContext(ctx, ollamaTarExtractArgs(archivePath, rootDir), nil, 5*time.Minute)
 	if err != nil {
 		return err
 	}
 	if res.ExitCode != 0 {
-		return fmt.Errorf("extract Ollama archive failed")
+		stderr := strings.TrimSpace(res.Stderr)
+		if stderr == "" {
+			stderr = strings.TrimSpace(res.Stdout)
+		}
+		if stderr == "" {
+			return fmt.Errorf("extract Ollama archive failed")
+		}
+		return fmt.Errorf("extract Ollama archive failed: %s", stderr)
 	}
 	if err := os.Remove(archivePath); err != nil {
 		return err
@@ -912,7 +967,35 @@ func (s *HostOperationsService) ensureOllamaInstalled(ctx context.Context, cfg O
 	return nil
 }
 
+func ollamaReachable(ctx context.Context, port int, within time.Duration) bool {
+	deadline := time.Now().Add(within)
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/tags", port)
+	client := &http.Client{Timeout: 2 * time.Second}
+	for time.Now().Before(deadline) {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return false
+		}
+		response, err := client.Do(request)
+		if err == nil {
+			response.Body.Close()
+			if response.StatusCode >= 200 && response.StatusCode < 500 {
+				return true
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return false
+}
+
 func (s *HostOperationsService) startOllama(ctx context.Context, cfg OllamaConfig) error {
+	if ollamaReachable(ctx, cfg.Port, 3*time.Second) {
+		return nil
+	}
 	unit, err := RenderOllamaSystemdUnit(cfg)
 	if err != nil {
 		return err
@@ -934,8 +1017,40 @@ func (s *HostOperationsService) startOllama(ctx context.Context, cfg OllamaConfi
 			return err
 		}
 		if res.ExitCode != 0 {
-			return fmt.Errorf("Ollama systemd operation failed")
+			stderr := strings.TrimSpace(res.Stderr)
+			if stderr == "" {
+				stderr = strings.TrimSpace(res.Stdout)
+			}
+			if stderr == "" {
+				return fmt.Errorf("Ollama systemd operation failed")
+			}
+			return fmt.Errorf("Ollama systemd operation failed: %s", stderr)
 		}
 	}
-	return nil
+	return waitForOllamaReady(ctx, cfg.Port)
+}
+
+func waitForOllamaReady(ctx context.Context, port int) error {
+	deadline := time.Now().Add(90 * time.Second)
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/tags", port)
+	client := &http.Client{Timeout: 5 * time.Second}
+	for time.Now().Before(deadline) {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		response, err := client.Do(request)
+		if err == nil {
+			response.Body.Close()
+			if response.StatusCode >= 200 && response.StatusCode < 500 {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("Ollama did not become ready on 127.0.0.1:%d within 90s", port)
 }

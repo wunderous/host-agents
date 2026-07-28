@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -105,6 +108,9 @@ func connectOnce(ctx context.Context, host *hostmcp.Server, wsURL, agentID, auth
 	if authToken != "" {
 		header.Set("Authorization", "Bearer "+authToken)
 	}
+	if routeHost := mcpRouteHost(); routeHost != "" {
+		header.Set("Host", routeHost)
+	}
 	dialer := websocket.Dialer{Subprotocols: []string{"mcp"}}
 	conn, _, err := dialer.DialContext(ctx, tunnelURL, header)
 	if err != nil {
@@ -149,6 +155,10 @@ func waitForHealth(ctx context.Context, url string, timeout time.Duration) error
 		if err != nil {
 			return err
 		}
+		if routeHost := mcpRouteHost(); routeHost != "" {
+			req.Host = routeHost
+			req.Header.Set("Host", routeHost)
+		}
 		res, err := http.DefaultClient.Do(req)
 		if err == nil && res.StatusCode == http.StatusOK {
 			res.Body.Close()
@@ -172,4 +182,23 @@ func BuildTunnelURL(wsBase, agentID string) string {
 		root = root[:idx]
 	}
 	return fmt.Sprintf("%s/mcp-agent/%s", root, agentID)
+}
+
+func mcpRouteHost() string {
+	if routeHost := strings.TrimSpace(os.Getenv("OPUTE_MCP_ROUTE_HOST")); routeHost != "" {
+		return routeHost
+	}
+	mcpURL := strings.TrimSpace(os.Getenv("OPUTE_MCP_URL"))
+	if mcpURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(mcpURL)
+	if err != nil {
+		return ""
+	}
+	host := parsed.Hostname()
+	if host == "" || net.ParseIP(host) != nil {
+		return ""
+	}
+	return host
 }

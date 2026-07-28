@@ -1,0 +1,14 @@
+[Unit]
+Description=Opute host agent (seeded Ubuntu 26.04 bootstrap)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/opute/host-agent.env
+ExecStart=%h/.local/share/opute/opute-host-agent
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

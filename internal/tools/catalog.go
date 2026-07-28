@@ -99,6 +99,10 @@ func LoadAllToolDefinitions(providerID string) ([]ToolDefinition, error) {
 
 func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	needed := map[string]bool{
+		"install_incus_stack":           true,
+		"probe_incus_gpu":               true,
+		"provision_container":           true,
+		"probe_gpu_container":           true,
 		"ensure_oci_builder":            true,
 		"build_and_push_oci_image":      true,
 		"stage_build_context":           true,
@@ -126,6 +130,14 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		return defs
 	}
 	defs = append(defs, ToolDefinition{
+		Name: "install_incus_stack", Title: "Install Incus virtualization stack", Description: "Install or upgrade a pinned Incus feature release from the signed Zabbly repository. QEMU is optional for VM profiles; GPU container profiles do not install it.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"incusPackage": map[string]any{"type": "string"}, "qemuPackage": map[string]any{"type": "string"}, "gpuPackages": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "incusChannel": map[string]any{"type": "string", "enum": []string{"stable", "lts-7.0", "lts-6.0"}}, "incusVersion": map[string]any{"type": "string"}, "installQemu": map[string]any{"type": "boolean"}}},
+	}, ToolDefinition{
+		Name: "probe_incus_gpu", Title: "Probe Incus GPU capability", Description: "Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.", InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "provision_container", Title: "Provision Incus system container", Description: "Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.", InputSchema: map[string]any{"type": "object", "required": []string{"containerName"}, "properties": map[string]any{"containerName": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "disk": map[string]any{"type": "string"}, "gpu": map[string]any{"type": "boolean"}, "wslGpuLibs": map[string]any{"type": "boolean"}, "nesting": map[string]any{"type": "boolean"}, "port": map[string]any{"type": "integer"}, "modelVolume": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "probe_gpu_container", Title: "Probe system container GPU", Description: "Launch a disposable Incus system container, probe GPU visibility and NVML, then delete it.", InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
 		Name:         "ensure_oci_builder",
 		Title:        "Ensure OCI image builder",
 		Description:  "Ensure a generic host-side OCI image builder is installed and available.",
@@ -158,8 +170,20 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Name:         "ensure_host_tool",
 		Title:        "Ensure generic host tool",
 		Description:  "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
-		InputSchema:  map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared"}}}},
+		InputSchema:  map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared", "helm"}}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
+	}, ToolDefinition{
+		Name:         "render_helm_template",
+		Title:        "Render Helm template",
+		Description:  "Render a Helm chart to Kubernetes manifests on the host using helm template.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"chartPath", "releaseName"}, "properties": map[string]any{"chartPath": map[string]any{"type": "string"}, "releaseName": map[string]any{"type": "string"}, "valuesFiles": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "set": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "namespace": map[string]any{"type": "string"}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"manifest"}},
+	}, ToolDefinition{
+		Name:         "prepare_host_agent_artifacts",
+		Title:        "Prepare host-agent artifacts",
+		Description:  "Build Linux host-agent binaries into a caller-selected directory for platform image builds.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"sourceDir", "destDir"}, "properties": map[string]any{"sourceDir": map[string]any{"type": "string"}, "destDir": map[string]any{"type": "string"}, "archs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}},
+		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name:        "set_host_service_state",
 		Title:       "Set host service state",
@@ -184,6 +208,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"serviceName":          map[string]any{"type": "string"},
 			"restart":              map[string]any{"type": "boolean"},
 			"mcpHealthUrl":         map[string]any{"type": "string"},
+			"mcpRouteHost":         map[string]any{"type": "string"},
 		}},
 		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
@@ -203,7 +228,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Title:       "Ensure generic host tool",
 		Description: "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
 		InputSchema: map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{
-			"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared"}},
+			"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared", "helm"}},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
 	}, ToolDefinition{
@@ -310,7 +335,6 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"numCtx":      map[string]any{"type": "integer"},
 		}},
 		"install_local_llm_model": {"type": "object", "properties": map[string]any{
-			"runtime":       map[string]any{"type": "string", "enum": []string{"ollama", "litert-lm"}},
 			"modelFamily":   map[string]any{"type": "string"},
 			"modelVariant":  map[string]any{"type": "string"},
 			"installSource": map[string]any{"type": "string"},
@@ -351,7 +375,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			case "check_local_llm_prerequisites":
 				desc = "Inspect local Ollama install readiness and GPU/CUDA diagnostics (blockers + remediationHints; does not install NVIDIA drivers)."
 			case "install_local_llm_model":
-				desc = "Install an Opute-managed Ollama or LiteRT-LM runtime and model. LiteRT-LM is allowlisted to Gemma 4 E2B from Hugging Face."
+				desc = "Install an Opute-managed Ollama runtime and model."
 			case "configure_local_llm_model":
 				desc = "Create/replace a local Ollama tag FROM an already-pulled model with Modelfile parameters (numGpu/numCtx). Pass modelRef or modelPreset. Does not re-download."
 			case "start_local_llm_runtime":

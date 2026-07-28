@@ -160,6 +160,7 @@ func buildVMInfoFromIncusListItem(item incusListItem, agentReady *bool, k3sInsta
 	disk := extractIncusDisk(item)
 	info := VMInfo{
 		Name:       item.Name,
+		Type:       mapIncusInstanceType(item.Type),
 		Status:     mapIncusStatus(item.Status),
 		State:      map[string]any{"incusStatus": item.Status},
 		IPv4:       normalizeClusterIpv4(extractIPv4FromState(item.State)),
@@ -268,7 +269,9 @@ func extractIncusMemory(item incusListItem) string {
 
 func extractIncusDisk(item incusListItem) string {
 	if disk := strings.TrimSpace(pickIncusConfigValue(item, "limits.disk")); disk != "" {
-		return disk
+		if !strings.HasPrefix(disk, "-") && !strings.EqualFold(disk, "0B") {
+			return disk
+		}
 	}
 	if size := extractIncusRootDeviceSize(item.Devices); size != "" {
 		return size
@@ -304,7 +307,11 @@ func extractIncusRootDeviceSize(devices map[string]map[string]any) string {
 	}
 	switch size := root["size"].(type) {
 	case string:
-		return strings.TrimSpace(size)
+		s := strings.TrimSpace(size)
+		if s == "" || strings.HasPrefix(s, "-") || strings.EqualFold(s, "0B") {
+			return ""
+		}
+		return s
 	case float64:
 		if size > 0 {
 			return formatIncusBytes(size)
@@ -377,7 +384,22 @@ func (s *HostOperationsService) readGuestCpuCount(vmName string) (int, error) {
 
 func isIncusVirtualMachine(typeName string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(typeName))
-	return normalized == "virtual-machine" || normalized == "virtual machine"
+	return normalized == "virtual-machine" || normalized == "virtual machine" || normalized == "container"
+}
+
+func mapIncusInstanceType(typeName string) string {
+	normalized := strings.ToLower(strings.TrimSpace(typeName))
+	switch normalized {
+	case "container":
+		return "container"
+	case "virtual-machine", "virtual machine":
+		return "vm"
+	default:
+		if normalized != "" {
+			return normalized
+		}
+		return "vm"
+	}
 }
 
 func mapIncusStatus(status string) string {

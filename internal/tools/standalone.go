@@ -146,6 +146,10 @@ func StandaloneToolMetadata(name string) map[string]any {
 // agent is used directly by a local MCP client. Platform routing and host
 // onboarding tools are deliberately not part of this surface.
 var StandaloneToolNames = map[string]bool{
+	"install_incus_stack":                 true,
+	"probe_incus_gpu":                     true,
+	"provision_container":                 true,
+	"probe_gpu_container":                 true,
 	"get_host_info":                       true,
 	"check_local_prerequisites":           true,
 	"get_local_status":                    true,
@@ -203,6 +207,8 @@ var StandaloneToolNames = map[string]bool{
 	"build_and_push_oci_image":            true,
 	"stage_build_context":                 true,
 	"ensure_host_tool":                    true,
+	"render_helm_template":                true,
+	"prepare_host_agent_artifacts":        true,
 	"set_host_service_state":              true,
 	"configure_platform_agent":            true,
 	"create_cloudflare_tunnel":            true,
@@ -211,6 +217,9 @@ var StandaloneToolNames = map[string]bool{
 }
 
 var standaloneMutationToolNames = map[string]bool{
+	"install_incus_stack":                 true,
+	"provision_container":                 true,
+	"probe_gpu_container":                 true,
 	"create_vm":                           true,
 	"provision_vm":                        true,
 	"start_vm":                            true,
@@ -237,6 +246,7 @@ var standaloneMutationToolNames = map[string]bool{
 	"build_and_push_oci_image":            true,
 	"stage_build_context":                 true,
 	"ensure_host_tool":                    true,
+	"prepare_host_agent_artifacts":        true,
 	"set_host_service_state":              true,
 	"configure_platform_agent":            true,
 	"create_cloudflare_tunnel":            true,
@@ -266,7 +276,7 @@ func StandaloneToolDefinitions() []ToolDefinition {
 		{Name: "check_local_llm_prerequisites", Description: "Inspect local Ollama install readiness and GPU/CUDA diagnostics. Returns blockers and remediationHints for host-OS driver prep; does not install NVIDIA drivers or change laptop GPU Eco/MUX modes.", InputSchema: objectSchema(nil, nil)},
 		{Name: "list_local_llm_models", Description: "List local Ollama models.", InputSchema: objectSchema(nil, nil)},
 		{Name: "probe_local_llm", Description: "Probe the local Ollama endpoint. Optionally warm-load modelRef or modelPreset (gemma|qwen) with numGpu/numCtx and return loadError/remediationHints plus GPU sizeVramBytes.", InputSchema: objectSchema(map[string]any{"includeChat": map[string]any{"type": "boolean"}, "modelRef": map[string]any{"type": "string"}, "modelPreset": map[string]any{"type": "string", "enum": []any{"gemma", "qwen"}}, "numGpu": map[string]any{"type": "integer"}, "numCtx": map[string]any{"type": "integer"}}, nil)},
-		{Name: "install_local_llm_model", Description: "Install an Opute-managed Ollama or LiteRT-LM runtime and model. LiteRT-LM is allowlisted to Gemma 4 E2B from Hugging Face.", InputSchema: objectSchema(map[string]any{"runtime": map[string]any{"type": "string", "enum": []any{"ollama", "litert-lm"}}, "modelFamily": map[string]any{"type": "string"}, "modelVariant": map[string]any{"type": "string"}, "installSource": map[string]any{"type": "string"}, "modelRef": map[string]any{"type": "string"}, "modelPreset": map[string]any{"type": "string", "enum": []any{"gemma", "qwen"}}, "startRuntime": map[string]any{"type": "boolean"}, "createAs": map[string]any{"type": "string"}, "numGpu": map[string]any{"type": "integer"}, "numCtx": map[string]any{"type": "integer"}, "template": map[string]any{"type": "string"}}, nil)},
+		{Name: "install_local_llm_model", Description: "Install an Opute-managed Ollama runtime and model.", InputSchema: objectSchema(map[string]any{"modelFamily": map[string]any{"type": "string"}, "modelVariant": map[string]any{"type": "string"}, "modelRef": map[string]any{"type": "string"}, "modelPreset": map[string]any{"type": "string", "enum": []any{"gemma", "qwen"}}, "startRuntime": map[string]any{"type": "boolean"}, "createAs": map[string]any{"type": "string"}, "numGpu": map[string]any{"type": "integer"}, "numCtx": map[string]any{"type": "integer"}, "template": map[string]any{"type": "string"}}, nil)},
 		{Name: "configure_local_llm_model", Description: "Create/replace a local Ollama tag FROM an already-pulled model with Modelfile parameters (numGpu/numCtx). Does not re-download.", InputSchema: objectSchema(map[string]any{"modelRef": map[string]any{"type": "string"}, "modelPreset": map[string]any{"type": "string", "enum": []any{"gemma", "qwen"}}, "fromRef": map[string]any{"type": "string"}, "numGpu": map[string]any{"type": "integer"}, "numCtx": map[string]any{"type": "integer"}, "template": map[string]any{"type": "string"}}, nil)},
 		{Name: "start_local_llm_runtime", Description: "Start/restart the local Ollama runtime with the Opute-managed CUDA-pinned systemd unit.", InputSchema: objectSchema(nil, nil)},
 		{Name: "stop_local_llm_runtime", Description: "Stop the local Ollama runtime.", InputSchema: objectSchema(nil, nil)},
@@ -337,7 +347,13 @@ func StandaloneToolDefinitions() []ToolDefinition {
 			"files":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
 			"fileEncoding": map[string]any{"type": "string", "enum": []string{"utf8", "base64"}},
 		}, []string{"destDir", "files"})},
-		{Name: "ensure_host_tool", Description: "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.", InputSchema: objectSchema(map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared"}}}, []string{"tool"})},
+		{Name: "install_incus_stack", Description: "Install or upgrade a pinned Incus feature release from the signed Zabbly repository. QEMU is optional for VM profiles; GPU container profiles do not install it.", InputSchema: objectSchema(map[string]any{"incusPackage": map[string]any{"type": "string"}, "qemuPackage": map[string]any{"type": "string"}, "gpuPackages": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "incusChannel": map[string]any{"type": "string", "enum": []string{"stable", "lts-7.0", "lts-6.0"}}, "incusVersion": map[string]any{"type": "string"}, "installQemu": map[string]any{"type": "boolean"}}, nil)},
+		{Name: "probe_incus_gpu", Description: "Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.", InputSchema: objectSchema(nil, nil)},
+		{Name: "provision_container", Description: "Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.", InputSchema: objectSchema(map[string]any{"containerName": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "disk": map[string]any{"type": "string"}, "gpu": map[string]any{"type": "boolean"}, "wslGpuLibs": map[string]any{"type": "boolean"}, "nesting": map[string]any{"type": "boolean"}, "port": map[string]any{"type": "integer"}, "modelVolume": map[string]any{"type": "string"}}, []string{"containerName"})},
+		{Name: "probe_gpu_container", Description: "Launch a disposable Incus system container, probe GPU visibility and NVML, then delete it.", InputSchema: objectSchema(nil, nil)},
+		{Name: "ensure_host_tool", Description: "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.", InputSchema: objectSchema(map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared", "helm"}}}, []string{"tool"})},
+		{Name: "render_helm_template", Description: "Render a Helm chart to Kubernetes manifests on the host using helm template.", InputSchema: objectSchema(map[string]any{"chartPath": map[string]any{"type": "string"}, "releaseName": map[string]any{"type": "string"}, "valuesFiles": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "set": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "namespace": map[string]any{"type": "string"}}, []string{"chartPath", "releaseName"})},
+		{Name: "prepare_host_agent_artifacts", Description: "Build Linux host-agent binaries into a caller-selected directory for platform image builds.", InputSchema: objectSchema(map[string]any{"sourceDir": map[string]any{"type": "string"}, "destDir": map[string]any{"type": "string"}, "archs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, []string{"sourceDir", "destDir"})},
 		{Name: "set_host_service_state", Description: "Start, stop, restart, enable, or disable a validated host service.", InputSchema: objectSchema(map[string]any{"serviceName": map[string]any{"type": "string", "pattern": "^[A-Za-z0-9_.@:-]+$"}, "state": map[string]any{"type": "string", "enum": []string{"start", "stop", "restart", "enable", "disable"}}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}}}, []string{"serviceName", "state"})},
 		{Name: "configure_platform_agent", Description: "Write platform-mode host-agent env and optionally restart so the agent reverse-tunnels to a CPC MCP URL.", InputSchema: objectSchema(map[string]any{
 			"mcpUrl":               map[string]any{"type": "string"},
@@ -349,6 +365,7 @@ func StandaloneToolDefinitions() []ToolDefinition {
 			"serviceName":          map[string]any{"type": "string"},
 			"restart":              map[string]any{"type": "boolean"},
 			"mcpHealthUrl":         map[string]any{"type": "string"},
+			"mcpRouteHost":         map[string]any{"type": "string"},
 		}, []string{"mcpUrl", "remoteAgentAuthToken", "hostAuthToken"})},
 		{Name: "create_cloudflare_tunnel", Description: "Start a token-authenticated Cloudflare Tunnel for an allowed local target.", InputSchema: objectSchema(map[string]any{
 			"bindingId":   map[string]any{"type": "string"},

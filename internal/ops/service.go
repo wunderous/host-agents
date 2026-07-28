@@ -156,6 +156,7 @@ type VMListResult struct {
 
 type VMInfo struct {
 	Name       string         `json:"name"`
+	Type       string         `json:"type,omitempty"`
 	Status     string         `json:"status"`
 	State      map[string]any `json:"state"`
 	IPv4       []string       `json:"ipv4"`
@@ -394,11 +395,22 @@ systemctl daemon-reload 2>/dev/null || true`
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
 	}
-	// Repair older/provisioned VMs too.  A platform service installed into a
-	// VM that predates the boot-autostart contract must still survive the next
-	// host restart.
-	if err := s.ensureIncusVMAutostart(vmName); err != nil {
-		return nil, fmt.Errorf("enable VM autostart: %w", err)
+	if target == "container" {
+		if err := s.ensureIncusInstanceAutostart(vmName); err != nil {
+			return nil, fmt.Errorf("enable container autostart: %w", err)
+		}
+		if err := s.ensureContainerNesting(vmName); err != nil {
+			return nil, fmt.Errorf("enable container nesting: %w", err)
+		}
+		if restartErr := s.restartIncusInstanceIfRunning(vmName, onData); restartErr != nil {
+			return nil, restartErr
+		}
+	} else if target == "vm" {
+		if err := s.ensureIncusVMAutostart(vmName); err != nil {
+			return nil, fmt.Errorf("enable VM autostart: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("target must be vm, container, or host")
 	}
 	if err := s.waitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {
 		return nil, err
@@ -408,7 +420,7 @@ systemctl daemon-reload 2>/dev/null || true`
 	}
 	ensureCurl := `if ! command -v curl >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get install -y curl >/dev/null || (apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y curl >/dev/null); fi`
 	if res, err := s.runVMExecContext(ctx, vmName, []string{"bash", "-lc", ensureCurl}, onData, 0); err != nil || res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "failed to ensure curl in VM"))
+		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "failed to ensure curl in instance"))
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -418,13 +430,13 @@ systemctl daemon-reload 2>/dev/null || true`
 		return nil, err
 	}
 	if install.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(install.Stderr, install.Stdout, "failed to install K3s in VM"))
+		return nil, fmt.Errorf("%s", firstNonEmpty(install.Stderr, install.Stdout, "failed to install K3s in instance"))
 	}
 	if err := s.waitForVMServiceActive(vmName, "k3s", onData, 5*time.Minute); err != nil {
 		return nil, err
 	}
 	_ = s.setIncusInstanceConfig(vmName, oputeK3sInstalledLabel, "true")
-	return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "active", "target": "vm"}, nil
+	return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "active"}, nil
 }
 
 type UninstallK3sArgs struct {
@@ -987,6 +999,13 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func errString(err error, fallback string) string {
+	if err != nil {
+		return err.Error()
+	}
+	return fallback
 }
 
 func defaultString(value, fallback string) string {

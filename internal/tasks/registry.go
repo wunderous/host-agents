@@ -213,7 +213,9 @@ func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 }
 
 var TaskAwareTools = map[string]bool{
+	"install_incus_stack":           true,
 	"create_vm":                     true,
+	"provision_container":           true,
 	"provision_vm":                  true,
 	"delete_vm":                     true,
 	"start_vm":                      true,
@@ -233,6 +235,7 @@ var TaskAwareTools = map[string]bool{
 	"delete_cloudflared_connector":  true,
 	"ensure_oci_builder":            true,
 	"build_and_push_oci_image":      true,
+	"prepare_host_agent_artifacts":  true,
 	"stage_build_context":           true,
 	"ensure_host_tool":              true,
 	"delete_postgresql":             true,
