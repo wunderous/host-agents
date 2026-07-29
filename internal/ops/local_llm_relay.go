@@ -56,9 +56,35 @@ func closeLocalLLMRelaySession(session *localLLMRelaySession) {
 	_ = session.server.Close()
 }
 
+func localLLMRelayCIDRsEqual(existing []*net.IPNet, desired []string) bool {
+	if len(existing) != len(desired) {
+		return false
+	}
+	normalized := make(map[string]struct{}, len(desired))
+	for _, source := range desired {
+		_, cidr, err := net.ParseCIDR(strings.TrimSpace(source))
+		if err != nil {
+			return false
+		}
+		normalized[cidr.String()] = struct{}{}
+	}
+	for _, cidr := range existing {
+		if cidr == nil {
+			return false
+		}
+		if _, ok := normalized[cidr.String()]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs) (map[string]any, error) {
 	if err := ValidateLocalLLMRelayArgs(args); err != nil {
 		return nil, err
+	}
+	if len(args.AllowedSourceCIDRs) == 0 && strings.TrimSpace(args.AllowedSourceIP) != "" {
+		args.AllowedSourceCIDRs = []string{strings.TrimSpace(args.AllowedSourceIP) + "/32"}
 	}
 	var stale *localLLMRelaySession
 	m.mu.Lock()
@@ -67,12 +93,13 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 		if incoming == "" {
 			incoming = args.RelayToken
 		}
-		if existing.incomingToken == incoming && existing.listenHost == args.ListenHost && (args.ListenPort == 0 || existing.listenPort == args.ListenPort) {
+		sameCIDRs := localLLMRelayCIDRsEqual(existing.allowedSources, args.AllowedSourceCIDRs)
+		if existing.incomingToken == incoming && existing.listenHost == args.ListenHost && (args.ListenPort == 0 || existing.listenPort == args.ListenPort) && sameCIDRs {
 			m.mu.Unlock()
 			return map[string]any{"sessionId": existing.id, "listenHost": existing.listenHost, "listenPort": existing.listenPort, "ready": true}, nil
 		}
-		// Credential rotation reuses the durable session id. Replace the old
-		// listener so the next public request is checked against the new token.
+		// Credential / CIDR / bind change reuses the durable session id. Replace
+		// the old listener so the next public request uses the new policy.
 		delete(m.sessions, args.SessionID)
 		m.mu.Unlock()
 		closeLocalLLMRelaySession(existing)
@@ -101,6 +128,10 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 	}
 	target, _ := url.Parse(fmt.Sprintf("http://%s:%d", args.TargetHost, args.TargetPort))
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	// Ollama chat streams NDJSON/SSE. Default ReverseProxy buffering holds the
+	// first chunk until the upstream finishes, which looks like a hung socket
+	// to ai-sdk-ollama (Bun: "socket connection was closed unexpectedly").
+	proxy.FlushInterval = -1
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, _ error) {
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 	}

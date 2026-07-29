@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderLocalLLMK3sProxyManifest(t *testing.T) {
@@ -114,6 +115,69 @@ func TestLocalLLMRelayRequiresSourceAndBearerAndForwardsV1AndApi(t *testing.T) {
 		t.Fatalf("expected forwarded request, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
+}
+
+func TestLocalLLMRelayFlushesStreamingChatChunks(t *testing.T) {
+	flushed := make(chan struct{}, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("upstream ResponseWriter must flush")
+		}
+		_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ready\"}}\n")
+		flusher.Flush()
+		select {
+		case flushed <- struct{}{}:
+		default:
+		}
+		// Keep the upstream open so a buffering proxy would hang the client.
+		<-r.Context().Done()
+	}))
+	defer upstream.Close()
+	parts := strings.Split(upstream.Listener.Addr().String(), ":")
+	targetPort, _ := strconv.Atoi(parts[len(parts)-1])
+	m := newLocalLLMRelayManager()
+	result, err := m.start(context.Background(), LocalLLMRelayArgs{
+		SessionID: "stream-relay", ListenHost: "127.0.0.1", ListenPort: 0,
+		TargetHost: "127.0.0.1", TargetPort: targetPort,
+		RelayToken: strings.Repeat("r", 40), AllowedSourceIP: "127.0.0.1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.stop("stream-relay")
+	base := "http://127.0.0.1:" + strconv.Itoa(result["listenPort"].(int))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/chat", strings.NewReader(`{"stream":true}`))
+	req.Header.Set("Authorization", "Bearer "+strings.Repeat("r", 40))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	buf := make([]byte, 64)
+	n, readErr := resp.Body.Read(buf)
+	if readErr != nil && n == 0 {
+		t.Fatalf("expected streamed chunk before upstream close: %v", readErr)
+	}
+	if !strings.Contains(string(buf[:n]), "ready") {
+		t.Fatalf("unexpected chunk %q", string(buf[:n]))
+	}
+	select {
+	case <-flushed:
+	case <-time.After(time.Second):
+		t.Fatal("upstream never flushed")
+	}
 }
 
 func TestLocalLLMRelayRotatesCredentialsForExistingSession(t *testing.T) {
