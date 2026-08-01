@@ -32,6 +32,9 @@ type InstallIncusStackArgs struct {
 }
 
 func (s *HostOperationsService) InstallIncusStack(args InstallIncusStackArgs, onData func(string)) (map[string]any, error) {
+	if err := s.requireSharedHostOwner("install_incus_stack"); err != nil {
+		return nil, err
+	}
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("install_incus_stack is unsupported on %s host agents", runtime.GOOS)
 	}
@@ -276,6 +279,9 @@ func currentUserName() string {
 // EnsureHostTool installs a small, explicitly allowlisted set of generic host
 // build/runtime tools. Application-specific setup remains outside the agent.
 func (s *HostOperationsService) EnsureHostTool(args EnsureHostToolArgs, onData func(string)) (map[string]any, error) {
+	if err := s.requireSharedHostOwner("ensure_host_tool"); err != nil {
+		return nil, err
+	}
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("ensure_host_tool is unsupported on %s host agents", runtime.GOOS)
 	}

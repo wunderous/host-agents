@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/console"
 	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/state"
 	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
@@ -28,6 +29,7 @@ type Server struct {
 	standalone     bool
 	allowMutations bool
 	state          *state.Store
+	admission      *resource.Coordinator
 	mu             sync.Mutex
 	toolDefs       []tools.ToolDefinition
 }
@@ -40,6 +42,7 @@ type Options struct {
 	AllowMutations bool
 	StateDir       string
 	Version        string
+	Admission      *resource.Coordinator
 }
 
 func NewServer(opts Options) (*Server, error) {
@@ -89,6 +92,7 @@ func NewServer(opts Options) (*Server, error) {
 		standalone:     opts.Standalone,
 		allowMutations: opts.AllowMutations,
 		toolDefs:       catalog,
+		admission:      opts.Admission,
 	}
 	if opts.Standalone {
 		store, err := state.Open(opts.StateDir)
@@ -114,6 +118,25 @@ func (s *Server) Close() error {
 
 func (s *Server) MCP() *mcp.Server {
 	return s.mcpServer
+}
+
+func (s *Server) Ops() *ops.HostOperationsService {
+	return s.ops
+}
+
+// DispatchTool is the single execution boundary for MCP, task, and HWP
+// callers. Keeping admission here prevents one transport from bypassing the
+// host-wide policy when two agent instances share WSL/Incus resources.
+func (s *Server) DispatchTool(ctx context.Context, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
+	if s.admission == nil {
+		return tools.DispatchTool(ctx, s.ops, name, args, onData)
+	}
+	release, err := s.admission.Acquire(ctx, name)
+	if err != nil {
+		return tools.ErrorResult(err), nil
+	}
+	defer release()
+	return tools.DispatchTool(ctx, s.ops, name, args, onData)
 }
 
 func (s *Server) Tasks() *tasks.Registry {
@@ -260,7 +283,7 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		return s.createAsyncTask(name, args)
 	}
 	onData := func(chunk string) {}
-	return tools.DispatchTool(ctx, s.ops, name, args, onData)
+	return s.DispatchTool(ctx, name, args, onData)
 }
 
 func structuredResult(value any, text string) *mcp.CallToolResult {
@@ -295,7 +318,7 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 	}
 	go func(taskID string) {
 		onData := func(chunk string) { s.tasks.AppendLog(taskID, chunk) }
-		result, err := tools.DispatchTool(taskCtx, s.ops, name, args, onData)
+		result, err := s.DispatchTool(taskCtx, name, args, onData)
 		if err != nil {
 			if s.state != nil {
 				_ = s.state.Fail(taskID, err.Error())

@@ -43,6 +43,7 @@
     {"name": "restart_cluster", "classification": "mutation", "support": "experimental"},
     {"name": "uninstall_k3s", "classification": "destructive", "support": "experimental"},
     {"name": "list_namespaces", "classification": "read_only", "support": "experimental"},
+    {"name": "list_ingress_classes", "classification": "read_only", "support": "experimental"},
     {"name": "list_pods", "classification": "read_only", "support": "experimental"},
     {"name": "list_services", "classification": "read_only", "support": "experimental"},
     {"name": "install_postgresql", "classification": "credential_bearing", "support": "experimental"},

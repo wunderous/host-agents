@@ -14,16 +14,21 @@ import (
 // agent onto a CPC MCP URL without requiring an out-of-band shell installer.
 // Secrets are written to a mode-0600 EnvironmentFile; values are never logged.
 type ConfigurePlatformAgentArgs struct {
-	McpURL               string `json:"mcpUrl"`
-	HostWsURL            string `json:"hostWsUrl,omitempty"`
-	RemoteAgentAuthToken string `json:"remoteAgentAuthToken"`
-	HostAuthToken        string `json:"hostAuthToken"`
-	RemoteAgentID        string `json:"remoteAgentId,omitempty"`
-	EnvFile              string `json:"envFile,omitempty"`
-	ServiceName          string `json:"serviceName,omitempty"`
-	Restart              *bool  `json:"restart,omitempty"`
-	McpHealthURL         string `json:"mcpHealthUrl,omitempty"`
-	McpRouteHost         string `json:"mcpRouteHost,omitempty"`
+	McpURL                  string `json:"mcpUrl"`
+	HostWsURL               string `json:"hostWsUrl,omitempty"`
+	RemoteAgentAuthToken    string `json:"remoteAgentAuthToken"`
+	HostAuthToken           string `json:"hostAuthToken"`
+	RemoteAgentID           string `json:"remoteAgentId,omitempty"`
+	EnvFile                 string `json:"envFile,omitempty"`
+	ServiceName             string `json:"serviceName,omitempty"`
+	Restart                 *bool  `json:"restart,omitempty"`
+	McpHealthURL            string `json:"mcpHealthUrl,omitempty"`
+	McpRouteHost            string `json:"mcpRouteHost,omitempty"`
+	InstanceID              string `json:"instanceId,omitempty"`
+	InstanceRoot            string `json:"instanceRoot,omitempty"`
+	RelayConfigDir          string `json:"relayConfigDir,omitempty"`
+	OwnershipMode           string `json:"ownershipMode,omitempty"`
+	SharedHostOwnerInstance string `json:"sharedHostOwnerInstance,omitempty"`
 }
 
 // ConfigurePlatformAgent writes platform-mode settings into the host-agent env
@@ -61,13 +66,32 @@ func (s *HostOperationsService) ConfigurePlatformAgent(args ConfigurePlatformAge
 		mcpHealthURL = base + "/health"
 	}
 
-	envFile := strings.TrimSpace(args.EnvFile)
-	if envFile == "" {
+	instanceID := strings.TrimSpace(args.InstanceID)
+	if instanceID == "" {
+		instanceID = strings.TrimSpace(s.instanceID)
+	}
+	if instanceID == "" {
+		instanceID = strings.TrimSpace(args.RemoteAgentID)
+	}
+	if instanceID == "" {
+		instanceID = "platform"
+	}
+	if err := validateHostAgentInstanceID(instanceID); err != nil {
+		return nil, err
+	}
+	instanceRoot := strings.TrimSpace(args.InstanceRoot)
+	if instanceRoot == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("resolve home directory: %w", err)
 		}
-		envFile = filepath.Join(home, ".config", "opute", "host-agent.env")
+		instanceRoot = filepath.Join(home, ".config", "opute", "instances", instanceID)
+	}
+	envFile := strings.TrimSpace(args.EnvFile)
+	if envFile == "" {
+		envFile = filepath.Join(instanceRoot, "host-agent.env")
+	} else if strings.TrimSpace(args.InstanceRoot) == "" {
+		instanceRoot = filepath.Dir(envFile)
 	}
 	if err := os.MkdirAll(filepath.Dir(envFile), 0o700); err != nil {
 		return nil, fmt.Errorf("create env directory: %w", err)
@@ -83,15 +107,22 @@ func (s *HostOperationsService) ConfigurePlatformAgent(args ConfigurePlatformAge
 	}
 
 	assignments := map[string]string{
-		"OPUTE_AGENT_MODE":              "platform",
-		"OPUTE_REVERSE_TUNNEL":          "true",
-		"OPUTE_MCP_URL":                 mcpURL,
-		"OPUTE_HOST_WS_URL":             hostWsURL,
-		"OPUTE_REMOTE_AGENT_AUTH_TOKEN": remoteAuth,
-		"OPUTE_MCP_HEALTH_URL":          mcpHealthURL,
-		"MCP_AUTH_TOKEN":                hostAuth,
-		"OPUTE_BRIDGE_TOKEN":            hostAuth,
-		"BRIDGE_TOKEN":                  hostAuth,
+		"OPUTE_AGENT_MODE":                 "platform",
+		"OPUTE_HOST_AGENT_INSTANCE":        instanceID,
+		"OPUTE_HOST_AGENT_INSTANCE_ROOT":   instanceRoot,
+		"OPUTE_HOST_AGENT_RELAY_DIR":       filepath.Join(instanceRoot, "local-llm-relays"),
+		"OPUTE_HOST_AGENT_SERVICE_NAME":    "opute-host-agent@" + instanceID + ".service",
+		"OPUTE_INCUS_OWNERSHIP_MODE":       firstNonEmpty(args.OwnershipMode, "audit"),
+		"OPUTE_SHARED_HOST_OWNER_INSTANCE": firstNonEmpty(args.SharedHostOwnerInstance, instanceID),
+		"OPUTE_REVERSE_TUNNEL":             "true",
+		"HOST_MCP_PORT":                    "0",
+		"OPUTE_MCP_URL":                    mcpURL,
+		"OPUTE_HOST_WS_URL":                hostWsURL,
+		"OPUTE_REMOTE_AGENT_AUTH_TOKEN":    remoteAuth,
+		"OPUTE_MCP_HEALTH_URL":             mcpHealthURL,
+		"MCP_AUTH_TOKEN":                   hostAuth,
+		"OPUTE_BRIDGE_TOKEN":               hostAuth,
+		"BRIDGE_TOKEN":                     hostAuth,
 	}
 	if mcpRouteHost != "" {
 		assignments["OPUTE_MCP_ROUTE_HOST"] = mcpRouteHost
@@ -113,7 +144,7 @@ func (s *HostOperationsService) ConfigurePlatformAgent(args ConfigurePlatformAge
 	}
 	serviceName := strings.TrimSpace(args.ServiceName)
 	if serviceName == "" {
-		serviceName = "opute-host-agent.service"
+		serviceName = "opute-host-agent@" + instanceID + ".service"
 	}
 	result := map[string]any{
 		"envFile":      envFile,
@@ -187,7 +218,14 @@ func upsertEnvFile(path string, assignments map[string]string) error {
 
 	preferredOrder := []string{
 		"OPUTE_AGENT_MODE",
+		"OPUTE_HOST_AGENT_INSTANCE",
+		"OPUTE_HOST_AGENT_INSTANCE_ROOT",
+		"OPUTE_HOST_AGENT_RELAY_DIR",
+		"OPUTE_HOST_AGENT_SERVICE_NAME",
+		"OPUTE_INCUS_OWNERSHIP_MODE",
+		"OPUTE_SHARED_HOST_OWNER_INSTANCE",
 		"OPUTE_REVERSE_TUNNEL",
+		"HOST_MCP_PORT",
 		"OPUTE_MCP_URL",
 		"OPUTE_HOST_WS_URL",
 		"OPUTE_MCP_HEALTH_URL",

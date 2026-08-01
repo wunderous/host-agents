@@ -8,6 +8,60 @@ import (
 	"time"
 )
 
+// normalizeProvisionInstanceType maps caller input to "container" (default) or
+// "virtual-machine". Empty or unknown values provision a system container so
+// automated paths do not create QEMU guests unless explicitly requested.
+func normalizeProvisionInstanceType(raw string) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case "container", "system-container":
+		return "container"
+	case "vm", "virtual-machine", "virtual_machine", "virtual machine":
+		return "virtual-machine"
+	default:
+		return "container"
+	}
+}
+
+func (s *HostOperationsService) readIncusInstanceType(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("instance name is required")
+	}
+	if err := s.assertIncusOwnership(name, "read_instance_info"); err != nil {
+		return "", err
+	}
+	res, err := s.commandRunner([]string{"info", name, "--format", "json"}, nil, defaultDiscoveryTimeout)
+	if err != nil {
+		return "", err
+	}
+	if res.ExitCode != 0 {
+		return "", fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "incus info failed"))
+	}
+	var info struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &info); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(info.Type), nil
+}
+
+func (s *HostOperationsService) resolveInstallK3sTarget(vmName, explicitTarget string) string {
+	target := strings.TrimSpace(explicitTarget)
+	if target != "" {
+		return target
+	}
+	instanceType, err := s.readIncusInstanceType(vmName)
+	if err != nil {
+		return "container"
+	}
+	if strings.EqualFold(instanceType, "container") {
+		return "container"
+	}
+	return "vm"
+}
+
 type incusProfileDevice struct {
 	Type string `json:"type"`
 	Path string `json:"path,omitempty"`
@@ -129,12 +183,19 @@ func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus i
 		disk = "10GiB"
 	}
 
+	config := incusVMConfig(cpus, memory)
+	if owner := s.ownerConfigValue(); owner != "" {
+		config[oputeIncusOwnerLabel] = owner
+		if agentID := s.ownerAgentConfigValue(); agentID != "" {
+			config[oputeIncusAgentLabel] = agentID
+		}
+	}
 	payload := map[string]any{
 		"name":     vmName,
 		"type":     "virtual-machine",
 		"profiles": []string{"default"},
 		"source":   resolveIncusImageSource(normalizedImage),
-		"config":   incusVMConfig(cpus, memory),
+		"config":   config,
 	}
 
 	instanceDevices := map[string]any{}

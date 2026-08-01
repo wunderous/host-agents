@@ -1,0 +1,134 @@
+package ops
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+const (
+	oputeIncusOwnerLabel = "user.opute.host_agent_instance"
+	oputeIncusAgentLabel = "user.opute.host_agent_id"
+)
+
+var hostAgentInstanceIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+func validateHostAgentInstanceID(value string) error {
+	if !hostAgentInstanceIDPattern.MatchString(strings.TrimSpace(value)) {
+		return fmt.Errorf("OPUTE_HOST_AGENT_INSTANCE %q is invalid: use [a-z0-9][a-z0-9-]{0,62}", value)
+	}
+	return nil
+}
+
+// IncusOwnershipMismatchError is deliberately structured so the MCP adapter
+// can preserve the same diagnostic contract as the TypeScript Incus leaf.
+// The provider mutation must not be attempted after this error is returned.
+type IncusOwnershipMismatchError struct {
+	Code             string `json:"code"`
+	VMName           string `json:"vmName"`
+	ExpectedInstance string `json:"expectedInstance"`
+	ActualOwner      string `json:"actualOwner"`
+	Operation        string `json:"operation"`
+	Remediation      string `json:"remediation"`
+}
+
+type SharedHostOwnershipError struct {
+	Code             string `json:"code"`
+	ExpectedInstance string `json:"expectedInstance"`
+	ActualInstance   string `json:"actualInstance"`
+	Operation        string `json:"operation"`
+	Remediation      string `json:"remediation"`
+}
+
+func (e *SharedHostOwnershipError) Error() string {
+	encoded, err := json.Marshal(e)
+	if err == nil {
+		return string(encoded)
+	}
+	return fmt.Sprintf("shared_host_ownership_required: %s must be performed by %s", e.Operation, e.ExpectedInstance)
+}
+
+func (e *IncusOwnershipMismatchError) Error() string {
+	if e == nil {
+		return "incus ownership mismatch"
+	}
+	encoded, err := json.Marshal(e)
+	if err == nil {
+		return string(encoded)
+	}
+	return fmt.Sprintf("incus_ownership_mismatch: %s is owned by %s, expected %s", e.VMName, e.ActualOwner, e.ExpectedInstance)
+}
+
+func (s *HostOperationsService) ownershipEnabled() bool {
+	return strings.TrimSpace(s.instanceID) != ""
+}
+
+func (s *HostOperationsService) readIncusOwner(vmName string) (string, error) {
+	if !s.ownershipEnabled() {
+		return "", nil
+	}
+	res, err := s.commandRunner([]string{"config", "get", vmName, oputeIncusOwnerLabel}, nil, defaultDiscoveryTimeout)
+	if err != nil {
+		return "", err
+	}
+	if res.ExitCode != 0 {
+		return "", fmt.Errorf("read Incus ownership for %q: %s", vmName, firstNonEmpty(res.Stderr, res.Stdout, "incus config get failed"))
+	}
+	return strings.TrimSpace(res.Stdout), nil
+}
+
+func (s *HostOperationsService) assertIncusOwnership(vmName, operation string) error {
+	vmName = strings.TrimSpace(vmName)
+	if vmName == "" || !s.ownershipEnabled() || s.ownershipMode != "enforce" {
+		return nil
+	}
+	owner, err := s.readIncusOwner(vmName)
+	if err != nil {
+		return err
+	}
+	if owner == s.instanceID {
+		return nil
+	}
+	actual := owner
+	if actual == "" {
+		actual = "unowned-or-foreign"
+	}
+	return &IncusOwnershipMismatchError{
+		Code:             "incus_ownership_mismatch",
+		VMName:           vmName,
+		ExpectedInstance: s.instanceID,
+		ActualOwner:      actual,
+		Operation:        strings.TrimSpace(operation),
+		Remediation:      "Select the owning host agent or use the approved adoption workflow.",
+	}
+}
+
+func (s *HostOperationsService) ownedIncusItem(item incusListItem) bool {
+	if !s.ownershipEnabled() || s.ownershipMode != "enforce" {
+		return true
+	}
+	return pickIncusConfigValue(item, oputeIncusOwnerLabel) == s.instanceID
+}
+
+func (s *HostOperationsService) ownerConfigValue() string {
+	return strings.TrimSpace(s.instanceID)
+}
+
+func (s *HostOperationsService) ownerAgentConfigValue() string {
+	return strings.TrimSpace(s.agentID)
+}
+
+func (s *HostOperationsService) requireSharedHostOwner(operation string) error {
+	expected := strings.TrimSpace(s.sharedHostOwnerInstance)
+	if expected == "" || strings.TrimSpace(s.instanceID) == expected {
+		return nil
+	}
+	return &SharedHostOwnershipError{
+		Code:             "shared_host_ownership_required",
+		ExpectedInstance: expected,
+		ActualInstance:   s.instanceID,
+		Operation:        strings.TrimSpace(operation),
+		Remediation:      "Select the shared-host owner instance or use the approved operator workflow.",
+	}
+}

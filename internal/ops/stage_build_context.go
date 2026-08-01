@@ -88,9 +88,9 @@ func (s *HostOperationsService) StageBuildContext(args StageBuildContextArgs, on
 		}
 	}
 	return map[string]any{
-		"destDir":     absDest,
-		"fileCount":   len(written),
-		"files":       written,
+		"destDir":      absDest,
+		"fileCount":    len(written),
+		"files":        written,
 		"fileEncoding": encoding,
 	}, nil
 }

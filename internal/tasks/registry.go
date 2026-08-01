@@ -228,7 +228,6 @@ var TaskAwareTools = map[string]bool{
 	"put_k8s_secret":                true,
 	"install_oci_registry":          true,
 	"delete_oci_registry":           true,
-	"configure_k3s_registry":        true,
 	"configure_service_domain":      true,
 	"remove_service_domain":         true,
 	"install_cloudflared_connector": true,

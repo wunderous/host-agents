@@ -27,6 +27,16 @@
           "items": {
             "type": "string"
           }
+        },
+        "capacity": {
+          "type": "object",
+          "description": "Declared Incus resource allocations and current VM/container mix on this host.",
+          "additionalProperties": true
+        },
+        "system": {
+          "type": "object",
+          "description": "Effective host/cgroup resource limits, usage, load, and memory pressure.",
+          "additionalProperties": true
         }
       },
       "required": [
@@ -232,13 +242,13 @@
   {
     "name": "provision_vm",
     "title": "Provision VM",
-    "description": "Launch a new Incus virtual machine on the host",
+    "description": "Launch a new Incus instance on the host (system container by default; pass instanceType virtual-machine for a QEMU VM)",
     "inputSchema": {
       "type": "object",
       "properties": {
         "name": {
           "type": "string",
-          "description": "VM instance name to create"
+          "description": "Instance name to create"
         },
         "image": {
           "type": "string",
@@ -255,6 +265,11 @@
         "disk": {
           "type": "string",
           "description": "Optional root disk size such as 20GiB"
+        },
+        "instanceType": {
+          "type": "string",
+          "enum": ["container", "virtual-machine"],
+          "description": "Incus instance kind (default: container)"
         }
       },
       "required": [

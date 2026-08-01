@@ -135,3 +135,42 @@ func TestLoadNormalizesQuotedPlatformURLs(t *testing.T) {
 		t.Fatalf("websocket URL = %q", cfg.HostWSURL)
 	}
 }
+
+func TestLoadResolvesExplicitInstanceRoots(t *testing.T) {
+	t.Setenv("OPUTE_AGENT_MODE", "platform")
+	t.Setenv("OPUTE_HOST_AGENT_INSTANCE", "dogfood")
+	t.Setenv("OPUTE_HOST_AGENT_INSTANCE_ROOT", "/tmp/opute-dogfood")
+	t.Setenv("OPUTE_HOST_AGENT_RELAY_DIR", "")
+	t.Setenv("OPUTE_STANDALONE_STATE_DIR", "")
+	cfg := Load()
+	if cfg.InstanceID != "dogfood" || cfg.InstanceRoot != "/tmp/opute-dogfood" {
+		t.Fatalf("instance scope = %#v", cfg)
+	}
+	if cfg.RelayConfigDir != "/tmp/opute-dogfood/local-llm-relays" || cfg.StandaloneStateDir != "/tmp/opute-dogfood/state" {
+		t.Fatalf("derived instance paths = %#v", cfg)
+	}
+}
+
+func TestValidateRejectsInvalidInstanceID(t *testing.T) {
+	t.Setenv("OPUTE_AGENT_MODE", "standalone")
+	if err := (Config{AgentMode: "standalone", InstanceID: "Dogfood"}).Validate(); err == nil {
+		t.Fatal("expected invalid instance id to fail")
+	}
+}
+
+func TestValidateRejectsDirectHttpPortZero(t *testing.T) {
+	t.Setenv("OPUTE_AGENT_MODE", "standalone")
+	t.Setenv("HOST_MCP_PORT", "0")
+	if err := Load().Validate(); err == nil {
+		t.Fatal("expected direct HTTP port zero to fail")
+	}
+}
+
+func TestValidateAllowsReverseTunnelPortZero(t *testing.T) {
+	t.Setenv("OPUTE_AGENT_MODE", "platform")
+	t.Setenv("OPUTE_REVERSE_TUNNEL", "true")
+	t.Setenv("HOST_MCP_PORT", "0")
+	if err := Load().Validate(); err != nil {
+		t.Fatalf("expected reverse-tunnel port zero to pass: %v", err)
+	}
+}

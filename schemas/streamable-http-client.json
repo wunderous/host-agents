@@ -3,6 +3,8 @@
   "mcpPath": "/mcp",
   "healthPath": "/health",
   "sessionHeader": "Mcp-Session-Id",
-  "protocolVersionHeader": "Mcp-Protocol-Version",
-  "protocolVersion": "2024-11-05"
+  "protocolVersionHeader": "MCP-Protocol-Version",
+  "methodHeader": "Mcp-Method",
+  "nameHeader": "Mcp-Name",
+  "protocolVersion": "2026-07-28"
 }

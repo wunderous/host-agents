@@ -37,27 +37,27 @@ const (
 )
 
 type LocalLLMPrerequisitesResult struct {
-	Supported              bool     `json:"supported"`
-	SystemdUserAvailable   bool     `json:"systemdUserAvailable"`
-	Architecture           string   `json:"architecture"`
-	CPUCount               int      `json:"cpuCount"`
-	ModelsDirectory        string   `json:"modelsDirectory"`
-	MemoryBytes            uint64   `json:"memoryBytes,omitempty"`
-	DiskAvailableBytes     uint64   `json:"diskAvailableBytes,omitempty"`
-	GPU                    string   `json:"gpu,omitempty"`
-	GpuMemoryTotalBytes    uint64   `json:"gpuMemoryTotalBytes,omitempty"`
-	NvidiaSmiOk            bool     `json:"nvidiaSmiOk"`
-	CudaLibraryPresent     bool     `json:"cudaLibraryPresent"`
-	DxgDevicePresent       bool     `json:"dxgDevicePresent,omitempty"`
-	OllamaBinaryPresent    bool     `json:"ollamaBinaryPresent"`
-	OllamaServiceActive    bool     `json:"ollamaServiceActive"`
-	RuntimeGpuAccelerated  bool     `json:"runtimeGpuAccelerated,omitempty"`
-	RuntimeSizeVramBytes   int64    `json:"runtimeSizeVramBytes,omitempty"`
-	RuntimeLoadedModel     string   `json:"runtimeLoadedModel,omitempty"`
-	ReadyForInstall        bool     `json:"readyForInstall"`
-	ReadyForGpuInference   bool     `json:"readyForGpuInference"`
-	Blockers               []string `json:"blockers,omitempty"`
-	RemediationHints       []string `json:"remediationHints,omitempty"`
+	Supported             bool     `json:"supported"`
+	SystemdUserAvailable  bool     `json:"systemdUserAvailable"`
+	Architecture          string   `json:"architecture"`
+	CPUCount              int      `json:"cpuCount"`
+	ModelsDirectory       string   `json:"modelsDirectory"`
+	MemoryBytes           uint64   `json:"memoryBytes,omitempty"`
+	DiskAvailableBytes    uint64   `json:"diskAvailableBytes,omitempty"`
+	GPU                   string   `json:"gpu,omitempty"`
+	GpuMemoryTotalBytes   uint64   `json:"gpuMemoryTotalBytes,omitempty"`
+	NvidiaSmiOk           bool     `json:"nvidiaSmiOk"`
+	CudaLibraryPresent    bool     `json:"cudaLibraryPresent"`
+	DxgDevicePresent      bool     `json:"dxgDevicePresent,omitempty"`
+	OllamaBinaryPresent   bool     `json:"ollamaBinaryPresent"`
+	OllamaServiceActive   bool     `json:"ollamaServiceActive"`
+	RuntimeGpuAccelerated bool     `json:"runtimeGpuAccelerated,omitempty"`
+	RuntimeSizeVramBytes  int64    `json:"runtimeSizeVramBytes,omitempty"`
+	RuntimeLoadedModel    string   `json:"runtimeLoadedModel,omitempty"`
+	ReadyForInstall       bool     `json:"readyForInstall"`
+	ReadyForGpuInference  bool     `json:"readyForGpuInference"`
+	Blockers              []string `json:"blockers,omitempty"`
+	RemediationHints      []string `json:"remediationHints,omitempty"`
 }
 
 type LocalLLMModelResult struct {
@@ -67,18 +67,18 @@ type LocalLLMModelResult struct {
 }
 
 type LocalLLMProbeResult struct {
-	APIBaseURL         string                `json:"apiBaseUrl"`
-	Version            string                `json:"version,omitempty"`
-	Ready              bool                  `json:"ready"`
-	Models             []LocalLLMModelResult `json:"models"`
-	ChatReady          bool                  `json:"chatReady,omitempty"`
-	OpenAIModelsReady  bool                  `json:"openAiModelsReady,omitempty"`
-	GpuAccelerated     bool                  `json:"gpuAccelerated,omitempty"`
-	SizeVramBytes      int64                 `json:"sizeVramBytes,omitempty"`
-	LoadedModel        string                `json:"loadedModel,omitempty"`
-	LoadError          string                `json:"loadError,omitempty"`
-	RemediationHints   []string              `json:"remediationHints,omitempty"`
-	ContextLength      int                   `json:"contextLength,omitempty"`
+	APIBaseURL        string                `json:"apiBaseUrl"`
+	Version           string                `json:"version,omitempty"`
+	Ready             bool                  `json:"ready"`
+	Models            []LocalLLMModelResult `json:"models"`
+	ChatReady         bool                  `json:"chatReady,omitempty"`
+	OpenAIModelsReady bool                  `json:"openAiModelsReady,omitempty"`
+	GpuAccelerated    bool                  `json:"gpuAccelerated,omitempty"`
+	SizeVramBytes     int64                 `json:"sizeVramBytes,omitempty"`
+	LoadedModel       string                `json:"loadedModel,omitempty"`
+	LoadError         string                `json:"loadError,omitempty"`
+	RemediationHints  []string              `json:"remediationHints,omitempty"`
+	ContextLength     int                   `json:"contextLength,omitempty"`
 }
 
 // InstallLocalLLMModelArgs pulls an Ollama registry model and optionally creates
@@ -413,6 +413,9 @@ func finalizeLocalLLMPrerequisites(result *LocalLLMPrerequisitesResult) {
 }
 
 func (s *HostOperationsService) InstallLocalLLMModel(ctx context.Context, args InstallLocalLLMModelArgs) (*LocalLLMProbeResult, error) {
+	if err := s.requireSharedHostOwner("install_local_llm_model"); err != nil {
+		return nil, err
+	}
 	if err := s.requireGpuInferenceReady(); err != nil {
 		return nil, err
 	}
@@ -464,6 +467,9 @@ func (s *HostOperationsService) InstallLocalLLMModel(ctx context.Context, args I
 }
 
 func (s *HostOperationsService) ConfigureLocalLLMModel(ctx context.Context, args ConfigureLocalLLMModelArgs) (*LocalLLMProbeResult, error) {
+	if err := s.requireSharedHostOwner("configure_local_llm_model"); err != nil {
+		return nil, err
+	}
 	if err := s.requireGpuInferenceReady(); err != nil {
 		return nil, err
 	}
@@ -623,6 +629,9 @@ func (s *HostOperationsService) createOllamaModel(ctx context.Context, cfg Ollam
 }
 
 func (s *HostOperationsService) StartLocalLLMRuntime(ctx context.Context) (*LocalLLMProbeResult, error) {
+	if err := s.requireSharedHostOwner("start_local_llm_runtime"); err != nil {
+		return nil, err
+	}
 	if err := s.requireGpuInferenceReady(); err != nil {
 		return nil, err
 	}
@@ -640,11 +649,17 @@ func (s *HostOperationsService) StartLocalLLMRuntime(ctx context.Context) (*Loca
 }
 
 func (s *HostOperationsService) StopLocalLLMRuntime(ctx context.Context) error {
+	if err := s.requireSharedHostOwner("stop_local_llm_runtime"); err != nil {
+		return err
+	}
 	_, err := s.hostCommandRunnerContext(ctx, []string{"systemctl", "--user", "stop", "opute-ollama.service"}, nil, 30*time.Second)
 	return err
 }
 
 func (s *HostOperationsService) RemoveLocalLLMModel(ctx context.Context, modelRef string, purge bool) error {
+	if err := s.requireSharedHostOwner("remove_local_llm_model"); err != nil {
+		return err
+	}
 	cfg, err := defaultOllamaConfig()
 	if err != nil {
 		return err
@@ -757,11 +772,11 @@ func (s *HostOperationsService) ProbeLocalLLM(ctx context.Context, args ProbeLoc
 			options["num_ctx"] = *args.NumCtx
 		}
 		payload, _ := json.Marshal(map[string]any{
-			"model":   warmModel,
-			"stream":  false,
-			"think":   false,
+			"model":    warmModel,
+			"stream":   false,
+			"think":    false,
 			"messages": []map[string]string{{"role": "user", "content": "Reply with one word: ready"}},
-			"options": options,
+			"options":  options,
 		})
 		chatRequest, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/api/chat", cfg.Port), strings.NewReader(string(payload)))
 		if requestErr == nil {

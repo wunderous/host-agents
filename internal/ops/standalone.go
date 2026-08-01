@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/heartbeat"
 )
 
 var standaloneIdentifier = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
@@ -52,11 +54,24 @@ func (s *HostOperationsService) GetLocalStatus() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	capacity, err := s.VMInventoryCapacity()
+	if err != nil {
+		return nil, err
+	}
+	system := heartbeat.ReadHostSystemMetadata()
+	if s.resourceSnapshot != nil {
+		if system == nil {
+			system = map[string]any{}
+		}
+		system["resourceAdmission"] = s.resourceSnapshot()
+	}
 	return map[string]any{
 		"provider":       s.runtime.ReadProviderID(),
 		"providerBinary": s.runtime.ProviderBinary(),
 		"vmCount":        len(vms.VMs),
 		"vms":            vms.VMs,
+		"capacity":       capacity,
+		"system":         system,
 		"checkedAt":      time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }

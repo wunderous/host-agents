@@ -15,17 +15,35 @@ type HealthOnlyServer struct {
 	logger     *slog.Logger
 }
 
-func NewHealthOnlyServer(bindHost string, port int, logger *slog.Logger) *HealthOnlyServer {
+func NewHealthOnlyServer(bindHost string, port int, logger *slog.Logger, identity ...string) *HealthOnlyServer {
+	if port <= 0 {
+		return nil
+	}
 	if logger == nil {
 		logger = slog.Default()
+	}
+	instanceID := ""
+	agentID := ""
+	if len(identity) > 0 {
+		instanceID = identity[0]
+	}
+	if len(identity) > 1 {
+		agentID = identity[1]
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		payload := map[string]any{
 			"ok":              true,
 			"isReverseTunnel": true,
-		})
+		}
+		if instanceID != "" {
+			payload["instanceId"] = instanceID
+		}
+		if agentID != "" {
+			payload["agentId"] = agentID
+		}
+		_ = json.NewEncoder(w).Encode(payload)
 	})
 	return &HealthOnlyServer{
 		httpServer: &http.Server{
@@ -38,10 +56,16 @@ func NewHealthOnlyServer(bindHost string, port int, logger *slog.Logger) *Health
 }
 
 func (h *HealthOnlyServer) Start() error {
+	if h == nil {
+		return nil
+	}
 	h.logger.Info("health-only transport listening", "addr", h.httpServer.Addr)
 	return h.httpServer.ListenAndServe()
 }
 
 func (h *HealthOnlyServer) Shutdown(ctx context.Context) error {
+	if h == nil {
+		return nil
+	}
 	return h.httpServer.Shutdown(ctx)
 }

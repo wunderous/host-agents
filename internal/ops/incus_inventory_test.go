@@ -182,3 +182,22 @@ func TestNormalizeIncusMemory(t *testing.T) {
 		}
 	}
 }
+
+func TestParseCapacityBytes(t *testing.T) {
+	tests := []struct {
+		in   string
+		want int64
+	}{
+		{"4GiB", 4 << 30},
+		{"2GB", 2_000_000_000},
+		{"512MiB", 512 << 20},
+		{"80GiB", 80 << 30},
+		{"max", 0},
+		{"", 0},
+	}
+	for _, tc := range tests {
+		if got := parseCapacityBytes(tc.in); got != tc.want {
+			t.Fatalf("parseCapacityBytes(%q) = %d want %d", tc.in, got, tc.want)
+		}
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/schemas"
 )
@@ -86,93 +87,45 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 	}
 	var fixture struct {
 		Accept                string `json:"accept"`
-		SessionHeader         string `json:"sessionHeader"`
+		MethodHeader          string `json:"methodHeader"`
 		ProtocolVersionHeader string `json:"protocolVersionHeader"`
 		ProtocolVersion       string `json:"protocolVersion"`
 	}
 	if err := json.Unmarshal(fixtureRaw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	initializeBody, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize",
-		"params": map[string]any{
-			"protocolVersion": fixture.ProtocolVersion,
-			"capabilities":    map[string]any{},
-			"clientInfo":      map[string]any{"name": "standalone-fixture-test", "version": "1"},
-		},
+	meta, err := mcphttp.ModernRequestEnvelope("1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listBody, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+		"params": map[string]any{"_meta": meta},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rawResponse *http.Response
+	var listResponse *http.Response
 	for {
-		rawRequest, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(initializeBody))
+		listRequest, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(listBody))
 		if requestErr != nil {
 			t.Fatal(requestErr)
 		}
-		rawRequest.Header.Set("Accept", fixture.Accept)
-		rawRequest.Header.Set("Content-Type", "application/json")
-		rawRequest.Header.Set(fixture.ProtocolVersionHeader, fixture.ProtocolVersion)
-		rawResponse, err = http.DefaultClient.Do(rawRequest)
+		listRequest.Header.Set("Content-Type", "application/json")
+		if err := mcphttp.ApplyStreamableHTTPRequestHeaders(listRequest); err != nil {
+			t.Fatal(err)
+		}
+		if fixture.MethodHeader != "" {
+			listRequest.Header.Set(fixture.MethodHeader, "tools/list")
+		}
+		listResponse, err = http.DefaultClient.Do(listRequest)
 		if err == nil {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("fixture initialize: %v", err)
+			t.Fatalf("fixture tools/list: %v", err)
 		}
 		time.Sleep(100 * time.Millisecond)
-	}
-	if rawResponse.StatusCode != http.StatusOK {
-		rawResponse.Body.Close()
-		t.Fatalf("fixture initialize status = %d", rawResponse.StatusCode)
-	}
-	sessionID := rawResponse.Header.Get(fixture.SessionHeader)
-	if sessionID == "" {
-		rawResponse.Body.Close()
-		t.Fatalf("fixture initialize missing %s response header", fixture.SessionHeader)
-	}
-	rawResponse.Body.Close()
-
-	initializedBody, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "method": "notifications/initialized",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	initializedRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(initializedBody))
-	if err != nil {
-		t.Fatal(err)
-	}
-	initializedRequest.Header.Set("Accept", fixture.Accept)
-	initializedRequest.Header.Set("Content-Type", "application/json")
-	initializedRequest.Header.Set(fixture.ProtocolVersionHeader, fixture.ProtocolVersion)
-	initializedRequest.Header.Set(fixture.SessionHeader, sessionID)
-	initializedResponse, err := http.DefaultClient.Do(initializedRequest)
-	if err != nil {
-		t.Fatalf("fixture notifications/initialized: %v", err)
-	}
-	initializedResponse.Body.Close()
-	if initializedResponse.StatusCode != http.StatusOK && initializedResponse.StatusCode != http.StatusAccepted && initializedResponse.StatusCode != http.StatusNoContent {
-		t.Fatalf("fixture notifications/initialized status = %d", initializedResponse.StatusCode)
-	}
-
-	listBody, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 2, "method": "tools/list",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	listRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(listBody))
-	if err != nil {
-		t.Fatal(err)
-	}
-	listRequest.Header.Set("Accept", fixture.Accept)
-	listRequest.Header.Set("Content-Type", "application/json")
-	listRequest.Header.Set(fixture.ProtocolVersionHeader, fixture.ProtocolVersion)
-	listRequest.Header.Set(fixture.SessionHeader, sessionID)
-	listResponse, err := http.DefaultClient.Do(listRequest)
-	if err != nil {
-		t.Fatalf("fixture tools/list with session header: %v", err)
 	}
 	if listResponse.StatusCode != http.StatusOK {
 		listResponse.Body.Close()

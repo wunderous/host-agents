@@ -13,6 +13,11 @@ import (
 // Config holds host agent runtime configuration from environment variables.
 type Config struct {
 	AgentMode                        string
+	InstanceID                       string
+	InstanceRoot                     string
+	RelayConfigDir                   string
+	OwnershipMode                    string
+	SharedHostOwnerInstance          string
 	StandaloneStateDir               string
 	StandaloneAllowMutations         bool
 	StandaloneAllowInsecureDownloads bool
@@ -32,10 +37,37 @@ type Config struct {
 	OnboardingSessionID              string
 	EnvFile                          string
 	TestMode                         bool
+	HostResourceLockDir              string
+	HostResourceMaxNormal            int
+	HostResourceMaxHeavy             int
+	HostResourceMaxQueued            int
+	HostResourceMinMemoryBytes       int64
+	HostResourceMinDiskBytes         int64
+	HostResourceDiskPaths            []string
 }
 
 func Load() Config {
 	mode := normalizeMode(os.Getenv("OPUTE_AGENT_MODE"))
+	instanceID := strings.TrimSpace(envValue("OPUTE_HOST_AGENT_INSTANCE"))
+	if instanceID == "" {
+		if mode == "standalone" {
+			instanceID = "standalone"
+		} else {
+			instanceID = "platform"
+		}
+	}
+	instanceRoot := strings.TrimSpace(envValue("OPUTE_HOST_AGENT_INSTANCE_ROOT"))
+	if instanceRoot == "" {
+		instanceRoot = filepath.Join(userConfigDir(), "instances", instanceID)
+	}
+	stateDir := strings.TrimSpace(envValue("OPUTE_STANDALONE_STATE_DIR"))
+	if stateDir == "" {
+		stateDir = filepath.Join(instanceRoot, "state")
+	}
+	relayDir := strings.TrimSpace(envValue("OPUTE_HOST_AGENT_RELAY_DIR"))
+	if relayDir == "" {
+		relayDir = filepath.Join(instanceRoot, "local-llm-relays")
+	}
 	defaultPort := "3004"
 	if mode == "standalone" {
 		// Avoid colliding with platform dogfood host on 3004.
@@ -70,7 +102,12 @@ func Load() Config {
 	}
 	return Config{
 		AgentMode:                        mode,
-		StandaloneStateDir:               envOr("OPUTE_STANDALONE_STATE_DIR", filepath.Join(userHomeDir(), ".opute", "standalone")),
+		InstanceID:                       instanceID,
+		InstanceRoot:                     instanceRoot,
+		RelayConfigDir:                   relayDir,
+		OwnershipMode:                    normalizeOwnershipMode(envValue("OPUTE_INCUS_OWNERSHIP_MODE")),
+		SharedHostOwnerInstance:          strings.TrimSpace(envValue("OPUTE_SHARED_HOST_OWNER_INSTANCE")),
+		StandaloneStateDir:               stateDir,
 		StandaloneAllowMutations:         os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
 		StandaloneAllowInsecureDownloads: os.Getenv("OPUTE_STANDALONE_ALLOW_INSECURE_DOWNLOADS") == "true",
 		StandaloneInstanceID:             strings.TrimSpace(envValue("OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID")),
@@ -89,12 +126,33 @@ func Load() Config {
 		OnboardingSessionID:              strings.TrimSpace(envValue("OPUTE_ONBOARDING_SESSION_ID")),
 		EnvFile:                          strings.TrimSpace(envValue("OPUTE_HOST_AGENT_ENV_FILE")),
 		TestMode:                         os.Getenv("OPUTE_TEST") == "true" || os.Getenv("NODE_ENV") == "test",
+		HostResourceLockDir:              envOr("OPUTE_HOST_RESOURCE_LOCK_DIR", filepath.Join(userConfigDir(), "host-resource-coordinator")),
+		HostResourceMaxNormal:            envIntOr("OPUTE_HOST_MAX_NORMAL_OPERATIONS", 2),
+		HostResourceMaxHeavy:             envIntOr("OPUTE_HOST_MAX_HEAVY_OPERATIONS", 1),
+		HostResourceMaxQueued:            envIntOr("OPUTE_HOST_MAX_QUEUED_OPERATIONS", 16),
+		HostResourceMinMemoryBytes:       envInt64Or("OPUTE_HOST_MIN_AVAILABLE_MEMORY_BYTES", 0),
+		HostResourceMinDiskBytes:         envInt64Or("OPUTE_HOST_MIN_AVAILABLE_DISK_BYTES", 0),
+		HostResourceDiskPaths:            envPathsOr("OPUTE_HOST_RESOURCE_DISK_PATHS", []string{"/", "/mnt/c"}),
 	}
 }
 
 // Validate rejects ambiguous profile combinations before the agent starts a
 // listener, emits MCP protocol output, or contacts the Opute control plane.
 func (c Config) Validate() error {
+	instanceID := strings.TrimSpace(c.InstanceID)
+	if instanceID == "" {
+		if strings.EqualFold(strings.TrimSpace(c.AgentMode), "standalone") {
+			instanceID = "standalone"
+		} else {
+			instanceID = "platform"
+		}
+	}
+	if err := validateInstanceID(instanceID); err != nil {
+		return err
+	}
+	if c.OwnershipMode != "" && c.OwnershipMode != "audit" && c.OwnershipMode != "enforce" {
+		return fmt.Errorf("invalid OPUTE_INCUS_OWNERSHIP_MODE %q: expected audit or enforce", c.OwnershipMode)
+	}
 	rawMode := strings.TrimSpace(os.Getenv("OPUTE_AGENT_MODE"))
 	if rawMode != "" && !strings.EqualFold(rawMode, "platform") && !strings.EqualFold(rawMode, "standalone") {
 		return fmt.Errorf("invalid OPUTE_AGENT_MODE %q: expected platform or standalone", rawMode)
@@ -105,6 +163,12 @@ func (c Config) Validate() error {
 	}
 	if mode != "platform" && mode != "standalone" {
 		return fmt.Errorf("invalid agent mode %q: expected platform or standalone", c.AgentMode)
+	}
+	if c.HostMCPPort < 0 {
+		return fmt.Errorf("HOST_MCP_PORT must be non-negative")
+	}
+	if !c.IsReverseTunnel && c.HostMCPPort == 0 && strings.TrimSpace(os.Getenv("HOST_MCP_PORT")) == "0" {
+		return fmt.Errorf("HOST_MCP_PORT must be positive for direct HTTP mode")
 	}
 	rawTransport := strings.TrimSpace(os.Getenv("OPUTE_TRANSPORT"))
 	if rawTransport != "" && !strings.EqualFold(rawTransport, "http") {
@@ -143,6 +207,30 @@ func normalizeMode(raw string) string {
 	return "platform"
 }
 
+func normalizeOwnershipMode(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), "enforce") {
+		return "enforce"
+	}
+	return "audit"
+}
+
+func validateInstanceID(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("OPUTE_HOST_AGENT_INSTANCE is required")
+	}
+	if len(value) > 63 {
+		return fmt.Errorf("OPUTE_HOST_AGENT_INSTANCE must be at most 63 characters")
+	}
+	for i, ch := range value {
+		valid := ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-'
+		if !valid || (i == 0 && ch == '-') || (i == len(value)-1 && ch == '-') {
+			return fmt.Errorf("OPUTE_HOST_AGENT_INSTANCE %q is invalid: use [a-z0-9][a-z0-9-]{0,62}", value)
+		}
+	}
+	return nil
+}
+
 func userHomeDir() string {
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
 		return home
@@ -150,11 +238,59 @@ func userHomeDir() string {
 	return "."
 }
 
+func userConfigDir() string {
+	if configured := strings.TrimSpace(envValue("XDG_CONFIG_HOME")); configured != "" {
+		return configured
+	}
+	return filepath.Join(userHomeDir(), ".config", "opute")
+}
+
 func envOr(key, fallback string) string {
 	if v := strings.TrimSpace(envValue(key)); v != "" {
 		return v
 	}
 	return fallback
+}
+
+func envIntOr(key string, fallback int) int {
+	value := strings.TrimSpace(envValue(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func envInt64Or(key string, fallback int64) int64 {
+	value := strings.TrimSpace(envValue(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func envPathsOr(key string, fallback []string) []string {
+	value := strings.TrimSpace(envValue(key))
+	if value == "" {
+		return append([]string(nil), fallback...)
+	}
+	paths := make([]string, 0)
+	for _, path := range strings.Split(value, ",") {
+		if path = strings.TrimSpace(path); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	if len(paths) == 0 {
+		return append([]string(nil), fallback...)
+	}
+	return paths
 }
 
 // envValue accepts both ordinary systemd EnvironmentFile values and values

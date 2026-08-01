@@ -11,3 +11,18 @@ func TestIncusVMConfigEnablesAutostart(t *testing.T) {
 		t.Fatalf("resource limits were not preserved: %#v", config)
 	}
 }
+
+func TestNormalizeProvisionInstanceType(t *testing.T) {
+	if got := normalizeProvisionInstanceType(""); got != "container" {
+		t.Fatalf("empty = %q, want container", got)
+	}
+	if got := normalizeProvisionInstanceType("virtual-machine"); got != "virtual-machine" {
+		t.Fatalf("virtual-machine = %q", got)
+	}
+	if got := normalizeProvisionInstanceType("vm"); got != "virtual-machine" {
+		t.Fatalf("vm = %q, want virtual-machine", got)
+	}
+	if got := normalizeProvisionInstanceType("container"); got != "container" {
+		t.Fatalf("container = %q", got)
+	}
+}

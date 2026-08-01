@@ -16,6 +16,7 @@ import (
 	"github.com/wunderous/host-agents/internal/hostmcp"
 	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/state"
 	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/internal/transport"
@@ -38,8 +39,13 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	svc := ops.NewHostOperationsService(ops.Options{
-		ProviderID:             provider.NormalizeProviderID(cfg.ProviderID),
-		AllowInsecureDownloads: cfg.AgentMode == "standalone" && cfg.StandaloneAllowInsecureDownloads,
+		ProviderID:              provider.NormalizeProviderID(cfg.ProviderID),
+		InstanceID:              cfg.InstanceID,
+		AgentID:                 cfg.RemoteAgentID,
+		OwnershipMode:           cfg.OwnershipMode,
+		RelayConfigDir:          cfg.RelayConfigDir,
+		SharedHostOwnerInstance: cfg.SharedHostOwnerInstance,
+		AllowInsecureDownloads:  cfg.AgentMode == "standalone" && cfg.StandaloneAllowInsecureDownloads,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)
 			if err != nil {
@@ -48,6 +54,19 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 			return names
 		},
 	})
+	admission, err := resource.NewCoordinator(resource.Config{
+		LockDir:                 cfg.HostResourceLockDir,
+		MaxNormal:               cfg.HostResourceMaxNormal,
+		MaxHeavy:                cfg.HostResourceMaxHeavy,
+		MaxQueued:               cfg.HostResourceMaxQueued,
+		MinAvailableMemoryBytes: cfg.HostResourceMinMemoryBytes,
+		MinAvailableDiskBytes:   cfg.HostResourceMinDiskBytes,
+		DiskPaths:               cfg.HostResourceDiskPaths,
+	})
+	if err != nil {
+		return err
+	}
+	svc.SetResourceSnapshot(admission.Metadata)
 
 	hostServer, err := hostmcp.NewServer(hostmcp.Options{
 		ProviderID:     cfg.ProviderID,
@@ -57,6 +76,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		AllowMutations: cfg.StandaloneAllowMutations,
 		StateDir:       cfg.StandaloneStateDir,
 		Version:        version.Version,
+		Admission:      admission,
 	})
 	if err != nil {
 		return err
@@ -76,13 +96,23 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				fp.Fingerprint += ":test"
 			}
 			collectVMStats := func() (heartbeat.HostVMStats, error) {
-				running, total, err := svc.VMInventoryStats()
+				capacity, err := svc.VMInventoryCapacity()
 				if err != nil {
 					return heartbeat.HostVMStats{}, err
 				}
 				return heartbeat.HostVMStats{
-					RunningVMCount: running,
-					TotalVMCount:   total,
+					RunningVMCount:            capacity.RunningVMCount,
+					TotalVMCount:              capacity.TotalVMCount,
+					RunningVMCPULimitCores:    capacity.RunningVMCPULimitCores,
+					TotalVMCPULimitCores:      capacity.TotalVMCPULimitCores,
+					RunningVMMemoryLimitBytes: capacity.RunningVMMemoryLimitBytes,
+					TotalVMMemoryLimitBytes:   capacity.TotalVMMemoryLimitBytes,
+					RunningVMDiskLimitBytes:   capacity.RunningVMDiskLimitBytes,
+					TotalVMDiskLimitBytes:     capacity.TotalVMDiskLimitBytes,
+					RunningQEMUCount:          capacity.RunningQEMUCount,
+					TotalQEMUCount:            capacity.TotalQEMUCount,
+					RunningContainerCount:     capacity.RunningContainerCount,
+					TotalContainerCount:       capacity.TotalContainerCount,
 				}, nil
 			}
 			hostCapabilities := append([]string(nil), toolNames...)
@@ -142,22 +172,31 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				CollectVMStats:       collectVMStats,
 				HostCapabilities:     hostCapabilities,
 				CapabilitySummary:    capabilitySummary,
+				ResourceSnapshot:     admission.Metadata,
 			})
 		}
 	}
 
 	if cfg.IsReverseTunnel {
 		logger.Info("reverse tunnel mode enabled", "agentId", cfg.RemoteAgentID, "mode", cfg.AgentMode)
-		healthSrv := transport.NewHealthOnlyServer(cfg.HostMCPBindHost, cfg.HostMCPPort, logger)
-		go func() {
-			if err := healthSrv.Start(); err != nil && err != http.ErrServerClosed {
-				logger.Warn("health listener stopped", "err", err)
-			}
-		}()
+		var healthSrv *transport.HealthOnlyServer
+		if cfg.HostMCPPort > 0 {
+			healthSrv = transport.NewHealthOnlyServer(cfg.HostMCPBindHost, cfg.HostMCPPort, logger, cfg.InstanceID, cfg.RemoteAgentID)
+			go func() {
+				if err := healthSrv.Start(); err != nil && err != http.ErrServerClosed {
+					logger.Warn("health listener stopped", "err", err)
+				}
+			}()
+		} else {
+			logger.Info("reverse-tunnel health listener disabled", "instanceId", cfg.InstanceID, "agentId", cfg.RemoteAgentID)
+		}
+		go transport.RunHostWorkerLoop(ctx, hostServer, cfg.HostWSURL, cfg.RemoteAgentID, cfg.RemoteAgentAuthToken, cfg.MCPHealthURL, logger)
 		go transport.RunReverseTunnelLoop(ctx, hostServer, cfg.HostWSURL, cfg.RemoteAgentID, cfg.RemoteAgentAuthToken, cfg.MCPHealthURL, logger)
 		<-ctx.Done()
 		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = healthSrv.Shutdown(shutdownCtx)
+		if healthSrv != nil {
+			_ = healthSrv.Shutdown(shutdownCtx)
+		}
 		cancelShutdown()
 		if hb != nil {
 			hb.Stop()

@@ -4,10 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/hostmcp"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 )
 
 type wsOutboundTransport struct {
@@ -108,7 +106,7 @@ func connectOnce(ctx context.Context, host *hostmcp.Server, wsURL, agentID, auth
 	if authToken != "" {
 		header.Set("Authorization", "Bearer "+authToken)
 	}
-	if routeHost := mcpRouteHost(); routeHost != "" {
+	if routeHost := mcphttp.RouteHostFromEnv(); routeHost != "" {
 		header.Set("Host", routeHost)
 	}
 	dialer := websocket.Dialer{Subprotocols: []string{"mcp"}}
@@ -155,7 +153,7 @@ func waitForHealth(ctx context.Context, url string, timeout time.Duration) error
 		if err != nil {
 			return err
 		}
-		if routeHost := mcpRouteHost(); routeHost != "" {
+		if routeHost := mcphttp.RouteHostFromEnv(); routeHost != "" {
 			req.Host = routeHost
 			req.Header.Set("Host", routeHost)
 		}
@@ -182,23 +180,4 @@ func BuildTunnelURL(wsBase, agentID string) string {
 		root = root[:idx]
 	}
 	return fmt.Sprintf("%s/mcp-agent/%s", root, agentID)
-}
-
-func mcpRouteHost() string {
-	if routeHost := strings.TrimSpace(os.Getenv("OPUTE_MCP_ROUTE_HOST")); routeHost != "" {
-		return routeHost
-	}
-	mcpURL := strings.TrimSpace(os.Getenv("OPUTE_MCP_URL"))
-	if mcpURL == "" {
-		return ""
-	}
-	parsed, err := url.Parse(mcpURL)
-	if err != nil {
-		return ""
-	}
-	host := parsed.Hostname()
-	if host == "" || net.ParseIP(host) != nil {
-		return ""
-	}
-	return host
 }

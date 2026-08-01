@@ -68,9 +68,10 @@ func (s *HostOperationsService) PrepareHostAgentArtifacts(args PrepareHostAgentA
 			onData(fmt.Sprintf("Building %s for linux/%s...", outputName, arch))
 		}
 		buildScript := fmt.Sprintf(
-			`cd %s && GOOS=linux GOARCH=%s go build -buildvcs=false -ldflags=-s -w -o %s github.com/wunderous/host-agents/cmd/opute-host-agent`,
+			`cd %s && export GOCACHE="${GOCACHE:-$HOME/.cache/go-build}" && mkdir -p "$GOCACHE" && GOOS=linux GOARCH=%s go build -buildvcs=false -ldflags=%s -o %s github.com/wunderous/host-agents/cmd/opute-host-agent`,
 			shellEscape(absSource),
 			arch,
+			shellEscape("-s -w"),
 			shellEscape(outputPath),
 		)
 		res, runErr := s.hostCommandRunner([]string{"bash", "-lc", buildScript}, onData, 15*time.Minute)

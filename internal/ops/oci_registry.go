@@ -175,6 +175,11 @@ func (s *HostOperationsService) ConfigureK3sRegistry(args ConfigureK3sRegistryAr
 	if strings.ContainsAny(registry, "\r\n'") {
 		return nil, errors.New("registry is invalid")
 	}
+	if changed, err := s.ensureContainerK3sKubeletConfig(vmName, onData); err != nil {
+		return nil, fmt.Errorf("ensure K3s container kubelet config: %w", err)
+	} else if changed && onData != nil {
+		onData("Applied K3s container kubelet config before registry update")
+	}
 	protocol := "https"
 	if args.Insecure {
 		protocol = "http"

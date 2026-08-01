@@ -16,6 +16,7 @@ import (
 	"time"
 
 	hostexec "github.com/wunderous/host-agents/internal/exec"
+	"github.com/wunderous/host-agents/internal/heartbeat"
 	"github.com/wunderous/host-agents/internal/provider"
 )
 
@@ -34,11 +35,13 @@ var clusterScopedK8sResources = map[string]bool{
 
 // HostInfoResult mirrors the TypeScript describeHost payload.
 type HostInfoResult struct {
-	HostName       string   `json:"hostName"`
-	ProviderID     string   `json:"providerId"`
-	LXCBinaryPath  string   `json:"lxcBinaryPath"`
-	SystemctlPath  string   `json:"systemctlPath"`
-	SupportedTools []string `json:"supportedTools"`
+	HostName       string               `json:"hostName"`
+	ProviderID     string               `json:"providerId"`
+	LXCBinaryPath  string               `json:"lxcBinaryPath"`
+	SystemctlPath  string               `json:"systemctlPath"`
+	SupportedTools []string             `json:"supportedTools"`
+	Capacity       *VMInventoryCapacity `json:"capacity,omitempty"`
+	System         map[string]any       `json:"system,omitempty"`
 }
 
 // BridgeDiagnosticResult is returned by DiagnoseBridge.
@@ -66,19 +69,29 @@ type BridgeDiagnosticResult struct {
 
 // HostOperationsService implements host MCP operations against Incus on Linux.
 type HostOperationsService struct {
-	runtime *provider.Runtime
-	toolsFn func(providerID string) []string
+	runtime                 *provider.Runtime
+	toolsFn                 func(providerID string) []string
+	instanceID              string
+	agentID                 string
+	ownershipMode           string
+	sharedHostOwnerInstance string
 
 	sqlSupervisor          *sqlConnectorSupervisor
 	guestBridgeRelay       *tcpRelayManager
 	localLLMRelay          *localLLMRelayManager
 	allowInsecureDownloads bool
+	resourceSnapshot       func() map[string]any
 }
 
 type Options struct {
-	ProviderID             provider.ID
-	ToolsForProvider       func(providerID string) []string
-	AllowInsecureDownloads bool
+	ProviderID              provider.ID
+	ToolsForProvider        func(providerID string) []string
+	AllowInsecureDownloads  bool
+	InstanceID              string
+	AgentID                 string
+	OwnershipMode           string
+	RelayConfigDir          string
+	SharedHostOwnerInstance string
 }
 
 func NewHostOperationsService(opts Options) *HostOperationsService {
@@ -88,13 +101,21 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 	if toolsFn == nil {
 		toolsFn = func(string) []string { return nil }
 	}
+	ownershipMode := strings.TrimSpace(opts.OwnershipMode)
+	if ownershipMode != "enforce" {
+		ownershipMode = "audit"
+	}
 	return &HostOperationsService{
-		runtime:                rt,
-		toolsFn:                toolsFn,
-		sqlSupervisor:          newSQLConnectorSupervisor(),
-		guestBridgeRelay:       newTCPRelayManager(),
-		localLLMRelay:          newPersistentLocalLLMRelayManager(),
-		allowInsecureDownloads: opts.AllowInsecureDownloads,
+		runtime:                 rt,
+		toolsFn:                 toolsFn,
+		instanceID:              strings.TrimSpace(opts.InstanceID),
+		agentID:                 strings.TrimSpace(opts.AgentID),
+		ownershipMode:           ownershipMode,
+		sharedHostOwnerInstance: strings.TrimSpace(opts.SharedHostOwnerInstance),
+		sqlSupervisor:           newSQLConnectorSupervisor(),
+		guestBridgeRelay:        newTCPRelayManager(),
+		localLLMRelay:           newPersistentLocalLLMRelayManagerAt(opts.RelayConfigDir),
+		allowInsecureDownloads:  opts.AllowInsecureDownloads,
 	}
 }
 
@@ -102,16 +123,33 @@ func (s *HostOperationsService) ReadProviderID() string {
 	return string(s.runtime.ReadProviderID())
 }
 
+// SetResourceSnapshot connects host-local admission telemetry to direct
+// diagnostics such as get_host_info and get_local_status.
+func (s *HostOperationsService) SetResourceSnapshot(snapshot func() map[string]any) {
+	s.resourceSnapshot = snapshot
+}
+
 func (s *HostOperationsService) DescribeHost() HostInfoResult {
 	pid := s.ReadProviderID()
 	host, _ := os.Hostname()
-	return HostInfoResult{
+	result := HostInfoResult{
 		HostName:       host,
 		ProviderID:     pid,
 		LXCBinaryPath:  s.runtime.ProviderBinary(),
 		SystemctlPath:  provider.DefaultSystemctlPath,
 		SupportedTools: s.toolsFn(pid),
 	}
+	if capacity, err := s.VMInventoryCapacity(); err == nil {
+		result.Capacity = &capacity
+	}
+	result.System = heartbeat.ReadHostSystemMetadata()
+	if s.resourceSnapshot != nil {
+		if result.System == nil {
+			result.System = map[string]any{}
+		}
+		result.System["resourceAdmission"] = s.resourceSnapshot()
+	}
+	return result
 }
 
 func (s *HostOperationsService) waitForVMExecReady(vmName string, timeout time.Duration, onData func(string)) error {
@@ -143,10 +181,16 @@ func (s *HostOperationsService) vmExecArgv(vmName string, guestArgv []string) []
 }
 
 func (s *HostOperationsService) runVMExec(vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	if err := s.assertIncusOwnership(vmName, "exec"); err != nil {
+		return hostexec.Result{}, err
+	}
 	return s.commandRunner(s.vmExecArgv(vmName, guestArgv), onData, timeout)
 }
 
 func (s *HostOperationsService) runVMExecContext(ctx context.Context, vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	if err := s.assertIncusOwnership(vmName, "exec"); err != nil {
+		return hostexec.Result{}, err
+	}
 	return s.runtime.RunVMExecContext(ctx, vmName, guestArgv, onData, timeout)
 }
 
@@ -155,34 +199,36 @@ type VMListResult struct {
 }
 
 type VMInfo struct {
-	Name       string         `json:"name"`
-	Type       string         `json:"type,omitempty"`
-	Status     string         `json:"status"`
-	State      map[string]any `json:"state"`
-	IPv4       []string       `json:"ipv4"`
-	Release    string         `json:"release"`
-	ProviderID string         `json:"providerId"`
-	CPUs       *int           `json:"cpus,omitempty"`
-	Memory     string         `json:"memory,omitempty"`
-	Disk       string         `json:"disk,omitempty"`
-	AgentReady   *bool `json:"agentReady,omitempty"`
-	K3sInstalled *bool `json:"k3sInstalled,omitempty"`
+	Name         string         `json:"name"`
+	Type         string         `json:"type,omitempty"`
+	Status       string         `json:"status"`
+	State        map[string]any `json:"state"`
+	IPv4         []string       `json:"ipv4"`
+	Release      string         `json:"release"`
+	ProviderID   string         `json:"providerId"`
+	CPUs         *int           `json:"cpus,omitempty"`
+	Memory       string         `json:"memory,omitempty"`
+	Disk         string         `json:"disk,omitempty"`
+	AgentReady   *bool          `json:"agentReady,omitempty"`
+	K3sInstalled *bool          `json:"k3sInstalled,omitempty"`
 }
 
 // --- VM lifecycle ---
 
 type ProvisionVMArgs struct {
-	VMName string `json:"vmName"`
-	Image  string `json:"image,omitempty"`
-	CPUs   int    `json:"cpus,omitempty"`
-	Memory string `json:"memory,omitempty"`
-	Disk   string `json:"disk,omitempty"`
+	VMName       string `json:"vmName"`
+	Image        string `json:"image,omitempty"`
+	CPUs         int    `json:"cpus,omitempty"`
+	Memory       string `json:"memory,omitempty"`
+	Disk         string `json:"disk,omitempty"`
+	InstanceType string `json:"instanceType,omitempty"`
 }
 
 type VMStatusResult struct {
-	VMName string `json:"vmName"`
-	Image  string `json:"image,omitempty"`
-	Status string `json:"status"`
+	VMName       string `json:"vmName"`
+	Image        string `json:"image,omitempty"`
+	Status       string `json:"status"`
+	InstanceType string `json:"instanceType,omitempty"`
 }
 
 func (s *HostOperationsService) CreateVM(args ProvisionVMArgs, onData func(string)) (VMStatusResult, error) {
@@ -215,15 +261,42 @@ func (s *HostOperationsService) provisionVM(args ProvisionVMArgs, onData func(st
 		disk = "10GiB"
 	}
 
-	if err := s.launchVM(vmName, image, cpus, memory, disk, onData, provisionVMTimeout); err != nil {
+	instanceType := normalizeProvisionInstanceType(args.InstanceType)
+	if exists, err := s.incusInstanceExists(vmName); err == nil && exists {
+		if err := s.assertIncusOwnership(vmName, "provision_vm"); err != nil {
+			return VMStatusResult{}, err
+		}
+	}
+	if instanceType == "virtual-machine" {
+		if err := s.launchVM(vmName, image, cpus, memory, disk, onData, provisionVMTimeout); err != nil {
+			return VMStatusResult{}, err
+		}
+		if image == "" {
+			image = "images:ubuntu/22.04"
+		} else {
+			image = normalizeIncusLaunchImage(image)
+		}
+		return VMStatusResult{VMName: vmName, Image: image, Status: "running", InstanceType: "virtual-machine"}, nil
+	}
+
+	nesting := true
+	container, err := s.ProvisionContainer(ProvisionContainerArgs{
+		ContainerName: vmName,
+		Image:         image,
+		CPUs:          cpus,
+		Memory:        memory,
+		Disk:          disk,
+		Nesting:       &nesting,
+	}, onData)
+	if err != nil {
 		return VMStatusResult{}, err
 	}
-	if image == "" {
-		image = "images:ubuntu/22.04"
-	} else {
-		image = normalizeIncusLaunchImage(image)
-	}
-	return VMStatusResult{VMName: vmName, Image: image, Status: "running"}, nil
+	return VMStatusResult{
+		VMName:       container.ContainerName,
+		Image:        container.Image,
+		Status:       container.Status,
+		InstanceType: container.InstanceType,
+	}, nil
 }
 
 type VMScopedArgs struct {
@@ -234,6 +307,9 @@ func (s *HostOperationsService) StartVM(args VMScopedArgs, onData func(string)) 
 	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
+	}
+	if err := s.assertIncusOwnership(vmName, "start_vm"); err != nil {
+		return nil, err
 	}
 	res, err := s.commandRunner([]string{"start", vmName}, onData, 0)
 	if err != nil {
@@ -250,6 +326,9 @@ func (s *HostOperationsService) StopVM(args VMScopedArgs, onData func(string)) (
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
 	}
+	if err := s.assertIncusOwnership(vmName, "stop_vm"); err != nil {
+		return nil, err
+	}
 	cmd := s.stopVMArgs(vmName)
 	res, err := s.commandRunner(cmd, onData, 0)
 	if err != nil {
@@ -265,6 +344,9 @@ func (s *HostOperationsService) RestartVM(args VMScopedArgs, onData func(string)
 	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
+	}
+	if err := s.assertIncusOwnership(vmName, "restart_vm"); err != nil {
+		return nil, err
 	}
 	stop, err := s.commandRunner(s.stopVMArgs(vmName), onData, 0)
 	if err != nil {
@@ -287,6 +369,9 @@ func (s *HostOperationsService) DeleteVM(args VMScopedArgs, onData func(string))
 	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
+	}
+	if err := s.assertIncusOwnership(vmName, "delete_vm"); err != nil {
+		return nil, err
 	}
 	res, err := s.commandRunner(s.deleteVMArgs(vmName), onData, 0)
 	if err != nil {
@@ -328,9 +413,6 @@ func (s *HostOperationsService) InstallK3s(ctx context.Context, args InstallK3sA
 		return nil, err
 	}
 	target := strings.TrimSpace(args.Target)
-	if target == "" {
-		target = "vm"
-	}
 	// Pin a concrete version by default. update.k3s.io channel resolution often
 	// 404s from guest NAT; the upstream script then treats "stable" as a GitHub
 	// release tag and fails on .../download/stable/sha256sum-amd64.txt.
@@ -361,6 +443,9 @@ func (s *HostOperationsService) InstallK3s(ctx context.Context, args InstallK3sA
 		execEnv,
 	)
 	if target == "host" {
+		if err := s.requireSharedHostOwner("install_k3s_host"); err != nil {
+			return nil, err
+		}
 		clusterID := strings.TrimSpace(args.ClusterID)
 		if clusterID == "" {
 			return nil, errors.New("clusterId is required for host K3s installation")
@@ -395,6 +480,9 @@ systemctl daemon-reload 2>/dev/null || true`
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
 	}
+	if target == "" {
+		target = s.resolveInstallK3sTarget(vmName, args.Target)
+	}
 	if target == "container" {
 		if err := s.ensureIncusInstanceAutostart(vmName); err != nil {
 			return nil, fmt.Errorf("enable container autostart: %w", err)
@@ -418,6 +506,25 @@ systemctl daemon-reload 2>/dev/null || true`
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if target == "container" {
+		if _, err := s.ensureContainerK3sKubeletConfig(vmName, onData); err != nil {
+			return nil, fmt.Errorf("prepare K3s container kubelet config: %w", err)
+		}
+		existing, existingErr := s.runVMExec(vmName, []string{"bash", "-lc", "test -x /usr/local/bin/k3s"}, onData, 30*time.Second)
+		if existingErr == nil && existing.ExitCode == 0 {
+			if onData != nil {
+				onData("K3s already installed in container; repairing config and waiting for node readiness...")
+			}
+			if restartErr := s.restartVMK3sIfPresent(vmName, onData); restartErr != nil {
+				return nil, restartErr
+			}
+			if err := s.waitForK3sNodeReady(ctx, vmName, onData, 5*time.Minute); err != nil {
+				return nil, err
+			}
+			_ = s.setIncusInstanceConfig(vmName, oputeK3sInstalledLabel, "true")
+			return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "active", "repaired": true}, nil
+		}
+	}
 	ensureCurl := `if ! command -v curl >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get install -y curl >/dev/null || (apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y curl >/dev/null); fi`
 	if res, err := s.runVMExecContext(ctx, vmName, []string{"bash", "-lc", ensureCurl}, onData, 0); err != nil || res.ExitCode != 0 {
 		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "failed to ensure curl in instance"))
@@ -432,7 +539,20 @@ systemctl daemon-reload 2>/dev/null || true`
 	if install.ExitCode != 0 {
 		return nil, fmt.Errorf("%s", firstNonEmpty(install.Stderr, install.Stdout, "failed to install K3s in instance"))
 	}
-	if err := s.waitForVMServiceActive(vmName, "k3s", onData, 5*time.Minute); err != nil {
+	if target == "container" {
+		changed, cfgErr := s.ensureContainerK3sKubeletConfig(vmName, onData)
+		if cfgErr != nil {
+			return nil, fmt.Errorf("finalize K3s container kubelet config: %w", cfgErr)
+		}
+		if changed {
+			if restartErr := s.restartVMK3sIfPresent(vmName, onData); restartErr != nil {
+				return nil, restartErr
+			}
+		}
+		if err := s.waitForK3sNodeReady(ctx, vmName, onData, 5*time.Minute); err != nil {
+			return nil, err
+		}
+	} else if err := s.waitForVMServiceActive(vmName, "k3s", onData, 5*time.Minute); err != nil {
 		return nil, err
 	}
 	_ = s.setIncusInstanceConfig(vmName, oputeK3sInstalledLabel, "true")
@@ -447,10 +567,10 @@ type UninstallK3sArgs struct {
 
 func (s *HostOperationsService) UninstallK3s(args UninstallK3sArgs, onData func(string)) (map[string]any, error) {
 	target := strings.TrimSpace(args.Target)
-	if target == "" {
-		target = "vm"
-	}
 	if target == "host" {
+		if err := s.requireSharedHostOwner("uninstall_k3s_host"); err != nil {
+			return nil, err
+		}
 		clusterID := strings.TrimSpace(args.ClusterID)
 		if clusterID == "" {
 			return nil, errors.New("clusterId is required for host K3s uninstall")
@@ -469,18 +589,21 @@ func (s *HostOperationsService) UninstallK3s(args UninstallK3sArgs, onData func(
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
 	}
+	if target == "" {
+		target = s.resolveInstallK3sTarget(vmName, args.Target)
+	}
 	if err := s.waitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {
 		return nil, err
 	}
 	uninstall, err := s.runVMExec(vmName, []string{"bash", "-lc", "/usr/local/bin/k3s-uninstall.sh"}, onData, 0)
 	if err != nil || uninstall.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(uninstall.Stderr, uninstall.Stdout, "failed to uninstall K3s from VM"))
+		return nil, fmt.Errorf("%s", firstNonEmpty(uninstall.Stderr, uninstall.Stdout, "failed to uninstall K3s from instance"))
 	}
 	verify, err := s.runVMExec(vmName, []string{"bash", "-lc", "test ! -x /usr/local/bin/k3s"}, onData, 0)
 	if err != nil || verify.ExitCode != 0 {
-		return nil, errors.New("k3s is still installed in VM after uninstall")
+		return nil, errors.New("k3s is still installed in instance after uninstall")
 	}
-	return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "removed", "target": "vm"}, nil
+	return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "removed", "target": target}, nil
 }
 
 func (s *HostOperationsService) ConfigureK3sLoadBalancer(_ map[string]any, _ func(string)) (map[string]any, error) {
@@ -542,6 +665,20 @@ func (s *HostOperationsService) ListNamespaces(vmName string) ([]string, error) 
 
 func (s *HostOperationsService) ListStorageClasses(vmName string) ([]string, error) {
 	data, err := s.getKubernetesList(vmName, "storageclasses", "")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0)
+	for _, item := range data["items"].([]any) {
+		m := item.(map[string]any)
+		meta := m["metadata"].(map[string]any)
+		out = append(out, meta["name"].(string))
+	}
+	return out, nil
+}
+
+func (s *HostOperationsService) ListIngressClasses(vmName string) ([]string, error) {
+	data, err := s.getKubernetesList(vmName, "ingressclasses", "")
 	if err != nil {
 		return nil, err
 	}
@@ -759,6 +896,9 @@ func serviceStatusCommand(serviceName string) []string {
 }
 
 func (s *HostOperationsService) RestartHostService(args RestartHostServiceArgs, onData func(string)) (map[string]string, error) {
+	if err := s.requireSharedHostOwner("restart_host_service"); err != nil {
+		return nil, err
+	}
 	serviceName := strings.TrimSpace(args.ServiceName)
 	if serviceName == "" {
 		return nil, errors.New("serviceName is required")
@@ -785,6 +925,9 @@ func (s *HostOperationsService) RestartHostService(args RestartHostServiceArgs, 
 // scope is explicit and uses non-interactive sudo so MCP cannot hang on a
 // password prompt.
 func (s *HostOperationsService) SetHostServiceState(args SetHostServiceStateArgs, onData func(string)) (map[string]any, error) {
+	if err := s.requireSharedHostOwner("set_host_service_state"); err != nil {
+		return nil, err
+	}
 	serviceName := strings.TrimSpace(args.ServiceName)
 	state := strings.ToLower(strings.TrimSpace(args.State))
 	scope := strings.ToLower(strings.TrimSpace(args.Scope))

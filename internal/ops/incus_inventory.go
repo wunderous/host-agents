@@ -49,18 +49,117 @@ func (s *HostOperationsService) ListVMs(fast bool) (VMListResult, error) {
 	return VMListResult{VMs: vms}, nil
 }
 
-// VMInventoryStats returns running/total VM counts for bridge heartbeat metrics.
+// VMInventoryCapacity describes declared Incus allocations and instance mix.
+// It is intentionally based on Incus configuration, not guest-reported usage,
+// so callers can see oversubscription before the guest becomes unhealthy.
+type VMInventoryCapacity struct {
+	RunningVMCount            int   `json:"runningVmCount"`
+	TotalVMCount              int   `json:"totalVmCount"`
+	RunningVMCPULimitCores    int   `json:"runningVmCpuLimitCores"`
+	TotalVMCPULimitCores      int   `json:"totalVmCpuLimitCores"`
+	RunningVMMemoryLimitBytes int64 `json:"runningVmMemoryLimitBytes"`
+	TotalVMMemoryLimitBytes   int64 `json:"totalVmMemoryLimitBytes"`
+	RunningVMDiskLimitBytes   int64 `json:"runningVmDiskLimitBytes"`
+	TotalVMDiskLimitBytes     int64 `json:"totalVmDiskLimitBytes"`
+	RunningQEMUCount          int   `json:"runningQemuCount"`
+	TotalQEMUCount            int   `json:"totalQemuCount"`
+	RunningContainerCount     int   `json:"runningContainerCount"`
+	TotalContainerCount       int   `json:"totalContainerCount"`
+}
+
+func (s *HostOperationsService) VMInventoryCapacity() (VMInventoryCapacity, error) {
+	items, err := s.listIncusVirtualMachines()
+	if err != nil {
+		return VMInventoryCapacity{}, err
+	}
+	var capacity VMInventoryCapacity
+	for _, item := range items {
+		capacity.TotalVMCount++
+		running := strings.EqualFold(item.Status, "running")
+		isQEMU := strings.EqualFold(mapIncusInstanceType(item.Type), "vm")
+		if isQEMU {
+			capacity.TotalQEMUCount++
+		} else {
+			capacity.TotalContainerCount++
+		}
+		if running {
+			capacity.RunningVMCount++
+			if isQEMU {
+				capacity.RunningQEMUCount++
+			} else {
+				capacity.RunningContainerCount++
+			}
+		}
+		if cpus := extractIncusCPUCount(item); cpus > 0 {
+			capacity.TotalVMCPULimitCores += cpus
+			if running {
+				capacity.RunningVMCPULimitCores += cpus
+			}
+		}
+		if memory := parseCapacityBytes(pickIncusConfigValue(item, "limits.memory")); memory > 0 {
+			capacity.TotalVMMemoryLimitBytes += memory
+			if running {
+				capacity.RunningVMMemoryLimitBytes += memory
+			}
+		}
+		if disk := parseCapacityBytes(pickIncusDiskLimit(item)); disk > 0 {
+			capacity.TotalVMDiskLimitBytes += disk
+			if running {
+				capacity.RunningVMDiskLimitBytes += disk
+			}
+		}
+	}
+	return capacity, nil
+}
+
+// VMInventoryStats preserves the compact heartbeat helper used by older callers.
 func (s *HostOperationsService) VMInventoryStats() (running int, total int, err error) {
-	result, err := s.ListVMs(true)
+	capacity, err := s.VMInventoryCapacity()
 	if err != nil {
 		return 0, 0, err
 	}
-	for _, vm := range result.VMs {
-		if strings.EqualFold(vm.Status, "running") {
-			running++
+	return capacity.RunningVMCount, capacity.TotalVMCount, nil
+}
+
+func pickIncusDiskLimit(item incusListItem) string {
+	if value := strings.TrimSpace(pickIncusConfigValue(item, "limits.disk")); value != "" && value != "0B" && value != "-1" {
+		return value
+	}
+	if size := extractIncusRootDeviceSize(item.Devices); size != "" {
+		return size
+	}
+	return extractIncusRootDeviceSize(item.ExpandedDevices)
+}
+
+func parseCapacityBytes(value string) int64 {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if trimmed == "" || trimmed == "max" {
+		return 0
+	}
+	units := []struct {
+		suffix string
+		factor float64
+	}{
+		{"tib", 1 << 40}, {"tb", 1e12}, {"ti", 1 << 40}, {"t", 1 << 40},
+		{"gib", 1 << 30}, {"gb", 1e9}, {"gi", 1 << 30}, {"g", 1 << 30},
+		{"mib", 1 << 20}, {"mb", 1e6}, {"mi", 1 << 20}, {"m", 1 << 20},
+		{"kib", 1 << 10}, {"kb", 1e3}, {"ki", 1 << 10}, {"k", 1 << 10},
+		{"b", 1},
+	}
+	factor := float64(1)
+	number := trimmed
+	for _, unit := range units {
+		if strings.HasSuffix(trimmed, unit.suffix) {
+			number = strings.TrimSpace(strings.TrimSuffix(trimmed, unit.suffix))
+			factor = unit.factor
+			break
 		}
 	}
-	return running, len(result.VMs), nil
+	parsed, err := strconv.ParseFloat(number, 64)
+	if err != nil || parsed <= 0 || parsed*factor > float64(^uint64(0)>>1) {
+		return 0
+	}
+	return int64(parsed * factor)
 }
 
 func (s *HostOperationsService) GetVMInfo(vmName string, fast bool) (VMInfo, error) {
@@ -68,11 +167,17 @@ func (s *HostOperationsService) GetVMInfo(vmName string, fast bool) (VMInfo, err
 	if vmName == "" {
 		return VMInfo{}, errors.New("vmName is required")
 	}
+	if err := s.assertIncusOwnership(vmName, "get_vm_info"); err != nil {
+		return VMInfo{}, err
+	}
 	items, err := s.listIncusVirtualMachines()
 	if err != nil {
 		return VMInfo{}, err
 	}
 	for _, item := range items {
+		if !s.ownedIncusItem(item) {
+			continue
+		}
 		if item.Name == vmName {
 			return s.mapIncusListItem(item, fast)
 		}
@@ -97,7 +202,7 @@ func (s *HostOperationsService) listIncusVirtualMachines() ([]incusListItem, err
 		if item.Name == "" {
 			continue
 		}
-		if isIncusVirtualMachine(item.Type) {
+		if isIncusVirtualMachine(item.Type) && s.ownedIncusItem(item) {
 			filtered = append(filtered, item)
 		}
 	}
@@ -159,16 +264,16 @@ func buildVMInfoFromIncusListItem(item incusListItem, agentReady *bool, k3sInsta
 	memory := extractIncusMemory(item)
 	disk := extractIncusDisk(item)
 	info := VMInfo{
-		Name:       item.Name,
-		Type:       mapIncusInstanceType(item.Type),
-		Status:     mapIncusStatus(item.Status),
-		State:      map[string]any{"incusStatus": item.Status},
-		IPv4:       normalizeClusterIpv4(extractIPv4FromState(item.State)),
-		Release:    extractIncusRelease(item),
-		ProviderID: "incus",
-		Memory:     memory,
-		Disk:       disk,
-		AgentReady: agentReady,
+		Name:         item.Name,
+		Type:         mapIncusInstanceType(item.Type),
+		Status:       mapIncusStatus(item.Status),
+		State:        map[string]any{"incusStatus": item.Status},
+		IPv4:         normalizeClusterIpv4(extractIPv4FromState(item.State)),
+		Release:      extractIncusRelease(item),
+		ProviderID:   "incus",
+		Memory:       memory,
+		Disk:         disk,
+		AgentReady:   agentReady,
 		K3sInstalled: k3sInstalled,
 	}
 	if cpus > 0 {
@@ -490,6 +595,9 @@ func extractIPv4FromState(state map[string]any) []string {
 }
 
 func (s *HostOperationsService) readIncusInstanceIPv4(vmName string) ([]string, error) {
+	if err := s.assertIncusOwnership(vmName, "read_instance_state"); err != nil {
+		return nil, err
+	}
 	path := fmt.Sprintf("/1.0/instances/%s/state", urlPathEscape(vmName))
 	res, err := s.commandRunner([]string{"query", path}, nil, defaultDiscoveryTimeout)
 	if err != nil {
@@ -544,6 +652,11 @@ func (s *HostOperationsService) probeK3sInstalled(vmName string) bool {
 }
 
 func (s *HostOperationsService) setIncusInstanceConfig(vmName, key, value string) error {
+	if key != oputeIncusOwnerLabel {
+		if err := s.assertIncusOwnership(vmName, "set_instance_config"); err != nil {
+			return err
+		}
+	}
 	res, err := s.commandRunner([]string{"config", "set", vmName, key, value}, nil, defaultDiscoveryTimeout)
 	if err != nil {
 		return err

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/wunderous/host-agents/internal/fingerprint"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 )
 
 type Service struct {
@@ -34,6 +35,7 @@ type Service struct {
 	CollectVMStats       CollectVMStats
 	HostCapabilities     []string
 	CapabilitySummary    map[string]any
+	ResourceSnapshot     func() map[string]any
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -57,7 +59,13 @@ type Options struct {
 	CollectVMStats       CollectVMStats
 	HostCapabilities     []string
 	CapabilitySummary    map[string]any
+	ResourceSnapshot     func() map[string]any
 }
+
+// Keep a stalled edge/tunnel request from wedging the heartbeat loop forever.
+// The loop runs every 30 seconds, so a bounded request leaves room for the
+// next attempt while still allowing normal MCP tool execution to complete.
+var mcpRequestTimeout = 15 * time.Second
 
 func Start(opts Options) *Service {
 	logger := opts.Logger
@@ -88,6 +96,7 @@ func Start(opts Options) *Service {
 		CollectVMStats:       opts.CollectVMStats,
 		HostCapabilities:     opts.HostCapabilities,
 		CapabilitySummary:    opts.CapabilitySummary,
+		ResourceSnapshot:     opts.ResourceSnapshot,
 		stopCh:               make(chan struct{}),
 	}
 	s.wg.Add(1)
@@ -169,6 +178,9 @@ func (s *Service) register() error {
 	if system := systemMetadata(ReadHostSystemStats()); system != nil {
 		metadata["system"] = system
 	}
+	if s.ResourceSnapshot != nil {
+		metadata["resourceAdmission"] = s.ResourceSnapshot()
+	}
 	if len(metadata) > 0 {
 		registration["metadata"] = metadata
 	}
@@ -201,6 +213,9 @@ func (s *Service) heartbeat() error {
 	}
 	if system := systemMetadata(ReadHostSystemStats()); system != nil {
 		metadata["system"] = system
+	}
+	if s.ResourceSnapshot != nil {
+		metadata["resourceAdmission"] = s.ResourceSnapshot()
 	}
 	heartbeatPayload := map[string]any{
 		"agentId":            s.AgentID,
@@ -341,6 +356,10 @@ func (s *Service) callTool(name string, args map[string]any) (map[string]any, er
 }
 
 func (s *Service) callToolWithToken(name string, args map[string]any, token string) (map[string]any, error) {
+	envelopeMeta, err := mcphttp.ModernRequestEnvelope(s.AgentVersion)
+	if err != nil {
+		return nil, err
+	}
 	payload := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -348,22 +367,34 @@ func (s *Service) callToolWithToken(name string, args map[string]any, token stri
 		"params": map[string]any{
 			"name":      name,
 			"arguments": args,
+			"_meta":     envelopeMeta,
 		},
 	}
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.MCPURL, strings.NewReader(string(body)))
+	requestContext, cancel := context.WithTimeout(context.Background(), mcpRequestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestContext, http.MethodPost, s.MCPURL, strings.NewReader(string(body)))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
+	if err := mcphttp.ApplyToolsCallRequestHeaders(req, name); err != nil {
+		return nil, err
+	}
+	mcphttp.ApplyMcpRouteHost(req)
 	req.Header.Set("Authorization", "Bearer "+token)
-	res, err := http.DefaultClient.Do(req)
+	// The timeout must cover response-body reads as well as connection setup;
+	// Streamable HTTP may return headers before the final event arrives.
+	client := &http.Client{Timeout: mcpRequestTimeout}
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
-	raw, _ := io.ReadAll(res.Body)
+	raw, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
 	if res.StatusCode == http.StatusUnauthorized {
 		return nil, fmt.Errorf("401 unauthorized")
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	wslGpuLibHostPath = "/usr/lib/wsl/lib"
+	wslGpuLibHostPath  = "/usr/lib/wsl/lib"
 	wslGpuLibGuestPath = "/usr/lib/wsl/lib"
 )
 
@@ -17,6 +17,8 @@ const (
 type ProvisionContainerArgs struct {
 	ContainerName string `json:"containerName"`
 	Image         string `json:"image,omitempty"`
+	CPUs          int    `json:"cpus,omitempty"`
+	Memory        string `json:"memory,omitempty"`
 	Disk          string `json:"disk,omitempty"`
 	GPU           bool   `json:"gpu,omitempty"`
 	WSLGpuLibs    bool   `json:"wslGpuLibs,omitempty"`
@@ -56,6 +58,9 @@ func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, 
 		nesting = *args.Nesting
 	}
 	if existing, err := s.incusInstanceExists(name); err == nil && existing {
+		if err := s.assertIncusOwnership(name, "provision_container"); err != nil {
+			return ContainerStatusResult{}, err
+		}
 		if onData != nil {
 			onData(fmt.Sprintf("Reusing existing Incus container %q", name))
 		}
@@ -88,7 +93,7 @@ func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, 
 		}
 		return ContainerStatusResult{ContainerName: name, Image: image, Status: "running", InstanceType: "container"}, nil
 	}
-	if err := s.launchIncusContainer(name, image, disk, nesting, onData); err != nil {
+	if err := s.launchIncusContainer(name, image, disk, args.CPUs, strings.TrimSpace(args.Memory), nesting, onData, 10*time.Minute); err != nil {
 		return ContainerStatusResult{}, err
 	}
 	if args.GPU {
@@ -123,18 +128,33 @@ func (s *HostOperationsService) incusInstanceExists(name string) (bool, error) {
 	return strings.TrimSpace(res.Stdout) != "", nil
 }
 
-func (s *HostOperationsService) launchIncusContainer(name, image, disk string, nesting bool, onData func(string)) error {
+func (s *HostOperationsService) launchIncusContainer(name, image, disk string, cpus int, memory string, nesting bool, onData func(string), timeout time.Duration) error {
 	if onData != nil {
 		onData(fmt.Sprintf("Launching Incus system container %q...", name))
 	}
 	launch := []string{"launch", image, name, "--config", "boot.autostart=true"}
+	if owner := s.ownerConfigValue(); owner != "" {
+		launch = append(launch, "--config", oputeIncusOwnerLabel+"="+owner)
+		if agentID := s.ownerAgentConfigValue(); agentID != "" {
+			launch = append(launch, "--config", oputeIncusAgentLabel+"="+agentID)
+		}
+	}
 	if nesting {
 		launch = append(launch, "--config", "security.nesting=true")
+	}
+	if cpus > 0 {
+		launch = append(launch, "--config", fmt.Sprintf("limits.cpu=%d", cpus))
+	}
+	if memory != "" {
+		launch = append(launch, "--config", "limits.memory="+memory)
 	}
 	if disk != "" {
 		launch = append(launch, "--device", "root,size="+disk)
 	}
-	launched, err := s.commandRunner(launch, onData, 10*time.Minute)
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	launched, err := s.commandRunner(launch, onData, timeout)
 	if err != nil || launched.ExitCode != 0 {
 		return fmt.Errorf("launch container: %s", firstNonEmpty(launched.Stderr, launched.Stdout, errString(err, fmt.Sprintf("incus exited %d", launched.ExitCode))))
 	}
@@ -211,6 +231,9 @@ func evaluateSystemContainerGPUProbe(guestStdout string) (gpuOK bool, status str
 }
 
 func (s *HostOperationsService) ensureIncusDevice(instance, deviceName string, addArgs []string) error {
+	if err := s.assertIncusOwnership(instance, "configure_instance_device"); err != nil {
+		return err
+	}
 	show, err := s.commandRunner([]string{"config", "device", "show", instance}, nil, 30*time.Second)
 	if err == nil && show.ExitCode == 0 && strings.Contains(show.Stdout, deviceName+":") {
 		return nil
@@ -324,7 +347,7 @@ func (s *HostOperationsService) ProbeGPUContainer(onData func(string)) (map[stri
 	if onData != nil {
 		onData(fmt.Sprintf("Launching disposable GPU probe container %q...", probeName))
 	}
-	if err := s.launchIncusContainer(probeName, "images:ubuntu/24.04", "4GiB", false, onData); err != nil {
+	if err := s.launchIncusContainer(probeName, "images:ubuntu/24.04", "4GiB", 0, "", false, onData, 10*time.Minute); err != nil {
 		result["status"] = "probe_launch_failed"
 		result["error"] = err.Error()
 		return result, nil

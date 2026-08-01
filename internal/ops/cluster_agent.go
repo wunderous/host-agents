@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/heartbeat"
 )
 
 const (
@@ -184,6 +186,11 @@ func (s *HostOperationsService) resolveBridgeEndpointForVM(
 	}
 
 	pushCandidate(s.readVMDefaultGateway(vmName, onData))
+	pushCandidate(s.resolveGuestBridgeListenHost())
+	if cpcIP := s.resolveCpcContainerBridgeIPv4(); cpcIP != "" {
+		pushCandidate(cpcIP)
+	}
+	pushCandidate(strings.TrimSpace(heartbeat.PrimaryLANIPv4()))
 	pushCandidate(resolveHyperVDefaultSwitchIPv4())
 
 	for _, host := range []string{
@@ -262,6 +269,19 @@ func (s *HostOperationsService) InstallClusterAgent(args InstallClusterAgentArgs
 	bridgeURL := strings.TrimSpace(args.BridgeURL)
 	if bridgeURL == "" {
 		bridgeURL = resolveBridgeURLFromEnv()
+	}
+	if err := s.ensureGuestBridgeReachability(bridgeURL, args.BridgePort, onData); err != nil && onData != nil {
+		onData(fmt.Sprintf("guest bridge reachability setup skipped: %v", err))
+	}
+	if listenHost := s.resolveGuestBridgeListenHost(); listenHost != "" {
+		port := args.BridgePort
+		if port <= 0 {
+			port = defaultBridgePort()
+		}
+		guestBridgeURL := buildBridgeEndpointURL(listenHost, port)
+		if bridgeURL == "" || isLoopbackBridgeURL(bridgeURL) || !s.probeBridgeHealthFromGuest(vmName, bridgeURL, onData) {
+			bridgeURL = guestBridgeURL
+		}
 	}
 	resolvedBridgeURL, err := s.resolveBridgeEndpointForVM(vmName, bridgeURL, args.BridgePort, onData)
 	if err != nil {

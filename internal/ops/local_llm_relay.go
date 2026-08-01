@@ -29,9 +29,10 @@ type localLLMRelaySession struct {
 }
 
 type localLLMRelayManager struct {
-	mu       sync.Mutex
-	sessions map[string]*localLLMRelaySession
-	persist  bool
+	mu        sync.Mutex
+	sessions  map[string]*localLLMRelaySession
+	persist   bool
+	configDir string
 }
 
 func newLocalLLMRelayManager() *localLLMRelayManager {
@@ -39,7 +40,15 @@ func newLocalLLMRelayManager() *localLLMRelayManager {
 }
 
 func newPersistentLocalLLMRelayManager() *localLLMRelayManager {
-	manager := &localLLMRelayManager{sessions: map[string]*localLLMRelaySession{}, persist: true}
+	dir, err := localLLMRelayConfigDir()
+	if err != nil {
+		dir = ""
+	}
+	return newPersistentLocalLLMRelayManagerAt(dir)
+}
+
+func newPersistentLocalLLMRelayManagerAt(configDir string) *localLLMRelayManager {
+	manager := &localLLMRelayManager{sessions: map[string]*localLLMRelaySession{}, persist: true, configDir: strings.TrimSpace(configDir)}
 	manager.restore()
 	return manager
 }
@@ -104,7 +113,7 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 		m.mu.Unlock()
 		closeLocalLLMRelaySession(existing)
 		if m.persist {
-			_ = removePersistedLocalLLMRelay(args.SessionID)
+			_ = m.removePersistedLocalLLMRelay(args.SessionID)
 		}
 	} else {
 		// A previous generic exposure may have been removed from the control
@@ -123,7 +132,7 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 	if stale != nil {
 		closeLocalLLMRelaySession(stale)
 		if m.persist {
-			_ = removePersistedLocalLLMRelay(stale.id)
+			_ = m.removePersistedLocalLLMRelay(stale.id)
 		}
 	}
 	target, _ := url.Parse(fmt.Sprintf("http://%s:%d", args.TargetHost, args.TargetPort))
@@ -201,7 +210,7 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 	m.mu.Unlock()
 	go func() { _ = session.server.Serve(ln) }()
 	if m.persist {
-		if err := persistLocalLLMRelayArgs(args); err != nil {
+		if err := m.persistLocalLLMRelayArgs(args); err != nil {
 			closeLocalLLMRelaySession(session)
 			m.mu.Lock()
 			delete(m.sessions, args.SessionID)
@@ -219,13 +228,13 @@ func (m *localLLMRelayManager) stop(id string) bool {
 	m.mu.Unlock()
 	if session == nil {
 		if m.persist {
-			_ = removePersistedLocalLLMRelay(id)
+			_ = m.removePersistedLocalLLMRelay(id)
 		}
 		return false
 	}
 	closeLocalLLMRelaySession(session)
 	if m.persist {
-		_ = removePersistedLocalLLMRelay(id)
+		_ = m.removePersistedLocalLLMRelay(id)
 	}
 	return true
 }
@@ -238,19 +247,37 @@ func localLLMRelayConfigDir() (string, error) {
 	return filepath.Join(home, ".config", "opute", "local-llm-relays"), nil
 }
 
-func localLLMRelayConfigPath(sessionID string) (string, error) {
+func (m *localLLMRelayManager) relayConfigDir() (string, error) {
+	if strings.TrimSpace(m.configDir) != "" {
+		return m.configDir, nil
+	}
+	return localLLMRelayConfigDir()
+}
+
+func localLLMRelayConfigPathInDir(dir, sessionID string) (string, error) {
 	if strings.TrimSpace(sessionID) == "" || strings.ContainsAny(sessionID, "/\\\r\n\x00") {
 		return "", fmt.Errorf("sessionId is invalid")
 	}
-	dir, err := localLLMRelayConfigDir()
-	if err != nil {
-		return "", err
+	if strings.TrimSpace(dir) == "" {
+		return "", fmt.Errorf("relay config directory is required")
 	}
 	return filepath.Join(dir, sessionID+".json"), nil
 }
 
-func persistLocalLLMRelayArgs(args LocalLLMRelayArgs) error {
-	path, err := localLLMRelayConfigPath(args.SessionID)
+func localLLMRelayConfigPath(sessionID string) (string, error) {
+	dir, err := localLLMRelayConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return localLLMRelayConfigPathInDir(dir, sessionID)
+}
+
+func (m *localLLMRelayManager) persistLocalLLMRelayArgs(args LocalLLMRelayArgs) error {
+	dir, err := m.relayConfigDir()
+	if err != nil {
+		return err
+	}
+	path, err := localLLMRelayConfigPathInDir(dir, args.SessionID)
 	if err != nil {
 		return err
 	}
@@ -264,8 +291,12 @@ func persistLocalLLMRelayArgs(args LocalLLMRelayArgs) error {
 	return os.WriteFile(path, append(content, '\n'), 0600)
 }
 
-func removePersistedLocalLLMRelay(sessionID string) error {
-	path, err := localLLMRelayConfigPath(sessionID)
+func (m *localLLMRelayManager) removePersistedLocalLLMRelay(sessionID string) error {
+	dir, err := m.relayConfigDir()
+	if err != nil {
+		return err
+	}
+	path, err := localLLMRelayConfigPathInDir(dir, sessionID)
 	if err != nil {
 		return err
 	}
@@ -276,7 +307,7 @@ func removePersistedLocalLLMRelay(sessionID string) error {
 }
 
 func (m *localLLMRelayManager) restore() {
-	dir, err := localLLMRelayConfigDir()
+	dir, err := m.relayConfigDir()
 	if err != nil {
 		return
 	}

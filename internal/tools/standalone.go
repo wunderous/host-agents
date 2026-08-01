@@ -184,6 +184,7 @@ var StandaloneToolNames = map[string]bool{
 	"restart_cluster":                     true,
 	"uninstall_k3s":                       true,
 	"list_namespaces":                     true,
+	"list_ingress_classes":                true,
 	"list_pods":                           true,
 	"list_services":                       true,
 	"install_postgresql":                  true,

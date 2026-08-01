@@ -47,7 +47,7 @@ func NewHTTPServer(opts HTTPOptions) *HTTPServer {
 	}
 	h.mcpHandler = mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return opts.HostServer.MCP()
-	}, &mcp.StreamableHTTPOptions{JSONResponse: true})
+	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.handleHealth)
 	mux.HandleFunc("/mcp", h.handleMCP)
@@ -67,6 +67,12 @@ func (h *HTTPServer) Addr() string {
 }
 
 func (h *HTTPServer) Start() error {
+	if h == nil || h.httpServer == nil {
+		return fmt.Errorf("HTTP transport is not configured")
+	}
+	if h.httpServer.Addr == ":0" || strings.HasSuffix(h.httpServer.Addr, ":0") {
+		return fmt.Errorf("HOST_MCP_PORT must be positive for direct HTTP mode")
+	}
 	h.logger.Info("HTTP transport listening", "addr", h.httpServer.Addr)
 	return h.httpServer.ListenAndServe()
 }

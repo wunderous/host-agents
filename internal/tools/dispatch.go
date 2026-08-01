@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/resource"
 )
 
 // DispatchTool executes a host MCP tool via HostOperationsService and returns an MCP CallToolResult.
@@ -441,13 +442,28 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, fmt.Sprintf("Firewall rule applied=%v", out.Applied)), nil
 
-	case "create_vm", "provision_vm":
+	case "create_vm":
 		parsed := provisionArgs(args)
+		if strings.TrimSpace(parsed.InstanceType) == "" {
+			parsed.InstanceType = "virtual-machine"
+		}
 		out, err := svc.ProvisionVM(parsed, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Created VM '%s' from image '%s'.", out.VMName, out.Image)), nil
+
+	case "provision_vm":
+		parsed := provisionArgs(args)
+		out, err := svc.ProvisionVM(parsed, onData)
+		if err != nil {
+			return nil, err
+		}
+		kind := strings.TrimSpace(out.InstanceType)
+		if kind == "" {
+			kind = "container"
+		}
+		return structuredResult(out, fmt.Sprintf("Provisioned %s '%s' from image '%s'.", kind, out.VMName, out.Image)), nil
 
 	case "start_vm":
 		out, err := svc.StartVM(ops.VMScopedArgs{VMName: stringField(args, "vmName")}, onData)
@@ -854,6 +870,14 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		out := map[string]any{"storageClasses": storageClasses}
 		return structuredResult(out, ""), nil
 
+	case "list_ingress_classes":
+		vmName := stringField(args, "vmName")
+		ingressClasses, err := svc.ListIngressClasses(vmName)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(map[string]any{"classes": ingressClasses, "ingressClasses": ingressClasses}, ""), nil
+
 	case "list_pods":
 		vmName := stringField(args, "vmName")
 		namespace := stringField(args, "namespace")
@@ -917,6 +941,19 @@ func structuredResult(structured any, text string) *mcp.CallToolResult {
 
 // ErrorResult builds an MCP error tool result.
 func ErrorResult(err error) *mcp.CallToolResult {
+	if admissionErr, ok := err.(*resource.AdmissionError); ok {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "Error: " + err.Error()}},
+			StructuredContent: map[string]any{
+				"code":         admissionErr.Code,
+				"class":        admissionErr.Class,
+				"pressure":     admissionErr.Pressure,
+				"reason":       admissionErr.Reason,
+				"retryAfterMs": admissionErr.RetryAfterMs,
+			},
+			IsError: true,
+		}
+	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: "Error: " + err.Error()}},
 		IsError: true,
@@ -1028,11 +1065,12 @@ func provisionArgs(args map[string]any) ops.ProvisionVMArgs {
 		vmName = stringField(args, "name")
 	}
 	return ops.ProvisionVMArgs{
-		VMName: vmName,
-		Image:  stringField(args, "image"),
-		CPUs:   intField(args, "cpus"),
-		Memory: stringField(args, "memory"),
-		Disk:   stringField(args, "disk"),
+		VMName:       vmName,
+		Image:        stringField(args, "image"),
+		CPUs:         intField(args, "cpus"),
+		Memory:       stringField(args, "memory"),
+		Disk:         stringField(args, "disk"),
+		InstanceType: stringField(args, "instanceType"),
 	}
 }
 
