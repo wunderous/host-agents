@@ -77,6 +77,9 @@
     {"name": "run_sql", "classification": "mutation", "support": "experimental"},
     {"name": "create_cloudflare_tunnel", "classification": "credential_bearing", "support": "experimental"},
     {"name": "get_cloudflare_tunnel_status", "classification": "read_only", "support": "experimental"},
-    {"name": "delete_cloudflare_tunnel", "classification": "destructive", "support": "experimental"}
+    {"name": "delete_cloudflare_tunnel", "classification": "destructive", "support": "experimental"},
+    {"name": "ensure_platform_postgres", "classification": "mutation", "support": "experimental"},
+    {"name": "get_platform_postgres_status", "classification": "read_only", "support": "experimental"},
+    {"name": "remove_platform_postgres", "classification": "destructive", "support": "experimental"}
   ]
 }

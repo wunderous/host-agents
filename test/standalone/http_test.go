@@ -51,7 +51,7 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 	env := make([]string, 0, len(os.Environ()))
 	for _, assignment := range os.Environ() {
 		key, _, _ := strings.Cut(assignment, "=")
-		if strings.HasPrefix(key, "OPUTE_") || key == "MCP_AUTH_TOKEN" || key == "BRIDGE_TOKEN" {
+		if strings.HasPrefix(key, "OPUTE_") || key == "MCP_AUTH_TOKEN" {
 			continue
 		}
 		env = append(env, assignment)

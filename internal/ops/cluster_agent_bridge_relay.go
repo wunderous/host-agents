@@ -57,10 +57,8 @@ func resolveHyperVDefaultSwitchIPv4() string {
 }
 
 func readGuestBridgeListenHost() string {
-	for _, key := range []string{"OPUTE_BRIDGE_GUEST_HOST", "BRIDGE_GUEST_HOST"} {
-		if host := strings.TrimSpace(os.Getenv(key)); host != "" {
-			return host
-		}
+	if host := strings.TrimSpace(os.Getenv("OPUTE_PLATFORM_GUEST_HOST")); host != "" {
+		return host
 	}
 	if bridge := heartbeat.IncusBridgeIPv4(); bridge != "" {
 		return bridge
@@ -88,10 +86,8 @@ func (s *HostOperationsService) resolveCpcContainerBridgeIPv4() string {
 }
 
 func (s *HostOperationsService) resolveGuestBridgeListenHost() string {
-	for _, key := range []string{"OPUTE_BRIDGE_GUEST_HOST", "BRIDGE_GUEST_HOST"} {
-		if host := strings.TrimSpace(os.Getenv(key)); host != "" {
-			return host
-		}
+	if host := strings.TrimSpace(os.Getenv("OPUTE_PLATFORM_GUEST_HOST")); host != "" {
+		return host
 	}
 	if ip := s.resolveCpcContainerBridgeIPv4(); ip != "" {
 		return ip

@@ -119,6 +119,9 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"delete_cloudflared_connector":  true,
 		"configure_service_domain":      true,
 		"remove_service_domain":         true,
+		"ensure_platform_postgres":      true,
+		"get_platform_postgres_status":  true,
+		"remove_platform_postgres":      true,
 	}
 	seen := make(map[string]bool, len(needed))
 	for _, definition := range defs {
@@ -166,6 +169,14 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"fileEncoding": map[string]any{"type": "string", "enum": []string{"utf8", "base64"}},
 		}},
 		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "ensure_platform_postgres", Title: "Ensure platform PostgreSQL", Description: "Provision or reuse the persistent host-owned PostgreSQL instance for Opute Platform and Task Ledger. Returns redacted connection metadata; it is not a SQL proxy.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"dataDir": map[string]any{"type": "string"}, "bindHost": map[string]any{"type": "string"}, "port": map[string]any{"type": "integer"}, "allowedCidrs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "installIfMissing": map[string]any{"type": "boolean"},
+		}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "get_platform_postgres_status", Title: "Get platform PostgreSQL status", Description: "Read the host-owned platform PostgreSQL service and direct-query readiness without returning credentials.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"dataDir": map[string]any{"type": "string"}, "bindHost": map[string]any{"type": "string"}, "port": map[string]any{"type": "integer"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "remove_platform_postgres", Title: "Remove platform PostgreSQL", Description: "Destructively remove the host-owned platform PostgreSQL service and data. Requires confirm=true.", InputSchema: map[string]any{"type": "object", "required": []string{"confirm"}, "properties": map[string]any{"dataDir": map[string]any{"type": "string"}, "bindHost": map[string]any{"type": "string"}, "port": map[string]any{"type": "integer"}, "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name:         "ensure_host_tool",
 		Title:        "Ensure generic host tool",

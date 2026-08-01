@@ -4578,5 +4578,26 @@
     "description": "Launch a disposable Incus system container, probe GPU visibility and NVML, then delete it.",
     "inputSchema": {"type":"object"},
     "outputSchema": {"type":"object"}
+  },
+  {
+    "name": "ensure_platform_postgres",
+    "title": "Ensure platform PostgreSQL",
+    "description": "Provision or reuse the persistent host-owned PostgreSQL instance for Opute Platform and Task Ledger. Returns redacted connection metadata; it is not a SQL proxy.",
+    "inputSchema": {"type":"object","properties":{"dataDir":{"type":"string"},"bindHost":{"type":"string"},"port":{"type":"integer"},"allowedCidrs":{"type":"array","items":{"type":"string"}},"installIfMissing":{"type":"boolean"}}},
+    "outputSchema": {"type":"object"}
+  },
+  {
+    "name": "get_platform_postgres_status",
+    "title": "Get platform PostgreSQL status",
+    "description": "Read host-owned platform PostgreSQL service and direct-query readiness without returning credentials.",
+    "inputSchema": {"type":"object","properties":{"dataDir":{"type":"string"},"bindHost":{"type":"string"},"port":{"type":"integer"}}},
+    "outputSchema": {"type":"object"}
+  },
+  {
+    "name": "remove_platform_postgres",
+    "title": "Remove platform PostgreSQL",
+    "description": "Destructively remove host-owned platform PostgreSQL data. Requires confirm=true.",
+    "inputSchema": {"type":"object","required":["confirm"],"properties":{"dataDir":{"type":"string"},"bindHost":{"type":"string"},"port":{"type":"integer"},"confirm":{"type":"boolean"}}},
+    "outputSchema": {"type":"object"}
   }
 ]

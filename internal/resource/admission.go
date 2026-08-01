@@ -40,7 +40,7 @@ func DefaultConfig(lockDir string) Config {
 		MaxNormal: 2,
 		MaxHeavy:  1,
 		MaxQueued: 16,
-		DiskPaths: []string{"/", "/mnt/c"},
+		DiskPaths: []string{"/"},
 	}
 }
 
@@ -96,7 +96,7 @@ func NewCoordinator(config Config) (*Coordinator, error) {
 		config.MaxQueued = 16
 	}
 	if len(config.DiskPaths) == 0 {
-		config.DiskPaths = []string{"/", "/mnt/c"}
+		config.DiskPaths = []string{"/"}
 	}
 	lock, err := newHostLock(config.LockDir)
 	if err != nil {

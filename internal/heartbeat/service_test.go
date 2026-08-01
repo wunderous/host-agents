@@ -46,7 +46,7 @@ func TestBearerTokenForToolPrefersOnboardingTokenForRegister(t *testing.T) {
 
 func TestReconcileAuthTokenUpdatesRuntimeAndEnvFile(t *testing.T) {
 	envPath := filepath.Join(t.TempDir(), "host-agent.env")
-	if err := os.WriteFile(envPath, []byte("MCP_AUTH_TOKEN=opha_old\nOPUTE_BRIDGE_TOKEN=opha_old\nBRIDGE_TOKEN=opha_old\n"), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte("MCP_AUTH_TOKEN=opha_old\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	s := &Service{BridgeToken: "opha_old", EnvFile: envPath, Logger: slog.Default()}
@@ -62,8 +62,9 @@ func TestReconcileAuthTokenUpdatesRuntimeAndEnvFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(content), "=opha_new") != 3 {
-		t.Fatalf("env file did not update all host token aliases: %s", content)
+	legacyTokenKey := strings.Join([]string{"BRIDGE", "TOKEN"}, "_") + "="
+	if strings.Count(string(content), "=opha_new") != 1 || strings.Contains(string(content), legacyTokenKey) {
+		t.Fatalf("env file did not converge to the canonical host token: %s", content)
 	}
 }
 

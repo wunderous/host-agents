@@ -20,10 +20,11 @@ type HostDiskStats struct {
 }
 
 func defaultDiskPaths() []string {
+	// Host-agent work (including OCI builds and Incus state) is stored in the
+	// Linux/WSL filesystem. The Windows mount can be configured explicitly when
+	// a deployment writes durable host state there, but it must not make normal
+	// WSL admission fail because an unrelated Windows volume is low on space.
 	paths := []string{"/"}
-	if _, err := os.Stat("/mnt/c"); err == nil {
-		paths = append(paths, "/mnt/c")
-	}
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
 		paths = append(paths, filepath.Clean(home))
 	}

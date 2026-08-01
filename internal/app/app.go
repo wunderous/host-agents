@@ -156,6 +156,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 			}
 			hb = heartbeat.Start(heartbeat.Options{
 				AgentID:              cfg.RemoteAgentID,
+				InstanceID:           cfg.InstanceID,
 				MCPURL:               cfg.MCPURL,
 				BridgeToken:          cfg.BridgeToken,
 				RemoteAgentAuthToken: cfg.RemoteAgentAuthToken,

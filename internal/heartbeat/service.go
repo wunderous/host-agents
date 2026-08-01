@@ -19,6 +19,7 @@ import (
 
 type Service struct {
 	AgentID              string
+	InstanceID           string
 	MCPURL               string
 	BridgeToken          string
 	RemoteAgentAuthToken string
@@ -43,6 +44,7 @@ type Service struct {
 
 type Options struct {
 	AgentID              string
+	InstanceID           string
 	MCPURL               string
 	BridgeToken          string
 	RemoteAgentAuthToken string
@@ -80,6 +82,7 @@ func Start(opts Options) *Service {
 	}
 	s := &Service{
 		AgentID:              opts.AgentID,
+		InstanceID:           opts.InstanceID,
 		MCPURL:               opts.MCPURL,
 		BridgeToken:          opts.BridgeToken,
 		RemoteAgentAuthToken: opts.RemoteAgentAuthToken,
@@ -155,6 +158,7 @@ func (s *Service) loop() {
 func (s *Service) register() error {
 	registration := map[string]any{
 		"agentId":            s.AgentID,
+		"instanceId":         s.InstanceID,
 		"hostName":           s.HostName,
 		"fingerprint":        s.Fingerprint.Fingerprint,
 		"fingerprintVersion": s.Fingerprint.FingerprintVersion,
@@ -219,6 +223,7 @@ func (s *Service) heartbeat() error {
 	}
 	heartbeatPayload := map[string]any{
 		"agentId":            s.AgentID,
+		"instanceId":         s.InstanceID,
 		"sentAt":             time.Now().UTC().Format(time.RFC3339),
 		"fingerprint":        s.Fingerprint.Fingerprint,
 		"fingerprintVersion": s.Fingerprint.FingerprintVersion,
@@ -321,15 +326,25 @@ func persistAuthToken(path, token string) error {
 	}
 	lines := strings.Split(string(content), "\n")
 	found := false
-	for i, line := range lines {
-		if strings.HasPrefix(line, "MCP_AUTH_TOKEN=") || strings.HasPrefix(line, "OPUTE_BRIDGE_TOKEN=") || strings.HasPrefix(line, "BRIDGE_TOKEN=") {
-			key := strings.SplitN(line, "=", 2)[0]
-			lines[i] = key + "=" + token
-			found = true
+	cleaned := make([]string, 0, len(lines))
+	for _, line := range lines {
+		legacyTokenKeys := []string{
+			strings.Join([]string{"OPUTE", "BRIDGE", "TOKEN"}, "_") + "=",
+			strings.Join([]string{"BRIDGE", "TOKEN"}, "_") + "=",
 		}
+		if strings.HasPrefix(line, legacyTokenKeys[0]) || strings.HasPrefix(line, legacyTokenKeys[1]) {
+			continue
+		}
+		if strings.HasPrefix(line, "MCP_AUTH_TOKEN=") {
+			cleaned = append(cleaned, "MCP_AUTH_TOKEN="+token)
+			found = true
+			continue
+		}
+		cleaned = append(cleaned, line)
 	}
+	lines = cleaned
 	if !found {
-		lines = append(lines, "MCP_AUTH_TOKEN="+token, "OPUTE_BRIDGE_TOKEN="+token, "BRIDGE_TOKEN="+token)
+		lines = append(lines, "MCP_AUTH_TOKEN="+token)
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".host-agent.env.*")
 	if err != nil {

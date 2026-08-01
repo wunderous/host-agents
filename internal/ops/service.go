@@ -1021,9 +1021,7 @@ func (s *HostOperationsService) RecoverBridge(ctx context.Context, onData func(s
 
 func probeBridgeHealth(ctx context.Context) (BridgeDiagnosticResult, error) {
 	port := 9093
-	if p := strings.TrimSpace(os.Getenv("BRIDGE_PORT")); p != "" {
-		fmt.Sscanf(p, "%d", &port)
-	} else if p := strings.TrimSpace(os.Getenv("PLATFORM_MCP_PORT")); p != "" {
+	if p := strings.TrimSpace(os.Getenv("PLATFORM_MCP_PORT")); p != "" {
 		fmt.Sscanf(p, "%d", &port)
 	}
 	bridgeURL := envOr("BRIDGE_URL", fmt.Sprintf("http://127.0.0.1:%d", port))
@@ -1166,12 +1164,12 @@ func envOr(key, fallback string) string {
 }
 
 func resolveBridgeURLFromEnv() string {
-	for _, key := range []string{"BRIDGE_URL", "OPUTE_BRIDGE_PUBLIC_URL", "BRIDGE_PUBLIC_URL"} {
+	for _, key := range []string{"OPUTE_PLATFORM_PUBLIC_URL", "OPUTE_PLATFORM_URL"} {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 			return strings.TrimRight(v, "/")
 		}
 	}
-	port := envOr("BRIDGE_PORT", envOr("PLATFORM_MCP_PORT", "9093"))
+	port := envOr("PLATFORM_MCP_PORT", "9093")
 	return fmt.Sprintf("http://127.0.0.1:%s", port)
 }
 
@@ -1210,7 +1208,30 @@ type relaySession struct {
 	targetHost string
 	targetPort int
 	listener   net.Listener
+	activeMu   *sync.Mutex
 	active     map[net.Conn]struct{}
+}
+
+func (s *relaySession) track(conn net.Conn) {
+	s.activeMu.Lock()
+	s.active[conn] = struct{}{}
+	s.activeMu.Unlock()
+}
+
+func (s *relaySession) untrack(conn net.Conn) {
+	s.activeMu.Lock()
+	delete(s.active, conn)
+	s.activeMu.Unlock()
+}
+
+func (s *relaySession) activeConnections() []net.Conn {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	connections := make([]net.Conn, 0, len(s.active))
+	for conn := range s.active {
+		connections = append(connections, conn)
+	}
+	return connections
 }
 
 func newTCPRelayManager() *tcpRelayManager {
@@ -1263,6 +1284,7 @@ func (m *tcpRelayManager) startRelay(sessionID, listenHost string, listenPort in
 		targetHost: targetHost,
 		targetPort: targetPort,
 		listener:   ln,
+		activeMu:   &sync.Mutex{},
 		active:     make(map[net.Conn]struct{}),
 	}
 	m.sessions[sessionID] = session
@@ -1288,8 +1310,8 @@ func (m *tcpRelayManager) pipe(session *relaySession, client net.Conn) {
 		client.Close()
 		return
 	}
-	session.active[client] = struct{}{}
-	session.active[upstream] = struct{}{}
+	session.track(client)
+	session.track(upstream)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -1307,8 +1329,8 @@ func (m *tcpRelayManager) pipe(session *relaySession, client net.Conn) {
 		wg.Wait()
 		upstream.Close()
 		client.Close()
-		delete(session.active, client)
-		delete(session.active, upstream)
+		session.untrack(client)
+		session.untrack(upstream)
 	}()
 }
 
@@ -1329,7 +1351,7 @@ func (m *tcpRelayManager) stopRelay(sessionID string) bool {
 	delete(m.portToSession, session.listenPort)
 	m.mu.Unlock()
 
-	for conn := range session.active {
+	for _, conn := range session.activeConnections() {
 		conn.Close()
 	}
 	session.listener.Close()

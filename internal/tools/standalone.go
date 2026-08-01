@@ -153,6 +153,9 @@ var StandaloneToolNames = map[string]bool{
 	"get_host_info":                       true,
 	"check_local_prerequisites":           true,
 	"get_local_status":                    true,
+	"ensure_platform_postgres":            true,
+	"get_platform_postgres_status":        true,
+	"remove_platform_postgres":            true,
 	"check_local_llm_prerequisites":       true,
 	"list_local_llm_models":               true,
 	"probe_local_llm":                     true,
@@ -264,6 +267,8 @@ var standaloneMutationToolNames = map[string]bool{
 	"remove_local_llm_k3s_proxy":          true,
 	"ensure_cloudflared_tunnel":           true,
 	"remove_local_llm_cloudflared_tunnel": true,
+	"ensure_platform_postgres":            true,
+	"remove_platform_postgres":            true,
 }
 
 func IsStandaloneMutation(name string) bool {
@@ -274,6 +279,9 @@ func StandaloneToolDefinitions() []ToolDefinition {
 	defs := []ToolDefinition{
 		{Name: "check_local_prerequisites", Description: "Check local Incus, Kubernetes, PostgreSQL, and Cloudflare prerequisites.", InputSchema: objectSchema(nil, nil)},
 		{Name: "get_local_status", Description: "Return local provider and standalone agent status.", InputSchema: objectSchema(nil, nil)},
+		{Name: "ensure_platform_postgres", Description: "Provision or reuse the persistent host-owned PostgreSQL instance for Opute Platform and Task Ledger. Returns redacted connection metadata and never acts as a SQL proxy.", InputSchema: objectSchema(map[string]any{"dataDir": map[string]any{"type": "string"}, "bindHost": map[string]any{"type": "string"}, "port": map[string]any{"type": "integer"}, "allowedCidrs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "installIfMissing": map[string]any{"type": "boolean"}}, nil)},
+		{Name: "get_platform_postgres_status", Description: "Read host-owned platform PostgreSQL service and direct-query readiness without returning credentials.", InputSchema: objectSchema(map[string]any{"dataDir": map[string]any{"type": "string"}, "bindHost": map[string]any{"type": "string"}, "port": map[string]any{"type": "integer"}}, nil)},
+		{Name: "remove_platform_postgres", Description: "Destructively remove host-owned platform PostgreSQL data. Requires confirm=true.", InputSchema: objectSchema(map[string]any{"dataDir": map[string]any{"type": "string"}, "bindHost": map[string]any{"type": "string"}, "port": map[string]any{"type": "integer"}, "confirm": map[string]any{"type": "boolean"}}, []string{"confirm"})},
 		{Name: "check_local_llm_prerequisites", Description: "Inspect local Ollama install readiness and GPU/CUDA diagnostics. Returns blockers and remediationHints for host-OS driver prep; does not install NVIDIA drivers or change laptop GPU Eco/MUX modes.", InputSchema: objectSchema(nil, nil)},
 		{Name: "list_local_llm_models", Description: "List local Ollama models.", InputSchema: objectSchema(nil, nil)},
 		{Name: "probe_local_llm", Description: "Probe the local Ollama endpoint. Optionally warm-load modelRef or modelPreset (gemma|qwen) with numGpu/numCtx and return loadError/remediationHints plus GPU sizeVramBytes.", InputSchema: objectSchema(map[string]any{"includeChat": map[string]any{"type": "boolean"}, "modelRef": map[string]any{"type": "string"}, "modelPreset": map[string]any{"type": "string", "enum": []any{"gemma", "qwen"}}, "numGpu": map[string]any{"type": "integer"}, "numCtx": map[string]any{"type": "integer"}}, nil)},

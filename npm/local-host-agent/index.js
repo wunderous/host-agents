@@ -291,7 +291,7 @@ async function waitForOwnedHealth(url, instanceId, timeoutMs = HEALTH_WAIT_MS, f
 function buildAgentEnv(instanceId = '') {
   const env = { ...process.env }
   for (const key of Object.keys(env)) {
-    if (key.startsWith('OPUTE_') || key === 'MCP_AUTH_TOKEN' || key === 'BRIDGE_TOKEN') {
+    if (key.startsWith('OPUTE_') || key === 'MCP_AUTH_TOKEN') {
       // Keep launcher-only and standalone-safe vars.
       if (
         key === 'OPUTE_HOST_AGENT_BINARY'

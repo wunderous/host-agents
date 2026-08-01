@@ -47,6 +47,7 @@ func RunCommandContext(ctx context.Context, argv []string, onData func(string), 
 
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	configureProcessGroup(cmd)
+	configureCommandEnvironment(cmd)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	var stdoutWriters []io.Writer

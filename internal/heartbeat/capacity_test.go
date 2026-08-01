@@ -89,4 +89,9 @@ func TestReadHostSystemStats(t *testing.T) {
 	if stats.CPUCount <= 0 {
 		t.Fatalf("expected cpu count > 0, got %d", stats.CPUCount)
 	}
+	for _, disk := range stats.DiskFilesystems {
+		if disk.Mount == "/mnt/c" {
+			t.Fatal("default host telemetry must not couple WSL admission to the Windows mount")
+		}
+	}
 }

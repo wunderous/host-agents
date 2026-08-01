@@ -131,7 +131,6 @@ const http = require('node:http')
 fs.writeFileSync(process.env.FAKE_ENV_REPORT, JSON.stringify({
   mcpUrl: process.env.OPUTE_MCP_URL || null,
   mcpAuth: process.env.MCP_AUTH_TOKEN || null,
-  bridgeToken: process.env.BRIDGE_TOKEN || null,
   reverseTunnel: process.env.OPUTE_REVERSE_TUNNEL || null,
   mode: process.env.OPUTE_AGENT_MODE,
   transport: process.env.OPUTE_TRANSPORT || null,
@@ -161,7 +160,6 @@ process.on('SIGINT', stop)
     OPUTE_MCP_URL: 'https://platform.example/mcp',
     OPUTE_REVERSE_TUNNEL: 'true',
     MCP_AUTH_TOKEN: 'platform-secret',
-    BRIDGE_TOKEN: 'bridge-secret',
   }
   const started = await execFileAsync(process.execPath, [indexPath, 'start', '--background'], { env, timeout: 20_000 })
   assert.equal(started.stdout.trim(), `http://127.0.0.1:${port}/mcp`)
@@ -180,7 +178,6 @@ process.on('SIGINT', stop)
   assert.deepEqual(childEnv, {
     mcpUrl: null,
     mcpAuth: null,
-    bridgeToken: null,
     reverseTunnel: null,
     mode: 'standalone',
     transport: null,

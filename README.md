@@ -169,7 +169,7 @@ curl -H "Authorization: Bearer dev-token" \
   http://127.0.0.1:3004/mcp
 ```
 
-`/health` is always open. `/mcp` requires `Authorization: Bearer <token>` when any of these env vars are set: `MCP_AUTH_TOKEN`, `BRIDGE_TOKEN`, `OPUTE_BRIDGE_TOKEN`, `OPUTE_REMOTE_AGENT_AUTH_TOKEN`, `OPUTE_CPC_TOKEN`. Omit all of them only for local dev without auth.
+`/health` is always open. `/mcp` requires `Authorization: Bearer <token>` when any of these env vars are set: `MCP_AUTH_TOKEN`, `OPUTE_REMOTE_AGENT_AUTH_TOKEN`, or `OPUTE_CPC_TOKEN`. Omit all of them only for local dev without auth.
 
 ## VS Code / external MCP configuration
 
@@ -215,7 +215,7 @@ With `bun run dev` in `opute/`:
 bun scripts/dev-host-mcp.ts
 ```
 
-Then run `bun scripts/validate-go-host-agent-phase3.ts` from Linux/WSL. Default dev token is **`dev-token`** (aligned with port-guard / `BRIDGE_TOKEN` / `OPUTE_CPC_TOKEN` in the opute repo).
+Then run `bun scripts/validate-go-host-agent-phase3.ts` from Linux/WSL. Default dev token is **`dev-token`** (aligned with port-guard / `MCP_AUTH_TOKEN` / `OPUTE_CPC_TOKEN` in the opute repo).
 
 ## Production install
 

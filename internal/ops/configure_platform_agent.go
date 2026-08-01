@@ -121,8 +121,6 @@ func (s *HostOperationsService) ConfigurePlatformAgent(args ConfigurePlatformAge
 		"OPUTE_REMOTE_AGENT_AUTH_TOKEN":    remoteAuth,
 		"OPUTE_MCP_HEALTH_URL":             mcpHealthURL,
 		"MCP_AUTH_TOKEN":                   hostAuth,
-		"OPUTE_BRIDGE_TOKEN":               hostAuth,
-		"BRIDGE_TOKEN":                     hostAuth,
 	}
 	if mcpRouteHost != "" {
 		assignments["OPUTE_MCP_ROUTE_HOST"] = mcpRouteHost
@@ -233,8 +231,6 @@ func upsertEnvFile(path string, assignments map[string]string) error {
 		"OPUTE_REMOTE_AGENT_AUTH_TOKEN",
 		"OPUTE_REMOTE_AGENT_ID",
 		"MCP_AUTH_TOKEN",
-		"OPUTE_BRIDGE_TOKEN",
-		"BRIDGE_TOKEN",
 	}
 	for _, key := range preferredOrder {
 		if value, ok := assignments[key]; ok {

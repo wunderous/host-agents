@@ -101,11 +101,9 @@ func renderClusterAgentInstallScript(bridgeURL string, arch clusterAgentArch, co
 }
 
 func defaultBridgePort() int {
-	for _, key := range []string{"BRIDGE_PORT", "PLATFORM_MCP_PORT"} {
-		if v := strings.TrimSpace(envOr(key, "")); v != "" {
-			if port, err := strconv.Atoi(v); err == nil && port > 0 {
-				return port
-			}
+	if v := strings.TrimSpace(envOr("PLATFORM_MCP_PORT", "")); v != "" {
+		if port, err := strconv.Atoi(v); err == nil && port > 0 {
+			return port
 		}
 	}
 	return 9093
@@ -195,8 +193,7 @@ func (s *HostOperationsService) resolveBridgeEndpointForVM(
 
 	for _, host := range []string{
 		"host.lan",
-		strings.TrimSpace(envOr("OPUTE_BRIDGE_GUEST_HOST", "")),
-		strings.TrimSpace(envOr("BRIDGE_GUEST_HOST", "")),
+		strings.TrimSpace(envOr("OPUTE_PLATFORM_GUEST_HOST", "")),
 	} {
 		if host == "host.lan" {
 			res, err := s.runVMExec(vmName, []string{"getent", "hosts", "host.lan"}, onData, 10*time.Second)

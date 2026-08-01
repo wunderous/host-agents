@@ -218,6 +218,35 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(map[string]any{"stopped": true}, "Local Ollama runtime stopped"), nil
 
+	case "ensure_platform_postgres":
+		out, err := svc.EnsurePlatformPostgres(ctx, ops.PlatformPostgresArgs{
+			DataDir: stringField(args, "dataDir"), BindHost: stringField(args, "bindHost"), Port: intField(args, "port"),
+			AllowedCIDRs:     stringSliceField(args, "allowedCidrs"),
+			InstallIfMissing: optionalBoolField(args, "installIfMissing"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Host-owned platform PostgreSQL is ready"), nil
+
+	case "get_platform_postgres_status":
+		out, err := svc.GetPlatformPostgresStatus(ctx, ops.PlatformPostgresArgs{
+			DataDir: stringField(args, "dataDir"), BindHost: stringField(args, "bindHost"), Port: intField(args, "port"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Host-owned platform PostgreSQL status returned"), nil
+
+	case "remove_platform_postgres":
+		out, err := svc.RemovePlatformPostgres(ctx, ops.PlatformPostgresArgs{
+			DataDir: stringField(args, "dataDir"), BindHost: stringField(args, "bindHost"), Port: intField(args, "port"),
+		}, boolField(args, "confirm"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Host-owned platform PostgreSQL was removed"), nil
+
 	case "remove_local_llm_model":
 		if err := svc.RemoveLocalLLMModel(ctx, stringField(args, "modelRef"), boolField(args, "purge")); err != nil {
 			return nil, err

@@ -105,8 +105,6 @@ func TestLoadStandaloneDefaultsPort3014(t *testing.T) {
 	t.Setenv("OPUTE_TRANSPORT", "")
 	t.Setenv("OPUTE_MCP_URL", "")
 	t.Setenv("MCP_AUTH_TOKEN", "")
-	t.Setenv("OPUTE_BRIDGE_TOKEN", "")
-	t.Setenv("BRIDGE_TOKEN", "")
 	cfg := Load()
 	if cfg.HostMCPPort != 3014 {
 		t.Fatalf("standalone default port = %d, want 3014", cfg.HostMCPPort)

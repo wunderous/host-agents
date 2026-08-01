@@ -33,7 +33,7 @@ function freePort() {
 function cleanEnv(overrides) {
   const env = {}
   for (const [key, value] of Object.entries(process.env)) {
-    if (!key.startsWith('OPUTE_') && !['MCP_AUTH_TOKEN', 'BRIDGE_TOKEN', 'NPM_TOKEN', 'NODE_AUTH_TOKEN'].includes(key)) {
+    if (!key.startsWith('OPUTE_') && !['MCP_AUTH_TOKEN', 'NPM_TOKEN', 'NODE_AUTH_TOKEN'].includes(key)) {
       env[key] = value
     }
   }

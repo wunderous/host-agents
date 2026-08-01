@@ -83,13 +83,8 @@ func Load() Config {
 	tunnelAuth := firstNonEmpty(
 		envValue("OPUTE_REMOTE_AGENT_AUTH_TOKEN"),
 		envValue("OPUTE_CPC_TOKEN"),
+		mcpAuth,
 	)
-	if tunnelAuth == "" && mcpAuth != "" && !strings.HasPrefix(mcpAuth, "opha_") {
-		tunnelAuth = mcpAuth
-	}
-	if tunnelAuth == "" {
-		tunnelAuth = firstNonEmpty(envValue("OPUTE_BRIDGE_TOKEN"), envValue("BRIDGE_TOKEN"))
-	}
 	bindHost := envOr("HOST_MCP_BIND_HOST", "127.0.0.1")
 	wsURL := envOr("OPUTE_HOST_WS_URL", "ws://"+bindHost+":9091")
 	mcpURL := strings.TrimSpace(envValue("OPUTE_MCP_URL"))
@@ -120,7 +115,7 @@ func Load() Config {
 		RemoteAgentID:                    agentID,
 		RemoteAgentAuthToken:             tunnelAuth,
 		MCPAuthToken:                     mcpAuth,
-		BridgeToken:                      firstNonEmpty(envValue("OPUTE_BRIDGE_TOKEN"), envValue("BRIDGE_TOKEN")),
+		BridgeToken:                      mcpAuth,
 		ProviderID:                       providerID,
 		OnboardingToken:                  strings.TrimSpace(envValue("OPUTE_ONBOARDING_TOKEN")),
 		OnboardingSessionID:              strings.TrimSpace(envValue("OPUTE_ONBOARDING_SESSION_ID")),
@@ -132,7 +127,7 @@ func Load() Config {
 		HostResourceMaxQueued:            envIntOr("OPUTE_HOST_MAX_QUEUED_OPERATIONS", 16),
 		HostResourceMinMemoryBytes:       envInt64Or("OPUTE_HOST_MIN_AVAILABLE_MEMORY_BYTES", 0),
 		HostResourceMinDiskBytes:         envInt64Or("OPUTE_HOST_MIN_AVAILABLE_DISK_BYTES", 0),
-		HostResourceDiskPaths:            envPathsOr("OPUTE_HOST_RESOURCE_DISK_PATHS", []string{"/", "/mnt/c"}),
+		HostResourceDiskPaths:            envPathsOr("OPUTE_HOST_RESOURCE_DISK_PATHS", []string{"/"}),
 	}
 }
 
@@ -189,7 +184,7 @@ func (c Config) Validate() error {
 		for _, key := range []string{
 			"OPUTE_MCP_URL", "OPUTE_MCP_HEALTH_URL", "OPUTE_HOST_WS_URL",
 			"OPUTE_ONBOARDING_TOKEN", "OPUTE_ONBOARDING_SESSION_ID",
-			"OPUTE_REMOTE_AGENT_AUTH_TOKEN", "OPUTE_CPC_TOKEN", "OPUTE_BRIDGE_TOKEN", "BRIDGE_TOKEN",
+			"OPUTE_REMOTE_AGENT_AUTH_TOKEN", "OPUTE_CPC_TOKEN",
 			"MCP_AUTH_TOKEN",
 		} {
 			if strings.TrimSpace(os.Getenv(key)) != "" {
