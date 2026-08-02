@@ -1,4 +1,4 @@
-.PHONY: build test standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary npm-test artifacts clean
+.PHONY: build test standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary npm-test artifacts clean agent-work
 
 BINARY=opute-host-agent
 DIST=dist
@@ -45,3 +45,10 @@ clean:
 
 export-schemas:
 	cd ../opute && bun scripts/export-host-agent-schemas.ts ../opute-host-agent/schemas
+
+# The shared adapter lives in the TypeScript control-plane repo so both
+# repositories use one Beads database and one metadata convention.
+# Example: make agent-work ARGS="status" or
+#         make agent-work ARGS="start --title=... --touches=..."
+agent-work:
+	OPUTE_AGENT_WORK_REPOSITORY=opute-host-agent OPUTE_AGENT_WORK_REPO_ROOT=$(CURDIR) bun --cwd ../opute scripts/agent-work-coordination.ts $(ARGS)

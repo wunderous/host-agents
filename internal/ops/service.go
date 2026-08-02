@@ -413,6 +413,10 @@ func (s *HostOperationsService) InstallK3s(ctx context.Context, args InstallK3sA
 		return nil, err
 	}
 	target := strings.TrimSpace(args.Target)
+	vmName := strings.TrimSpace(args.VMName)
+	if target == "" && vmName != "" {
+		target = s.resolveInstallK3sTarget(vmName, args.Target)
+	}
 	// Pin a concrete version by default. update.k3s.io channel resolution often
 	// 404s from guest NAT; the upstream script then treats "stable" as a GitHub
 	// release tag and fails on .../download/stable/sha256sum-amd64.txt.
@@ -429,9 +433,13 @@ func (s *HostOperationsService) InstallK3s(ctx context.Context, args InstallK3sA
 		// certificate-verifying by default.
 		curlFlags = "-k -sfL --retry 4 --retry-delay 2 --retry-connrefused"
 	}
+	installArgs := args.InstallArgs
+	if target == "container" {
+		installArgs = containerK3sInstallArgs(installArgs)
+	}
 	execEnv := ""
-	if len(args.InstallArgs) > 0 {
-		execEnv = fmt.Sprintf(" INSTALL_K3S_EXEC=%s", shellEscape(strings.Join(args.InstallArgs, " ")))
+	if len(installArgs) > 0 {
+		execEnv = fmt.Sprintf(" INSTALL_K3S_EXEC=%s", shellEscape(strings.Join(installArgs, " ")))
 	}
 	// Single-line bash -c (not login -lc): Incus/guest argv must not depend on
 	// multiline -c parsing. Echo a pin marker so failures prove this path ran.
@@ -476,12 +484,8 @@ systemctl daemon-reload 2>/dev/null || true`
 		return map[string]any{"clusterId": clusterID, "serviceName": "k3s", "status": "active", "target": "host"}, nil
 	}
 
-	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
-	}
-	if target == "" {
-		target = s.resolveInstallK3sTarget(vmName, args.Target)
 	}
 	if target == "container" {
 		if err := s.ensureIncusInstanceAutostart(vmName); err != nil {
@@ -513,16 +517,27 @@ systemctl daemon-reload 2>/dev/null || true`
 		existing, existingErr := s.runVMExec(vmName, []string{"bash", "-lc", "test -x /usr/local/bin/k3s"}, onData, 30*time.Second)
 		if existingErr == nil && existing.ExitCode == 0 {
 			if onData != nil {
-				onData("K3s already installed in container; repairing config and waiting for node readiness...")
+				onData("K3s already installed in container; checking readiness before repair...")
 			}
-			if restartErr := s.restartVMK3sIfPresent(vmName, onData); restartErr != nil {
-				return nil, restartErr
+			status, statusErr := s.GetK3sStatus(vmName)
+			if statusErr == nil && strings.EqualFold(fmt.Sprint(status["status"]), "ready") && s.containerK3sHasCanonicalInstallArg(vmName, onData) {
+				if err := s.waitForK3sNodeReady(ctx, vmName, onData, 2*time.Minute); err != nil {
+					return nil, err
+				}
+				_ = s.setIncusInstanceConfig(vmName, oputeK3sInstalledLabel, "true")
+				return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "active", "repaired": false}, nil
 			}
-			if err := s.waitForK3sNodeReady(ctx, vmName, onData, 5*time.Minute); err != nil {
-				return nil, err
+			// An executable without a ready API, or without the canonical
+			// v1.31 service argument, is an incomplete install. Remove only
+			// that incomplete/unrepairable install and retry; never replace a
+			// ready cluster that already has the canonical service argument.
+			if onData != nil {
+				onData("K3s container install is present but not ready; removing the incomplete install before retrying...")
 			}
-			_ = s.setIncusInstanceConfig(vmName, oputeK3sInstalledLabel, "true")
-			return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "active", "repaired": true}, nil
+			uninstall, uninstallErr := s.runVMExec(vmName, []string{"bash", "-lc", "/usr/local/bin/k3s-uninstall.sh"}, onData, 5*time.Minute)
+			if uninstallErr != nil || uninstall.ExitCode != 0 {
+				return nil, fmt.Errorf("remove incomplete K3s container install: %s", firstNonEmpty(uninstall.Stderr, uninstall.Stdout, "uninstall failed"))
+			}
 		}
 	}
 	ensureCurl := `if ! command -v curl >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get install -y curl >/dev/null || (apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y curl >/dev/null); fi`

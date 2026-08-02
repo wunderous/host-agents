@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+opute_root=$(CDPATH= cd -- "$repo_root/../opute" && pwd)
+bun_command=${OPUTE_BUN_PATH:-"$HOME/.bun/bin/bun"}
+if [ ! -x "$bun_command" ] && [ -z "${OPUTE_BUN_PATH:-}" ]; then
+  bun_command=bun
+fi
+
+export OPUTE_AGENT_WORK_REPOSITORY=opute-host-agent
+export OPUTE_AGENT_WORK_REPO_ROOT="$repo_root"
+exec "$bun_command" --cwd "$opute_root" scripts/agent-work-coordination.ts "$@"

@@ -13,6 +13,32 @@ const containerK3sKubeletConfig = `kubelet-arg:
   - feature-gates=KubeletInUserNamespace=true
 `
 
+const containerK3sKubeletInstallArg = "--kubelet-arg=feature-gates=KubeletInUserNamespace=true"
+
+// containerK3sInstallArgs returns the installer arguments required by the
+// pinned K3s v1.31 release when it runs in an Incus container. K3s v1.31 does
+// not read the newer config-file kubelet-arg form, so this must be present in
+// INSTALL_K3S_EXEC at install time. Keep caller-supplied arguments intact.
+func containerK3sInstallArgs(installArgs []string) []string {
+	out := append([]string(nil), installArgs...)
+	hasServerCommand := false
+	for _, arg := range out {
+		if strings.TrimSpace(arg) == "server" {
+			hasServerCommand = true
+		}
+		if strings.Contains(arg, "KubeletInUserNamespace=true") {
+			if hasServerCommand {
+				return out
+			}
+			return append([]string{"server"}, out...)
+		}
+	}
+	if !hasServerCommand {
+		out = append([]string{"server"}, out...)
+	}
+	return append(out, containerK3sKubeletInstallArg)
+}
+
 func containerK3sKubeletConfigScript() string {
 	encoded := shellEscape(containerK3sKubeletConfig)
 	return fmt.Sprintf(
@@ -59,8 +85,15 @@ func (s *HostOperationsService) restartVMK3sIfPresent(vmName string, onData func
 	return nil
 }
 
+func (s *HostOperationsService) containerK3sHasCanonicalInstallArg(vmName string, onData func(string)) bool {
+	check := fmt.Sprintf("systemctl cat k3s 2>/dev/null | grep -Fq -- %s", shellEscape(containerK3sKubeletInstallArg))
+	result, err := s.runVMExec(vmName, []string{"bash", "-lc", check}, onData, defaultDiscoveryTimeout)
+	return err == nil && result.ExitCode == 0
+}
+
 func (s *HostOperationsService) waitForK3sNodeReady(ctx context.Context, vmName string, onData func(string), timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	consecutiveReady := 0
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -70,11 +103,18 @@ func (s *HostOperationsService) waitForK3sNodeReady(ctx context.Context, vmName 
 			readyNodes, _ := status["readyNodes"].(int)
 			totalNodes, _ := status["totalNodes"].(int)
 			if strings.EqualFold(fmt.Sprint(status["status"]), "ready") && totalNodes > 0 && readyNodes == totalNodes {
-				return nil
+				consecutiveReady++
+				if consecutiveReady >= 3 {
+					return nil
+				}
+			} else {
+				consecutiveReady = 0
 			}
 			if onData != nil && totalNodes > 0 {
 				onData(fmt.Sprintf("K3s nodes %d/%d ready...", readyNodes, totalNodes))
 			}
+		} else {
+			consecutiveReady = 0
 		}
 		time.Sleep(3 * time.Second)
 	}
