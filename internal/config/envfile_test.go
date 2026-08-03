@@ -144,7 +144,7 @@ func TestLoadResolvesExplicitInstanceRoots(t *testing.T) {
 	if cfg.InstanceID != "dogfood" || cfg.InstanceRoot != "/tmp/opute-dogfood" {
 		t.Fatalf("instance scope = %#v", cfg)
 	}
-	if cfg.RelayConfigDir != "/tmp/opute-dogfood/local-llm-relays" || cfg.StandaloneStateDir != "/tmp/opute-dogfood/state" {
+	if cfg.RelayConfigDir != filepath.Join("/tmp/opute-dogfood", "local-llm-relays") || cfg.StandaloneStateDir != filepath.Join("/tmp/opute-dogfood", "state") {
 		t.Fatalf("derived instance paths = %#v", cfg)
 	}
 }

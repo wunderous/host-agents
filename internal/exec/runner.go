@@ -32,6 +32,17 @@ func RunCommand(argv []string, onData func(string), timeout time.Duration) (Resu
 // children are started in a new process group so abort kills the full tree
 // (e.g. `bash -lc 'curl | sh'`), not only the direct child.
 func RunCommandContext(ctx context.Context, argv []string, onData func(string), timeout time.Duration) (Result, error) {
+	return runCommandContext(ctx, argv, nil, onData, timeout)
+}
+
+// RunCommandWithStdinContext is the secret-safe variant of RunCommandContext.
+// Input is attached to stdin rather than encoded into argv, which keeps
+// credentials and manifests out of process listings and command diagnostics.
+func RunCommandWithStdinContext(ctx context.Context, argv []string, input []byte, onData func(string), timeout time.Duration) (Result, error) {
+	return runCommandContext(ctx, argv, bytes.NewReader(input), onData, timeout)
+}
+
+func runCommandContext(ctx context.Context, argv []string, stdin io.Reader, onData func(string), timeout time.Duration) (Result, error) {
 	if len(argv) == 0 {
 		return Result{ExitCode: 1, Stderr: "empty command"}, nil
 	}
@@ -48,6 +59,9 @@ func RunCommandContext(ctx context.Context, argv []string, onData func(string), 
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	configureProcessGroup(cmd)
 	configureCommandEnvironment(cmd)
+	if stdin != nil {
+		cmd.Stdin = stdin
+	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	var stdoutWriters []io.Writer

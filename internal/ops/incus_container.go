@@ -35,12 +35,12 @@ type ContainerStatusResult struct {
 }
 
 func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, onData func(string)) (ContainerStatusResult, error) {
-	if runtime.GOOS != "linux" {
-		return ContainerStatusResult{}, fmt.Errorf("provision_container is unsupported on %s host agents", runtime.GOOS)
-	}
 	name := strings.TrimSpace(args.ContainerName)
 	if name == "" {
 		return ContainerStatusResult{}, errors.New("containerName is required")
+	}
+	if runtime.GOOS != "linux" {
+		return ContainerStatusResult{}, fmt.Errorf("provision_container is unsupported on %s host agents", runtime.GOOS)
 	}
 	if strings.ContainsAny(name, " \t\r\n") {
 		return ContainerStatusResult{}, errors.New("containerName may not contain whitespace")

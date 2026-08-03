@@ -13,6 +13,7 @@ import (
 	"github.com/wunderous/host-agents/internal/hostmcp"
 	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/internal/transport"
 )
@@ -144,6 +145,36 @@ func TestMCPTasksList(t *testing.T) {
 	}
 	if _, ok := m["tasks"]; !ok {
 		t.Fatalf("missing tasks key: %+v", m)
+	}
+}
+
+func TestMCPTaskResultServesInlineToolResult(t *testing.T) {
+	hs := newTestServer(t)
+	rec := hs.Tasks().Create("probe_tool", map[string]any{"vmName": "probe"}, 0, "Executing probe_tool...", nil)
+	hs.Tasks().Complete(rec.TaskID, tasks.ToolResult{
+		Content:           []map[string]any{{"type": "text", "text": "done"}},
+		StructuredContent: map[string]any{"ready": true},
+	})
+	params, err := json.Marshal(map[string]string{"taskId": rec.TaskID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := hs.HandleExtensionMethod("tasks/result", params)
+	if err != nil {
+		t.Fatalf("tasks/result: %v", err)
+	}
+	m, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected result type %T", result)
+	}
+	if m["isError"] != false {
+		t.Fatalf("expected isError=false: %+v", m)
+	}
+	if _, ok := m["structuredContent"]; !ok {
+		t.Fatalf("missing structuredContent: %+v", m)
+	}
+	if _, err := hs.HandleExtensionMethod("tasks/result", json.RawMessage(`{"taskId":"missing"}`)); err == nil {
+		t.Fatal("expected task-not-found error for unknown task id")
 	}
 }
 

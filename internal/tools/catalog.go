@@ -122,6 +122,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"ensure_platform_postgres":      true,
 		"get_platform_postgres_status":  true,
 		"remove_platform_postgres":      true,
+		"reset_incus_stack":             true,
 	}
 	seen := make(map[string]bool, len(needed))
 	for _, definition := range defs {
@@ -170,13 +171,15 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		}},
 		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
-		Name: "ensure_platform_postgres", Title: "Ensure platform PostgreSQL", Description: "Provision or reuse the persistent host-owned PostgreSQL instance for Opute Platform and Task Ledger. Returns redacted connection metadata; it is not a SQL proxy.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{
-			"dataDir": map[string]any{"type": "string"}, "bindHost": map[string]any{"type": "string"}, "port": map[string]any{"type": "integer"}, "allowedCidrs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "installIfMissing": map[string]any{"type": "boolean"},
+		Name: "ensure_platform_postgres", Title: "Ensure platform PostgreSQL", Description: "Install or reconcile CloudNativePG and a SQL-gated platform PostgreSQL Cluster in the host-agent-managed K3s VM. Credentials remain CNPG-owned and are never returned.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}, "storageClass": map[string]any{"type": "string"}, "storageSize": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "localRelay": map[string]any{"type": "object"},
 		}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
-		Name: "get_platform_postgres_status", Title: "Get platform PostgreSQL status", Description: "Read the host-owned platform PostgreSQL service and direct-query readiness without returning credentials.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"dataDir": map[string]any{"type": "string"}, "bindHost": map[string]any{"type": "string"}, "port": map[string]any{"type": "integer"}}}, OutputSchema: map[string]any{"type": "object"},
+		Name: "get_platform_postgres_status", Title: "Get platform PostgreSQL status", Description: "Read SQL-gated CloudNativePG platform PostgreSQL readiness without returning credentials.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
-		Name: "remove_platform_postgres", Title: "Remove platform PostgreSQL", Description: "Destructively remove the host-owned platform PostgreSQL service and data. Requires confirm=true.", InputSchema: map[string]any{"type": "object", "required": []string{"confirm"}, "properties": map[string]any{"dataDir": map[string]any{"type": "string"}, "bindHost": map[string]any{"type": "string"}, "port": map[string]any{"type": "integer"}, "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
+		Name: "remove_platform_postgres", Title: "Remove platform PostgreSQL", Description: "Destructively remove the platform PostgreSQL CNPG Cluster and owned data while preserving the operator. Requires confirm=true.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "confirm"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "localRelay": map[string]any{"type": "object"}, "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "reset_incus_stack", Title: "Reset Incus stack", Description: "Fail-closed, ownership-checked, confirmation-gated reset of explicitly selected disposable Incus instances. Returns redacted resumable phase evidence.", InputSchema: map[string]any{"type": "object", "required": []string{"confirm", "reinstall", "disposableHostFingerprint", "expectedHostFingerprint", "disposableHostAuthorization"}, "properties": map[string]any{"instanceNames": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "instancePrefix": map[string]any{"type": "string"}, "confirm": map[string]any{"type": "boolean"}, "reinstall": map[string]any{"type": "boolean"}, "dryRun": map[string]any{"type": "boolean"}, "disposableHostFingerprint": map[string]any{"type": "string"}, "expectedHostFingerprint": map[string]any{"type": "string"}, "disposableHostAuthorization": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name:         "ensure_host_tool",
 		Title:        "Ensure generic host tool",
@@ -341,7 +344,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"probe_local_llm": {"type": "object", "properties": map[string]any{
 			"includeChat": map[string]any{"type": "boolean"},
 			"modelRef":    map[string]any{"type": "string"},
-			"modelPreset": map[string]any{"type": "string", "enum": []string{"gemma", "qwen"}},
+			"modelPreset": map[string]any{"type": "string", "enum": []string{"granite", "nemotron"}},
 			"numGpu":      map[string]any{"type": "integer"},
 			"numCtx":      map[string]any{"type": "integer"},
 		}},
@@ -350,7 +353,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"modelVariant":  map[string]any{"type": "string"},
 			"installSource": map[string]any{"type": "string"},
 			"modelRef":      map[string]any{"type": "string"},
-			"modelPreset":   map[string]any{"type": "string", "enum": []string{"gemma", "qwen"}},
+			"modelPreset":   map[string]any{"type": "string", "enum": []string{"granite", "nemotron"}},
 			"createAs":      map[string]any{"type": "string"},
 			"numGpu":        map[string]any{"type": "integer"},
 			"numCtx":        map[string]any{"type": "integer"},
@@ -358,7 +361,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 		}},
 		"configure_local_llm_model": {"type": "object", "properties": map[string]any{
 			"modelRef":    map[string]any{"type": "string"},
-			"modelPreset": map[string]any{"type": "string", "enum": []string{"gemma", "qwen"}},
+			"modelPreset": map[string]any{"type": "string", "enum": []string{"granite", "nemotron"}},
 			"fromRef":     map[string]any{"type": "string"},
 			"numGpu":      map[string]any{"type": "integer"},
 			"numCtx":      map[string]any{"type": "integer"},

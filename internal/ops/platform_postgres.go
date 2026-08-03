@@ -636,9 +636,31 @@ func (s *HostOperationsService) platformPostgresCRDPresent(ctx context.Context, 
 	return true, nil
 }
 
+// platformPostgresWebhookReady reports whether the CloudNativePG admission
+// webhook service has at least one ready endpoint. Applying the tenant Cluster
+// before the webhook endpoints exist fails with "no endpoints available for
+// service cnpg-webhook-service".
+func (s *HostOperationsService) platformPostgresWebhookReady(ctx context.Context, spec platformPostgresSpec) (bool, error) {
+	endpoints, err := s.platformPostgresJSON(ctx, spec, []string{"get", "endpoints", "cnpg-webhook-service", "-n", platformPostgresOperatorNamespace}, "get CloudNativePG webhook endpoints")
+	if err != nil {
+		return false, nil
+	}
+	subsets, _ := endpoints["subsets"].([]any)
+	for _, subset := range subsets {
+		item, _ := subset.(map[string]any)
+		addresses, _ := item["addresses"].([]any)
+		if len(addresses) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // waitForPlatformPostgresCRD waits until the CloudNativePG operator HelmChart
-// has installed the clusters.postgresql.cnpg.io CRD. Applying the tenant
-// Cluster before the CRD exists makes a fresh-cluster apply fail.
+// has installed the clusters.postgresql.cnpg.io CRD and its admission webhook
+// endpoints are ready. Applying the tenant Cluster before the CRD exists makes
+// a fresh-cluster apply fail, and before the webhook endpoints exist it fails
+// the admission call itself.
 func (s *HostOperationsService) waitForPlatformPostgresCRD(ctx context.Context, spec platformPostgresSpec) error {
 	deadline := time.NewTimer(5 * time.Minute)
 	defer deadline.Stop()
@@ -649,14 +671,21 @@ func (s *HostOperationsService) waitForPlatformPostgresCRD(ctx context.Context, 
 		if err != nil {
 			return err
 		}
+		webhookReady := false
 		if present {
+			webhookReady, err = s.platformPostgresWebhookReady(ctx, spec)
+			if err != nil {
+				return err
+			}
+		}
+		if present && webhookReady {
 			return nil
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return errors.New("CloudNativePG Cluster CRD did not appear after applying the operator HelmChart")
+			return errors.New("CloudNativePG operator did not become ready (CRD or admission webhook) after applying the HelmChart")
 		case <-ticker.C:
 		}
 	}

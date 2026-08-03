@@ -26,7 +26,7 @@ func TestOllamaTarExtractArgsPreferUnzstd(t *testing.T) {
 }
 
 func TestValidateOllamaModelRef(t *testing.T) {
-	for _, ref := range []string{"smollm:135m", "qwen3.5:2b", "ibm/granite4.1:3b", "../escape"} {
+	for _, ref := range []string{"smollm:135m", "nemotron-3-nano:4b-opute", "ibm/granite4.1:3b-opute", "../escape"} {
 		err := ValidateOllamaModelRef(ref)
 		if ref == "../escape" && err == nil {
 			t.Fatalf("expected invalid model ref")
@@ -111,7 +111,7 @@ func TestFinalizeLocalLLMPrerequisitesGpuBlockers(t *testing.T) {
 	result.NvidiaSmiOk = true
 	result.CudaLibraryPresent = true
 	result.OllamaServiceActive = true
-	result.RuntimeLoadedModel = "qwen3.5:2b"
+	result.RuntimeLoadedModel = "nemotron-3-nano:4b-opute"
 	result.RuntimeGpuAccelerated = false
 	finalizeLocalLLMPrerequisites(result)
 	if !result.ReadyForGpuInference {
@@ -203,11 +203,11 @@ func TestProbeLocalLLMWithFakeOllamaHTTP(t *testing.T) {
 }
 
 func TestResolveLocalLLMModelRef(t *testing.T) {
-	got, err := ResolveLocalLLMModelRef("", "qwen")
-	if err != nil || got != "qwen3.5:2b" {
-		t.Fatalf("qwen preset: got %q err=%v", got, err)
+	got, err := ResolveLocalLLMModelRef("", "nemotron")
+	if err != nil || got != "nemotron-3-nano:4b-opute" {
+		t.Fatalf("nemotron preset: got %q err=%v", got, err)
 	}
-	got, err = ResolveLocalLLMModelRef("custom:tag", "qwen")
+	got, err = ResolveLocalLLMModelRef("custom:tag", "nemotron")
 	if err != nil || got != "custom:tag" {
 		t.Fatalf("modelRef should win: got %q err=%v", got, err)
 	}
@@ -222,11 +222,11 @@ func TestResolveLocalLLMModelRef(t *testing.T) {
 func TestRenderOllamaModelfileGpuCtx(t *testing.T) {
 	gpu := 99
 	ctx := 4096
-	got, err := renderOllamaModelfile("qwen3.5:2b", &gpu, &ctx, "")
+	got, err := renderOllamaModelfile("nemotron-3-nano:4b-opute", &gpu, &ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"FROM qwen3.5:2b", "PARAMETER num_gpu 99", "PARAMETER num_ctx 4096"} {
+	for _, want := range []string{"FROM nemotron-3-nano:4b-opute", "PARAMETER num_gpu 99", "PARAMETER num_ctx 4096"} {
 		if !containsOllama(got, want) {
 			t.Fatalf("missing %q in %q", want, got)
 		}
@@ -238,7 +238,7 @@ func TestRenderOllamaModelfileGpuCtx(t *testing.T) {
 	if err != nil || tpl != "custom template body" {
 		t.Fatalf("custom template: err=%v tpl=%q", err, tpl)
 	}
-	withTpl, err := renderOllamaModelfile("qwen3.5:2b", &gpu, &ctx, tpl)
+	withTpl, err := renderOllamaModelfile("nemotron-3-nano:4b-opute", &gpu, &ctx, tpl)
 	if err != nil {
 		t.Fatal(err)
 	}

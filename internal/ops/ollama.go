@@ -84,7 +84,7 @@ type LocalLLMProbeResult struct {
 // InstallLocalLLMModelArgs pulls an Ollama registry model and optionally creates
 // a durable derived tag with Modelfile parameters (num_gpu / num_ctx). Full GPU
 // offload (numGpu near layer count, e.g. 99) is required for some edge models
-// that abort on hybrid CPU/GPU splits. Callers may pass modelPreset=gemma|qwen
+// that abort on hybrid CPU/GPU splits. Callers may pass modelPreset=granite|nemotron
 // or an explicit modelRef. Optional Template rewrites the chat TEMPLATE.
 type InstallLocalLLMModelArgs struct {
 	ModelRef string
@@ -118,8 +118,8 @@ var ollamaVersionRef = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // LocalLLMModelPresets maps standard chat presets to Ollama registry refs.
 var LocalLLMModelPresets = map[string]string{
-	"gemma": "gemma4:e2b",
-	"qwen":  "qwen3.5:2b",
+	"granite":  "ibm/granite4.1:3b-opute",
+	"nemotron": "nemotron-3-nano:4b-opute",
 }
 
 // localLLMFullGpuOffloadLayers requests full discrete-GPU offload for chat models.
@@ -146,7 +146,7 @@ func (s *HostOperationsService) requireGpuInferenceReady() error {
 		return err
 	}
 	if prereqs == nil || !prereqs.ReadyForGpuInference {
-		return fmt.Errorf("GPU inference is required for Opute local LLM models (gemma, qwen); resolve check_local_llm_prerequisites blockers before install or start")
+		return fmt.Errorf("GPU inference is required for Opute local LLM models (granite, nemotron); resolve check_local_llm_prerequisites blockers before install or start")
 	}
 	if prereqs.OllamaServiceActive && prereqs.RuntimeLoadedModel != "" && !prereqs.RuntimeGpuAccelerated {
 		return fmt.Errorf("Ollama is running on CPU (size_vram=0); call start_local_llm_runtime after the discrete GPU is healthy, then probe_local_llm and confirm sizeVramBytes > 0")
@@ -154,7 +154,7 @@ func (s *HostOperationsService) requireGpuInferenceReady() error {
 	return nil
 }
 
-// ResolveLocalLLMModelRef returns modelRef, or expands modelPreset (gemma|qwen).
+// ResolveLocalLLMModelRef returns modelRef, or expands modelPreset (granite|nemotron).
 func ResolveLocalLLMModelRef(modelRef string, modelPreset string) (string, error) {
 	ref := strings.TrimSpace(modelRef)
 	if ref != "" {
@@ -165,11 +165,11 @@ func ResolveLocalLLMModelRef(modelRef string, modelPreset string) (string, error
 	}
 	preset := strings.ToLower(strings.TrimSpace(modelPreset))
 	if preset == "" {
-		return "", fmt.Errorf("modelRef or modelPreset (gemma|qwen) is required")
+		return "", fmt.Errorf("modelRef or modelPreset (granite|nemotron) is required")
 	}
 	resolved, ok := LocalLLMModelPresets[preset]
 	if !ok {
-		return "", fmt.Errorf("unknown modelPreset %q (use gemma|qwen or pass modelRef)", modelPreset)
+		return "", fmt.Errorf("unknown modelPreset %q (use granite|nemotron or pass modelRef)", modelPreset)
 	}
 	return resolved, nil
 }
@@ -228,7 +228,7 @@ func RenderOllamaSystemdUnit(cfg OllamaConfig) (string, error) {
 	// AMD iGPU is not exposed to CUDA/WSL, so device 0 is the dGPU. WSL needs
 	// /usr/lib/wsl/lib (Windows NVIDIA driver GPU-PV) on LD_LIBRARY_PATH plus
 	// Ollama's bundled cuda_v12 ggml libs beside the binary tree.
-	libRoot := filepath.Join(filepath.Dir(filepath.Dir(cfg.BinaryPath)), "lib", "ollama")
+	libRoot := filepath.ToSlash(filepath.Join(filepath.Dir(filepath.Dir(cfg.BinaryPath)), "lib", "ollama"))
 	return fmt.Sprintf(`[Unit]
 Description=Opute-managed Ollama runtime
 After=network-online.target
@@ -404,11 +404,11 @@ func finalizeLocalLLMPrerequisites(result *LocalLLMPrerequisitesResult) {
 	}
 	if result.ReadyForGpuInference && result.GpuMemoryTotalBytes > 0 && result.GpuMemoryTotalBytes < 6*1024*1024*1024 {
 		result.RemediationHints = append(result.RemediationHints,
-			"This GPU reports under 6 GiB VRAM. Some large or multimodal models can crash on hybrid CPU/GPU layer splits (GGML_SCHED_MAX_SPLIT_INPUTS). Use install_local_llm_model / configure_local_llm_model with numGpu=99 (full GPU offload) and a bounded numCtx, then probe_local_llm with that modelRef. Standard presets: modelPreset=gemma|qwen.",
+			"This GPU reports under 6 GiB VRAM. Some large or multimodal models can crash on hybrid CPU/GPU layer splits (GGML_SCHED_MAX_SPLIT_INPUTS). Use install_local_llm_model / configure_local_llm_model with numGpu=99 (full GPU offload) and a bounded numCtx, then probe_local_llm with that modelRef. Standard presets: modelPreset=granite|nemotron.",
 		)
 	}
 	if !result.ReadyForGpuInference {
-		result.Blockers = append(result.Blockers, "GPU inference prerequisites are not satisfied. Opute chat models (gemma, qwen) run exclusively on the discrete GPU.")
+		result.Blockers = append(result.Blockers, "GPU inference prerequisites are not satisfied. Opute chat models (granite, nemotron) run exclusively on the discrete GPU.")
 	}
 }
 
@@ -870,7 +870,7 @@ func remediationHintsForLocalLLMProbe(result *LocalLLMProbeResult) []string {
 	}
 	if result.Ready && result.LoadedModel != "" && !result.GpuAccelerated {
 		hints = append(hints,
-			"Model is loaded on CPU (size_vram=0). Opute supports GPU-only inference for gemma/qwen — enable the discrete GPU, restart opute-ollama.service, and re-run with numGpu=99.",
+			"Model is loaded on CPU (size_vram=0). Opute supports GPU-only inference for granite/nemotron — enable the discrete GPU, restart opute-ollama.service, and re-run with numGpu=99.",
 		)
 	}
 	return hints

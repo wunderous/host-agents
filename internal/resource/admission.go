@@ -123,8 +123,9 @@ func ClassifyTool(tool string) Class {
 
 func isHeavyTool(name string) bool {
 	for _, candidate := range []string{
-		"install_incus_stack", "provision_container", "provision_vm", "create_vm",
+		"install_incus_stack", "reset_incus_stack", "provision_container", "provision_vm", "create_vm",
 		"install_k3s", "install_postgresql", "ensure_oci_builder",
+		"ensure_platform_postgres", "remove_platform_postgres",
 		"build_and_push_oci_image", "prepare_host_agent_artifacts", "stage_build_context",
 		"ensure_host_tool", "install_host_agent", "install_local_llm_model",
 		"configure_local_llm_model", "start_local_llm_runtime", "ensure_cloudflared_tunnel",

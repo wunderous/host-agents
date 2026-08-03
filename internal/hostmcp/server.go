@@ -87,7 +87,7 @@ func NewServer(opts Options) (*Server, error) {
 		mcpServer:      srv,
 		ops:            opts.Ops,
 		tasks:          tasks.NewRegistry(),
-		console:        console.NewRuntime(),
+		console:        console.NewRuntime(opts.Ops.NewVMInteractiveCommand),
 		providerID:     providerID,
 		standalone:     opts.Standalone,
 		allowMutations: opts.AllowMutations,
@@ -145,6 +145,31 @@ func (s *Server) Tasks() *tasks.Registry {
 
 func (s *Server) AbortAllConsoleStreams() {
 	s.console.AbortAll()
+}
+
+// OpenHostStream is the HWP stream boundary for host-owned interactive tools.
+// It deliberately reuses the same console runtime as direct MCP calls so
+// admission and PTY lifecycle cannot diverge by transport.
+func (s *Server) OpenHostStream(operationID, action string, args map[string]any, onData func(string)) error {
+	if action != "stream_vm_shell" && action != "stream_vm_console" {
+		return fmt.Errorf("unsupported host stream action: %s", action)
+	}
+	vmName, _ := args["vmName"].(string)
+	return s.console.OpenVMStream(vmName, operationID, onData)
+}
+
+func (s *Server) SendHostStreamInput(operationID, data string) error {
+	_, err := s.console.SendConsoleInput(operationID, data)
+	return err
+}
+
+func (s *Server) ResizeHostStream(operationID string, width, height int) error {
+	_, err := s.console.ResizeConsole(operationID, width, height)
+	return err
+}
+
+func (s *Server) CloseHostStream(operationID string) {
+	s.console.CloseStream(operationID)
 }
 
 func (s *Server) registerTools() {
@@ -409,6 +434,25 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 			return nil, fmt.Errorf("task not found: %s", p.TaskID)
 		}
 		return s.tasks.ToGetTaskResult(rec), nil
+	case "tasks/result":
+		var p struct {
+			TaskID string `json:"taskId"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		rec, ok := s.tasks.Get(p.TaskID)
+		if !ok {
+			return nil, fmt.Errorf("task not found: %s", p.TaskID)
+		}
+		if rec.ToolResult == nil {
+			return nil, fmt.Errorf("task has no result yet: %s", p.TaskID)
+		}
+		return map[string]any{
+			"content":           rec.ToolResult.Content,
+			"structuredContent": rec.ToolResult.StructuredContent,
+			"isError":           rec.ToolResult.IsError,
+		}, nil
 	case "tasks/cancel":
 		var p struct {
 			TaskID string `json:"taskId"`

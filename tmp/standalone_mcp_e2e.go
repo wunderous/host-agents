@@ -168,7 +168,7 @@ func run() error {
 		time.Sleep(5 * time.Second)
 	}
 
-	if _, err := c.callTask("install_postgresql", map[string]any{"vmName": vmName, "namespace": "opute-local-db", "database": "app", "password": "StandaloneE2e-2026!"}); err != nil {
+	if _, err := c.callTask("install_postgresql", map[string]any{"vmName": vmName, "namespace": "opute-local-db", "database": "app"}); err != nil {
 		return fmt.Errorf("install PostgreSQL: %w", err)
 	}
 	if _, err := c.callTool("get_postgresql_status", map[string]any{"vmName": vmName, "namespace": "opute-local-db"}); err != nil {

@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -75,12 +77,20 @@ type HostOperationsService struct {
 	agentID                 string
 	ownershipMode           string
 	sharedHostOwnerInstance string
+	resetCheckpointPath     string
 
 	sqlSupervisor          *sqlConnectorSupervisor
 	guestBridgeRelay       *tcpRelayManager
 	localLLMRelay          *localLLMRelayManager
+	platformPostgresRelay  *platformPostgresRelayManager
 	allowInsecureDownloads bool
 	resourceSnapshot       func() map[string]any
+	// kubectlRunner is a test seam for the platform PostgreSQL ordering and
+	// readiness contract. When nil, the real guest-exec kubectl path is used.
+	kubectlRunner func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error)
+	// commandRunnerFn is a test seam for provider command execution (Incus
+	// CLI). When nil, the real provider runtime is used.
+	commandRunnerFn func(args []string, onData func(string), timeout time.Duration) (hostexec.Result, error)
 }
 
 type Options struct {
@@ -91,6 +101,7 @@ type Options struct {
 	AgentID                 string
 	OwnershipMode           string
 	RelayConfigDir          string
+	ResetCheckpointPath     string
 	SharedHostOwnerInstance string
 }
 
@@ -112,11 +123,23 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		agentID:                 strings.TrimSpace(opts.AgentID),
 		ownershipMode:           ownershipMode,
 		sharedHostOwnerInstance: strings.TrimSpace(opts.SharedHostOwnerInstance),
+		resetCheckpointPath:     resolveResetCheckpointPath(opts.ResetCheckpointPath, opts.RelayConfigDir),
 		sqlSupervisor:           newSQLConnectorSupervisor(),
 		guestBridgeRelay:        newTCPRelayManager(),
 		localLLMRelay:           newPersistentLocalLLMRelayManagerAt(opts.RelayConfigDir),
+		platformPostgresRelay:   newPlatformPostgresRelayManager(),
 		allowInsecureDownloads:  opts.AllowInsecureDownloads,
 	}
+}
+
+func resolveResetCheckpointPath(explicitPath, relayConfigDir string) string {
+	if path := strings.TrimSpace(explicitPath); path != "" {
+		return path
+	}
+	if dir := strings.TrimSpace(relayConfigDir); dir != "" {
+		return filepath.Join(dir, "incus-reset-checkpoint.json")
+	}
+	return ""
 }
 
 func (s *HostOperationsService) ReadProviderID() string {
@@ -164,7 +187,20 @@ func (s *HostOperationsService) RunAgentShell(command string, onData func(string
 	return s.runtime.RunHost([]string{"bash", "-lc", command}, onData, 0)
 }
 
+// NewVMInteractiveCommand is the ownership-checked command factory for the
+// host worker PTY stream. Interactive lifecycle is kept in console.Runtime;
+// this service remains the single Incus ownership boundary.
+func (s *HostOperationsService) NewVMInteractiveCommand(vmName string) (*exec.Cmd, error) {
+	if err := s.assertIncusOwnership(vmName, "console"); err != nil {
+		return nil, err
+	}
+	return s.runtime.NewVMInteractiveCommand(vmName)
+}
+
 func (s *HostOperationsService) commandRunner(args []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	if s.commandRunnerFn != nil {
+		return s.commandRunnerFn(args, onData, timeout)
+	}
 	return s.runtime.RunProvider(args, onData, timeout)
 }
 
@@ -192,6 +228,13 @@ func (s *HostOperationsService) runVMExecContext(ctx context.Context, vmName str
 		return hostexec.Result{}, err
 	}
 	return s.runtime.RunVMExecContext(ctx, vmName, guestArgv, onData, timeout)
+}
+
+func (s *HostOperationsService) runVMExecWithStdinContext(ctx context.Context, vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	if err := s.assertIncusOwnership(vmName, "exec"); err != nil {
+		return hostexec.Result{}, err
+	}
+	return s.runtime.RunVMExecWithStdinContext(ctx, vmName, guestArgv, input, onData, timeout)
 }
 
 type VMListResult struct {
@@ -831,6 +874,60 @@ func (s *HostOperationsService) runKubernetesKubectlTimed(vmName string, kubectl
 	var lastErr error
 	for _, cmd := range variants {
 		res, err := s.commandRunner(cmd, nil, timeout)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if res.ExitCode != 0 {
+			lastErr = errors.New(firstNonEmpty(res.Stderr, res.Stdout, fmt.Sprintf("exit %d", res.ExitCode)))
+			continue
+		}
+		return strings.TrimSpace(res.Stdout), nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("unknown error")
+	}
+	return "", fmt.Errorf("failed to %s in %s: %w", label, vmName, lastErr)
+}
+
+func (s *HostOperationsService) runKubernetesKubectlContext(ctx context.Context, vmName string, kubectlArgs []string, label string, timeout time.Duration) (string, error) {
+	if s.kubectlRunner != nil {
+		return s.kubectlRunner(ctx, vmName, kubectlArgs, nil, label, timeout)
+	}
+	variants := [][]string{
+		append([]string{"kubectl"}, kubectlArgs...),
+		append([]string{"k3s", "kubectl"}, kubectlArgs...),
+	}
+	var lastErr error
+	for _, guestArgv := range variants {
+		res, err := s.runVMExecContext(ctx, vmName, guestArgv, nil, timeout)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if res.ExitCode != 0 {
+			lastErr = errors.New(firstNonEmpty(res.Stderr, res.Stdout, fmt.Sprintf("exit %d", res.ExitCode)))
+			continue
+		}
+		return strings.TrimSpace(res.Stdout), nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("unknown error")
+	}
+	return "", fmt.Errorf("failed to %s in %s: %w", label, vmName, lastErr)
+}
+
+func (s *HostOperationsService) runKubernetesKubectlWithStdinContext(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
+	if s.kubectlRunner != nil {
+		return s.kubectlRunner(ctx, vmName, kubectlArgs, input, label, timeout)
+	}
+	variants := [][]string{
+		append([]string{"kubectl"}, kubectlArgs...),
+		append([]string{"k3s", "kubectl"}, kubectlArgs...),
+	}
+	var lastErr error
+	for _, guestArgv := range variants {
+		res, err := s.runVMExecWithStdinContext(ctx, vmName, guestArgv, input, nil, timeout)
 		if err != nil {
 			lastErr = err
 			continue

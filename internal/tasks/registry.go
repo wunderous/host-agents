@@ -214,6 +214,7 @@ func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 
 var TaskAwareTools = map[string]bool{
 	"install_incus_stack":           true,
+	"reset_incus_stack":             true,
 	"create_vm":                     true,
 	"provision_container":           true,
 	"provision_vm":                  true,
@@ -223,6 +224,8 @@ var TaskAwareTools = map[string]bool{
 	"restart_vm":                    true,
 	"install_k3s":                   true,
 	"install_postgresql":            true,
+	"ensure_platform_postgres":      true,
+	"remove_platform_postgres":      true,
 	"apply_manifest":                true,
 	"delete_k8s_resource":           true,
 	"put_k8s_secret":                true,

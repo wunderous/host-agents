@@ -61,7 +61,12 @@ func TestStandaloneHTTPIsolationAndShutdown(t *testing.T) {
 		t.Skip("standalone Incus agent is Linux-only; Windows clients use WSL")
 	}
 
-	trap, err := net.Listen("tcp", "127.0.0.1:9091")
+	// A co-resident Platform/MCP stack may own 9091. Use an isolated dynamic
+	// trap and pin the default health target to it without setting
+	// OPUTE_MCP_HEALTH_URL, which is a platform-only setting rejected by the
+	// standalone profile.
+	trapPort := freeStandalonePort(t)
+	trap, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", trapPort))
 	if err != nil {
 		t.Skipf("platform network trap port is unavailable: %v", err)
 	}
@@ -90,6 +95,7 @@ func TestStandaloneHTTPIsolationAndShutdown(t *testing.T) {
 		"OPUTE_STANDALONE_STATE_DIR="+stateDir,
 		"HOST_MCP_BIND_HOST=127.0.0.1",
 		fmt.Sprintf("HOST_MCP_PORT=%d", port),
+		fmt.Sprintf("AGENT_PORT=%d", trapPort),
 	)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

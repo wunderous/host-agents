@@ -19,6 +19,57 @@ var requiredTunnelInventoryDispatch = []string{
 	"get_cluster_runtime_details",
 }
 
+var requiredPlatformPostgresDispatch = []string{
+	"ensure_platform_postgres",
+	"get_platform_postgres_status",
+	"remove_platform_postgres",
+	"reset_incus_stack",
+}
+
+func TestPlatformPostgresAndResetToolsHaveDispatchCoverage(t *testing.T) {
+	dispatched := loadDispatchToolNames(t)
+	incus, err := tools.HostToolDefinitionsForProvider("incus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := make(map[string]bool, len(incus))
+	for _, tool := range incus {
+		catalog[tool.Name] = true
+	}
+	for _, name := range requiredPlatformPostgresDispatch {
+		if !dispatched[name] {
+			t.Fatalf("platform/reset tool %q has no dispatch case in internal/tools/dispatch.go", name)
+		}
+		if !catalog[name] {
+			t.Fatalf("platform/reset tool %q missing from the tunnel catalog", name)
+		}
+	}
+}
+
+func TestPlatformPostgresAndResetToolsHaveStandaloneCoverage(t *testing.T) {
+	defs := tools.StandaloneToolDefinitions()
+	definitions := make(map[string]bool, len(defs))
+	for _, tool := range defs {
+		definitions[tool.Name] = true
+	}
+	for _, name := range requiredPlatformPostgresDispatch {
+		if !tools.StandaloneToolNames[name] {
+			t.Fatalf("platform/reset tool %q missing from standalone catalog", name)
+		}
+		if !definitions[name] {
+			t.Fatalf("platform/reset tool %q missing from standalone tool definitions", name)
+		}
+	}
+	for _, name := range []string{"ensure_platform_postgres", "remove_platform_postgres", "reset_incus_stack"} {
+		if !tools.IsStandaloneMutation(name) {
+			t.Fatalf("mutation tool %q must be a standalone mutation", name)
+		}
+	}
+	if tools.IsStandaloneMutation("get_platform_postgres_status") {
+		t.Fatal("get_platform_postgres_status must remain read-only")
+	}
+}
+
 func TestRequiredInventoryToolsHaveDispatchCase(t *testing.T) {
 	dispatched := loadDispatchToolNames(t)
 	for _, name := range requiredTunnelInventoryDispatch {

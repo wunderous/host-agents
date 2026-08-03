@@ -1,7 +1,7 @@
 package ops
 
 import (
-	"encoding/base64"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -132,7 +132,6 @@ type InstallPostgreSQLArgs struct {
 	VMName    string `json:"vmName"`
 	Namespace string `json:"namespace,omitempty"`
 	Database  string `json:"database,omitempty"`
-	Password  string `json:"password"`
 }
 
 func (s *HostOperationsService) InstallPostgreSQL(args InstallPostgreSQLArgs, onData func(string)) (map[string]any, error) {
@@ -151,15 +150,15 @@ func (s *HostOperationsService) InstallPostgreSQL(args InstallPostgreSQLArgs, on
 	if !standaloneIdentifier.MatchString(namespace) || !standaloneIdentifier.MatchString(database) {
 		return nil, errors.New("namespace and database must be lowercase DNS-safe identifiers")
 	}
-	if strings.TrimSpace(args.Password) == "" {
-		return nil, errors.New("password is required")
+	ctx := context.Background()
+	if _, err := s.runKubernetesKubectlWithStdinContext(ctx, vmName, []string{"apply", "-f", "-"}, []byte(standalonePostgresOperatorManifest(namespace)), "apply CloudNativePG operator", 3*time.Minute); err != nil {
+		return nil, err
 	}
-	manifest := postgresManifest(namespace, database, args.Password)
-	encoded := base64.StdEncoding.EncodeToString([]byte(manifest))
-	apply := fmt.Sprintf("printf '%s' | base64 -d | k3s kubectl apply -f -", encoded)
-	res, err := s.runVMExec(vmName, []string{"bash", "-lc", apply}, onData, 2*time.Minute)
-	if err != nil || res.ExitCode != 0 {
-		return nil, fmt.Errorf("apply PostgreSQL manifest: %s", firstNonEmpty(res.Stderr, res.Stdout, errorText(err)))
+	if err := s.waitForStandalonePostgresCRD(ctx, vmName); err != nil {
+		return nil, err
+	}
+	if _, err := s.runKubernetesKubectlWithStdinContext(ctx, vmName, []string{"apply", "-f", "-"}, []byte(standalonePostgresClusterManifest(namespace, database)), "apply CloudNativePG PostgreSQL Cluster", 3*time.Minute); err != nil {
+		return nil, err
 	}
 	deadline := time.Now().Add(6 * time.Minute)
 	for time.Now().Before(deadline) {
@@ -178,24 +177,28 @@ func (s *HostOperationsService) GetPostgreSQLStatus(vmName, namespace string) (m
 	if strings.TrimSpace(namespace) == "" {
 		namespace = "opute-local-db"
 	}
-	out, err := s.runKubernetesKubectlTimed(vmName, []string{"get", "deployment", "postgres", "-n", namespace, "-o", "json"}, "get PostgreSQL deployment", 30*time.Second)
+	out, err := s.runKubernetesKubectlTimed(vmName, []string{"get", "cluster.postgresql.cnpg.io", "postgres", "-n", namespace, "-o", "json"}, "get CloudNativePG PostgreSQL Cluster", 30*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	var deployment struct {
+	var cluster struct {
 		Spec struct {
 			Replicas int `json:"replicas"`
 		} `json:"spec"`
 		Status struct {
-			ReadyReplicas     int `json:"readyReplicas"`
-			AvailableReplicas int `json:"availableReplicas"`
+			Phase          string `json:"phase"`
+			ReadyInstances int    `json:"readyInstances"`
 		} `json:"status"`
 	}
-	if err := json.Unmarshal([]byte(out), &deployment); err != nil {
-		return nil, fmt.Errorf("parse PostgreSQL deployment: %w", err)
+	if err := json.Unmarshal([]byte(out), &cluster); err != nil {
+		return nil, fmt.Errorf("parse CloudNativePG PostgreSQL Cluster: %w", err)
 	}
-	ready := deployment.Status.ReadyReplicas >= 1 && deployment.Status.AvailableReplicas >= 1
-	return map[string]any{"vmName": vmName, "namespace": namespace, "deployment": "postgres", "ready": ready, "readyReplicas": deployment.Status.ReadyReplicas, "replicas": deployment.Spec.Replicas}, nil
+	instances := cluster.Spec.Replicas
+	if instances == 0 {
+		instances = 1
+	}
+	ready := strings.Contains(strings.ToLower(cluster.Status.Phase), "healthy") && cluster.Status.ReadyInstances >= instances
+	return map[string]any{"vmName": vmName, "namespace": namespace, "cluster": "postgres", "phase": cluster.Status.Phase, "ready": ready, "readyInstances": cluster.Status.ReadyInstances, "instances": instances}, nil
 }
 
 func (s *HostOperationsService) DeletePostgreSQL(vmName, namespace string, onData func(string)) (map[string]any, error) {
@@ -219,103 +222,139 @@ func (s *HostOperationsService) RunSQL(vmName, namespace, database, sql string) 
 	if database == "" {
 		database = "app"
 	}
+	namespace = strings.TrimSpace(namespace)
+	database = strings.TrimSpace(database)
+	if !standaloneIdentifier.MatchString(namespace) || !standaloneIdentifier.MatchString(database) {
+		return nil, errors.New("namespace and database must be lowercase DNS-safe identifiers")
+	}
 	if len(sql) > 64*1024 {
 		return nil, errors.New("sql exceeds 64 KiB limit")
 	}
-	out, err := s.runKubernetesKubectlTimed(vmName, []string{"exec", "-n", namespace, "deploy/postgres", "--", "psql", "-U", "postgres", "-d", database, "-v", "ON_ERROR_STOP=1", "-At", "-c", sql}, "run SQL", 2*time.Minute)
+	pod, credentials, err := s.standalonePostgresExecutionTarget(vmName, namespace)
+	if err != nil {
+		return nil, err
+	}
+	script := standalonePostgresSQLScript(credentials.Username, database, sql)
+	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
+	out, err := s.runKubernetesKubectlWithStdinContext(
+		context.Background(),
+		vmName,
+		[]string{"exec", "-i", pod, "-n", namespace, "--", "sh", "-ceu", script},
+		input,
+		"run SQL through CloudNativePG primary",
+		2*time.Minute,
+	)
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{"vmName": vmName, "namespace": namespace, "database": database, "output": out}, nil
 }
 
-func postgresManifest(namespace, database, password string) string {
-	encodedPassword := base64.StdEncoding.EncodeToString([]byte(password))
+func standalonePostgresManifest(namespace, database string) string {
+	return standalonePostgresOperatorManifest(namespace) + "---\n" + standalonePostgresClusterManifest(namespace, database)
+}
+
+func standalonePostgresOperatorManifest(namespace string) string {
 	return fmt.Sprintf(`apiVersion: v1
 kind: Namespace
 metadata:
   name: %s
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-secret
-  namespace: %s
-type: Opaque
-data:
-  POSTGRES_PASSWORD: %s
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-data
-  namespace: %s
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 2Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: postgres
-  namespace: %s
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres
-  template:
-    metadata:
-      labels:
-        app: postgres
-    spec:
-      containers:
-        - name: postgres
-          image: postgres:16-alpine
-          ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRES_DB
-              value: %s
-            - name: POSTGRES_USER
-              value: postgres
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: POSTGRES_PASSWORD
-          readinessProbe:
-            exec:
-              command: ["sh", "-c", "pg_isready -U postgres"]
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/postgresql/data
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: postgres-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: %s
-spec:
-  selector:
-    app: postgres
-  ports:
-    - port: 5432
-      targetPort: 5432
-`, namespace, namespace, encodedPassword, namespace, namespace, database, namespace)
+%s---
+`, namespace, renderPlatformPostgresOperatorManifest())
 }
 
-func errorText(err error) string {
-	if err == nil {
-		return "unknown error"
+func standalonePostgresClusterManifest(namespace, database string) string {
+	return fmt.Sprintf(`apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: %s
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  storage:
+    size: 2Gi
+  bootstrap:
+    initdb:
+      database: %s
+      owner: app
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+`, namespace, database)
+}
+
+func (s *HostOperationsService) waitForStandalonePostgresCRD(ctx context.Context, vmName string) error {
+	deadline := time.NewTimer(3 * time.Minute)
+	defer deadline.Stop()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		if _, err := s.runKubernetesKubectlContext(ctx, vmName, []string{"get", "crd", "clusters.postgresql.cnpg.io"}, "wait for CloudNativePG Cluster CRD", 30*time.Second); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return errors.New("CloudNativePG Cluster CRD did not become available")
+		case <-ticker.C:
+		}
 	}
-	return err.Error()
+}
+
+func (s *HostOperationsService) standalonePostgresExecutionTarget(vmName, namespace string) (string, platformPostgresSecret, error) {
+	podsJSON, err := s.runKubernetesKubectlTimed(vmName, []string{"get", "pods", "-n", namespace, "-l", "cnpg.io/cluster=postgres,role=primary", "-o", "json"}, "find CloudNativePG primary", 30*time.Second)
+	if err != nil {
+		return "", platformPostgresSecret{}, err
+	}
+	var pods struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+			Status struct {
+				Phase string `json:"phase"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(podsJSON), &pods); err != nil {
+		return "", platformPostgresSecret{}, fmt.Errorf("parse CloudNativePG primary pods: %w", err)
+	}
+	pod := ""
+	for _, item := range pods.Items {
+		if item.Metadata.Name != "" && item.Status.Phase == "Running" {
+			pod = item.Metadata.Name
+			break
+		}
+	}
+	if pod == "" {
+		return "", platformPostgresSecret{}, errors.New("CloudNativePG primary pod is not running")
+	}
+	secretJSON, err := s.runKubernetesKubectlTimed(vmName, []string{"get", "secret", "postgres-app", "-n", namespace, "-o", "json"}, "read CloudNativePG application Secret", 30*time.Second)
+	if err != nil {
+		return "", platformPostgresSecret{}, err
+	}
+	var secret map[string]any
+	if err := json.Unmarshal([]byte(secretJSON), &secret); err != nil {
+		return "", platformPostgresSecret{}, fmt.Errorf("parse CloudNativePG application Secret: %w", err)
+	}
+	data, _ := secret["data"].(map[string]any)
+	username := decodeSecretValue(data, "username")
+	password := decodeSecretValue(data, "password")
+	if username == "" || password == "" {
+		return "", platformPostgresSecret{}, errors.New("CloudNativePG application Secret is incomplete")
+	}
+	return pod, platformPostgresSecret{Username: username, Password: password}, nil
+}
+
+func standalonePostgresSQLScript(username, database, sql string) string {
+	return fmt.Sprintf(`set -eu
+pgpass="$(mktemp)"
+trap 'rm -f "$pgpass"' EXIT
+cat >"$pgpass"
+chmod 600 "$pgpass"
+PGPASSFILE="$pgpass" psql -h 127.0.0.1 -p 5432 -U %s -d %s -v ON_ERROR_STOP=1 -Atqc %s
+`, shellEscape(username), shellEscape(database), shellEscape(sql))
 }

@@ -24,6 +24,8 @@ func TestEnsurePlatformPostgresAppliesOperatorBeforeCluster(t *testing.T) {
 				return "", fmt.Errorf("CRD not installed yet")
 			}
 			return "", nil
+		case kubectlArgs[0] == "get" && kubectlArgs[1] == "endpoints":
+			return `{"subsets":[{"addresses":[{"ip":"10.42.0.9"}]}]}`, nil
 		case kubectlArgs[0] == "apply":
 			if strings.Contains(string(input), "chart: cloudnative-pg") {
 				applied = true

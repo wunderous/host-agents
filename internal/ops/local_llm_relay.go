@@ -239,6 +239,18 @@ func (m *localLLMRelayManager) stop(id string) bool {
 	return true
 }
 
+func (m *localLLMRelayManager) stopAll() {
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.sessions))
+	for id := range m.sessions {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+	for _, id := range ids {
+		m.stop(id)
+	}
+}
+
 func localLLMRelayConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

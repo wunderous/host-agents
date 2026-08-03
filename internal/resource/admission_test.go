@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -46,6 +47,9 @@ func TestHeavyAdmissionIsSerialized(t *testing.T) {
 }
 
 func TestCoResidentCoordinatorsShareHeavyLock(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows host agents do not share the WSL Incus provider lock")
+	}
 	lockDir := t.TempDir()
 	first, err := NewCoordinator(Config{LockDir: lockDir, DiskPaths: []string{t.TempDir()}})
 	if err != nil {
@@ -69,6 +73,9 @@ func TestCoResidentCoordinatorsShareHeavyLock(t *testing.T) {
 }
 
 func TestCriticalPressureRejectsHeavyWork(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows host pressure probes are not the WSL/Incus admission contract")
+	}
 	c, err := NewCoordinator(Config{LockDir: t.TempDir(), MinAvailableMemoryBytes: 1 << 62, DiskPaths: []string{t.TempDir()}})
 	if err != nil {
 		t.Fatal(err)

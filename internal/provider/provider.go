@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -144,6 +145,23 @@ func (r *Runtime) RunVMExec(vmName string, guestArgv []string, onData func(strin
 func (r *Runtime) RunVMExecContext(ctx context.Context, vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
 	execArgs := append([]string{"exec", vmName, "--"}, guestArgv...)
 	return r.RunProviderContext(ctx, execArgs, onData, timeout)
+}
+
+// RunVMExecWithStdinContext executes a guest command while keeping the
+// supplied input off the provider process argv. This is required for
+// Kubernetes Secret manifests and other credential-bearing payloads.
+func (r *Runtime) RunVMExecWithStdinContext(ctx context.Context, vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	execArgs := append([]string{"exec", vmName, "--"}, guestArgv...)
+	return hostexec.RunCommandWithStdinContext(ctx, append([]string{r.cfg.ProviderBinary}, execArgs...), input, onData, timeout)
+}
+
+// NewVMInteractiveCommand builds the provider command used by the host-owned
+// PTY stream. The caller owns lifecycle, input, resize, and cancellation.
+func (r *Runtime) NewVMInteractiveCommand(vmName string) (*exec.Cmd, error) {
+	if strings.TrimSpace(vmName) == "" {
+		return nil, fmt.Errorf("vmName is required")
+	}
+	return exec.Command(r.cfg.ProviderBinary, "exec", vmName, "--", "bash", "-il"), nil
 }
 
 // NeedsDirectSpawn reports whether provider commands should bypass PTY (JSON / machine-readable).

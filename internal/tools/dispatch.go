@@ -220,32 +220,66 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "ensure_platform_postgres":
 		out, err := svc.EnsurePlatformPostgres(ctx, ops.PlatformPostgresArgs{
-			DataDir: stringField(args, "dataDir"), BindHost: stringField(args, "bindHost"), Port: intField(args, "port"),
-			AllowedCIDRs:     stringSliceField(args, "allowedCidrs"),
-			InstallIfMissing: optionalBoolField(args, "installIfMissing"),
+			VMName:          stringField(args, "vmName"),
+			ClusterName:     stringField(args, "clusterName"),
+			Namespace:       stringField(args, "namespace"),
+			Instances:       intField(args, "instances"),
+			StorageClass:    stringField(args, "storageClass"),
+			StorageSize:     stringField(args, "storageSize"),
+			RetentionPolicy: stringField(args, "retentionPolicy"),
+			Relay:           platformPostgresRelayArgs(args),
 		}, onData)
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, "Host-owned platform PostgreSQL is ready"), nil
+		return structuredResult(out, "CloudNativePG platform PostgreSQL is ready"), nil
 
 	case "get_platform_postgres_status":
 		out, err := svc.GetPlatformPostgresStatus(ctx, ops.PlatformPostgresArgs{
-			DataDir: stringField(args, "dataDir"), BindHost: stringField(args, "bindHost"), Port: intField(args, "port"),
+			VMName:          stringField(args, "vmName"),
+			ClusterName:     stringField(args, "clusterName"),
+			Namespace:       stringField(args, "namespace"),
+			Instances:       intField(args, "instances"),
+			StorageClass:    stringField(args, "storageClass"),
+			StorageSize:     stringField(args, "storageSize"),
+			RetentionPolicy: stringField(args, "retentionPolicy"),
 		})
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, "Host-owned platform PostgreSQL status returned"), nil
+		return structuredResult(out, "CloudNativePG platform PostgreSQL status returned"), nil
 
 	case "remove_platform_postgres":
 		out, err := svc.RemovePlatformPostgres(ctx, ops.PlatformPostgresArgs{
-			DataDir: stringField(args, "dataDir"), BindHost: stringField(args, "bindHost"), Port: intField(args, "port"),
+			VMName:          stringField(args, "vmName"),
+			ClusterName:     stringField(args, "clusterName"),
+			Namespace:       stringField(args, "namespace"),
+			Instances:       intField(args, "instances"),
+			StorageClass:    stringField(args, "storageClass"),
+			StorageSize:     stringField(args, "storageSize"),
+			RetentionPolicy: stringField(args, "retentionPolicy"),
+			Relay:           platformPostgresRelayArgs(args),
 		}, boolField(args, "confirm"))
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, "Host-owned platform PostgreSQL was removed"), nil
+		return structuredResult(out, "CloudNativePG platform PostgreSQL was removed"), nil
+
+	case "reset_incus_stack":
+		out, err := svc.ResetIncusStack(ctx, ops.ResetIncusStackArgs{
+			InstanceNames:               stringSliceField(args, "instanceNames"),
+			InstancePrefix:              stringField(args, "instancePrefix"),
+			Confirm:                     boolField(args, "confirm"),
+			Reinstall:                   boolField(args, "reinstall"),
+			DryRun:                      boolField(args, "dryRun"),
+			DisposableHostFingerprint:   stringField(args, "disposableHostFingerprint"),
+			ExpectedHostFingerprint:     stringField(args, "expectedHostFingerprint"),
+			DisposableHostAuthorization: stringField(args, "disposableHostAuthorization"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Incus stack reset phase completed"), nil
 
 	case "remove_local_llm_model":
 		if err := svc.RemoveLocalLLMModel(ctx, stringField(args, "modelRef"), boolField(args, "purge")); err != nil {
@@ -551,7 +585,6 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			VMName:    stringField(args, "vmName"),
 			Namespace: stringField(args, "namespace"),
 			Database:  stringField(args, "database"),
-			Password:  stringField(args, "password"),
 		}, onData)
 		if err != nil {
 			return nil, err
@@ -999,6 +1032,22 @@ func vmNameFromArgs(args map[string]any) string {
 func stringField(args map[string]any, key string) string {
 	v, _ := args[key].(string)
 	return strings.TrimSpace(v)
+}
+
+func platformPostgresRelayArgs(args map[string]any) *ops.PlatformPostgresRelayArgs {
+	raw, ok := args["localRelay"].(map[string]any)
+	if !ok || raw == nil {
+		return nil
+	}
+	return &ops.PlatformPostgresRelayArgs{
+		SessionID:  stringField(raw, "sessionId"),
+		ListenHost: stringField(raw, "listenHost"),
+		ListenPort: intField(raw, "listenPort"),
+		TargetHost: stringField(raw, "targetHost"),
+		TargetPort: intField(raw, "targetPort"),
+		TTLSeconds: intField(raw, "ttlSeconds"),
+		RelayToken: stringField(raw, "relayToken"),
+	}
 }
 
 func resolveLocalLLMModelArg(args map[string]any) (string, error) {

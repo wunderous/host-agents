@@ -3974,7 +3974,7 @@
   {
     "name": "probe_local_llm",
     "title": "Probe Local LLM",
-    "description": "Probe the local Ollama endpoint; optionally warm-load modelRef or modelPreset (gemma|qwen).",
+    "description": "Probe the local Ollama endpoint; optionally warm-load modelRef or modelPreset (granite|nemotron).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3987,8 +3987,8 @@
         "modelPreset": {
           "type": "string",
           "enum": [
-            "gemma",
-            "qwen"
+            "granite",
+            "nemotron"
           ]
         },
         "numGpu": {
@@ -4006,7 +4006,7 @@
   {
     "name": "install_local_llm_model",
     "title": "Install Local LLM Model",
-    "description": "Install Ollama, pull modelRef or modelPreset (gemma|qwen), optionally createAs with numGpu/numCtx.",
+    "description": "Install Ollama, pull modelRef or modelPreset (granite|nemotron), optionally createAs with numGpu/numCtx.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4016,8 +4016,8 @@
         "modelPreset": {
           "type": "string",
           "enum": [
-            "gemma",
-            "qwen"
+            "granite",
+            "nemotron"
           ]
         },
         "numGpu": {
@@ -4048,8 +4048,8 @@
         "modelPreset": {
           "type": "string",
           "enum": [
-            "gemma",
-            "qwen"
+            "granite",
+            "nemotron"
           ]
         },
         "fromRef": {
@@ -4580,24 +4580,31 @@
     "outputSchema": {"type":"object"}
   },
   {
+    "name": "reset_incus_stack",
+    "title": "Reset Incus stack",
+    "description": "Fail-closed, ownership-checked, confirmation-gated reset of explicitly selected disposable Incus instances. Returns redacted resumable phase evidence.",
+    "inputSchema": {"type":"object","required":["confirm","reinstall","disposableHostFingerprint","expectedHostFingerprint","disposableHostAuthorization"],"properties":{"instanceNames":{"type":"array","items":{"type":"string"}},"instancePrefix":{"type":"string"},"confirm":{"type":"boolean"},"reinstall":{"type":"boolean"},"dryRun":{"type":"boolean"},"disposableHostFingerprint":{"type":"string"},"expectedHostFingerprint":{"type":"string"},"disposableHostAuthorization":{"type":"string"}}},
+    "outputSchema": {"type":"object"}
+  },
+  {
     "name": "ensure_platform_postgres",
     "title": "Ensure platform PostgreSQL",
-    "description": "Provision or reuse the persistent host-owned PostgreSQL instance for Opute Platform and Task Ledger. Returns redacted connection metadata; it is not a SQL proxy.",
-    "inputSchema": {"type":"object","properties":{"dataDir":{"type":"string"},"bindHost":{"type":"string"},"port":{"type":"integer"},"allowedCidrs":{"type":"array","items":{"type":"string"}},"installIfMissing":{"type":"boolean"}}},
+    "description": "Install or reconcile CloudNativePG and a SQL-gated platform PostgreSQL Cluster in the host-agent-managed K3s VM. Credentials remain CNPG-owned and are never returned.",
+    "inputSchema": {"type":"object","required":["vmName"],"properties":{"vmName":{"type":"string"},"clusterName":{"type":"string"},"namespace":{"type":"string"},"instances":{"type":"integer"},"storageClass":{"type":"string"},"storageSize":{"type":"string"},"retentionPolicy":{"type":"string","enum":["delete","retain"]},"localRelay":{"type":"object"}}},
     "outputSchema": {"type":"object"}
   },
   {
     "name": "get_platform_postgres_status",
     "title": "Get platform PostgreSQL status",
-    "description": "Read host-owned platform PostgreSQL service and direct-query readiness without returning credentials.",
-    "inputSchema": {"type":"object","properties":{"dataDir":{"type":"string"},"bindHost":{"type":"string"},"port":{"type":"integer"}}},
+    "description": "Read SQL-gated CloudNativePG platform PostgreSQL readiness without returning credentials.",
+    "inputSchema": {"type":"object","required":["vmName"],"properties":{"vmName":{"type":"string"},"clusterName":{"type":"string"},"namespace":{"type":"string"},"instances":{"type":"integer"}}},
     "outputSchema": {"type":"object"}
   },
   {
     "name": "remove_platform_postgres",
     "title": "Remove platform PostgreSQL",
-    "description": "Destructively remove host-owned platform PostgreSQL data. Requires confirm=true.",
-    "inputSchema": {"type":"object","required":["confirm"],"properties":{"dataDir":{"type":"string"},"bindHost":{"type":"string"},"port":{"type":"integer"},"confirm":{"type":"boolean"}}},
+    "description": "Destructively remove the platform PostgreSQL CNPG Cluster and owned data while preserving the operator. Requires confirm=true.",
+    "inputSchema": {"type":"object","required":["vmName","confirm"],"properties":{"vmName":{"type":"string"},"clusterName":{"type":"string"},"namespace":{"type":"string"},"retentionPolicy":{"type":"string","enum":["delete","retain"]},"localRelay":{"type":"object"},"confirm":{"type":"boolean"}}},
     "outputSchema": {"type":"object"}
   }
 ]
