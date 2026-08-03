@@ -99,7 +99,10 @@ func (s *HostOperationsService) InstallIncusStack(args InstallIncusStackArgs, on
 	if incusVersion == "" {
 		incusVersion = "7.2"
 	}
-	if candidate := aptCandidate(incusPackage); candidate != "" && !regexp.MustCompile(`(?:^|:)`+regexp.QuoteMeta(incusVersion)+`(?:[.-]|$)`).MatchString(candidate) {
+	// The Zabbly stable channel advances minor/patch releases (e.g. 7.3) while
+	// the requested pin stays on the same major line; accept candidates that
+	// share the requested major version instead of requiring an exact match.
+	if candidate := aptCandidate(incusPackage); candidate != "" && !incusCandidateSatisfies(candidate, incusVersion) {
 		return nil, fmt.Errorf("Incus repository candidate %q does not satisfy requested version %q", candidate, incusVersion)
 	}
 	argsInstall := append([]string{"apt-get", "install", "-y"}, packages...)
@@ -164,6 +167,18 @@ func aptCandidate(packageName string) string {
 		return m[1]
 	}
 	return ""
+}
+
+// incusCandidateSatisfies reports whether an apt candidate version (which may
+// carry an epoch prefix such as "1:7.3-ubuntu26.04-...") matches the requested
+// Incus version pin on the same major line.
+func incusCandidateSatisfies(candidate, requested string) bool {
+	requestedMajor := strings.SplitN(strings.TrimSpace(requested), ".", 2)[0]
+	withoutEpoch := strings.TrimSpace(candidate)
+	if colon := strings.Index(withoutEpoch, ":"); colon >= 0 {
+		withoutEpoch = withoutEpoch[colon+1:]
+	}
+	return strings.HasPrefix(withoutEpoch, requestedMajor)
 }
 
 func (s *HostOperationsService) configureZabblyIncusRepository(ctx context.Context, channel string) error {
