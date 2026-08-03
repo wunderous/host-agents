@@ -2,457 +2,856 @@ package ops
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
-	"net"
-	"os"
-	"path/filepath"
+	"net/url"
 	"strings"
 	"time"
 )
 
-const platformPostgresServiceName = "opute-platform-postgres.service"
+const (
+	platformPostgresOperatorRelease     = "cloudnativepg"
+	platformPostgresOperatorNamespace   = "cnpg-system"
+	platformPostgresClusterName         = "opute-platform-postgres"
+	platformPostgresNamespace           = "opute-system"
+	platformPostgresStorageSize         = "10Gi"
+	platformPostgresServicePort         = 5432
+	platformPostgresReadinessTimeout    = 15 * time.Minute
+	platformPostgresConsumerSecretName  = "opute-platform-db"
+	platformPostgresConsumerSecretLabel = "opute.io/managed-platform-postgres"
+)
 
-// PlatformPostgresArgs describes the host-owned CPC PostgreSQL instance. The
-// default is intentionally loopback-only; a dogfood deployment must opt into a
-// host-reachable bind and configure its firewall/pg_hba policy separately.
+// PlatformPostgresArgs is the versioned host-agent input for the platform
+// PostgreSQL lifecycle. Credentials are owned by CNPG and are never accepted
+// from, written to, or returned by the host agent.
 type PlatformPostgresArgs struct {
-	DataDir          string   `json:"dataDir,omitempty"`
-	BindHost         string   `json:"bindHost,omitempty"`
-	Port             int      `json:"port,omitempty"`
-	AllowedCIDRs     []string `json:"allowedCidrs,omitempty"`
-	InstallIfMissing *bool    `json:"installIfMissing,omitempty"`
+	VMName          string                     `json:"vmName,omitempty"`
+	ClusterName     string                     `json:"clusterName,omitempty"`
+	Namespace       string                     `json:"namespace,omitempty"`
+	Instances       int                        `json:"instances,omitempty"`
+	StorageClass    string                     `json:"storageClass,omitempty"`
+	StorageSize     string                     `json:"storageSize,omitempty"`
+	RetentionPolicy string                     `json:"retentionPolicy,omitempty"`
+	Relay           *PlatformPostgresRelayArgs `json:"localRelay,omitempty"`
 }
 
-type platformPostgresCredentials struct {
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	CreatedAt string `json:"createdAt"`
+type PlatformPostgresRelayArgs struct {
+	SessionID  string `json:"sessionId"`
+	ListenHost string `json:"listenHost"`
+	ListenPort int    `json:"listenPort,omitempty"`
+	TargetHost string `json:"targetHost,omitempty"`
+	TargetPort int    `json:"targetPort,omitempty"`
+	TTLSeconds int    `json:"ttlSeconds,omitempty"`
+	RelayToken string `json:"relayToken"`
 }
 
-type platformPostgresPaths struct {
-	DataDir       string
-	ConfigDir     string
-	CredentialRef string
-	PgPassFile    string
-	UnitPath      string
-	Username      string
-	BindHost      string
-	Port          int
-	AllowedCIDRs  []string
+type platformPostgresSpec struct {
+	VMName          string
+	ClusterName     string
+	Namespace       string
+	Instances       int
+	StorageClass    string
+	StorageSize     string
+	RetentionPolicy string
 }
 
-// RenderPlatformPostgresSystemdUnit is kept pure so the lifecycle contract can
-// be tested without starting a database or mutating the host.
-func RenderPlatformPostgresSystemdUnit(postgresPath, pgCtlPath string, paths platformPostgresPaths) string {
-	return fmt.Sprintf(`[Unit]
-Description=Opute platform PostgreSQL (host-owned CPC store)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=%s -D %s -c config_file=%s
-ExecStop=%s -D %s stop -m fast
-Restart=on-failure
-RestartSec=3
-TimeoutStartSec=120
-TimeoutStopSec=120
-NoNewPrivileges=true
-PrivateTmp=true
-
-[Install]
-WantedBy=default.target
-`, shellEscape(postgresPath), shellEscape(paths.DataDir), shellEscape(filepath.Join(paths.DataDir, "postgresql.conf")), shellEscape(pgCtlPath), shellEscape(paths.DataDir))
+type platformPostgresSecret struct {
+	Username string
+	Password string
 }
 
-func defaultPlatformPostgresPaths(args PlatformPostgresArgs) (platformPostgresPaths, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return platformPostgresPaths{}, fmt.Errorf("resolve host home: %w", err)
+type platformPostgresProbe struct {
+	OperatorReady      bool
+	CRDPresent         bool
+	ClusterReady       bool
+	PrimaryReady       bool
+	ServiceReady       bool
+	SecretReady        bool
+	SQLReady           bool
+	TaskLedgerSQLReady bool
+	Blockers           []string
+	PrimaryPod         string
+	Username           string
+	Password           string
+}
+
+func validatePlatformPostgresSpec(args PlatformPostgresArgs) (platformPostgresSpec, error) {
+	spec := platformPostgresSpec{
+		VMName:          strings.TrimSpace(args.VMName),
+		ClusterName:     strings.TrimSpace(args.ClusterName),
+		Namespace:       strings.TrimSpace(args.Namespace),
+		Instances:       args.Instances,
+		StorageClass:    strings.TrimSpace(args.StorageClass),
+		StorageSize:     strings.TrimSpace(args.StorageSize),
+		RetentionPolicy: strings.TrimSpace(args.RetentionPolicy),
 	}
-	dataDir := strings.TrimSpace(args.DataDir)
-	if dataDir == "" {
-		dataDir = strings.TrimSpace(os.Getenv("OPUTE_PLATFORM_POSTGRES_DATA_DIR"))
+	if spec.VMName == "" {
+		return platformPostgresSpec{}, errors.New("vmName is required")
 	}
-	if dataDir == "" {
-		dataDir = filepath.Join(home, ".local", "share", "opute", "platform-postgres")
+	if spec.ClusterName == "" {
+		spec.ClusterName = platformPostgresClusterName
 	}
-	dataDir, err = filepath.Abs(dataDir)
-	if err != nil || dataDir == string(filepath.Separator) {
-		return platformPostgresPaths{}, fmt.Errorf("invalid platform PostgreSQL data directory")
+	if spec.Namespace == "" {
+		spec.Namespace = platformPostgresNamespace
 	}
-	configDir := filepath.Join(home, ".config", "opute", "platform-postgres")
-	port := args.Port
-	if port == 0 {
-		port = 5433
+	if spec.Instances == 0 {
+		spec.Instances = 1
 	}
-	if port < 1024 || port > 65535 {
-		return platformPostgresPaths{}, fmt.Errorf("platform PostgreSQL port must be between 1024 and 65535")
+	if spec.Instances < 1 || spec.Instances > 5 {
+		return platformPostgresSpec{}, errors.New("instances must be between 1 and 5")
 	}
-	bindHost := strings.TrimSpace(args.BindHost)
-	if bindHost == "" {
-		bindHost = strings.TrimSpace(os.Getenv("OPUTE_PLATFORM_POSTGRES_BIND_HOST"))
+	if spec.StorageClass == "" {
+		spec.StorageClass = "local-path"
 	}
-	if bindHost == "" {
-		bindHost = "127.0.0.1"
+	if spec.StorageSize == "" {
+		spec.StorageSize = platformPostgresStorageSize
 	}
-	if strings.ContainsAny(bindHost, "\r\n\x00 ';") {
-		return platformPostgresPaths{}, fmt.Errorf("invalid platform PostgreSQL bind host")
+	if spec.RetentionPolicy == "" {
+		spec.RetentionPolicy = "delete"
 	}
-	if net.ParseIP(bindHost) == nil && !isSafePlatformPostgresHostName(bindHost) {
-		return platformPostgresPaths{}, fmt.Errorf("invalid platform PostgreSQL bind host")
+	if spec.RetentionPolicy != "delete" && spec.RetentionPolicy != "retain" {
+		return platformPostgresSpec{}, errors.New("retentionPolicy must be delete or retain")
 	}
-	allowedCIDRs := make([]string, 0, len(args.AllowedCIDRs))
-	for _, cidr := range args.AllowedCIDRs {
-		if strings.ContainsAny(cidr, "\r\n\x00'") {
-			return platformPostgresPaths{}, fmt.Errorf("invalid platform PostgreSQL allowed CIDR")
+	for field, value := range map[string]string{
+		"clusterName":  spec.ClusterName,
+		"namespace":    spec.Namespace,
+		"storageClass": spec.StorageClass,
+	} {
+		if !isSafeKubernetesName(value) {
+			return platformPostgresSpec{}, fmt.Errorf("%s is not a valid Kubernetes name/value", field)
 		}
-		cidr = strings.TrimSpace(cidr)
-		if cidr == "" || strings.ContainsAny(cidr, "\x00 '") {
-			return platformPostgresPaths{}, fmt.Errorf("invalid platform PostgreSQL allowed CIDR")
-		}
-		if _, _, err := net.ParseCIDR(cidr); err != nil {
-			return platformPostgresPaths{}, fmt.Errorf("invalid platform PostgreSQL allowed CIDR")
-		}
-		allowedCIDRs = append(allowedCIDRs, cidr)
 	}
-	return platformPostgresPaths{
-		DataDir:       dataDir,
-		ConfigDir:     configDir,
-		CredentialRef: filepath.Join(configDir, "credentials.json"),
-		PgPassFile:    filepath.Join(configDir, "pgpass"),
-		UnitPath:      filepath.Join(home, ".config", "systemd", "user", platformPostgresServiceName),
-		Username:      "opute",
-		BindHost:      bindHost,
-		Port:          port,
-		AllowedCIDRs:  allowedCIDRs,
-	}, nil
+	if !isValidStorageSize(spec.StorageSize) {
+		return platformPostgresSpec{}, errors.New("storageSize must be a Kubernetes quantity such as 10Gi")
+	}
+	return spec, nil
 }
 
-func isSafePlatformPostgresHostName(value string) bool {
-	if value == "localhost" {
-		return true
-	}
-	if value == "" || len(value) > 253 {
+func isValidStorageSize(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) < 3 {
 		return false
 	}
-	for _, label := range strings.Split(value, ".") {
-		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+	suffix := value[len(value)-2:]
+	if suffix != "Mi" && suffix != "Gi" && suffix != "Ti" {
+		return false
+	}
+	for _, char := range value[:len(value)-2] {
+		if char < '0' || char > '9' {
 			return false
-		}
-		for _, char := range label {
-			if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '-' {
-				return false
-			}
 		}
 	}
 	return true
 }
 
-func readPlatformPostgresCredentials(paths platformPostgresPaths) (platformPostgresCredentials, error) {
-	data, err := os.ReadFile(paths.CredentialRef)
-	if err != nil {
-		return platformPostgresCredentials{}, fmt.Errorf("read platform PostgreSQL credential reference: %w", err)
+func isSafeKubernetesName(value string) bool {
+	if value == "" || len(value) > 253 {
+		return false
 	}
-	var credentials platformPostgresCredentials
-	if err := json.Unmarshal(data, &credentials); err != nil {
-		return platformPostgresCredentials{}, fmt.Errorf("parse platform PostgreSQL credentials: %w", err)
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' || char == '.' {
+			continue
+		}
+		return false
 	}
-	if credentials.Username == "" || credentials.Password == "" {
-		return platformPostgresCredentials{}, fmt.Errorf("platform PostgreSQL credential reference is incomplete")
-	}
-	return credentials, nil
+	return value[0] != '-' && value[len(value)-1] != '-'
 }
 
-func writePlatformPostgresCredentials(paths platformPostgresPaths) (platformPostgresCredentials, error) {
-	if err := os.MkdirAll(paths.ConfigDir, 0o700); err != nil {
-		return platformPostgresCredentials{}, fmt.Errorf("create platform PostgreSQL config directory: %w", err)
-	}
-	credentials := platformPostgresCredentials{Username: paths.Username, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return platformPostgresCredentials{}, fmt.Errorf("generate platform PostgreSQL credential: %w", err)
-	}
-	credentials.Password = hex.EncodeToString(bytes)
-	payload, err := json.MarshalIndent(credentials, "", "  ")
-	if err != nil {
-		return platformPostgresCredentials{}, fmt.Errorf("encode platform PostgreSQL credential: %w", err)
-	}
-	if err := os.WriteFile(paths.CredentialRef, append(payload, '\n'), 0o600); err != nil {
-		return platformPostgresCredentials{}, fmt.Errorf("write platform PostgreSQL credential: %w", err)
-	}
-	if err := os.Chmod(paths.CredentialRef, 0o600); err != nil {
-		return platformPostgresCredentials{}, fmt.Errorf("lock down platform PostgreSQL credential: %w", err)
-	}
-	return credentials, nil
+func renderPlatformPostgresOperatorManifest() string {
+	return `apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cloudnativepg
+  namespace: kube-system
+spec:
+  chart: cloudnative-pg
+  repo: https://cloudnative-pg.github.io/charts
+  targetNamespace: cnpg-system
+  createNamespace: true
+  valuesContent: |
+    monitoring:
+      enabled: false
+`
 }
 
-func ensurePlatformPostgresCredentials(paths platformPostgresPaths) (platformPostgresCredentials, error) {
-	credentials, err := readPlatformPostgresCredentials(paths)
-	if err == nil {
-		return credentials, nil
-	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return platformPostgresCredentials{}, err
-	}
-	return writePlatformPostgresCredentials(paths)
+func renderPlatformPostgresClusterManifest(spec platformPostgresSpec) string {
+	retention := spec.RetentionPolicy
+	return fmt.Sprintf(`apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: %s
+  namespace: %s
+  annotations:
+    opute.io/platform-postgres-retention-policy: %s
+  labels:
+    app.kubernetes.io/part-of: opute-platform
+    opute.io/ownership: platform-postgres
+spec:
+  instances: %d
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  managed:
+    roles:
+      - name: opute
+        ensure: present
+        login: true
+        superuser: false
+        createdb: true
+  storage:
+    size: %s
+    storageClass: %s
+  bootstrap:
+    initdb:
+      database: opute
+      owner: opute
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+`, spec.ClusterName, spec.Namespace, retention, spec.Instances, spec.StorageSize, spec.StorageClass)
 }
 
-func (s *HostOperationsService) resolveHostBinary(ctx context.Context, name string) (string, error) {
-	res, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", "command -v " + shellEscape(name) + " || find /usr/lib/postgresql -type f -name " + shellEscape(name) + " -perm -111 2>/dev/null | sort -V | tail -n 1"}, nil, 20*time.Second)
-	if err != nil || res.ExitCode != 0 {
-		return "", fmt.Errorf("resolve host binary %s: %s", name, firstNonEmpty(res.Stderr, res.Stdout, errString(err, "not found")))
-	}
-	path := strings.TrimSpace(res.Stdout)
-	if path == "" || strings.ContainsAny(path, "\r\n") {
-		return "", fmt.Errorf("host binary %s was not found", name)
-	}
-	return path, nil
-}
-
-func (s *HostOperationsService) installPlatformPostgresPackages(ctx context.Context, onData func(string)) error {
-	res, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", "sudo -n apt-get update && sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-client"}, onData, 10*time.Minute)
-	if err != nil || res.ExitCode != 0 {
-		return fmt.Errorf("install host PostgreSQL packages: %s", firstNonEmpty(res.Stderr, res.Stdout, errString(err, "command failed")))
+func (s *HostOperationsService) applyPlatformPostgresManifest(ctx context.Context, spec platformPostgresSpec, manifest, label string) error {
+	if _, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, []string{"apply", "-f", "-"}, []byte(manifest), label, 3*time.Minute); err != nil {
+		return err
 	}
 	return nil
 }
 
-func writePlatformPostgresConfig(paths platformPostgresPaths) error {
-	if err := os.MkdirAll(paths.DataDir, 0o700); err != nil {
-		return fmt.Errorf("create platform PostgreSQL data directory: %w", err)
+func (s *HostOperationsService) replacePlatformPostgresConsumerSecret(ctx context.Context, spec platformPostgresSpec, manifest string) error {
+	if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{
+		"delete", "secret", platformPostgresConsumerSecretName,
+		"-n", spec.Namespace, "--ignore-not-found=true",
+	}, "replace platform PostgreSQL consumer Secret", defaultDiscoveryTimeout); err != nil {
+		return err
 	}
-	listenAddresses := paths.BindHost
-	if paths.BindHost != "127.0.0.1" && paths.BindHost != "localhost" && paths.BindHost != "0.0.0.0" {
-		listenAddresses += ",127.0.0.1"
-	}
-	config := fmt.Sprintf("listen_addresses = '%s'\nport = %d\nunix_socket_directories = '%s'\npassword_encryption = 'scram-sha-256'\n",
-		strings.ReplaceAll(listenAddresses, "'", "''"), paths.Port, strings.ReplaceAll(paths.ConfigDir, "'", "''"))
-	if err := os.WriteFile(filepath.Join(paths.DataDir, "postgresql.conf"), []byte(config), 0o600); err != nil {
-		return fmt.Errorf("write platform PostgreSQL config: %w", err)
-	}
-	allowed := []string{"127.0.0.1/32", "::1/128"}
-	if bindIP := net.ParseIP(paths.BindHost); bindIP != nil && !bindIP.IsLoopback() && !bindIP.IsUnspecified() {
-		mask := "/128"
-		if bindIP.To4() != nil {
-			mask = "/32"
+	return s.applyPlatformPostgresManifest(ctx, spec, manifest, "apply platform PostgreSQL consumer Secret")
+}
+
+func (s *HostOperationsService) ensurePlatformPostgresNamespace(ctx context.Context, spec platformPostgresSpec) error {
+	for _, namespace := range []string{spec.Namespace, platformPostgresOperatorNamespace} {
+		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"get", "namespace", namespace}, "get namespace", defaultDiscoveryTimeout); err == nil {
+			continue
 		}
-		allowed = append(allowed, paths.BindHost+mask)
-	}
-	for _, cidr := range paths.AllowedCIDRs {
-		if strings.TrimSpace(cidr) != "" {
-			allowed = append(allowed, cidr)
+		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"create", "namespace", namespace}, "create namespace", defaultDiscoveryTimeout); err != nil {
+			return err
 		}
-	}
-	hba := "local all all trust\n"
-	for _, cidr := range allowed {
-		hba += fmt.Sprintf("host all all %s scram-sha-256\n", cidr)
-	}
-	if err := os.WriteFile(filepath.Join(paths.DataDir, "pg_hba.conf"), []byte(hba), 0o600); err != nil {
-		return fmt.Errorf("write platform PostgreSQL pg_hba.conf: %w", err)
 	}
 	return nil
 }
 
-func (s *HostOperationsService) runPlatformPostgresSQL(ctx context.Context, paths platformPostgresPaths, credentials platformPostgresCredentials, database, sql string) error {
-	psql, err := s.resolveHostBinary(ctx, "psql")
+func (s *HostOperationsService) platformPostgresJSON(ctx context.Context, spec platformPostgresSpec, args []string, label string) (map[string]any, error) {
+	raw, err := s.runKubernetesKubectlContext(ctx, spec.VMName, append(args, "-o", "json"), label, defaultDiscoveryTimeout)
+	if err != nil {
+		return nil, err
+	}
+	var value map[string]any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return nil, fmt.Errorf("decode %s response: %w", label, err)
+	}
+	return value, nil
+}
+
+func nestedMap(value map[string]any, keys ...string) map[string]any {
+	current := value
+	for _, key := range keys {
+		next, ok := current[key].(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = next
+	}
+	return current
+}
+
+func nestedString(value map[string]any, keys ...string) string {
+	current := value
+	for index, key := range keys {
+		next, ok := current[key]
+		if !ok {
+			return ""
+		}
+		if index == len(keys)-1 {
+			result, _ := next.(string)
+			return result
+		}
+		current, _ = next.(map[string]any)
+		if current == nil {
+			return ""
+		}
+	}
+	return ""
+}
+
+func nestedInt(value map[string]any, keys ...string) int {
+	current := value
+	for index, key := range keys {
+		next, ok := current[key]
+		if !ok {
+			return 0
+		}
+		if index == len(keys)-1 {
+			switch result := next.(type) {
+			case float64:
+				return int(result)
+			case int:
+				return result
+			}
+			return 0
+		}
+		current, _ = next.(map[string]any)
+		if current == nil {
+			return 0
+		}
+	}
+	return 0
+}
+
+func (s *HostOperationsService) platformPostgresOperatorReady(ctx context.Context, spec platformPostgresSpec) (bool, bool, error) {
+	crdPresent, err := s.platformPostgresCRDPresent(ctx, spec)
+	if err != nil {
+		return false, false, err
+	}
+	if !crdPresent {
+		return false, false, nil
+	}
+	deployments, err := s.platformPostgresJSON(ctx, spec, []string{"get", "deployments", "-n", platformPostgresOperatorNamespace, "-l", "app.kubernetes.io/name=cloudnative-pg"}, "get CloudNativePG operator")
+	if err != nil {
+		return false, true, nil
+	}
+	items, _ := deployments["items"].([]any)
+	for _, item := range items {
+		deployment, _ := item.(map[string]any)
+		desired := nestedInt(deployment, "spec", "replicas")
+		available := nestedInt(deployment, "status", "availableReplicas")
+		if desired > 0 && available >= desired {
+			return true, true, nil
+		}
+	}
+	return false, true, nil
+}
+
+func (s *HostOperationsService) platformPostgresClusterReady(ctx context.Context, spec platformPostgresSpec) (bool, error) {
+	cluster, err := s.platformPostgresJSON(ctx, spec, []string{"get", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace}, "get platform PostgreSQL Cluster")
+	if err != nil {
+		return false, nil
+	}
+	phase := strings.ToLower(nestedString(cluster, "status", "phase"))
+	readyInstances := nestedInt(cluster, "status", "readyInstances")
+	instances := nestedInt(cluster, "spec", "instances")
+	return strings.Contains(phase, "healthy") && instances == spec.Instances && readyInstances >= spec.Instances, nil
+}
+
+func (s *HostOperationsService) platformPostgresServiceReady(ctx context.Context, spec platformPostgresSpec) (bool, error) {
+	service, err := s.platformPostgresJSON(ctx, spec, []string{"get", "service", spec.ClusterName + "-rw", "-n", spec.Namespace}, "get platform PostgreSQL read/write service")
+	if err != nil {
+		return false, nil
+	}
+	if nestedString(service, "spec", "clusterIP") == "" {
+		return false, nil
+	}
+	endpoints, err := s.platformPostgresJSON(ctx, spec, []string{"get", "endpoints", spec.ClusterName + "-rw", "-n", spec.Namespace}, "get platform PostgreSQL endpoints")
+	if err != nil {
+		return false, nil
+	}
+	subsets, _ := endpoints["subsets"].([]any)
+	for _, subset := range subsets {
+		item, _ := subset.(map[string]any)
+		addresses, _ := item["addresses"].([]any)
+		if len(addresses) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func decodeSecretValue(data map[string]any, key string) string {
+	encoded, _ := data[key].(string)
+	value, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return ""
+	}
+	return string(value)
+}
+
+func (s *HostOperationsService) platformPostgresSecret(ctx context.Context, spec platformPostgresSpec) (platformPostgresSecret, bool, error) {
+	secret, err := s.platformPostgresJSON(ctx, spec, []string{"get", "secret", spec.ClusterName + "-app", "-n", spec.Namespace}, "get platform PostgreSQL application secret")
+	if err != nil {
+		return platformPostgresSecret{}, false, nil
+	}
+	data, _ := secret["data"].(map[string]any)
+	username := decodeSecretValue(data, "username")
+	password := decodeSecretValue(data, "password")
+	if username == "" || password == "" {
+		return platformPostgresSecret{}, false, nil
+	}
+	return platformPostgresSecret{Username: username, Password: password}, true, nil
+}
+
+func (s *HostOperationsService) platformPostgresConsumerSecretReady(ctx context.Context, spec platformPostgresSpec) bool {
+	secret, err := s.platformPostgresJSON(ctx, spec, []string{"get", "secret", platformPostgresConsumerSecretName, "-n", spec.Namespace}, "get platform PostgreSQL consumer Secret")
+	if err != nil {
+		return false
+	}
+	data, _ := secret["data"].(map[string]any)
+	platformURL, _ := data["platformDatabaseUrl"].(string)
+	taskLedgerURL, _ := data["taskLedgerDatabaseUrl"].(string)
+	return strings.TrimSpace(platformURL) != "" && strings.TrimSpace(taskLedgerURL) != ""
+}
+
+func (s *HostOperationsService) platformPostgresPrimary(ctx context.Context, spec platformPostgresSpec) (string, error) {
+	pods, err := s.platformPostgresJSON(ctx, spec, []string{"get", "pods", "-n", spec.Namespace, "-l", "cnpg.io/cluster=" + spec.ClusterName + ",role=primary"}, "get platform PostgreSQL primary")
+	if err != nil {
+		return "", nil
+	}
+	items, _ := pods["items"].([]any)
+	for _, item := range items {
+		pod, _ := item.(map[string]any)
+		name := nestedString(pod, "metadata", "name")
+		if name == "" || nestedString(pod, "status", "phase") != "Running" {
+			continue
+		}
+		conditions, _ := nestedMap(pod, "status")["conditions"].([]any)
+		readyCondition := false
+		for _, raw := range conditions {
+			condition, _ := raw.(map[string]any)
+			if nestedString(condition, "type") == "Ready" && nestedString(condition, "status") == "True" {
+				readyCondition = true
+				break
+			}
+		}
+		if !readyCondition {
+			continue
+		}
+		statuses, _ := nestedMap(pod, "status")["containerStatuses"].([]any)
+		if len(statuses) == 0 {
+			continue
+		}
+		allReady := true
+		for _, raw := range statuses {
+			status, _ := raw.(map[string]any)
+			if ready, _ := status["ready"].(bool); !ready {
+				allReady = false
+				break
+			}
+		}
+		if allReady {
+			return name, nil
+		}
+	}
+	return "", nil
+}
+
+func platformPostgresSQLScript(serviceHost, username, sql string) string {
+	return fmt.Sprintf(`set -eu
+pgpass="$(mktemp)"
+trap 'rm -f "$pgpass"' EXIT
+cat >"$pgpass"
+chmod 600 "$pgpass"
+PGPASSFILE="$pgpass" psql -h %s -p %d -U %s -d postgres -v ON_ERROR_STOP=1 -Atqc %s
+`, shellEscape(serviceHost), platformPostgresServicePort, shellEscape(username), shellEscape(sql))
+}
+
+func (s *HostOperationsService) runPlatformPostgresSQL(ctx context.Context, spec platformPostgresSpec, credentials platformPostgresSecret, pod, database, sql string) (string, error) {
+	serviceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
+	script := platformPostgresSQLScript(serviceHost, credentials.Username, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database)))
+	if database != "postgres" {
+		script = fmt.Sprintf(`set -eu
+pgpass="$(mktemp)"
+trap 'rm -f "$pgpass"' EXIT
+cat >"$pgpass"
+chmod 600 "$pgpass"
+PGPASSFILE="$pgpass" psql -h %s -p %d -U %s -d %s -v ON_ERROR_STOP=1 -Atqc %s
+`, shellEscape(serviceHost), platformPostgresServicePort, shellEscape(credentials.Username), shellEscape(database), shellEscape(sql))
+	}
+	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
+	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", script}
+	return s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "query platform PostgreSQL through read/write service", 60*time.Second)
+}
+
+func (s *HostOperationsService) ensurePlatformPostgresDatabase(ctx context.Context, spec platformPostgresSpec, credentials platformPostgresSecret, pod, database string) error {
+	serviceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
+	checkSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database))
+	script := platformPostgresSQLScript(serviceHost, credentials.Username, checkSQL)
+	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
+	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", script}
+	result, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "check platform PostgreSQL database", 60*time.Second)
 	if err != nil {
 		return err
 	}
-	command := fmt.Sprintf("PGPASSFILE=%s %s -h 127.0.0.1 -p %d -U %s -d %s -v ON_ERROR_STOP=1 -Atqc %s", shellEscape(paths.PgPassFile), shellEscape(psql), paths.Port, shellEscape(credentials.Username), shellEscape(database), shellEscape(sql))
-	res, runErr := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", command}, nil, 30*time.Second)
-	if runErr != nil || res.ExitCode != 0 {
-		return fmt.Errorf("platform PostgreSQL query failed: %s", firstNonEmpty(res.Stderr, res.Stdout, errString(runErr, "command failed")))
+	if strings.TrimSpace(result) != "" {
+		return nil
+	}
+	createSQL := platformPostgresCreateDatabaseSQL(database)
+	script = platformPostgresSQLScript(serviceHost, credentials.Username, createSQL)
+	args[len(args)-1] = script
+	if _, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "create platform PostgreSQL database", 60*time.Second); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (s *HostOperationsService) writePlatformPostgresPgPass(paths platformPostgresPaths, credentials platformPostgresCredentials) error {
-	if err := os.MkdirAll(paths.ConfigDir, 0o700); err != nil {
-		return fmt.Errorf("create platform PostgreSQL credential directory: %w", err)
-	}
-	line := fmt.Sprintf("*:%d:*:%s:%s\n", paths.Port, credentials.Username, credentials.Password)
-	if err := os.WriteFile(paths.PgPassFile, []byte(line), 0o600); err != nil {
-		return fmt.Errorf("write platform PostgreSQL pgpass file: %w", err)
-	}
-	return nil
+func platformPostgresCreateDatabaseSQL(database string) string {
+	identifier := `"` + strings.ReplaceAll(database, `"`, `""`) + `"`
+	return "CREATE DATABASE " + identifier
 }
 
-func (s *HostOperationsService) ensurePlatformPostgresService(ctx context.Context, paths platformPostgresPaths, postgresPath, pgCtlPath string) error {
-	unit := RenderPlatformPostgresSystemdUnit(postgresPath, pgCtlPath, paths)
-	if err := os.MkdirAll(filepath.Dir(paths.UnitPath), 0o700); err != nil {
-		return fmt.Errorf("create user systemd directory: %w", err)
+func platformPostgresDatabaseURL(spec platformPostgresSpec, credentials platformPostgresSecret, database string) string {
+	connection := url.URL{
+		Scheme: "postgresql",
+		User:   url.UserPassword(credentials.Username, credentials.Password),
+		Host:   fmt.Sprintf("%s-rw.%s.svc:%d", spec.ClusterName, spec.Namespace, platformPostgresServicePort),
+		Path:   "/" + database,
 	}
-	if err := os.WriteFile(paths.UnitPath, []byte(unit), 0o600); err != nil {
-		return fmt.Errorf("write platform PostgreSQL systemd unit: %w", err)
-	}
-	res, err := s.hostCommandRunnerContext(ctx, []string{"systemctl", "--user", "daemon-reload"}, nil, 20*time.Second)
-	if err != nil || res.ExitCode != 0 {
-		return fmt.Errorf("reload user systemd: %s", firstNonEmpty(res.Stderr, res.Stdout, errString(err, "command failed")))
-	}
-	res, err = s.hostCommandRunnerContext(ctx, []string{"systemctl", "--user", "enable", "--now", platformPostgresServiceName}, nil, 90*time.Second)
-	if err != nil || res.ExitCode != 0 {
-		return fmt.Errorf("start platform PostgreSQL service: %s", firstNonEmpty(res.Stderr, res.Stdout, errString(err, "command failed")))
-	}
-	return nil
+	return connection.String()
 }
 
-func (s *HostOperationsService) EnsurePlatformPostgres(ctx context.Context, args PlatformPostgresArgs, onData func(string)) (map[string]any, error) {
-	paths, err := defaultPlatformPostgresPaths(args)
+func renderPlatformPostgresConsumerSecret(spec platformPostgresSpec, credentials platformPostgresSecret) string {
+	platformURL := platformPostgresDatabaseURL(spec, credentials, "opute")
+	taskLedgerURL := platformPostgresDatabaseURL(spec, credentials, "opute_task_ledger")
+	return fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    %s: "true"
+type: Opaque
+data:
+  platformDatabaseUrl: %s
+  taskLedgerDatabaseUrl: %s
+`, platformPostgresConsumerSecretName, spec.Namespace, platformPostgresConsumerSecretLabel,
+		base64.StdEncoding.EncodeToString([]byte(platformURL)),
+		base64.StdEncoding.EncodeToString([]byte(taskLedgerURL)))
+}
+
+func (s *HostOperationsService) restartPlatformPostgresConsumers(ctx context.Context, spec platformPostgresSpec) error {
+	deployments, err := s.platformPostgresJSON(ctx, spec, []string{"get", "deployments", "-n", spec.Namespace, "-l", platformPostgresConsumerSecretLabel}, "find platform PostgreSQL consumers")
 	if err != nil {
-		return nil, err
+		// A CNPG-only VM may not have cell consumers yet. The Secret is still
+		// ready for the next Helm reconciliation.
+		return nil
 	}
-	postgresPath, postgresErr := s.resolveHostBinary(ctx, "postgres")
-	pgCtlPath, pgCtlErr := s.resolveHostBinary(ctx, "pg_ctl")
-	initdbPath, initdbErr := s.resolveHostBinary(ctx, "initdb")
-	if postgresErr != nil || pgCtlErr != nil || initdbErr != nil {
-		install := args.InstallIfMissing == nil || *args.InstallIfMissing
-		if !install {
-			return nil, fmt.Errorf("host PostgreSQL is not installed; install postgresql or set installIfMissing=true")
+	items, _ := deployments["items"].([]any)
+	for _, raw := range items {
+		deployment, _ := raw.(map[string]any)
+		name := nestedString(deployment, "metadata", "name")
+		if name == "" {
+			continue
 		}
-		if err := s.installPlatformPostgresPackages(ctx, onData); err != nil {
-			return nil, err
+		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"rollout", "restart", "deployment", name, "-n", spec.Namespace}, "restart platform PostgreSQL consumer", 2*time.Minute); err != nil {
+			return err
 		}
-		postgresPath, err = s.resolveHostBinary(ctx, "postgres")
-		if err != nil {
-			return nil, err
-		}
-		pgCtlPath, err = s.resolveHostBinary(ctx, "pg_ctl")
-		if err != nil {
-			return nil, err
-		}
-		initdbPath, err = s.resolveHostBinary(ctx, "initdb")
-		if err != nil {
-			return nil, err
+		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"rollout", "status", "deployment", name, "-n", spec.Namespace, "--timeout=2m"}, "wait for platform PostgreSQL consumer", 3*time.Minute); err != nil {
+			return err
 		}
 	}
-	credentials, err := ensurePlatformPostgresCredentials(paths)
+	return nil
+}
+
+func (s *HostOperationsService) probePlatformPostgres(ctx context.Context, spec platformPostgresSpec) (platformPostgresProbe, error) {
+	operatorReady, crdPresent, _ := s.platformPostgresOperatorReady(ctx, spec)
+	clusterReady, _ := s.platformPostgresClusterReady(ctx, spec)
+	serviceReady, _ := s.platformPostgresServiceReady(ctx, spec)
+	credentials, secretReady, _ := s.platformPostgresSecret(ctx, spec)
+	primary := ""
+	if serviceReady && secretReady {
+		primary, _ = s.platformPostgresPrimary(ctx, spec)
+	}
+	probe := platformPostgresProbe{
+		OperatorReady: operatorReady,
+		CRDPresent:    crdPresent,
+		ClusterReady:  clusterReady,
+		PrimaryReady:  primary != "",
+		ServiceReady:  serviceReady,
+		SecretReady:   secretReady,
+		PrimaryPod:    primary,
+		Username:      credentials.Username,
+		Password:      credentials.Password,
+	}
+	if !operatorReady {
+		probe.Blockers = append(probe.Blockers, "CloudNativePG operator is not ready")
+	}
+	if !crdPresent {
+		probe.Blockers = append(probe.Blockers, "CloudNativePG Cluster CRD is not present")
+	}
+	if !clusterReady {
+		probe.Blockers = append(probe.Blockers, "platform PostgreSQL Cluster is not healthy with the expected instance count")
+	}
+	if !serviceReady {
+		probe.Blockers = append(probe.Blockers, "platform PostgreSQL read/write Service has no ready endpoint")
+	}
+	if !secretReady {
+		probe.Blockers = append(probe.Blockers, "platform PostgreSQL application Secret is missing required keys")
+	}
+	if !probe.PrimaryReady {
+		probe.Blockers = append(probe.Blockers, "platform PostgreSQL primary pod is not ready")
+	}
+	if probe.PrimaryReady && probe.SecretReady {
+		for _, database := range []string{"postgres", "opute"} {
+			if _, err := s.runPlatformPostgresSQL(ctx, spec, credentials, primary, database, "SELECT 1"); err != nil {
+				probe.Blockers = append(probe.Blockers, "SQL SELECT 1 failed through the read/write Service")
+				return probe, nil
+			}
+		}
+		probe.SQLReady = true
+		if _, err := s.runPlatformPostgresSQL(ctx, spec, credentials, primary, "opute_task_ledger", "SELECT 1"); err == nil {
+			probe.TaskLedgerSQLReady = true
+		} else {
+			probe.Blockers = append(probe.Blockers, "Task Ledger PostgreSQL database is not SQL-ready")
+		}
+	}
+	return probe, nil
+}
+
+func (s *HostOperationsService) waitForPlatformPostgres(ctx context.Context, spec platformPostgresSpec) (platformPostgresProbe, error) {
+	deadline := time.NewTimer(platformPostgresReadinessTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	var last platformPostgresProbe
+	for {
+		probe, err := s.probePlatformPostgres(ctx, spec)
+		if err != nil {
+			return platformPostgresProbe{}, err
+		}
+		last = probe
+		if probe.OperatorReady && probe.CRDPresent && probe.ClusterReady && probe.ServiceReady && probe.SecretReady && probe.PrimaryReady && probe.SQLReady {
+			return probe, nil
+		}
+		select {
+		case <-ctx.Done():
+			return platformPostgresProbe{}, ctx.Err()
+		case <-deadline.C:
+			return platformPostgresProbe{}, fmt.Errorf("platform PostgreSQL did not become SQL-ready: %s", strings.Join(last.Blockers, "; "))
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *HostOperationsService) platformPostgresCRDPresent(ctx context.Context, spec platformPostgresSpec) (bool, error) {
+	if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"get", "crd", "clusters.postgresql.cnpg.io"}, "get CloudNativePG CRD", defaultDiscoveryTimeout); err != nil {
+		return false, nil
+	}
+	return true, nil
+}
+
+// waitForPlatformPostgresCRD waits until the CloudNativePG operator HelmChart
+// has installed the clusters.postgresql.cnpg.io CRD. Applying the tenant
+// Cluster before the CRD exists makes a fresh-cluster apply fail.
+func (s *HostOperationsService) waitForPlatformPostgresCRD(ctx context.Context, spec platformPostgresSpec) error {
+	deadline := time.NewTimer(5 * time.Minute)
+	defer deadline.Stop()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		present, err := s.platformPostgresCRDPresent(ctx, spec)
+		if err != nil {
+			return err
+		}
+		if present {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return errors.New("CloudNativePG Cluster CRD did not appear after applying the operator HelmChart")
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *HostOperationsService) platformPostgresK3sReady(ctx context.Context, spec platformPostgresSpec) (bool, error) {
+	nodesJSON, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"get", "nodes", "-o", "json"}, "get K3s nodes", defaultDiscoveryTimeout)
 	if err != nil {
-		return nil, err
+		return false, nil
 	}
-	if err := s.writePlatformPostgresPgPass(paths, credentials); err != nil {
-		return nil, err
+	var nodes struct {
+		Items []struct {
+			Status struct {
+				Conditions []struct {
+					Type   string `json:"type"`
+					Status string `json:"status"`
+				} `json:"conditions"`
+			} `json:"status"`
+		} `json:"items"`
 	}
-	if _, err := os.Stat(filepath.Join(paths.DataDir, "PG_VERSION")); os.IsNotExist(err) {
-		pwFile := filepath.Join(paths.ConfigDir, "initdb-password")
-		if writeErr := os.WriteFile(pwFile, []byte(credentials.Password+"\n"), 0o600); writeErr != nil {
-			return nil, fmt.Errorf("write initdb password file: %w", writeErr)
-		}
-		defer os.Remove(pwFile)
-		command := fmt.Sprintf("%s -D %s -U %s --pwfile=%s --auth-local=trust --auth-host=scram-sha-256", shellEscape(initdbPath), shellEscape(paths.DataDir), shellEscape(credentials.Username), shellEscape(pwFile))
-		res, runErr := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", command}, onData, 2*time.Minute)
-		if runErr != nil || res.ExitCode != 0 {
-			return nil, fmt.Errorf("initialize host PostgreSQL: %s", firstNonEmpty(res.Stderr, res.Stdout, errString(runErr, "command failed")))
-		}
-	} else if err != nil {
-		return nil, fmt.Errorf("inspect platform PostgreSQL data directory: %w", err)
+	if err := json.Unmarshal([]byte(nodesJSON), &nodes); err != nil {
+		return false, fmt.Errorf("parse K3s nodes: %w", err)
 	}
-	if err := writePlatformPostgresConfig(paths); err != nil {
-		return nil, err
+	if len(nodes.Items) == 0 {
+		return false, nil
 	}
-	if err := s.ensurePlatformPostgresService(ctx, paths, postgresPath, pgCtlPath); err != nil {
-		return nil, err
-	}
-	ready := false
-	for attempt := 0; attempt < 30; attempt++ {
-		if err := s.runPlatformPostgresSQL(ctx, paths, credentials, "postgres", "SELECT 1"); err == nil {
-			ready = true
-			break
-		}
-		time.Sleep(2 * time.Second)
-	}
-	if !ready {
-		return nil, fmt.Errorf("host PostgreSQL service did not become queryable")
-	}
-	for _, database := range []string{"opute", "opute_task_ledger"} {
-		check := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database))
-		res, runErr := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", fmt.Sprintf("PGPASSFILE=%s %s -h 127.0.0.1 -p %d -U %s -d postgres -Atqc %s", shellEscape(paths.PgPassFile), shellEscape(mustResolveBinary(s, ctx, "psql")), paths.Port, shellEscape(credentials.Username), shellEscape(check))}, nil, 30*time.Second)
-		if runErr != nil || res.ExitCode != 0 {
-			return nil, fmt.Errorf("inspect platform PostgreSQL database %s: %s", database, firstNonEmpty(res.Stderr, res.Stdout, errString(runErr, "command failed")))
-		}
-		if strings.TrimSpace(res.Stdout) == "" {
-			if err := s.runPlatformPostgresSQL(ctx, paths, credentials, "postgres", "CREATE DATABASE "+database); err != nil {
-				return nil, err
+	for _, node := range nodes.Items {
+		for _, condition := range node.Status.Conditions {
+			if condition.Type == "Ready" && condition.Status == "True" {
+				return true, nil
 			}
 		}
 	}
-	return map[string]any{
-		"ready":           true,
-		"serviceName":     platformPostgresServiceName,
-		"dataDir":         paths.DataDir,
-		"bindHost":        paths.BindHost,
-		"port":            paths.Port,
-		"username":        credentials.Username,
-		"databases":       []string{"opute", "opute_task_ledger"},
-		"postgresVersion": "managed-by-host-postgres",
-	}, nil
+	return false, nil
 }
 
-func mustResolveBinary(s *HostOperationsService, ctx context.Context, name string) string {
-	path, err := s.resolveHostBinary(ctx, name)
-	if err != nil {
-		return name
+func (s *HostOperationsService) waitForPlatformPostgresK3sReady(ctx context.Context, spec platformPostgresSpec) error {
+	deadline := time.NewTimer(10 * time.Minute)
+	defer deadline.Stop()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		ready, err := s.platformPostgresK3sReady(ctx, spec)
+		if err != nil {
+			return err
+		}
+		if ready {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return errors.New("K3s did not report a Ready node before platform PostgreSQL reconciliation")
+		case <-ticker.C:
+		}
 	}
-	return path
+}
+
+// ensurePlatformPostgresOrdered runs the documented fresh-cluster sequence:
+// K3s readiness, the operator HelmChart, a wait for the CNPG Cluster CRD, and
+// only then the tenant Cluster apply. Reusing the standalone CRD wait pattern
+// prevents a fresh-cluster apply from racing the operator installation.
+func (s *HostOperationsService) ensurePlatformPostgresOrdered(ctx context.Context, spec platformPostgresSpec) error {
+	if err := s.waitForPlatformPostgresK3sReady(ctx, spec); err != nil {
+		return err
+	}
+	if err := s.applyPlatformPostgresManifest(ctx, spec, renderPlatformPostgresOperatorManifest(), "apply CloudNativePG HelmChart"); err != nil {
+		return err
+	}
+	if err := s.waitForPlatformPostgresCRD(ctx, spec); err != nil {
+		return err
+	}
+	if err := s.applyPlatformPostgresManifest(ctx, spec, renderPlatformPostgresClusterManifest(spec), "apply platform PostgreSQL Cluster"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *HostOperationsService) EnsurePlatformPostgres(ctx context.Context, args PlatformPostgresArgs, _ func(string)) (map[string]any, error) {
+	spec, err := validatePlatformPostgresSpec(args)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensurePlatformPostgresNamespace(ctx, spec); err != nil {
+		return nil, err
+	}
+	if err := s.ensurePlatformPostgresOrdered(ctx, spec); err != nil {
+		return nil, err
+	}
+	if _, err := s.waitForPlatformPostgres(ctx, spec); err != nil {
+		return nil, err
+	}
+	probe, _ := s.probePlatformPostgres(ctx, spec)
+	credentials := platformPostgresSecret{Username: probe.Username, Password: probe.Password}
+	for _, database := range []string{"opute", "opute_task_ledger"} {
+		if err := s.ensurePlatformPostgresDatabase(ctx, spec, credentials, probe.PrimaryPod, database); err != nil {
+			return nil, err
+		}
+	}
+	probe, _ = s.probePlatformPostgres(ctx, spec)
+	if !probe.SQLReady || !probe.TaskLedgerSQLReady {
+		return nil, errors.New("platform PostgreSQL databases did not become SQL-ready")
+	}
+	result := map[string]any{
+		"ready":              false,
+		"vmName":             spec.VMName,
+		"namespace":          spec.Namespace,
+		"clusterName":        spec.ClusterName,
+		"instances":          spec.Instances,
+		"storageClass":       spec.StorageClass,
+		"storageSize":        spec.StorageSize,
+		"serviceName":        spec.ClusterName + "-rw",
+		"servicePort":        platformPostgresServicePort,
+		"secretName":         platformPostgresConsumerSecretName,
+		"cnpgSecretName":     spec.ClusterName + "-app",
+		"databases":          []string{"opute", "opute_task_ledger"},
+		"sqlReady":           probe.SQLReady && probe.TaskLedgerSQLReady,
+		"taskLedgerSqlReady": probe.TaskLedgerSQLReady,
+		"credentialState":    "cnpg-owned",
+		"postgresVersion":    "cloudnativepg",
+	}
+	if err := s.replacePlatformPostgresConsumerSecret(ctx, spec, renderPlatformPostgresConsumerSecret(spec, credentials)); err != nil {
+		return nil, err
+	}
+	if err := s.restartPlatformPostgresConsumers(ctx, spec); err != nil {
+		return nil, err
+	}
+	consumerSecretReady := s.platformPostgresConsumerSecretReady(ctx, spec)
+	result["consumerSecretReady"] = consumerSecretReady
+	result["ready"] = probe.SQLReady && probe.TaskLedgerSQLReady && consumerSecretReady
+	if args.Relay != nil {
+		relay, err := s.ensurePlatformPostgresRelay(ctx, spec, *args.Relay)
+		if err != nil {
+			return nil, err
+		}
+		result["localRelay"] = relay
+	}
+	return result, nil
 }
 
 func (s *HostOperationsService) GetPlatformPostgresStatus(ctx context.Context, args PlatformPostgresArgs) (map[string]any, error) {
-	paths, err := defaultPlatformPostgresPaths(args)
+	spec, err := validatePlatformPostgresSpec(args)
 	if err != nil {
 		return nil, err
 	}
-	active := false
-	res, runErr := s.hostCommandRunnerContext(ctx, []string{"systemctl", "--user", "is-active", platformPostgresServiceName}, nil, 20*time.Second)
-	if runErr == nil && res.ExitCode == 0 && strings.TrimSpace(res.Stdout) == "active" {
-		active = true
+	probe, err := s.probePlatformPostgres(ctx, spec)
+	if err != nil {
+		return nil, err
 	}
-	credentials, credentialErr := readPlatformPostgresCredentials(paths)
-	ready := false
-	if credentialErr == nil && active {
-		ready = s.runPlatformPostgresSQL(ctx, paths, credentials, "postgres", "SELECT 1") == nil
-	}
+	consumerSecretReady := s.platformPostgresConsumerSecretReady(ctx, spec)
 	return map[string]any{
-		"ready":       ready,
-		"active":      active,
-		"serviceName": platformPostgresServiceName,
-		"dataDir":     paths.DataDir,
-		"bindHost":    paths.BindHost,
-		"port":        paths.Port,
-		"username":    paths.Username,
-		"credentialState": func() string {
-			if credentialErr != nil {
-				return "missing-or-invalid"
-			}
-			return "present"
-		}(),
+		"ready":               probe.OperatorReady && probe.CRDPresent && probe.ClusterReady && probe.ServiceReady && probe.SecretReady && probe.PrimaryReady && probe.SQLReady && probe.TaskLedgerSQLReady && consumerSecretReady,
+		"operatorReady":       probe.OperatorReady,
+		"crdPresent":          probe.CRDPresent,
+		"clusterReady":        probe.ClusterReady,
+		"serviceReady":        probe.ServiceReady,
+		"secretReady":         probe.SecretReady,
+		"primaryReady":        probe.PrimaryReady,
+		"sqlReady":            probe.SQLReady && probe.TaskLedgerSQLReady,
+		"taskLedgerSqlReady":  probe.TaskLedgerSQLReady,
+		"consumerSecretReady": consumerSecretReady,
+		"blockers":            probe.Blockers,
+		"vmName":              spec.VMName,
+		"namespace":           spec.Namespace,
+		"clusterName":         spec.ClusterName,
+		"serviceName":         spec.ClusterName + "-rw",
+		"secretName":          platformPostgresConsumerSecretName,
+		"cnpgSecretName":      spec.ClusterName + "-app",
+		"credentialState":     "cnpg-owned",
 	}, nil
 }
 
 func (s *HostOperationsService) RemovePlatformPostgres(ctx context.Context, args PlatformPostgresArgs, confirm bool) (map[string]any, error) {
 	if !confirm {
-		return nil, fmt.Errorf("remove_platform_postgres requires confirm=true")
+		return nil, errors.New("remove_platform_postgres requires confirm=true")
 	}
-	paths, err := defaultPlatformPostgresPaths(args)
+	spec, err := validatePlatformPostgresSpec(args)
 	if err != nil {
 		return nil, err
 	}
-	res, runErr := s.hostCommandRunnerContext(ctx, []string{"systemctl", "--user", "disable", "--now", platformPostgresServiceName}, nil, 90*time.Second)
-	if runErr != nil || (res.ExitCode != 0 && !strings.Contains(strings.ToLower(res.Stderr+res.Stdout), "not found")) {
-		return nil, fmt.Errorf("stop platform PostgreSQL service: %s", firstNonEmpty(res.Stderr, res.Stdout, errString(runErr, "command failed")))
+	if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace, "--ignore-not-found=true", "--wait=true"}, "delete platform PostgreSQL Cluster", 5*time.Minute); err != nil {
+		return nil, err
 	}
-	if err := os.Remove(paths.UnitPath); err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("remove platform PostgreSQL systemd unit: %w", err)
+	if spec.RetentionPolicy == "delete" {
+		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "secret", spec.ClusterName + "-app", "-n", spec.Namespace, "--ignore-not-found=true"}, "delete platform PostgreSQL Secret", defaultDiscoveryTimeout)
+		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "secret", platformPostgresConsumerSecretName, "-n", spec.Namespace, "--ignore-not-found=true"}, "delete platform PostgreSQL consumer Secret", defaultDiscoveryTimeout)
+		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "pvc", "-l", "cnpg.io/cluster=" + spec.ClusterName, "-n", spec.Namespace, "--ignore-not-found=true"}, "delete platform PostgreSQL PVCs", 5*time.Minute)
 	}
-	if err := os.RemoveAll(paths.DataDir); err != nil {
-		return nil, fmt.Errorf("remove platform PostgreSQL data directory: %w", err)
-	}
-	if err := os.RemoveAll(paths.ConfigDir); err != nil {
-		return nil, fmt.Errorf("remove platform PostgreSQL credentials: %w", err)
-	}
-	return map[string]any{"removed": true, "serviceName": platformPostgresServiceName, "dataDir": paths.DataDir}, nil
+	s.revokeAllPlatformPostgresRelays()
+	return map[string]any{
+		"removed":           true,
+		"vmName":            spec.VMName,
+		"namespace":         spec.Namespace,
+		"clusterName":       spec.ClusterName,
+		"operatorPreserved": true,
+	}, nil
 }

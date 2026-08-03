@@ -126,13 +126,43 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 			if !seenLLM {
 				hostCapabilities = append(hostCapabilities, "llm.ollama")
 			}
-			// Advertise the host-local runtime envelope during registration and
-			// heartbeat so the control plane can reject unsupported work before
-			// queueing a mutation. This is deliberately capability metadata only;
-			// installation and model state remain owned by host operations.
-			var capabilitySummary map[string]any
-			if prereqs, prereqErr := svc.CheckLocalLLMPrerequisites(); prereqErr == nil && prereqs != nil {
-				capabilitySummary = map[string]any{
+			// Start liveness before probing the optional host-local runtime. The
+			// probe can warm Ollama or stall on a broken local socket; that must
+			// not delay registration or make the host appear offline.
+			hb = heartbeat.Start(heartbeat.Options{
+				AgentID:              cfg.RemoteAgentID,
+				InstanceID:           cfg.InstanceID,
+				MCPURL:               cfg.MCPURL,
+				BridgeToken:          cfg.BridgeToken,
+				RemoteAgentAuthToken: cfg.RemoteAgentAuthToken,
+				OnboardingToken:      cfg.OnboardingToken,
+				OnboardingSessionID:  cfg.OnboardingSessionID,
+				EnvFile:              cfg.EnvFile,
+				HostMCPEndpoint:      endpointFor(cfg),
+				HostName:             hostNameFor(cfg),
+				AgentVersion:         "go-host-agent/" + version.Version,
+				ProviderID:           cfg.ProviderID,
+				Fingerprint:          fp,
+				TestMode:             cfg.TestMode,
+				Logger:               logger,
+				CollectVMStats:       collectVMStats,
+				HostCapabilities:     hostCapabilities,
+				CapabilitySummary:    nil,
+				ResourceSnapshot:     admission.Metadata,
+			})
+			go func() {
+				// Advertise the host-local runtime envelope after liveness is up so
+				// the control plane can still reject unsupported work before
+				// queueing a mutation. Installation and model state remain owned by
+				// host operations.
+				prereqs, prereqErr := svc.CheckLocalLLMPrerequisites()
+				if prereqErr != nil || prereqs == nil {
+					if prereqErr != nil {
+						logger.Warn("local LLM capability probe failed", "err", prereqErr)
+					}
+					return
+				}
+				hb.UpdateCapabilitySummary(map[string]any{
 					"llm": map[string]any{
 						"ollama": map[string]any{
 							"supported":            prereqs.Supported,
@@ -152,29 +182,9 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 							"remediationHints": prereqs.RemediationHints,
 						},
 					},
-				}
-			}
-			hb = heartbeat.Start(heartbeat.Options{
-				AgentID:              cfg.RemoteAgentID,
-				InstanceID:           cfg.InstanceID,
-				MCPURL:               cfg.MCPURL,
-				BridgeToken:          cfg.BridgeToken,
-				RemoteAgentAuthToken: cfg.RemoteAgentAuthToken,
-				OnboardingToken:      cfg.OnboardingToken,
-				OnboardingSessionID:  cfg.OnboardingSessionID,
-				EnvFile:              cfg.EnvFile,
-				HostMCPEndpoint:      endpointFor(cfg),
-				HostName:             hostNameFor(cfg),
-				AgentVersion:         "go-host-agent/" + version.Version,
-				ProviderID:           cfg.ProviderID,
-				Fingerprint:          fp,
-				TestMode:             cfg.TestMode,
-				Logger:               logger,
-				CollectVMStats:       collectVMStats,
-				HostCapabilities:     hostCapabilities,
-				CapabilitySummary:    capabilitySummary,
-				ResourceSnapshot:     admission.Metadata,
-			})
+				})
+				logger.Info("local LLM capability probe completed")
+			}()
 		}
 	}
 

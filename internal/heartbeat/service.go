@@ -38,8 +38,25 @@ type Service struct {
 	CapabilitySummary    map[string]any
 	ResourceSnapshot     func() map[string]any
 
-	stopCh chan struct{}
-	wg     sync.WaitGroup
+	capabilityMu sync.RWMutex
+	stopCh       chan struct{}
+	wg           sync.WaitGroup
+}
+
+// UpdateCapabilitySummary lets startup publish the initial liveness signal
+// before an optional host-local capability probe completes. The probe may
+// contact a stalled local runtime; it must never delay registration or
+// heartbeats for the host itself.
+func (s *Service) UpdateCapabilitySummary(summary map[string]any) {
+	s.capabilityMu.Lock()
+	defer s.capabilityMu.Unlock()
+	s.CapabilitySummary = summary
+}
+
+func (s *Service) capabilitySummarySnapshot() map[string]any {
+	s.capabilityMu.RLock()
+	defer s.capabilityMu.RUnlock()
+	return s.CapabilitySummary
 }
 
 type Options struct {
@@ -172,8 +189,8 @@ func (s *Service) register() error {
 	if len(s.HostCapabilities) > 0 {
 		registration["capabilities"] = s.HostCapabilities
 	}
-	if len(s.CapabilitySummary) > 0 {
-		registration["capabilitySummary"] = s.CapabilitySummary
+	if capabilitySummary := s.capabilitySummarySnapshot(); len(capabilitySummary) > 0 {
+		registration["capabilitySummary"] = capabilitySummary
 	}
 	metadata := map[string]any{}
 	if s.OnboardingSessionID != "" {
@@ -230,8 +247,8 @@ func (s *Service) heartbeat() error {
 		"fingerprintSource":  string(s.Fingerprint.FingerprintSource),
 		"connectionState":    "connected",
 	}
-	if len(s.CapabilitySummary) > 0 {
-		heartbeatPayload["capabilitySummary"] = s.CapabilitySummary
+	if capabilitySummary := s.capabilitySummarySnapshot(); len(capabilitySummary) > 0 {
+		heartbeatPayload["capabilitySummary"] = capabilitySummary
 	}
 	if len(metadata) > 0 {
 		heartbeatPayload["metadata"] = metadata
