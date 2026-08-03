@@ -58,6 +58,21 @@ Verify a `reverse tunnel connected` log line and, after HWP R1 rollout, **`host 
 treat it as an onboarding-token mismatch: `MCP_AUTH_TOKEN` must be the per-host
 `opha_*` token, not the CPC bearer (see `../opute/AGENTS.md`, **Host Agent Registration And Heartbeat**).
 
+**Unit topology on this workstation (2026-08-03, do not regress).** The platform agent is
+the **plain unit** `opute-host-agent.service` (binary `~/.local/share/opute/opute-host-agent`).
+The per-instance template units `opute-host-agent@host-zephyrus-8a224c89.service` and
+`opute-host-agent@standalone.service` are **disabled/masked** — do not re-enable them; the
+standalone instance unit auto-restart-loops on a missing instance binary
+(`~/.local/share/opute/instances/standalone/opute-host-agent`), and stale instance envs
+(`OPUTE_MCP_HEALTH_URL=http://10.0.100.129/health`) pointed at the retired VM octet. The
+standalone build/roll agent runs via `bash scripts/start-standalone-build-mcp.sh`
+(`:3014`, `OPUTE_STANDALONE_ALLOW_MUTATIONS=true`); it must expose `get_k8s_resource`
+(unredacted) for secret-backed rolls — `run_kubectl` is **not** implemented by the Go agent
+(control-plane aggregator name only). After `bun run build:host-agent`, install the Linux
+artifact into `~/.local/share/opute/opute-host-agent` and restart
+`opute-host-agent.service`; recycle the standalone with
+`scripts/start-standalone-build-mcp.sh`.
+
 An explicit `hostId` is the durable execution assignment. The host agent should execute that assignment through the reverse tunnel without requiring control-plane provider rediscovery. Keep guest and provider probes bounded and cancellable so VM provisioning cannot starve heartbeats or operation polling.
 
 When a host is onboarded to a second control plane on the same machine, verify the
