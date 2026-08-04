@@ -26,6 +26,36 @@ var requiredPlatformPostgresDispatch = []string{
 	"reset_incus_stack",
 }
 
+var requiredVmResourceDispatch = []string{
+	"update_vm_resources",
+}
+
+func TestVmResourceToolsHaveDispatchCoverage(t *testing.T) {
+	dispatched := loadDispatchToolNames(t)
+	incus, err := tools.HostToolDefinitionsForProvider("incus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := make(map[string]bool, len(incus))
+	for _, tool := range incus {
+		catalog[tool.Name] = true
+	}
+	for _, name := range requiredVmResourceDispatch {
+		if !dispatched[name] {
+			t.Fatalf("VM resource tool %q has no dispatch case in internal/tools/dispatch.go", name)
+		}
+		if !catalog[name] {
+			t.Fatalf("VM resource tool %q missing from the tunnel catalog", name)
+		}
+		if !tools.IsStandaloneMutation(name) {
+			t.Fatalf("VM resource tool %q must be a standalone mutation", name)
+		}
+		if !tools.StandaloneToolNames[name] {
+			t.Fatalf("VM resource tool %q missing from the standalone catalog", name)
+		}
+	}
+}
+
 func TestPlatformPostgresAndResetToolsHaveDispatchCoverage(t *testing.T) {
 	dispatched := loadDispatchToolNames(t)
 	incus, err := tools.HostToolDefinitionsForProvider("incus")

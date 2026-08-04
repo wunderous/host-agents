@@ -37,6 +37,7 @@
     {"name": "start_vm", "classification": "mutation", "support": "stable"},
     {"name": "stop_vm", "classification": "mutation", "support": "stable"},
     {"name": "restart_vm", "classification": "mutation", "support": "stable"},
+    {"name": "update_vm_resources", "classification": "mutation", "support": "experimental"},
     {"name": "delete_vm", "classification": "destructive", "support": "stable"},
     {"name": "install_k3s", "classification": "mutation", "support": "experimental"},
     {"name": "get_k3s_status", "classification": "read_only", "support": "experimental"},

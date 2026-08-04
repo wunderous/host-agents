@@ -698,6 +698,58 @@
     }
   },
   {
+    "name": "update_vm_resources",
+    "title": "Update VM Resources",
+    "description": "Update CPU and/or memory limits of an existing VM or system container on the host",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Target VM instance name"
+        },
+        "cpus": {
+          "type": "number",
+          "description": "New vCPU limit (e.g. 3)"
+        },
+        "memory": {
+          "type": "string",
+          "description": "New memory limit (e.g. 3GiB)"
+        }
+      },
+      "required": [
+        "vmName"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "updated"
+          ]
+        },
+        "cpus": {
+          "type": "string"
+        },
+        "memory": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "vmName",
+        "status"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
     "name": "install_k3s",
     "title": "Install K3s",
     "description": "Install K3s inside a VM and verify the service becomes active",

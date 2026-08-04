@@ -549,6 +549,17 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, fmt.Sprintf("Restarted VM '%s'.", out["vmName"])), nil
 
+	case "update_vm_resources":
+		out, err := svc.UpdateVMResources(ops.UpdateVMResourcesArgs{
+			VMName: stringField(args, "vmName"),
+			CPUs:   intField(args, "cpus"),
+			Memory: stringField(args, "memory"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Updated resources for '%s' (cpus=%s, memory=%s).", out["vmName"], out["cpus"], out["memory"])), nil
+
 	case "delete_vm":
 		out, err := svc.DeleteVM(ops.VMScopedArgs{VMName: stringField(args, "vmName")}, onData)
 		if err != nil {

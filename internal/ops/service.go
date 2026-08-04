@@ -408,6 +408,46 @@ func (s *HostOperationsService) RestartVM(args VMScopedArgs, onData func(string)
 	return map[string]string{"vmName": vmName, "status": "running"}, nil
 }
 
+// UpdateVMResourcesArgs selects the instance and the limits to apply. At least
+// one of CPUs or Memory must be set; both are optional so callers can adjust
+// a single limit without touching the other.
+type UpdateVMResourcesArgs struct {
+	VMName string `json:"vmName"`
+	CPUs   int    `json:"cpus,omitempty"`
+	Memory string `json:"memory,omitempty"`
+}
+
+// UpdateVMResources applies limits.cpu / limits.memory to an existing VM or
+// system container. CPU and memory limits are live-applied by Incus for
+// containers; QEMU guests pick them up on the next start.
+func (s *HostOperationsService) UpdateVMResources(args UpdateVMResourcesArgs, onData func(string)) (map[string]string, error) {
+	vmName := strings.TrimSpace(args.VMName)
+	if vmName == "" {
+		return nil, errors.New("vmName is required")
+	}
+	memory := strings.TrimSpace(args.Memory)
+	if args.CPUs <= 0 && memory == "" {
+		return nil, errors.New("at least one of cpus or memory is required")
+	}
+	if err := s.assertIncusOwnership(vmName, "update_vm_resources"); err != nil {
+		return nil, err
+	}
+	applied := map[string]string{"vmName": vmName, "status": "updated"}
+	if args.CPUs > 0 {
+		if err := s.setIncusInstanceConfig(vmName, "limits.cpu", strconv.Itoa(args.CPUs)); err != nil {
+			return nil, fmt.Errorf("set CPU limit: %w", err)
+		}
+		applied["cpus"] = strconv.Itoa(args.CPUs)
+	}
+	if memory != "" {
+		if err := s.setIncusInstanceConfig(vmName, "limits.memory", memory); err != nil {
+			return nil, fmt.Errorf("set memory limit: %w", err)
+		}
+		applied["memory"] = memory
+	}
+	return applied, nil
+}
+
 func (s *HostOperationsService) DeleteVM(args VMScopedArgs, onData func(string)) (map[string]any, error) {
 	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
