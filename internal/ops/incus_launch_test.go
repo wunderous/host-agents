@@ -1,6 +1,12 @@
 package ops
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/wunderous/host-agents/internal/exec"
+)
 
 func TestIncusVMConfigEnablesAutostart(t *testing.T) {
 	config := incusVMConfig(4, "4GiB")
@@ -24,5 +30,28 @@ func TestNormalizeProvisionInstanceType(t *testing.T) {
 	}
 	if got := normalizeProvisionInstanceType("container"); got != "container" {
 		t.Fatalf("container = %q", got)
+	}
+}
+
+func TestLaunchIncusContainerUsesDefaultResources(t *testing.T) {
+	var launchArgs []string
+	service := &HostOperationsService{}
+	service.commandRunnerFn = func(args []string, _ func(string), _ time.Duration) (exec.Result, error) {
+		if len(args) > 0 && args[0] == "launch" {
+			launchArgs = append([]string(nil), args...)
+		}
+		return exec.Result{ExitCode: 0}, nil
+	}
+
+	if err := service.launchIncusContainer("default-resources", "images:ubuntu/24.04", "", 0, "", false, nil, time.Minute); err != nil {
+		t.Fatalf("launchIncusContainer returned error: %v", err)
+	}
+
+	joined := strings.Join(launchArgs, " ")
+	if !strings.Contains(joined, "limits.cpu=2") {
+		t.Fatalf("launch args missing default CPU limit: %q", joined)
+	}
+	if !strings.Contains(joined, "limits.memory=2GiB") {
+		t.Fatalf("launch args missing default memory limit: %q", joined)
 	}
 }

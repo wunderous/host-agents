@@ -28,6 +28,96 @@ type OllamaConfig struct {
 	BinaryPath string
 	Version    string
 	Sha256     string
+	Limits     OllamaRuntimeLimits
+}
+
+// OllamaRuntimeLimits caps how much of the discrete GPU Ollama may use. They
+// map to the OLLAMA_GPU_OVERHEAD / OLLAMA_MAX_LOADED_MODELS /
+// OLLAMA_NUM_PARALLEL / OLLAMA_FLASH_ATTENTION environment variables rendered
+// into the managed systemd unit. On low-VRAM laptop GPUs (e.g. 4 GiB) the
+// default overhead reserve keeps the WDDM/display driver from being starved,
+// which prevents Windows VIDEO_TDR_FAILURE (0x116) and
+// VIDEO_MEMORY_MANAGEMENT_INTERNAL (0x10E) crashes under inference load.
+type OllamaRuntimeLimits struct {
+	GpuOverheadMiB  int  `json:"gpuOverheadMiB"`
+	MaxLoadedModels int  `json:"maxLoadedModels"`
+	NumParallel     int  `json:"numParallel"`
+	FlashAttention  bool `json:"flashAttention"`
+}
+
+const (
+	// DefaultOllamaGpuOverheadMiB reserves 768 MiB for the display driver.
+	DefaultOllamaGpuOverheadMiB = 768
+	// DefaultOllamaMaxLoadedModels keeps a single model resident.
+	DefaultOllamaMaxLoadedModels = 1
+	// DefaultOllamaNumParallel serves one inference request at a time.
+	DefaultOllamaNumParallel = 1
+	// DefaultOllamaFlashAttention reduces KV cache VRAM.
+	DefaultOllamaFlashAttention = true
+)
+
+func DefaultOllamaRuntimeLimits() OllamaRuntimeLimits {
+	return OllamaRuntimeLimits{
+		GpuOverheadMiB:  DefaultOllamaGpuOverheadMiB,
+		MaxLoadedModels: DefaultOllamaMaxLoadedModels,
+		NumParallel:     DefaultOllamaNumParallel,
+		FlashAttention:  DefaultOllamaFlashAttention,
+	}
+}
+
+// ollamaRuntimeLimitsPath returns the persisted runtime-limits file. The unit
+// is re-rendered on every startOllama, so the limits must survive restarts in
+// a file, not only in the current systemd unit.
+func ollamaRuntimeLimitsPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	return filepath.Join(home, ".config", "opute", "ollama-runtime-limits.json"), nil
+}
+
+func loadOllamaRuntimeLimits() OllamaRuntimeLimits {
+	limits := DefaultOllamaRuntimeLimits()
+	path, err := ollamaRuntimeLimitsPath()
+	if err != nil {
+		return limits
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return limits
+	}
+	var persisted OllamaRuntimeLimits
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		return limits
+	}
+	if persisted.GpuOverheadMiB < 0 {
+		persisted.GpuOverheadMiB = limits.GpuOverheadMiB
+	}
+	if persisted.MaxLoadedModels < 0 {
+		persisted.MaxLoadedModels = limits.MaxLoadedModels
+	}
+	if persisted.NumParallel < 0 {
+		persisted.NumParallel = limits.NumParallel
+	}
+	return persisted
+}
+
+func saveOllamaRuntimeLimits(limits OllamaRuntimeLimits) error {
+	path, err := ollamaRuntimeLimitsPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("create opute config dir: %w", err)
+	}
+	data, err := json.MarshalIndent(limits, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode Ollama runtime limits: %w", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0600); err != nil {
+		return fmt.Errorf("persist Ollama runtime limits: %w", err)
+	}
+	return nil
 }
 
 const (
@@ -228,12 +318,31 @@ func RenderOllamaSystemdUnit(cfg OllamaConfig) (string, error) {
 	// AMD iGPU is not exposed to CUDA/WSL, so device 0 is the dGPU. WSL needs
 	// /usr/lib/wsl/lib (Windows NVIDIA driver GPU-PV) on LD_LIBRARY_PATH plus
 	// Ollama's bundled cuda_v12 ggml libs beside the binary tree.
-	libRoot := filepath.ToSlash(filepath.Join(filepath.Dir(filepath.Dir(cfg.BinaryPath)), "lib", "ollama"))
+	rootDir := filepath.Dir(filepath.Dir(cfg.BinaryPath))
+	libRoot := filepath.ToSlash(filepath.Join(rootDir, "lib", "ollama"))
+	// Fail closed: Opute-managed Ollama must never serve CPU-only inference.
+	// ExecStartPre refuses to start when no NVIDIA GPU is visible or the ggml
+	// CUDA backend link (see ensureOllamaGpuBackendLinks) is missing.
+	gatePath := filepath.ToSlash(filepath.Join(rootDir, "bin", "check-gpu.sh"))
+	// Low-VRAM guard: reserve driver headroom and cap concurrency so inference
+	// cannot starve the WDDM/display driver (host TDR/VMEM bugchecks). Zero
+	// means "leave Ollama's own default" for that knob.
+	limits := cfg.Limits
+	if limits.GpuOverheadMiB <= 0 {
+		limits.GpuOverheadMiB = DefaultOllamaGpuOverheadMiB
+	}
+	if limits.MaxLoadedModels <= 0 {
+		limits.MaxLoadedModels = DefaultOllamaMaxLoadedModels
+	}
+	if limits.NumParallel <= 0 {
+		limits.NumParallel = DefaultOllamaNumParallel
+	}
 	return fmt.Sprintf(`[Unit]
 Description=Opute-managed Ollama runtime
 After=network-online.target
 
 [Service]
+ExecStartPre=%s
 ExecStart=%s serve
 Environment=OLLAMA_HOST=127.0.0.1:%d
 Environment=OLLAMA_MODELS=%s
@@ -242,12 +351,84 @@ Environment=CUDA_VISIBLE_DEVICES=0
 Environment=NVIDIA_VISIBLE_DEVICES=0
 Environment=OLLAMA_INTEL_GPU=false
 Environment=LD_LIBRARY_PATH=/usr/lib/wsl/lib:%s/cuda_v12:%s
+Environment=OLLAMA_GPU_OVERHEAD=%d
+Environment=OLLAMA_MAX_LOADED_MODELS=%d
+Environment=OLLAMA_NUM_PARALLEL=%d
+Environment=OLLAMA_FLASH_ATTENTION=%t
 Restart=on-failure
 RestartSec=3
 
 [Install]
 WantedBy=default.target
-`, cfg.BinaryPath, cfg.Port, cfg.ModelsDir, libRoot, libRoot), nil
+`, gatePath, cfg.BinaryPath, cfg.Port, cfg.ModelsDir, libRoot, libRoot,
+		limits.GpuOverheadMiB, limits.MaxLoadedModels, limits.NumParallel, limits.FlashAttention), nil
+}
+
+// ollamaGpuBackendLinkPaths returns the ggml GPU backend loader links that the
+// official Ollama v0.30.x release tarball omits from lib/ollama/ (it ships the
+// CUDA payload only inside cuda_v12/cuda_v13 and the Vulkan payload only inside
+// vulkan/). llama-server discovers GPU backends by scanning its own directory
+// for libggml-*.so, so a pristine extraction runs CPU-only with
+// "no usable GPU found". The host agent links the payloads into lib/ollama/
+// after extraction so discrete-GPU inference works.
+func ollamaGpuBackendLinkPaths(libOllamaDir string) [][2]string {
+	return [][2]string{
+		{filepath.Join(libOllamaDir, "libggml-cuda.so"), filepath.Join("cuda_v12", "libggml-cuda.so")},
+		{filepath.Join(libOllamaDir, "libggml-vulkan.so"), filepath.Join("vulkan", "libggml-vulkan.so")},
+	}
+}
+
+// ensureOllamaGpuBackendLinks creates the missing backend loader links under
+// lib/ollama/ (idempotent). A missing payload is left absent so the fail-closed
+// unit gate refuses to start instead of serving CPU-only inference.
+func ensureOllamaGpuBackendLinks(rootDir string) error {
+	libOllamaDir := filepath.Join(rootDir, "lib", "ollama")
+	for _, pair := range ollamaGpuBackendLinkPaths(libOllamaDir) {
+		link, relativeTarget := pair[0], pair[1]
+		if _, err := os.Lstat(link); err == nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(libOllamaDir, relativeTarget)); err != nil {
+			continue
+		}
+		if err := os.Symlink(relativeTarget, link); err != nil {
+			return fmt.Errorf("link Ollama GPU backend %s: %w", relativeTarget, err)
+		}
+	}
+	return nil
+}
+
+// renderOllamaGpuGateScript returns the fail-closed ExecStartPre gate script.
+// It refuses to start Ollama unless an NVIDIA GPU is visible through nvidia-smi
+// (native Linux or WSL GPU-PV) and the ggml CUDA backend link exists.
+func renderOllamaGpuGateScript(rootDir string) string {
+	libOllamaDir := filepath.ToSlash(filepath.Join(rootDir, "lib", "ollama"))
+	return fmt.Sprintf(`#!/usr/bin/env bash
+# Opute fail-closed GPU gate: Opute-managed Ollama must run on the discrete
+# NVIDIA GPU. Refuse to start when no GPU is visible or the ggml CUDA backend
+# is missing, so inference never silently falls back to CPU.
+set -e
+if ! (/usr/lib/wsl/lib/nvidia-smi -L >/dev/null 2>&1 || nvidia-smi -L >/dev/null 2>&1); then
+  echo "Opute Ollama: no NVIDIA GPU visible (nvidia-smi failed); refusing CPU-only start" >&2
+  exit 1
+fi
+if [ ! -e %s/libggml-cuda.so ]; then
+  echo "Opute Ollama: ggml CUDA backend missing; refusing CPU-only start" >&2
+  exit 1
+fi
+exit 0
+`, libOllamaDir)
+}
+
+func writeOllamaGpuGate(rootDir string) (string, error) {
+	gatePath := filepath.Join(rootDir, "bin", "check-gpu.sh")
+	if err := os.MkdirAll(filepath.Dir(gatePath), 0700); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(gatePath, []byte(renderOllamaGpuGateScript(rootDir)), 0700); err != nil {
+		return "", err
+	}
+	return gatePath, nil
 }
 
 func defaultOllamaConfig() (OllamaConfig, error) {
@@ -263,7 +444,14 @@ func defaultOllamaConfig() (OllamaConfig, error) {
 		return OllamaConfig{}, fmt.Errorf("unsupported Ollama architecture %q", runtime.GOARCH)
 	}
 	root := filepath.Join(home, ".local", "share", "opute", "ollama")
-	return OllamaConfig{Port: 11434, ModelsDir: filepath.Join(root, "models"), BinaryPath: filepath.Join(root, "bin", "ollama"), Version: ollamaVersion, Sha256: sha}, nil
+	return OllamaConfig{
+		Port:       11434,
+		ModelsDir:  filepath.Join(root, "models"),
+		BinaryPath: filepath.Join(root, "bin", "ollama"),
+		Version:    ollamaVersion,
+		Sha256:     sha,
+		Limits:     loadOllamaRuntimeLimits(),
+	}, nil
 }
 
 func (s *HostOperationsService) CheckLocalLLMPrerequisites() (*LocalLLMPrerequisitesResult, error) {
@@ -648,6 +836,95 @@ func (s *HostOperationsService) StartLocalLLMRuntime(ctx context.Context) (*Loca
 	return s.ProbeLocalLLM(ctx, ProbeLocalLLMArgs{})
 }
 
+// ConfigureLocalLLMRuntimeArgs adjusts the Opute-managed Ollama runtime limits
+// (GPU headroom + concurrency caps) and persists them so every later unit
+// re-render keeps them. Omitted fields keep their current persisted values.
+type ConfigureLocalLLMRuntimeArgs struct {
+	GpuOverheadMiB  *int
+	MaxLoadedModels *int
+	NumParallel     *int
+	FlashAttention  *bool
+}
+
+func (s *HostOperationsService) ConfigureLocalLLMRuntime(ctx context.Context, args ConfigureLocalLLMRuntimeArgs) (*LocalLLMProbeResult, error) {
+	if err := s.requireSharedHostOwner("configure_local_llm_runtime"); err != nil {
+		return nil, err
+	}
+	limits := loadOllamaRuntimeLimits()
+	if args.GpuOverheadMiB != nil {
+		if *args.GpuOverheadMiB < 0 || *args.GpuOverheadMiB > 8192 {
+			return nil, fmt.Errorf("gpuOverheadMiB must be between 0 and 8192")
+		}
+		limits.GpuOverheadMiB = *args.GpuOverheadMiB
+	}
+	if args.MaxLoadedModels != nil {
+		if *args.MaxLoadedModels < 0 || *args.MaxLoadedModels > 16 {
+			return nil, fmt.Errorf("maxLoadedModels must be between 0 and 16")
+		}
+		limits.MaxLoadedModels = *args.MaxLoadedModels
+	}
+	if args.NumParallel != nil {
+		if *args.NumParallel < 0 || *args.NumParallel > 64 {
+			return nil, fmt.Errorf("numParallel must be between 0 and 64")
+		}
+		limits.NumParallel = *args.NumParallel
+	}
+	if args.FlashAttention != nil {
+		limits.FlashAttention = *args.FlashAttention
+	}
+	if err := saveOllamaRuntimeLimits(limits); err != nil {
+		return nil, err
+	}
+	cfg, err := defaultOllamaConfig()
+	if err != nil {
+		return nil, err
+	}
+	// Re-render the unit with the persisted limits and apply it. The service
+	// may already be running; a restart picks up the new environment without
+	// reinstalling the binary or re-pulling the model.
+	if err := s.writeOllamaUnitAndRestart(ctx, cfg); err != nil {
+		return nil, err
+	}
+	return s.ProbeLocalLLM(ctx, ProbeLocalLLMArgs{})
+}
+
+// writeOllamaUnitAndRestart renders the managed systemd unit from cfg, applies
+// it, and restarts the service so the environment changes take effect.
+func (s *HostOperationsService) writeOllamaUnitAndRestart(ctx context.Context, cfg OllamaConfig) error {
+	unit, err := RenderOllamaSystemdUnit(cfg)
+	if err != nil {
+		return err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	unitPath := filepath.Join(home, ".config", "systemd", "user", "opute-ollama.service")
+	if err := os.MkdirAll(filepath.Dir(unitPath), 0700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(unitPath, []byte(unit), 0600); err != nil {
+		return err
+	}
+	for _, command := range [][]string{{"systemctl", "--user", "daemon-reload"}, {"systemctl", "--user", "restart", "opute-ollama.service"}} {
+		res, err := s.hostCommandRunnerContext(ctx, command, nil, 30*time.Second)
+		if err != nil {
+			return err
+		}
+		if res.ExitCode != 0 {
+			stderr := strings.TrimSpace(res.Stderr)
+			if stderr == "" {
+				stderr = strings.TrimSpace(res.Stdout)
+			}
+			if stderr == "" {
+				return fmt.Errorf("Ollama systemd operation failed")
+			}
+			return fmt.Errorf("Ollama systemd operation failed: %s", stderr)
+		}
+	}
+	return waitForOllamaReady(ctx, cfg.Port)
+}
+
 func (s *HostOperationsService) StopLocalLLMRuntime(ctx context.Context) error {
 	if err := s.requireSharedHostOwner("stop_local_llm_runtime"); err != nil {
 		return err
@@ -979,6 +1256,12 @@ func (s *HostOperationsService) ensureOllamaInstalled(ctx context.Context, cfg O
 	if info.Mode()&0111 == 0 {
 		return fmt.Errorf("Ollama binary is not executable")
 	}
+	// Official v0.30.x tarballs ship the ggml CUDA/Vulkan payloads only under
+	// lib/ollama/cuda_v12|cuda_v13|vulkan; without loader links in lib/ollama/
+	// itself llama-server falls back to CPU-only inference.
+	if err := ensureOllamaGpuBackendLinks(rootDir); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1010,6 +1293,16 @@ func ollamaReachable(ctx context.Context, port int, within time.Duration) bool {
 func (s *HostOperationsService) startOllama(ctx context.Context, cfg OllamaConfig) error {
 	if ollamaReachable(ctx, cfg.Port, 3*time.Second) {
 		return nil
+	}
+	rootDir := filepath.Dir(filepath.Dir(cfg.BinaryPath))
+	// Self-heal a previously extracted tree whose backend loader links were
+	// missing (upstream v0.30.x tarball defect), then write the fail-closed GPU
+	// gate the rendered unit runs as ExecStartPre.
+	if err := ensureOllamaGpuBackendLinks(rootDir); err != nil {
+		return err
+	}
+	if _, err := writeOllamaGpuGate(rootDir); err != nil {
+		return err
 	}
 	unit, err := RenderOllamaSystemdUnit(cfg)
 	if err != nil {

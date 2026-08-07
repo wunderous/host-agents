@@ -254,6 +254,8 @@ type VMInfo struct {
 	Disk         string         `json:"disk,omitempty"`
 	AgentReady   *bool          `json:"agentReady,omitempty"`
 	K3sInstalled *bool          `json:"k3sInstalled,omitempty"`
+	// HostId is the owning host agent identity (durable execution owner).
+	HostId string `json:"hostId,omitempty"`
 }
 
 // --- VM lifecycle ---
@@ -293,11 +295,11 @@ func (s *HostOperationsService) provisionVM(args ProvisionVMArgs, onData func(st
 	}
 	cpus := args.CPUs
 	if cpus <= 0 {
-		cpus = 2
+		cpus = defaultIncusVMCPUs
 	}
 	memory := strings.TrimSpace(args.Memory)
 	if memory == "" {
-		memory = "2GiB"
+		memory = defaultIncusVMMemory
 	}
 	disk := strings.TrimSpace(args.Disk)
 	if disk == "" {

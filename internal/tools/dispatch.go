@@ -111,6 +111,8 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		out, err := svc.ProvisionContainer(ops.ProvisionContainerArgs{
 			ContainerName: stringField(args, "containerName"),
 			Image:         stringField(args, "image"),
+			CPUs:          intField(args, "cpus"),
+			Memory:        stringField(args, "memory"),
 			Disk:          stringField(args, "disk"),
 			GPU:           boolField(args, "gpu"),
 			WSLGpuLibs:    boolField(args, "wslGpuLibs"),
@@ -211,6 +213,18 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, "Local Ollama runtime is ready"), nil
+
+	case "configure_local_llm_runtime":
+		out, err := svc.ConfigureLocalLLMRuntime(ctx, ops.ConfigureLocalLLMRuntimeArgs{
+			GpuOverheadMiB:  optionalIntField(args, "gpuOverheadMiB"),
+			MaxLoadedModels: optionalIntField(args, "maxLoadedModels"),
+			NumParallel:     optionalIntField(args, "numParallel"),
+			FlashAttention:  optionalBoolField(args, "flashAttention"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Local Ollama runtime limits applied"), nil
 
 	case "stop_local_llm_runtime":
 		if err := svc.StopLocalLLMRuntime(ctx); err != nil {

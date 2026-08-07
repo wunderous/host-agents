@@ -35,6 +35,10 @@ type ClusterDetail struct {
 	Nodes                  []ClusterNode `json:"nodes"`
 	Logs                   []string      `json:"logs"`
 	NodeInventoryAvailable *bool         `json:"nodeInventoryAvailable,omitempty"`
+	// VMName is the backing Incus instance (cluster resource id).
+	VMName string `json:"vmName,omitempty"`
+	// HostId is the owning host agent identity (durable execution owner).
+	HostId string `json:"hostId,omitempty"`
 }
 
 func (s *HostOperationsService) ListClusters(fast bool) (ClusterListResult, error) {
@@ -109,17 +113,15 @@ func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
 		status = stoppedOrUnknown
 	}
 
-	version := "Unknown"
-	if k3sInstalled != nil && *k3sInstalled {
-		version = "Discovering…"
-	} else if k3sInstalled != nil && !*k3sInstalled {
+	// Runtime metrics are evidence, not optimistic placeholders. A stopped
+	// guest cannot report its k3s version or node inventory, and a failed live
+	// probe must remain visibly unavailable instead of looking authoritative.
+	version := ""
+	if k3sInstalled != nil && !*k3sInstalled {
 		version = "Not installed"
 	}
 
 	nodeCount := 0
-	if k3sInstalled != nil && *k3sInstalled {
-		nodeCount = 1
-	}
 
 	detail := ClusterDetail{
 		ID:            fmt.Sprintf("k3s:%s", vm.Name),
@@ -137,6 +139,8 @@ func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
 		AgentReady:    vm.AgentReady,
 		Nodes:         []ClusterNode{},
 		Logs:          []string{},
+		VMName:        vm.Name,
+		HostId:        strings.TrimSpace(vm.HostId),
 	}
 	if k3sInstalled != nil {
 		detail.K3sInstalled = k3sInstalled

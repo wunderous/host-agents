@@ -176,8 +176,11 @@ func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus i
 		profileDevices = map[string]incusProfileDevice{}
 	}
 
+	if cpus <= 0 {
+		cpus = defaultIncusVMCPUs
+	}
 	if memory == "" {
-		memory = "2GiB"
+		memory = defaultIncusVMMemory
 	}
 	if disk == "" {
 		disk = "10GiB"

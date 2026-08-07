@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -60,7 +62,7 @@ func TestOllamaReachable(t *testing.T) {
 }
 
 func TestRenderOllamaSystemdUnit(t *testing.T) {
-	cfg := OllamaConfig{Port: 11434, ModelsDir: "/var/lib/opute/ollama", BinaryPath: "/usr/local/bin/ollama", Version: "v0.30.8", Sha256: "ffe2b2c2f2f5f5b30c081ec353c2e0bb2d9ead516064a8e22663b24b8fd8dca0"}
+	cfg := OllamaConfig{Port: 11434, ModelsDir: "/var/lib/opute/ollama", BinaryPath: "/usr/local/bin/ollama", Version: "v0.30.8", Sha256: "ffe2b2c2f2f5f5b30c081ec353c2e0bb2d9ead516064a8e22663b24b8fd8dca0", Limits: DefaultOllamaRuntimeLimits()}
 	unit, err := RenderOllamaSystemdUnit(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -72,10 +74,77 @@ func TestRenderOllamaSystemdUnit(t *testing.T) {
 		"NVIDIA_VISIBLE_DEVICES=0",
 		"OLLAMA_INTEL_GPU=false",
 		"LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/lib/ollama/cuda_v12:/usr/local/lib/ollama",
+		"ExecStartPre=/usr/local/bin/check-gpu.sh",
 		"ExecStart=/usr/local/bin/ollama serve",
+		"OLLAMA_GPU_OVERHEAD=768",
+		"OLLAMA_MAX_LOADED_MODELS=1",
+		"OLLAMA_NUM_PARALLEL=1",
+		"OLLAMA_FLASH_ATTENTION=true",
 	} {
 		if !containsOllama(unit, want) {
 			t.Fatalf("missing %q", want)
+		}
+	}
+}
+
+func TestEnsureOllamaGpuBackendLinks(t *testing.T) {
+	root := t.TempDir()
+	libDir := filepath.Join(root, "lib", "ollama")
+	for _, payload := range []string{"cuda_v12/libggml-cuda.so", "cuda_v13/libggml-cuda.so", "vulkan/libggml-vulkan.so"} {
+		dir := filepath.Join(libDir, filepath.Dir(payload))
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(libDir, payload), []byte("payload"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ensureOllamaGpuBackendLinks(root); err != nil {
+		t.Fatal(err)
+	}
+	cudaLink := filepath.Join(libDir, "libggml-cuda.so")
+	vulkanLink := filepath.Join(libDir, "libggml-vulkan.so")
+	for _, link := range []string{cudaLink, vulkanLink} {
+		info, err := os.Lstat(link)
+		if err != nil {
+			t.Fatalf("expected backend link %s: %v", link, err)
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("expected symlink for %s", link)
+		}
+		if _, err := os.Stat(link); err != nil {
+			t.Fatalf("backend link %s does not resolve: %v", link, err)
+		}
+	}
+	// Idempotent re-run must not fail or recreate.
+	if err := ensureOllamaGpuBackendLinks(root); err != nil {
+		t.Fatal(err)
+	}
+	// A missing payload must leave the loader link absent so the fail-closed
+	// unit gate refuses to start (no silent CPU fallback).
+	brokenRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(brokenRoot, "lib", "ollama", "vulkan"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureOllamaGpuBackendLinks(brokenRoot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(brokenRoot, "lib", "ollama", "libggml-cuda.so")); err == nil {
+		t.Fatal("expected no CUDA link when payload is missing")
+	}
+}
+
+func TestRenderOllamaGpuGateScript(t *testing.T) {
+	script := renderOllamaGpuGateScript("/home/opute/.local/share/opute/ollama")
+	for _, want := range []string{
+		"#!/usr/bin/env bash",
+		"/usr/lib/wsl/lib/nvidia-smi",
+		"/home/opute/.local/share/opute/ollama/lib/ollama/libggml-cuda.so",
+		"refusing CPU-only start",
+		"exit 1",
+	} {
+		if !containsOllama(script, want) {
+			t.Fatalf("gate script missing %q", want)
 		}
 	}
 }

@@ -132,6 +132,12 @@ func (s *HostOperationsService) launchIncusContainer(name, image, disk string, c
 	if onData != nil {
 		onData(fmt.Sprintf("Launching Incus system container %q...", name))
 	}
+	if cpus <= 0 {
+		cpus = defaultIncusVMCPUs
+	}
+	if strings.TrimSpace(memory) == "" {
+		memory = defaultIncusVMMemory
+	}
 	launch := []string{"launch", image, name, "--config", "boot.autostart=true"}
 	if owner := s.ownerConfigValue(); owner != "" {
 		launch = append(launch, "--config", oputeIncusOwnerLabel+"="+owner)
@@ -347,7 +353,7 @@ func (s *HostOperationsService) ProbeGPUContainer(onData func(string)) (map[stri
 	if onData != nil {
 		onData(fmt.Sprintf("Launching disposable GPU probe container %q...", probeName))
 	}
-	if err := s.launchIncusContainer(probeName, "images:ubuntu/24.04", "4GiB", 0, "", false, onData, 10*time.Minute); err != nil {
+	if err := s.launchIncusContainer(probeName, "images:ubuntu/24.04", "4GiB", defaultIncusVMCPUs, defaultIncusVMMemory, false, onData, 10*time.Minute); err != nil {
 		result["status"] = "probe_launch_failed"
 		result["error"] = err.Error()
 		return result, nil

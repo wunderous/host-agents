@@ -59,6 +59,55 @@ type hwpAssignCancelFrame struct {
 	HostID      string `json:"hostId"`
 }
 
+type hwpStreamOpenFrame struct {
+	Type      string         `json:"type"`
+	RequestID string         `json:"requestId"`
+	HostID    string         `json:"hostId"`
+	Action    string         `json:"action"`
+	Args      map[string]any `json:"args"`
+}
+
+type hwpStreamInputFrame struct {
+	Type     string `json:"type"`
+	StreamID string `json:"streamId"`
+	Data     string `json:"data"`
+}
+
+type hwpStreamResizeFrame struct {
+	Type     string `json:"type"`
+	StreamID string `json:"streamId"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+}
+
+type hwpStreamCloseFrame struct {
+	Type     string `json:"type"`
+	StreamID string `json:"streamId"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+type hwpStreamOpenedFrame struct {
+	Type      string `json:"type"`
+	RequestID string `json:"requestId"`
+	StreamID  string `json:"streamId"`
+}
+
+type hwpStreamChunkFrame struct {
+	Type     string `json:"type"`
+	StreamID string `json:"streamId"`
+	Data     string `json:"data"`
+	EOF      bool   `json:"eof,omitempty"`
+}
+
+type hwpStreamErrorFrame struct {
+	Type      string         `json:"type"`
+	RequestID string         `json:"requestId,omitempty"`
+	StreamID  string         `json:"streamId,omitempty"`
+	Code      string         `json:"code"`
+	Message   string         `json:"message"`
+	Details   map[string]any `json:"details,omitempty"`
+}
+
 type hwpSyncResultFrame struct {
 	Type      string `json:"type"`
 	RequestID string `json:"requestId"`
@@ -81,6 +130,12 @@ type hostWorkerConn struct {
 	mu      sync.Mutex
 	pending map[string]chan syncResult
 	assigns map[string]context.CancelFunc
+	streams map[string]hostWorkerStream
+}
+
+type hostWorkerStream struct {
+	cancel context.CancelFunc
+	vmName string
 }
 
 type syncResult struct {
@@ -154,6 +209,7 @@ func connectHostWorkerOnce(ctx context.Context, host *hostmcp.Server, wsURL, age
 		host:    host,
 		pending: make(map[string]chan syncResult),
 		assigns: make(map[string]context.CancelFunc),
+		streams: make(map[string]hostWorkerStream),
 	}
 
 	register := hwpRegisterFrame{
@@ -178,6 +234,7 @@ func connectHostWorkerOnce(ctx context.Context, host *hostmcp.Server, wsURL, age
 	case err := <-readErrCh:
 		cancelHeartbeat()
 		session.cancelAllAssigns()
+		session.cancelAllStreams()
 		_ = conn.Close()
 		if err == nil {
 			return fmt.Errorf("host worker closed")
@@ -186,6 +243,7 @@ func connectHostWorkerOnce(ctx context.Context, host *hostmcp.Server, wsURL, age
 	case <-ctx.Done():
 		cancelHeartbeat()
 		session.cancelAllAssigns()
+		session.cancelAllStreams()
 		_ = conn.Close()
 		<-readErrCh
 		return ctx.Err()
@@ -217,6 +275,20 @@ func (s *hostWorkerConn) cancelAllAssigns() {
 	for id, cancel := range s.assigns {
 		cancel()
 		delete(s.assigns, id)
+	}
+}
+
+func (s *hostWorkerConn) cancelAllStreams() {
+	s.mu.Lock()
+	streams := make(map[string]hostWorkerStream, len(s.streams))
+	for id, stream := range s.streams {
+		streams[id] = stream
+		delete(s.streams, id)
+	}
+	s.mu.Unlock()
+	for id, stream := range streams {
+		stream.cancel()
+		s.host.CloseHostStream(id)
 	}
 }
 
@@ -254,10 +326,155 @@ func (s *hostWorkerConn) readLoop(ctx context.Context) error {
 				return err
 			}
 			s.handleAssignCancel(frame)
+		case "stream_open":
+			var frame hwpStreamOpenFrame
+			if err := json.Unmarshal(data, &frame); err != nil {
+				return err
+			}
+			go s.handleStreamOpen(frame)
+		case "stream_input":
+			var frame hwpStreamInputFrame
+			if err := json.Unmarshal(data, &frame); err != nil {
+				return err
+			}
+			s.handleStreamInput(frame)
+		case "stream_resize":
+			var frame hwpStreamResizeFrame
+			if err := json.Unmarshal(data, &frame); err != nil {
+				return err
+			}
+			s.handleStreamResize(frame)
+		case "stream_close":
+			var frame hwpStreamCloseFrame
+			if err := json.Unmarshal(data, &frame); err != nil {
+				return err
+			}
+			s.handleStreamClose(frame)
 		default:
 			s.logger.Warn("ignored host worker frame", "type", envelope.Type)
 		}
 	}
+}
+
+func (s *hostWorkerConn) handleStreamOpen(frame hwpStreamOpenFrame) {
+	args := frame.Args
+	if args == nil {
+		args = map[string]any{}
+	}
+	vmName, _ := args["vmName"].(string)
+	if vmName == "" {
+		_ = s.writeJSON(hwpStreamErrorFrame{
+			Type: "stream_error", RequestID: frame.RequestID,
+			Code: "invalid_arguments", Message: "vmName is required",
+		})
+		return
+	}
+	_, cancel := context.WithCancel(context.Background())
+	s.mu.Lock()
+	if priorID, ok := s.streamByVM(vmName); ok {
+		if prior, exists := s.streams[priorID]; exists {
+			prior.cancel()
+			delete(s.streams, priorID)
+			s.host.CloseHostStream(priorID)
+		}
+	}
+	streamID := fmt.Sprintf("hwp-stream-%d", time.Now().UnixNano())
+	s.streams[streamID] = hostWorkerStream{cancel: cancel, vmName: vmName}
+	s.mu.Unlock()
+
+	onData := func(chunk string) {
+		if chunk == "" {
+			return
+		}
+		_ = s.writeJSON(hwpStreamChunkFrame{Type: "stream_chunk", StreamID: streamID, Data: chunk})
+	}
+	onClose := func(reason string) {
+		s.mu.Lock()
+		if _, exists := s.streams[streamID]; exists {
+			delete(s.streams, streamID)
+		}
+		s.mu.Unlock()
+		_ = s.writeJSON(hwpStreamChunkFrame{Type: "stream_chunk", StreamID: streamID, EOF: true})
+		_ = s.writeJSON(hwpStreamCloseFrame{Type: "stream_close", StreamID: streamID, Reason: reason})
+	}
+
+	if err := s.host.OpenHostStreamWithClose(streamID, frame.Action, args, onData, onClose); err != nil {
+		s.mu.Lock()
+		delete(s.streams, streamID)
+		s.mu.Unlock()
+		cancel()
+		_ = s.writeJSON(hwpStreamErrorFrame{
+			Type: "stream_error", RequestID: frame.RequestID,
+			Code: "stream_open_failed", Message: err.Error(),
+		})
+		return
+	}
+	_ = s.writeJSON(hwpStreamOpenedFrame{Type: "stream_opened", RequestID: frame.RequestID, StreamID: streamID})
+}
+
+func (s *hostWorkerConn) streamByVM(vmName string) (string, bool) {
+	for id, stream := range s.streams {
+		if stream.vmName == vmName {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+func (s *hostWorkerConn) findStream(streamID string) (hostWorkerStream, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stream, ok := s.streams[streamID]
+	return stream, ok
+}
+
+func (s *hostWorkerConn) handleStreamInput(frame hwpStreamInputFrame) {
+	if _, ok := s.findStream(frame.StreamID); !ok {
+		_ = s.writeJSON(hwpStreamErrorFrame{
+			Type: "stream_error", StreamID: frame.StreamID,
+			Code: "session_not_found", Message: "host worker stream is not active",
+		})
+		return
+	}
+	if err := s.host.SendHostStreamInput(frame.StreamID, frame.Data); err != nil {
+		_ = s.writeJSON(hwpStreamErrorFrame{
+			Type: "stream_error", StreamID: frame.StreamID,
+			Code: "session_not_found", Message: err.Error(),
+		})
+	}
+}
+
+func (s *hostWorkerConn) handleStreamResize(frame hwpStreamResizeFrame) {
+	if _, ok := s.findStream(frame.StreamID); !ok {
+		_ = s.writeJSON(hwpStreamErrorFrame{
+			Type: "stream_error", StreamID: frame.StreamID,
+			Code: "session_not_found", Message: "host worker stream is not active",
+		})
+		return
+	}
+	if err := s.host.ResizeHostStream(frame.StreamID, frame.Width, frame.Height); err != nil {
+		_ = s.writeJSON(hwpStreamErrorFrame{
+			Type: "stream_error", StreamID: frame.StreamID,
+			Code: "session_not_found", Message: err.Error(),
+		})
+	}
+}
+
+func (s *hostWorkerConn) handleStreamClose(frame hwpStreamCloseFrame) {
+	stream, ok := s.findStream(frame.StreamID)
+	if !ok {
+		_ = s.writeJSON(hwpStreamErrorFrame{
+			Type: "stream_error", StreamID: frame.StreamID,
+			Code: "session_not_found", Message: "host worker stream is not active",
+		})
+		return
+	}
+	stream.cancel()
+	s.mu.Lock()
+	delete(s.streams, frame.StreamID)
+	s.mu.Unlock()
+	s.host.CloseHostStream(frame.StreamID)
+	_ = s.writeJSON(hwpStreamCloseFrame{Type: "stream_close", StreamID: frame.StreamID, Reason: frame.Reason})
 }
 
 func (s *hostWorkerConn) handleSyncCall(frame hwpSyncCallFrame) {

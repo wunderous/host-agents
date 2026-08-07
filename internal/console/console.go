@@ -16,6 +16,7 @@ type CommandFactory func(vmName string) (*exec.Cmd, error)
 
 type streamSession struct {
 	operationID string
+	vmName      string
 	pty         *os.File
 	cmd         *exec.Cmd
 	mu          sync.Mutex
@@ -26,6 +27,8 @@ type Runtime struct {
 	mu sync.Mutex
 	// operationId -> active PTY session
 	streams map[string]*streamSession
+	// vmName -> active PTY session for VM-scoped exclusivity
+	byVM           map[string]*streamSession
 	commandFactory CommandFactory
 }
 
@@ -34,7 +37,11 @@ func NewRuntime(commandFactory ...CommandFactory) *Runtime {
 	if len(commandFactory) > 0 {
 		factory = commandFactory[0]
 	}
-	return &Runtime{streams: make(map[string]*streamSession), commandFactory: factory}
+	return &Runtime{
+		streams:        make(map[string]*streamSession),
+		byVM:           make(map[string]*streamSession),
+		commandFactory: factory,
+	}
 }
 
 func (r *Runtime) AbortAll() {
@@ -43,6 +50,7 @@ func (r *Runtime) AbortAll() {
 	for id, session := range r.streams {
 		r.closeSessionLocked(id, session)
 		delete(r.streams, id)
+		delete(r.byVM, session.vmName)
 	}
 }
 
@@ -57,7 +65,7 @@ func (r *Runtime) closeSessionLocked(_ string, session *streamSession) {
 	}
 }
 
-func (r *Runtime) open(vmName, operationID string, onData func(string)) error {
+func (r *Runtime) open(vmName, operationID string, onData, onClose func(string)) error {
 	if r.commandFactory == nil {
 		return errors.New("host console PTY command factory is not configured")
 	}
@@ -69,12 +77,17 @@ func (r *Runtime) open(vmName, operationID string, onData func(string)) error {
 	if err != nil {
 		return fmt.Errorf("start VM console PTY: %w", err)
 	}
-	session := &streamSession{operationID: operationID, pty: ptmx, cmd: cmd}
+	session := &streamSession{operationID: operationID, vmName: vmName, pty: ptmx, cmd: cmd}
 	r.mu.Lock()
 	if prior, ok := r.streams[operationID]; ok {
 		r.closeSessionLocked(operationID, prior)
 	}
+	if prior, ok := r.byVM[vmName]; ok {
+		delete(r.streams, prior.operationID)
+		r.closeSessionLocked(prior.operationID, prior)
+	}
 	r.streams[operationID] = session
+	r.byVM[vmName] = session
 	r.mu.Unlock()
 
 	go func() {
@@ -88,10 +101,16 @@ func (r *Runtime) open(vmName, operationID string, onData func(string)) error {
 				r.mu.Lock()
 				if r.streams[operationID] == session {
 					delete(r.streams, operationID)
+					if r.byVM[session.vmName] == session {
+						delete(r.byVM, session.vmName)
+					}
 				}
 				r.mu.Unlock()
 				_ = cmd.Wait()
 				_ = ptmx.Close()
+				if onClose != nil {
+					onClose("pty_closed")
+				}
 				return
 			}
 		}
@@ -107,7 +126,18 @@ func (r *Runtime) OpenVMStream(vmName, operationID string, onData func(string)) 
 	if operationID == "" {
 		return fmt.Errorf("operationId is required")
 	}
-	return r.open(vmName, operationID, onData)
+	return r.open(vmName, operationID, onData, nil)
+}
+
+// OpenVMStreamWithClose starts a PTY stream and reports EOF/process closure.
+func (r *Runtime) OpenVMStreamWithClose(vmName, operationID string, onData, onClose func(string)) error {
+	if vmName == "" {
+		return fmt.Errorf("vmName is required")
+	}
+	if operationID == "" {
+		return fmt.Errorf("operationId is required")
+	}
+	return r.open(vmName, operationID, onData, onClose)
 }
 
 // CloseStream terminates an active PTY stream. It is idempotent for callers
@@ -117,6 +147,9 @@ func (r *Runtime) CloseStream(operationID string) {
 	session := r.streams[operationID]
 	if session != nil {
 		delete(r.streams, operationID)
+		if r.byVM[session.vmName] == session {
+			delete(r.byVM, session.vmName)
+		}
 		r.closeSessionLocked(operationID, session)
 	}
 	r.mu.Unlock()
@@ -130,7 +163,7 @@ func (r *Runtime) StreamVMConsole(vmName, operationID string) (*mcp.CallToolResu
 	if operationID == "" {
 		operationID = fmt.Sprintf("console-%s", vmName)
 	}
-	if err := r.open(vmName, operationID, nil); err != nil {
+	if err := r.open(vmName, operationID, nil, nil); err != nil {
 		return nil, err
 	}
 	payload := map[string]any{

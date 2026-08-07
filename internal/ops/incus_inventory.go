@@ -225,6 +225,7 @@ func (s *HostOperationsService) mapIncusListItem(item incusListItem, fast bool) 
 		}
 	}
 	info := buildVMInfoFromIncusListItem(item, agentReady, k3sInstalled)
+	info.HostId = strings.TrimSpace(s.agentID)
 	if fast && len(info.IPv4) == 0 && status == "running" {
 		if ips, err := s.readIncusInstanceIPv4(item.Name); err == nil {
 			info.IPv4 = normalizeClusterIpv4(ips)

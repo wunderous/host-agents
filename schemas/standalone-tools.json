@@ -18,6 +18,7 @@
     {"name": "install_local_llm_model", "classification": "mutation", "support": "experimental"},
     {"name": "configure_local_llm_model", "classification": "mutation", "support": "experimental"},
     {"name": "start_local_llm_runtime", "classification": "mutation", "support": "experimental"},
+    {"name": "configure_local_llm_runtime", "classification": "mutation", "support": "experimental"},
     {"name": "stop_local_llm_runtime", "classification": "mutation", "support": "experimental"},
     {"name": "remove_local_llm_model", "classification": "destructive", "support": "experimental"},
     {"name": "ensure_local_llm_relay", "classification": "credential_bearing", "support": "experimental"},

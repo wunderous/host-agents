@@ -117,8 +117,8 @@ func TestLiveVMCreateListDelete(t *testing.T) {
 		Arguments: map[string]any{
 			"vmName": vmName,
 			"image":  "ubuntu:22.04",
-			"cpus":   1,
-			"memory": "1GiB",
+			"cpus":   2,
+			"memory": "2GiB",
 		},
 	})
 	if err != nil {

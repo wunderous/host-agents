@@ -128,7 +128,7 @@ func isHeavyTool(name string) bool {
 		"ensure_platform_postgres", "remove_platform_postgres",
 		"build_and_push_oci_image", "prepare_host_agent_artifacts", "stage_build_context",
 		"ensure_host_tool", "install_host_agent", "install_local_llm_model",
-		"configure_local_llm_model", "start_local_llm_runtime", "ensure_cloudflared_tunnel",
+		"configure_local_llm_model", "start_local_llm_runtime", "configure_local_llm_runtime", "ensure_cloudflared_tunnel",
 	} {
 		if name == candidate {
 			return true

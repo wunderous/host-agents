@@ -158,6 +158,15 @@ func (s *Server) OpenHostStream(operationID, action string, args map[string]any,
 	return s.console.OpenVMStream(vmName, operationID, onData)
 }
 
+// OpenHostStreamWithClose exposes the PTY close boundary to HWP.
+func (s *Server) OpenHostStreamWithClose(operationID, action string, args map[string]any, onData, onClose func(string)) error {
+	if action != "stream_vm_shell" && action != "stream_vm_console" {
+		return fmt.Errorf("unsupported host stream action: %s", action)
+	}
+	vmName, _ := args["vmName"].(string)
+	return s.console.OpenVMStreamWithClose(vmName, operationID, onData, onClose)
+}
+
 func (s *Server) SendHostStreamInput(operationID, data string) error {
 	_, err := s.console.SendConsoleInput(operationID, data)
 	return err

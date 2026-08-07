@@ -448,10 +448,12 @@
         },
         "cpus": {
           "type": "number",
+          "default": 2,
           "description": "CPU count (default: 2)"
         },
         "memory": {
           "type": "string",
+          "default": "2GiB",
           "description": "Memory limit such as 2GiB (default: 2GiB)"
         },
         "disk": {
@@ -506,10 +508,12 @@
         },
         "cpus": {
           "type": "number",
+          "default": 2,
           "description": "CPU count (default: 2)"
         },
         "memory": {
           "type": "string",
+          "default": "2GiB",
           "description": "Memory limit such as 2GiB (default: 2GiB)"
         },
         "disk": {
@@ -960,11 +964,11 @@
         },
         "cpus": {
           "type": "number",
-          "description": "New vCPU limit (e.g. 3)"
+          "description": "New vCPU limit (e.g. 2)"
         },
         "memory": {
           "type": "string",
-          "description": "New memory limit (e.g. 3GiB)"
+          "description": "New memory limit (e.g. 2GiB)"
         }
       },
       "required": [
@@ -4875,6 +4879,31 @@
     "inputSchema": {
       "type": "object",
       "properties": {}
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "configure_local_llm_runtime",
+    "title": "Configure Local LLM Runtime",
+    "description": "Persist and apply Opute-managed Ollama GPU/runtime limits (gpuOverheadMiB, maxLoadedModels, numParallel, flashAttention) by re-rendering the managed systemd unit and restarting the runtime. Omitted fields keep current values.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "gpuOverheadMiB": {
+          "type": "integer"
+        },
+        "maxLoadedModels": {
+          "type": "integer"
+        },
+        "numParallel": {
+          "type": "integer"
+        },
+        "flashAttention": {
+          "type": "boolean"
+        }
+      }
     },
     "outputSchema": {
       "type": "object"

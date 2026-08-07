@@ -368,6 +368,12 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"template":    map[string]any{"type": "string"},
 		}},
 		"start_local_llm_runtime": {"type": "object", "properties": map[string]any{}},
+		"configure_local_llm_runtime": {"type": "object", "properties": map[string]any{
+			"gpuOverheadMiB":  map[string]any{"type": "integer"},
+			"maxLoadedModels": map[string]any{"type": "integer"},
+			"numParallel":     map[string]any{"type": "integer"},
+			"flashAttention":  map[string]any{"type": "boolean"},
+		}},
 		"stop_local_llm_runtime":  {"type": "object", "properties": map[string]any{}},
 		"remove_local_llm_model":  {"type": "object", "required": []string{"modelRef"}, "properties": map[string]any{"modelRef": map[string]any{"type": "string"}, "purge": map[string]any{"type": "boolean"}}},
 		"ensure_local_llm_relay":  {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "incomingToken", "allowedSourceCIDRs"}, "properties": map[string]any{"upstreamToken": map[string]any{"type": "string"}, "allowedSourceCIDRs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}},
@@ -394,6 +400,8 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 				desc = "Create/replace a local Ollama tag FROM an already-pulled model with Modelfile parameters (numGpu/numCtx). Pass modelRef or modelPreset. Does not re-download."
 			case "start_local_llm_runtime":
 				desc = "Start/restart the local Ollama runtime with the Opute-managed CUDA-pinned systemd unit."
+			case "configure_local_llm_runtime":
+				desc = "Persist and apply Opute-managed Ollama GPU/runtime limits (gpuOverheadMiB, maxLoadedModels, numParallel, flashAttention) by re-rendering the managed systemd unit and restarting the runtime. Omitted fields keep current values."
 			case "probe_local_llm":
 				desc = "Probe local Ollama readiness; optionally warm-load modelRef or modelPreset and report loadError/remediationHints plus GPU sizeVramBytes."
 			case "remove_local_llm_model":
