@@ -25,6 +25,14 @@ Feature work is not complete while it exists only on a branch or worktree. Befor
 | Opute monorepo host exposure + MCP plugins | `../opute/AGENTS.md` (Host public exposure) |
 | MCP v2 breaking change (2026-07-28) | `../opute/docs/mcp-v2-breaking-change.md` |
 
+## Control-plane intent boundary
+
+Structured intent extraction, capability retrieval, dependency closure, and model-facing recovery belong to the Opute
+control plane. The host agent receives an explicitly authorized operation and executes it against the assigned host;
+do not add LLM retrieval, live topology discovery, entity-ID guessing, or provider rediscovery to the host fast path.
+Keep host IDs and provider state in the control-plane/tool-result contract, and preserve the existing host authorization,
+heartbeat, tracing, and execution boundaries.
+
 ## Host-agent-exclusive domain setup (do not regress)
 
 **Product contract:** All operations to publish a platform (or any service) at a customer domain — K3s bootstrap, Traefik ingress, in-cluster **`install_cloudflared_connector`**, image deploy, pod recycle, host exposure — must run **only through this host agent's MCP tools**. Opute dogfood (`platform.opute.io` / `mcp.opute.io`) must use the same path so product gaps surface before customers do. Thin Bun scripts in the Opute monorepo are MCP clients, not alternate control planes.
