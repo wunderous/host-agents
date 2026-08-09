@@ -104,6 +104,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"provision_container":           true,
 		"probe_gpu_container":           true,
 		"ensure_oci_builder":            true,
+		"configure_oci_storage":         true,
 		"build_and_push_oci_image":      true,
 		"stage_build_context":           true,
 		"ensure_host_tool":              true,
@@ -147,6 +148,16 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Description:  "Ensure a generic host-side OCI image builder is installed and available.",
 		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"builder": map[string]any{"type": "string", "enum": []string{"auto", "podman", "buildah", "buildkit"}}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"builder", "path", "available"}},
+	}, ToolDefinition{
+		Name:        "configure_oci_storage",
+		Title:       "Configure OCI storage retention",
+		Description: "Persist an age-gated Podman image storage budget and optionally prune unused images.",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"maxBytes":      map[string]any{"type": "integer", "minimum": 0},
+			"minAgeSeconds": map[string]any{"type": "integer", "minimum": 3600},
+			"pruneNow":      map[string]any{"type": "boolean"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name:        "build_and_push_oci_image",
 		Title:       "Build and push OCI image",

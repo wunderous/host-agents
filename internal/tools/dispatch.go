@@ -868,8 +868,19 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, "Host OCI image builder is available."), nil
 
+	case "configure_oci_storage":
+		out, err := svc.ConfigureOciStorage(ctx, ops.ConfigureOciStorageArgs{
+			MaxBytes:      optionalInt64Field(args, "maxBytes"),
+			MinAgeSeconds: optionalInt64Field(args, "minAgeSeconds"),
+			PruneNow:      boolField(args, "pruneNow"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "OCI image storage retention policy applied."), nil
+
 	case "build_and_push_oci_image":
-		out, err := svc.BuildAndPushOciImage(ops.BuildAndPushOciImageArgs{
+		out, err := svc.BuildAndPushOciImage(ctx, ops.BuildAndPushOciImageArgs{
 			ContextDir:       stringField(args, "contextDir"),
 			Dockerfile:       stringField(args, "dockerfile"),
 			Image:            stringField(args, "image"),
@@ -1124,6 +1135,29 @@ func intField(args map[string]any, key string) int {
 	}
 }
 
+func int64Field(args map[string]any, key string) int64 {
+	switch v := args[key].(type) {
+	case float64:
+		return int64(v)
+	case float32:
+		return int64(v)
+	case int:
+		return int64(v)
+	case int64:
+		return v
+	case int32:
+		return int64(v)
+	case json.Number:
+		n, err := v.Int64()
+		if err != nil {
+			return 0
+		}
+		return n
+	default:
+		return 0
+	}
+}
+
 func optionalIntField(args map[string]any, key string) *int {
 	if args == nil {
 		return nil
@@ -1132,6 +1166,17 @@ func optionalIntField(args map[string]any, key string) *int {
 		return nil
 	}
 	v := intField(args, key)
+	return &v
+}
+
+func optionalInt64Field(args map[string]any, key string) *int64 {
+	if args == nil {
+		return nil
+	}
+	if _, ok := args[key]; !ok {
+		return nil
+	}
+	v := int64Field(args, key)
 	return &v
 }
 

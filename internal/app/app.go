@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -44,6 +45,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		AgentID:                 cfg.RemoteAgentID,
 		OwnershipMode:           cfg.OwnershipMode,
 		RelayConfigDir:          cfg.RelayConfigDir,
+		OciStoragePolicyPath:    filepath.Join(cfg.HostResourceLockDir, "oci-storage-policy.json"),
 		SharedHostOwnerInstance: cfg.SharedHostOwnerInstance,
 		AllowInsecureDownloads:  cfg.AgentMode == "standalone" && cfg.StandaloneAllowInsecureDownloads,
 		ToolsForProvider: func(providerID string) []string {

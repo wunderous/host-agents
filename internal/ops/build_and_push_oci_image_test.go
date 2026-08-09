@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,7 +11,7 @@ import (
 
 func TestBuildAndPushOciImageValidatesArgs(t *testing.T) {
 	svc := &HostOperationsService{}
-	_, err := svc.BuildAndPushOciImage(BuildAndPushOciImageArgs{}, nil)
+	_, err := svc.BuildAndPushOciImage(context.Background(), BuildAndPushOciImageArgs{}, nil)
 	if runtime.GOOS != "linux" {
 		if err == nil || !strings.Contains(err.Error(), "unsupported") {
 			t.Fatalf("expected unsupported error, got %v", err)
@@ -22,7 +23,7 @@ func TestBuildAndPushOciImageValidatesArgs(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	_, err = svc.BuildAndPushOciImage(BuildAndPushOciImageArgs{
+	_, err = svc.BuildAndPushOciImage(context.Background(), BuildAndPushOciImageArgs{
 		ContextDir: dir,
 		Image:      "bad image",
 	}, nil)
@@ -30,7 +31,7 @@ func TestBuildAndPushOciImageValidatesArgs(t *testing.T) {
 		t.Fatalf("expected invalid image error, got %v", err)
 	}
 
-	_, err = svc.BuildAndPushOciImage(BuildAndPushOciImageArgs{
+	_, err = svc.BuildAndPushOciImage(context.Background(), BuildAndPushOciImageArgs{
 		ContextDir: dir,
 		Image:      "registry.example/app:test",
 	}, nil)

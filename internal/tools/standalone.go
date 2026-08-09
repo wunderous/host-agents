@@ -211,6 +211,7 @@ var StandaloneToolNames = map[string]bool{
 	"install_cloudflared_connector":       true,
 	"delete_cloudflared_connector":        true,
 	"ensure_oci_builder":                  true,
+	"configure_oci_storage":               true,
 	"build_and_push_oci_image":            true,
 	"stage_build_context":                 true,
 	"ensure_host_tool":                    true,
@@ -252,6 +253,7 @@ var standaloneMutationToolNames = map[string]bool{
 	"install_cloudflared_connector":       true,
 	"delete_cloudflared_connector":        true,
 	"ensure_oci_builder":                  true,
+	"configure_oci_storage":               true,
 	"build_and_push_oci_image":            true,
 	"stage_build_context":                 true,
 	"ensure_host_tool":                    true,
@@ -350,6 +352,11 @@ func StandaloneToolDefinitions() []ToolDefinition {
 		{Name: "install_cloudflared_connector", Description: "Deploy a token-backed Cloudflare connector inside Kubernetes, with optional generic local-port-to-service mappings.", InputSchema: objectSchema(map[string]any{"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "token": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "replicas": map[string]any{"type": "integer"}, "localTargets": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"localPort", "target"}, "properties": map[string]any{"localPort": map[string]any{"type": "integer"}, "target": map[string]any{"type": "string"}}}}}, []string{"vmName", "token"})},
 		{Name: "delete_cloudflared_connector", Description: "Delete the in-cluster Cloudflare connector namespace and resources.", InputSchema: objectSchema(map[string]any{"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}}, []string{"vmName"})},
 		{Name: "ensure_oci_builder", Description: "Ensure a generic host-side OCI image builder is installed and available.", InputSchema: objectSchema(map[string]any{"builder": map[string]any{"type": "string", "enum": []string{"auto", "podman", "buildah", "buildkit"}}}, nil)},
+		{Name: "configure_oci_storage", Description: "Persist an age-gated Podman image storage budget and optionally prune unused images.", InputSchema: objectSchema(map[string]any{
+			"maxBytes":      map[string]any{"type": "integer", "minimum": 0},
+			"minAgeSeconds": map[string]any{"type": "integer", "minimum": 3600},
+			"pruneNow":      map[string]any{"type": "boolean"},
+		}, nil)},
 		{Name: "build_and_push_oci_image", Description: "Build a generic OCI image from a host-local context directory and push it to a registry.", InputSchema: objectSchema(map[string]any{
 			"contextDir":       map[string]any{"type": "string"},
 			"dockerfile":       map[string]any{"type": "string"},

@@ -78,6 +78,8 @@ type HostOperationsService struct {
 	ownershipMode           string
 	sharedHostOwnerInstance string
 	resetCheckpointPath     string
+	ociStoragePolicyPath    string
+	ociStorageMu            sync.Mutex
 
 	sqlSupervisor          *sqlConnectorSupervisor
 	guestBridgeRelay       *tcpRelayManager
@@ -102,6 +104,7 @@ type Options struct {
 	OwnershipMode           string
 	RelayConfigDir          string
 	ResetCheckpointPath     string
+	OciStoragePolicyPath    string
 	SharedHostOwnerInstance string
 }
 
@@ -124,6 +127,7 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		ownershipMode:           ownershipMode,
 		sharedHostOwnerInstance: strings.TrimSpace(opts.SharedHostOwnerInstance),
 		resetCheckpointPath:     resolveResetCheckpointPath(opts.ResetCheckpointPath, opts.RelayConfigDir),
+		ociStoragePolicyPath:    strings.TrimSpace(opts.OciStoragePolicyPath),
 		sqlSupervisor:           newSQLConnectorSupervisor(),
 		guestBridgeRelay:        newTCPRelayManager(),
 		localLLMRelay:           newPersistentLocalLLMRelayManagerAt(opts.RelayConfigDir),

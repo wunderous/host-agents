@@ -1971,6 +1971,20 @@
     }
   },
   {
+    "name": "configure_oci_storage",
+    "title": "Configure OCI storage retention",
+    "description": "Persist an age-gated Podman image storage budget and optionally prune unused images.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "maxBytes": {"type": "integer", "minimum": 0},
+        "minAgeSeconds": {"type": "integer", "minimum": 3600},
+        "pruneNow": {"type": "boolean"}
+      }
+    },
+    "outputSchema": {"type": "object"}
+  },
+  {
     "name": "build_and_push_oci_image",
     "title": "Build and push OCI image",
     "description": "Build a generic OCI image from a host-local context directory and push it to a registry.",

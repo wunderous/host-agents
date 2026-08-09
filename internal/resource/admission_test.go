@@ -15,6 +15,7 @@ func TestClassifyTool(t *testing.T) {
 		{"host_agent_heartbeat", ClassControl},
 		{"get_host_info", ClassControl},
 		{"list_vms", ClassControl},
+		{"configure_oci_storage", ClassHeavy},
 		{"build_and_push_oci_image", ClassHeavy},
 		{"apply_manifest", ClassNormal},
 	} {

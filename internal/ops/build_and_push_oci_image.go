@@ -29,7 +29,10 @@ type BuildAndPushOciImageArgs struct {
 
 // BuildAndPushOciImage ensures a builder is available, builds the image, and
 // pushes it. Long-running progress is streamed through onData.
-func (s *HostOperationsService) BuildAndPushOciImage(args BuildAndPushOciImageArgs, onData func(string)) (map[string]any, error) {
+func (s *HostOperationsService) BuildAndPushOciImage(ctx context.Context, args BuildAndPushOciImageArgs, onData func(string)) (map[string]any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("build_and_push_oci_image is unsupported on %s host agents", runtime.GOOS)
 	}
@@ -80,12 +83,16 @@ func (s *HostOperationsService) BuildAndPushOciImage(args BuildAndPushOciImageAr
 			}
 		}
 	}
+	ociStorageBeforeBuild, err := s.enforceOciStoragePolicy(ctx, builder, onData)
+	if err != nil {
+		return nil, fmt.Errorf("enforce OCI storage policy before build: %w", err)
+	}
 
 	platform := strings.TrimSpace(args.Platform)
 	if onData != nil {
 		onData(fmt.Sprintf("Building %s with %s", image, builder))
 	}
-	buildCtx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	buildCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer cancel()
 
 	var buildCmd *exec.Cmd
@@ -114,7 +121,7 @@ func (s *HostOperationsService) BuildAndPushOciImage(args BuildAndPushOciImageAr
 	if onData != nil {
 		onData(fmt.Sprintf("Pushing %s", image))
 	}
-	pushCtx, pushCancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	pushCtx, pushCancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer pushCancel()
 	var pushCmd *exec.Cmd
 	switch builder {
@@ -137,14 +144,25 @@ func (s *HostOperationsService) BuildAndPushOciImage(args BuildAndPushOciImageAr
 		return nil, fmt.Errorf("push image: %w", err)
 	}
 
-	return map[string]any{
+	result := map[string]any{
 		"image":            image,
 		"builder":          builder,
 		"contextDir":       absContext,
 		"dockerfile":       dockerfilePath,
 		"insecureRegistry": args.InsecureRegistry,
 		"pushed":           true,
-	}, nil
+	}
+	if ociStorageBeforeBuild != nil {
+		result["ociStorageBeforeBuild"] = ociStorageBeforeBuild
+	}
+	if ociStorageAfterBuild, storageErr := s.enforceOciStoragePolicy(ctx, builder, onData); storageErr != nil {
+		// The image has already been pushed successfully. Preserve that result
+		// and surface cleanup failure for the caller to diagnose.
+		result["ociStoragePolicyWarning"] = storageErr.Error()
+	} else if ociStorageAfterBuild != nil {
+		result["ociStorageAfterBuild"] = ociStorageAfterBuild
+	}
+	return result, nil
 }
 
 func runStreamingCommand(cmd *exec.Cmd, onData func(string)) error {

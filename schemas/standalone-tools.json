@@ -64,6 +64,7 @@
     {"name": "remove_service_domain", "classification": "destructive", "support": "experimental"},
     {"name": "install_cloudflared_connector", "classification": "credential_bearing", "support": "experimental"},
     {"name": "ensure_oci_builder", "classification": "mutation", "support": "experimental"},
+    {"name": "configure_oci_storage", "classification": "mutation", "support": "experimental"},
     {"name": "build_and_push_oci_image", "classification": "mutation", "support": "experimental"},
     {"name": "stage_build_context", "classification": "mutation", "support": "experimental"},
     {"name": "ensure_host_tool", "classification": "mutation", "support": "experimental"},
