@@ -31,18 +31,16 @@ var CatalogExcludedToolNames = map[string]bool{
 	"get_task":        true,
 	"agent_shell":     true,
 	// Guest exec lives in the vm-exec static MCP for CPC-local cells, but tunnel hosts
-	"exec_command":                    true,
-	"ensure_sql_connector":            true,
-	"get_sql_connector_status":        true,
-	"release_sql_connector":           true,
-	"install_sql_forward_sidecar":     true,
-	"ensure_cloudflared_tunnel":       true,
-	"ensure_platform_opute_stack":     true,
-	"provision_platform_opute_tunnel": true,
-	"probe_host_exposure":             true,
-	"remove_host_exposure":            true,
-	"ensure_host_firewall_rule":       true,
-	"configure_host_network":          true,
+	"exec_command":                true,
+	"ensure_sql_connector":        true,
+	"get_sql_connector_status":    true,
+	"release_sql_connector":       true,
+	"install_sql_forward_sidecar": true,
+	"ensure_cloudflared_tunnel":   true,
+	"probe_host_exposure":         true,
+	"remove_host_exposure":        true,
+	"ensure_host_firewall_rule":   true,
+	"configure_host_network":      true,
 }
 
 // IncusOmittedToolNames are not supported on the Incus-only Linux host agent.
@@ -99,18 +97,28 @@ func LoadAllToolDefinitions(providerID string) ([]ToolDefinition, error) {
 
 func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	needed := map[string]bool{
+		"embed_texts":                   true,
+		"reconcile_serving_assignment":  true,
+		"configure_agent_connection":    true,
+		"discover_service_ingress":      true,
+		"reconcile_postgresql_service":  true,
+		"get_postgresql_service_status": true,
+		"remove_postgresql_service":     true,
+		"reconcile_tidb_service":        true,
+		"get_tidb_service_status":       true,
+		"remove_tidb_service":           true,
 		"install_incus_stack":           true,
 		"probe_incus_gpu":               true,
 		"provision_container":           true,
 		"probe_gpu_container":           true,
 		"ensure_oci_builder":            true,
 		"configure_oci_storage":         true,
+		"inspect_container_storage":     true,
+		"cleanup_container_storage":     true,
 		"build_and_push_oci_image":      true,
 		"stage_build_context":           true,
 		"ensure_host_tool":              true,
 		"set_host_service_state":        true,
-		"configure_platform_agent":      true,
-		"discover_cluster_ingress":      true,
 		"apply_manifest":                true,
 		"delete_k8s_resource":           true,
 		"put_k8s_secret":                true,
@@ -120,9 +128,8 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"delete_cloudflared_connector":  true,
 		"configure_service_domain":      true,
 		"remove_service_domain":         true,
-		"ensure_platform_postgres":      true,
-		"get_platform_postgres_status":  true,
-		"remove_platform_postgres":      true,
+		"ensure_pgvector":               true,
+		"get_pgvector_status":           true,
 		"reset_incus_stack":             true,
 	}
 	seen := make(map[string]bool, len(needed))
@@ -135,6 +142,20 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		return defs
 	}
 	defs = append(defs, ToolDefinition{
+		Name: "embed_texts", Title: "Generate host-local embeddings", Description: "Generate embeddings through the host-local, configured embedding service. The endpoint and model are controlled by the host agent.", InputSchema: map[string]any{"type": "object", "required": []string{"texts"}, "properties": map[string]any{"texts": map[string]any{"type": "array", "minItems": 1, "maxItems": 32, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 8192}}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"model", "dimensions", "embeddings"}},
+	}, ToolDefinition{
+		Name: "reconcile_serving_assignment", Title: "Reconcile generic serving assignment", Description: "Validate and reconcile a product-neutral serving assignment against an explicit host target. Rejects VM or ambiguous targets and returns bounded readiness evidence.", InputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "assignmentId", "generation", "idempotencyKey", "service", "mode", "runtime", "target", "artifact", "endpoints", "readiness", "exposure"}, "properties": map[string]any{"contractVersion": map[string]any{"type": "string", "const": "serving-assignment.v1"}, "assignmentId": map[string]any{"type": "string"}, "generation": map[string]any{"type": "integer", "minimum": 1}, "idempotencyKey": map[string]any{"type": "string"}, "service": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"dev-process", "oci-release"}}, "runtime": map[string]any{"type": "string", "enum": []string{"process", "podman", "kubernetes"}}, "target": map[string]any{"type": "object"}, "artifact": map[string]any{"type": "object"}, "endpoints": map[string]any{"type": "array", "minItems": 1}, "readiness": map[string]any{"type": "array", "minItems": 1}, "exposure": map[string]any{"type": "object"}, "serviceUnit": map[string]any{"type": "string"}, "desiredState": map[string]any{"type": "string", "enum": []string{"start", "restart"}}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "reconcile_postgresql_service", Title: "Reconcile PostgreSQL service", Description: "Reconcile a caller-defined PostgreSQL service and databases on an explicit Kubernetes target. Credentials remain operator-owned and are never returned.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "databases", "consumerSecretName", "consumerSecretLabel", "serviceOwner", "servicePartOf"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}, "storageClass": map[string]any{"type": "string"}, "storageSize": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "databases": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}}, "consumerSecretName": map[string]any{"type": "string"}, "consumerSecretLabel": map[string]any{"type": "string"}, "serviceOwner": map[string]any{"type": "string"}, "servicePartOf": map[string]any{"type": "string"}, "relayDeviceName": map[string]any{"type": "string"}, "restartConsumers": map[string]any{"type": "boolean"}, "localRelay": map[string]any{"type": "object"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "get_postgresql_service_status", Title: "Get PostgreSQL service status", Description: "Read SQL-gated readiness for a caller-defined PostgreSQL service without returning credentials.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "databases", "consumerSecretName", "consumerSecretLabel", "serviceOwner", "servicePartOf"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}, "databases": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}}, "consumerSecretName": map[string]any{"type": "string"}, "consumerSecretLabel": map[string]any{"type": "string"}, "serviceOwner": map[string]any{"type": "string"}, "servicePartOf": map[string]any{"type": "string"}, "relayDeviceName": map[string]any{"type": "string"}, "localRelay": map[string]any{"type": "object"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "remove_postgresql_service", Title: "Remove PostgreSQL service", Description: "Remove a caller-defined PostgreSQL service and owned data after explicit confirmation.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "consumerSecretName", "serviceOwner", "servicePartOf", "confirm"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "consumerSecretName": map[string]any{"type": "string"}, "consumerSecretLabel": map[string]any{"type": "string"}, "serviceOwner": map[string]any{"type": "string"}, "servicePartOf": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "configure_agent_connection", Title: "Configure generic agent connection", Description: "Write caller-supplied agent connection environment and optionally restart the declared service. Values are redacted from results.", InputSchema: map[string]any{"type": "object", "required": []string{"envFile", "environment"}, "properties": map[string]any{"envFile": map[string]any{"type": "string"}, "environment": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "serviceName": map[string]any{"type": "string"}, "restart": map[string]any{"type": "boolean"}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "discover_service_ingress", Title: "Discover service ingress", Description: "Resolve caller-declared service ingress endpoints on an explicit Kubernetes target. No product hostnames or ports are inferred.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "endpoints"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "endpoints": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object"}}, "ingressNamespace": map[string]any{"type": "string"}, "ingressService": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
 		Name: "install_incus_stack", Title: "Install Incus virtualization stack", Description: "Install or upgrade a pinned Incus feature release from the signed Zabbly repository. QEMU is optional for VM profiles; GPU container profiles do not install it.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"incusPackage": map[string]any{"type": "string"}, "qemuPackage": map[string]any{"type": "string"}, "gpuPackages": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "incusChannel": map[string]any{"type": "string", "enum": []string{"stable", "lts-7.0", "lts-6.0"}}, "incusVersion": map[string]any{"type": "string"}, "installQemu": map[string]any{"type": "boolean"}}},
 	}, ToolDefinition{
 		Name: "probe_incus_gpu", Title: "Probe Incus GPU capability", Description: "Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.", InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"},
@@ -151,11 +172,29 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}, ToolDefinition{
 		Name:        "configure_oci_storage",
 		Title:       "Configure OCI storage retention",
-		Description: "Persist an age-gated Podman image storage budget and optionally prune unused images.",
+		Description: "Persist an age-gated OCI image storage budget and optionally prune unused images.",
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"runtime":       map[string]any{"type": "string", "enum": []string{"auto", "podman"}},
 			"maxBytes":      map[string]any{"type": "integer", "minimum": 0},
 			"minAgeSeconds": map[string]any{"type": "integer", "minimum": 3600},
 			"pruneNow":      map[string]any{"type": "boolean"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:         "inspect_container_storage",
+		Title:        "Inspect container runtime storage",
+		Description:  "Inspect runtime-reported image, container, volume, and build-cache storage usage without changing state.",
+		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": []string{"auto", "podman"}}}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:        "cleanup_container_storage",
+		Title:       "Clean up container runtime storage",
+		Description: "Age-gated cleanup of unused images and supported build cache; containers, volumes, networks, and running image references are preserved.",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"runtime":       map[string]any{"type": "string", "enum": []string{"auto", "podman"}},
+			"maxBytes":      map[string]any{"type": "integer", "minimum": 0},
+			"minAgeSeconds": map[string]any{"type": "integer", "minimum": 3600},
+			"dryRun":        map[string]any{"type": "boolean"},
 		}},
 		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
@@ -168,7 +207,9 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"image":            map[string]any{"type": "string"},
 			"builder":          map[string]any{"type": "string", "enum": []string{"auto", "podman", "buildah", "buildkit"}},
 			"insecureRegistry": map[string]any{"type": "boolean"},
+			"untagAfterPush":   map[string]any{"type": []string{"boolean", "null"}},
 			"platform":         map[string]any{"type": "string"},
+			"buildArgs":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
 		}},
 		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
@@ -182,20 +223,36 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		}},
 		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
-		Name: "ensure_platform_postgres", Title: "Ensure platform PostgreSQL", Description: "Install or reconcile CloudNativePG and a SQL-gated platform PostgreSQL Cluster in the host-agent-managed K3s VM. Credentials remain CNPG-owned and are never returned.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
-			"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}, "storageClass": map[string]any{"type": "string"}, "storageSize": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "localRelay": map[string]any{"type": "object"},
+		Name: "reconcile_postgresql_service", Title: "Reconcile PostgreSQL service", Description: "Reconcile a caller-defined CloudNativePG PostgreSQL service. Credentials remain operator-owned and are never returned.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "databases", "consumerSecretName", "consumerSecretLabel", "serviceOwner", "servicePartOf"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}, "storageClass": map[string]any{"type": "string"}, "storageSize": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "restartConsumers": map[string]any{"type": "boolean"}, "localRelay": map[string]any{"type": "object"},
 		}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
-		Name: "get_platform_postgres_status", Title: "Get platform PostgreSQL status", Description: "Read SQL-gated CloudNativePG platform PostgreSQL readiness without returning credentials.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}}}, OutputSchema: map[string]any{"type": "object"},
+		Name: "reconcile_tidb_service", Title: "Reconcile TiDB service", Description: "Install or reconcile an explicitly selected TiDB service. Credentials remain operator-owned and are not returned.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "clusterName", "namespace"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "pdReplicas": map[string]any{"type": "integer"}, "tikvReplicas": map[string]any{"type": "integer"}, "tidbReplicas": map[string]any{"type": "integer"}, "storageClass": map[string]any{"type": "string"}, "storageSize": map[string]any{"type": "string"}, "tidbVersion": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}},
+		}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
-		Name: "remove_platform_postgres", Title: "Remove platform PostgreSQL", Description: "Destructively remove the platform PostgreSQL CNPG Cluster and owned data while preserving the operator. Requires confirm=true.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "confirm"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "localRelay": map[string]any{"type": "object"}, "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
+		Name: "get_tidb_service_status", Title: "Get TiDB service status", Description: "Read TiDB service readiness without returning credentials.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "clusterName", "namespace"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "remove_tidb_service", Title: "Remove TiDB service", Description: "Destructively remove a caller-defined TidbCluster. Requires confirm=true.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "clusterName", "namespace", "confirm"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "get_postgresql_service_status", Title: "Get PostgreSQL service status", Description: "Read SQL-gated CloudNativePG PostgreSQL service readiness without returning credentials. When already ready, an optional localRelay is reconciled without enqueueing a second CNPG task.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}, "localRelay": map[string]any{"type": "object"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "ensure_pgvector", Title: "Ensure pgvector", Description: "Reconcile a pinned pgvector CloudNativePG image and ensure the vector extension in selected databases. Credentials remain CNPG-owned and are never returned.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "databases": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1},
+		}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "get_pgvector_status", Title: "Get pgvector status", Description: "Read pgvector image and per-database extension readiness without changing the Cluster or databases.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
+			"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "databases": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1},
+		}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "remove_postgresql_service", Title: "Remove PostgreSQL service", Description: "Destructively remove a caller-defined PostgreSQL CNPG service and owned data while preserving the operator. Requires confirm=true.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "confirm"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "localRelay": map[string]any{"type": "object"}, "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name: "reset_incus_stack", Title: "Reset Incus stack", Description: "Fail-closed, ownership-checked, confirmation-gated reset of explicitly selected disposable Incus instances. Returns redacted resumable phase evidence.", InputSchema: map[string]any{"type": "object", "required": []string{"confirm", "reinstall", "disposableHostFingerprint", "expectedHostFingerprint", "disposableHostAuthorization"}, "properties": map[string]any{"instanceNames": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "instancePrefix": map[string]any{"type": "string"}, "confirm": map[string]any{"type": "boolean"}, "reinstall": map[string]any{"type": "boolean"}, "dryRun": map[string]any{"type": "boolean"}, "disposableHostFingerprint": map[string]any{"type": "string"}, "expectedHostFingerprint": map[string]any{"type": "string"}, "disposableHostAuthorization": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name:         "ensure_host_tool",
 		Title:        "Ensure generic host tool",
 		Description:  "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
-		InputSchema:  map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared", "helm"}}}},
+		InputSchema:  map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"bun", "gcc", "g++", "go", "podman", "buildah", "buildkitd", "cloudflared", "helm", "cmake", "ninja", "nvcc"}}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
 	}, ToolDefinition{
 		Name:         "render_helm_template",
@@ -220,40 +277,11 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "state", "scope", "status"}},
 	}, ToolDefinition{
-		Name:        "configure_platform_agent",
-		Title:       "Configure platform agent",
-		Description: "Write platform-mode host-agent env and optionally restart so the agent reverse-tunnels to a CPC MCP URL.",
-		InputSchema: map[string]any{"type": "object", "required": []string{"mcpUrl", "remoteAgentAuthToken", "hostAuthToken"}, "properties": map[string]any{
-			"mcpUrl":               map[string]any{"type": "string"},
-			"hostWsUrl":            map[string]any{"type": "string"},
-			"remoteAgentAuthToken": map[string]any{"type": "string"},
-			"hostAuthToken":        map[string]any{"type": "string"},
-			"remoteAgentId":        map[string]any{"type": "string"},
-			"envFile":              map[string]any{"type": "string"},
-			"serviceName":          map[string]any{"type": "string"},
-			"restart":              map[string]any{"type": "boolean"},
-			"mcpHealthUrl":         map[string]any{"type": "string"},
-			"mcpRouteHost":         map[string]any{"type": "string"},
-		}},
-		OutputSchema: map[string]any{"type": "object"},
-	}, ToolDefinition{
-		Name:        "discover_cluster_ingress",
-		Title:       "Discover cluster ingress",
-		Description: "Resolve Traefik/VM bridge endpoints for CPC web and MCP without kubectl port-forward.",
-		InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
-			"vmName":           map[string]any{"type": "string"},
-			"webHostname":      map[string]any{"type": "string"},
-			"mcpHostname":      map[string]any{"type": "string"},
-			"traefikNamespace": map[string]any{"type": "string"},
-			"traefikService":   map[string]any{"type": "string"},
-		}},
-		OutputSchema: map[string]any{"type": "object"},
-	}, ToolDefinition{
 		Name:        "ensure_host_tool",
 		Title:       "Ensure generic host tool",
 		Description: "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
 		InputSchema: map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{
-			"tool": map[string]any{"type": "string", "enum": []string{"go", "podman", "buildah", "buildkitd", "cloudflared", "helm"}},
+			"tool": map[string]any{"type": "string", "enum": []string{"bun", "gcc", "g++", "go", "podman", "buildah", "buildkitd", "cloudflared", "helm", "cmake", "ninja", "nvcc"}},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
 	}, ToolDefinition{
@@ -351,44 +379,79 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}
 	inputs := map[string]map[string]any{
 		"check_local_llm_prerequisites": {"type": "object", "properties": map[string]any{}},
-		"list_local_llm_models":         {"type": "object", "properties": map[string]any{"includeChat": map[string]any{"type": "boolean"}}},
+		"ensure_local_llm_server_binary": {"type": "object", "properties": map[string]any{
+			"runtime":           map[string]any{"type": "string", "enum": []string{"llama-cpp"}},
+			"sourceUri":         map[string]any{"type": "string", "format": "uri"},
+			"sourceSha256":      map[string]any{"type": "string"},
+			"sourceRevision":    map[string]any{"type": "string"},
+			"outputPath":        map[string]any{"type": "string"},
+			"cudaArchitectures": map[string]any{"type": "string"},
+		}},
+		"list_local_llm_models": {"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": []string{"llama-cpp"}}, "includeChat": map[string]any{"type": "boolean"}}},
 		"probe_local_llm": {"type": "object", "properties": map[string]any{
+			"runtime":     map[string]any{"type": "string", "enum": []string{"llama-cpp"}},
 			"includeChat": map[string]any{"type": "boolean"},
 			"modelRef":    map[string]any{"type": "string"},
-			"modelPreset": map[string]any{"type": "string", "enum": []string{"granite", "nemotron"}},
+			"modelPreset": map[string]any{"type": "string", "enum": []string{"qwen3.5", "qwen3.5-0.8b"}},
 			"numGpu":      map[string]any{"type": "integer"},
 			"numCtx":      map[string]any{"type": "integer"},
 		}},
 		"install_local_llm_model": {"type": "object", "properties": map[string]any{
-			"modelFamily":   map[string]any{"type": "string"},
-			"modelVariant":  map[string]any{"type": "string"},
-			"installSource": map[string]any{"type": "string"},
-			"modelRef":      map[string]any{"type": "string"},
-			"modelPreset":   map[string]any{"type": "string", "enum": []string{"granite", "nemotron"}},
-			"createAs":      map[string]any{"type": "string"},
-			"numGpu":        map[string]any{"type": "integer"},
-			"numCtx":        map[string]any{"type": "integer"},
-			"template":      map[string]any{"type": "string"},
+			"runtime":                 map[string]any{"type": "string", "enum": []string{"llama-cpp"}},
+			"modelFamily":             map[string]any{"type": "string"},
+			"modelVariant":            map[string]any{"type": "string"},
+			"installSource":           map[string]any{"type": "string"},
+			"modelRef":                map[string]any{"type": "string"},
+			"modelPreset":             map[string]any{"type": "string", "enum": []string{"qwen3.5", "qwen3.5-0.8b"}},
+			"createAs":                map[string]any{"type": "string"},
+			"numGpu":                  map[string]any{"type": "integer"},
+			"numCtx":                  map[string]any{"type": "integer"},
+			"template":                map[string]any{"type": "string"},
+			"artifactPath":            map[string]any{"type": "string"},
+			"artifactSha256":          map[string]any{"type": "string"},
+			"artifactUri":             map[string]any{"type": "string", "format": "uri"},
+			"baseModel":               map[string]any{"type": "string"},
+			"revision":                map[string]any{"type": "string"},
+			"tokenizerRevision":       map[string]any{"type": "string"},
+			"chatTemplateHash":        map[string]any{"type": "string"},
+			"chatTemplate":            map[string]any{"type": "string"},
+			"chatTemplateKwargs":      map[string]any{"type": "string"},
+			"contextSize":             map[string]any{"type": "integer"},
+			"gpuLayers":               map[string]any{"type": "integer"},
+			"binaryPath":              map[string]any{"type": "string"},
+			"binaryVersion":           map[string]any{"type": "string"},
+			"binarySha256":            map[string]any{"type": "string"},
+			"binaryUri":               map[string]any{"type": "string", "format": "uri"},
+			"binarySource":            map[string]any{"type": "string", "enum": []string{"host-build"}},
+			"sourceRevision":          map[string]any{"type": "string"},
+			"sourceSha256":            map[string]any{"type": "string"},
+			"binaryBuildSourceUri":    map[string]any{"type": "string", "format": "uri"},
+			"binaryBuildSourceSha256": map[string]any{"type": "string"},
+			"binaryBuildRevision":     map[string]any{"type": "string"},
+			"cudaEnabled":             map[string]any{"type": "boolean"},
+			"cudaArchitectures":       map[string]any{"type": "string"},
+			"quantization":            map[string]any{"type": "string", "enum": []string{"Q4_K_M"}},
+			"port":                    map[string]any{"type": "integer"},
 		}},
 		"configure_local_llm_model": {"type": "object", "properties": map[string]any{
 			"modelRef":    map[string]any{"type": "string"},
-			"modelPreset": map[string]any{"type": "string", "enum": []string{"granite", "nemotron"}},
+			"modelPreset": map[string]any{"type": "string", "enum": []string{"qwen3.5", "qwen3.5-0.8b"}},
 			"fromRef":     map[string]any{"type": "string"},
 			"numGpu":      map[string]any{"type": "integer"},
 			"numCtx":      map[string]any{"type": "integer"},
 			"template":    map[string]any{"type": "string"},
 		}},
-		"start_local_llm_runtime": {"type": "object", "properties": map[string]any{}},
+		"start_local_llm_runtime": {"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": []string{"llama-cpp"}}, "runtimeId": map[string]any{"type": "string"}}},
 		"configure_local_llm_runtime": {"type": "object", "properties": map[string]any{
 			"gpuOverheadMiB":  map[string]any{"type": "integer"},
 			"maxLoadedModels": map[string]any{"type": "integer"},
 			"numParallel":     map[string]any{"type": "integer"},
 			"flashAttention":  map[string]any{"type": "boolean"},
 		}},
-		"stop_local_llm_runtime":  {"type": "object", "properties": map[string]any{}},
-		"remove_local_llm_model":  {"type": "object", "required": []string{"modelRef"}, "properties": map[string]any{"modelRef": map[string]any{"type": "string"}, "purge": map[string]any{"type": "boolean"}}},
-		"ensure_local_llm_relay":  {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "incomingToken", "allowedSourceCIDRs"}, "properties": map[string]any{"upstreamToken": map[string]any{"type": "string"}, "allowedSourceCIDRs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}},
-		"remove_local_llm_relay":  {"type": "object", "required": []string{"sessionId"}, "properties": map[string]any{}},
+		"stop_local_llm_runtime": {"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": []string{"llama-cpp"}}, "runtimeId": map[string]any{"type": "string"}}},
+		"remove_local_llm_model": {"type": "object", "required": []string{"modelRef"}, "properties": map[string]any{"modelRef": map[string]any{"type": "string"}, "purge": map[string]any{"type": "boolean"}}},
+		"ensure_local_llm_relay": {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "incomingToken", "allowedSourceCIDRs"}, "properties": map[string]any{"upstreamToken": map[string]any{"type": "string"}, "allowedSourceCIDRs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}},
+		"remove_local_llm_relay": {"type": "object", "required": []string{"sessionId"}, "properties": map[string]any{}},
 		"ensure_local_llm_k3s_proxy": {"type": "object", "required": []string{"vmName", "nodePort", "relayHost", "relayPort", "relayToken", "bearerKey"}, "properties": map[string]any{
 			"namespace": map[string]any{"type": "string"}, "secretName": map[string]any{"type": "string"},
 			"configMapName": map[string]any{"type": "string"}, "deploymentName": map[string]any{"type": "string"},
@@ -401,27 +464,48 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}
 	for name, schema := range inputs {
 		if !seen[name] {
-			desc := "Opute-managed local Ollama operation"
+			desc := "Opute-managed local llama-server operation"
 			switch name {
 			case "check_local_llm_prerequisites":
-				desc = "Inspect local Ollama install readiness and GPU/CUDA diagnostics (blockers + remediationHints; does not install NVIDIA drivers)."
+				desc = "Inspect local llama-server readiness and GPU/CUDA diagnostics."
+			case "ensure_local_llm_server_binary":
+				desc = "Build and verify a pinned CUDA llama-server binary from source on the host."
 			case "install_local_llm_model":
-				desc = "Install an Opute-managed Ollama runtime and model."
+				desc = "Exclusively switch the resident generation model: unload the current model, then load and GPU-verify the requested pinned artifact."
 			case "configure_local_llm_model":
-				desc = "Create/replace a local Ollama tag FROM an already-pulled model with Modelfile parameters (numGpu/numCtx). Pass modelRef or modelPreset. Does not re-download."
+				desc = "Configure a local llama-server GGUF artifact."
 			case "start_local_llm_runtime":
-				desc = "Start/restart the local Ollama runtime with the Opute-managed CUDA-pinned systemd unit."
+				desc = "Start/restart the Opute-managed llama-server unit with one generation model resident."
 			case "configure_local_llm_runtime":
-				desc = "Persist and apply Opute-managed Ollama GPU/runtime limits (gpuOverheadMiB, maxLoadedModels, numParallel, flashAttention) by re-rendering the managed systemd unit and restarting the runtime. Omitted fields keep current values."
+				desc = "Persist and apply Opute-managed llama-server runtime settings."
 			case "probe_local_llm":
-				desc = "Probe local Ollama readiness; optionally warm-load modelRef or modelPreset and report loadError/remediationHints plus GPU sizeVramBytes."
+				desc = "Probe llama-server readiness, loaded model identity, and GPU residency."
+			case "stop_local_llm_runtime":
+				desc = "Unload the resident generation model without deleting artifacts or tool embeddings."
 			case "remove_local_llm_model":
-				desc = "Remove a local Ollama model. Set purge=true to delete all managed models and wipe the models directory."
+				desc = "Remove a local llama-server artifact adoption record."
 			}
 			defs = append(defs, ToolDefinition{Name: name, Title: name, Description: desc, InputSchema: schema, OutputSchema: map[string]any{"type": "object"}})
 		}
 	}
-	return defs
+	// The checked-in schema snapshots may still contain retired local-LLM
+	// definitions. Replace those entries at catalog assembly time so the
+	// host-agent MCP contract advertises only the managed llama-server runtime.
+	localNames := make(map[string]struct{}, len(inputs))
+	for name := range inputs {
+		localNames[name] = struct{}{}
+	}
+	filtered := make([]ToolDefinition, 0, len(defs)+len(inputs))
+	for _, definition := range defs {
+		if _, ok := localNames[definition.Name]; ok {
+			continue
+		}
+		filtered = append(filtered, definition)
+	}
+	for name, schema := range inputs {
+		filtered = append(filtered, ToolDefinition{Name: name, Title: name, Description: "Opute-managed llama-server operation", InputSchema: schema, OutputSchema: map[string]any{"type": "object"}})
+	}
+	return filtered
 }
 
 func augmentIncusInventoryTools(defs []ToolDefinition) ([]ToolDefinition, error) {
@@ -464,6 +548,9 @@ func loadCatalogMeta() (catalogMeta, error) {
 
 // IsOmittedToolName reports bridge-backed or platform-unsupported tools omitted from the Go agent.
 func IsOmittedToolName(name string) bool {
+	if name == "reconcile_postgresql_service" || name == "get_postgresql_service_status" || name == "remove_postgresql_service" {
+		return false
+	}
 	if IncusOmittedToolNames[name] {
 		return true
 	}

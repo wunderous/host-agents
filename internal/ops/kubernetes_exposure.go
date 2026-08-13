@@ -18,6 +18,7 @@ type ConfigureServiceDomainArgs struct {
 
 type InstallCloudflaredConnectorArgs struct {
 	VMName       string                   `json:"vmName"`
+	Target       string                   `json:"target,omitempty"`
 	Namespace    string                   `json:"namespace,omitempty"`
 	Name         string                   `json:"name,omitempty"`
 	Token        string                   `json:"token"`
@@ -93,6 +94,12 @@ func (s *HostOperationsService) RemoveServiceDomain(args ConfigureServiceDomainA
 func (s *HostOperationsService) InstallCloudflaredConnector(args InstallCloudflaredConnectorArgs, onData func(string)) (map[string]any, error) {
 	if strings.TrimSpace(args.VMName) == "" || strings.TrimSpace(args.Token) == "" {
 		return nil, errors.New("vmName and token are required")
+	}
+	if strings.TrimSpace(args.Target) == "local-dev" {
+		return nil, errors.New("local-dev public edge uses ensure_cloudflared_tunnel on the host; Kubernetes connector refused")
+	}
+	if strings.TrimSpace(args.Target) != "" && strings.TrimSpace(args.Target) != "kubernetes" {
+		return nil, errors.New("connector target must be local-dev or kubernetes")
 	}
 	// The connector is a Kubernetes Deployment, but Kubernetes cannot restore
 	// it until the backing Incus VM and K3s come back. Make the VM lifecycle

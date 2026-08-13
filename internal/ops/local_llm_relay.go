@@ -26,6 +26,8 @@ type localLLMRelaySession struct {
 	upstreamToken  string
 	listenHost     string
 	listenPort     int
+	targetHost     string
+	targetPort     int
 }
 
 type localLLMRelayManager struct {
@@ -103,7 +105,7 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 			incoming = args.RelayToken
 		}
 		sameCIDRs := localLLMRelayCIDRsEqual(existing.allowedSources, args.AllowedSourceCIDRs)
-		if existing.incomingToken == incoming && existing.listenHost == args.ListenHost && (args.ListenPort == 0 || existing.listenPort == args.ListenPort) && sameCIDRs {
+		if existing.incomingToken == incoming && existing.listenHost == args.ListenHost && (args.ListenPort == 0 || existing.listenPort == args.ListenPort) && existing.targetHost == args.TargetHost && existing.targetPort == args.TargetPort && sameCIDRs {
 			m.mu.Unlock()
 			return map[string]any{"sessionId": existing.id, "listenHost": existing.listenHost, "listenPort": existing.listenPort, "ready": true}, nil
 		}
@@ -137,9 +139,9 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 	}
 	target, _ := url.Parse(fmt.Sprintf("http://%s:%d", args.TargetHost, args.TargetPort))
 	proxy := httputil.NewSingleHostReverseProxy(target)
-	// Ollama chat streams NDJSON/SSE. Default ReverseProxy buffering holds the
+	// llama-server chat streams SSE. Default ReverseProxy buffering holds the
 	// first chunk until the upstream finishes, which looks like a hung socket
-	// to ai-sdk-ollama (Bun: "socket connection was closed unexpectedly").
+	// to the Opute chat client.
 	proxy.FlushInterval = -1
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, _ error) {
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
@@ -162,9 +164,10 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		// Forward OpenAI-compatible /v1 and native Ollama /api (required by ai-sdk-ollama in-cluster chat).
-		allowedPath := strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/v1" ||
-			strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api"
+		// llama-server exposes the OpenAI-compatible /v1 surface plus the
+		// read-only Ollama-compatible /api/ps residency endpoint that the
+		// control plane uses to label the loaded model runtime.
+		allowedPath := strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/v1" || r.URL.Path == "/api/ps"
 		if !allowedPath {
 			http.NotFound(w, r)
 			return
@@ -183,8 +186,8 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 		if strings.TrimSpace(args.UpstreamToken) != "" {
 			r.Header.Set("Authorization", "Bearer "+args.UpstreamToken)
 		}
-		// The public hostname is only for the edge route. Do not forward it as
-		// Ollama's Host header; Ollama rejects requests for that foreign host.
+		// The public hostname is only for the edge route. Keep the upstream Host
+		// header local to avoid virtual-host surprises.
 		r.Host = target.Host
 		proxy.ServeHTTP(w, r)
 	})
@@ -204,7 +207,7 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 	if incoming == "" {
 		incoming = args.RelayToken
 	}
-	session := &localLLMRelaySession{id: args.SessionID, server: &http.Server{Handler: handler}, listener: ln, allowedSources: allowedSources, incomingToken: incoming, upstreamToken: args.UpstreamToken, listenHost: listenHost, listenPort: port}
+	session := &localLLMRelaySession{id: args.SessionID, server: &http.Server{Handler: handler}, listener: ln, allowedSources: allowedSources, incomingToken: incoming, upstreamToken: args.UpstreamToken, listenHost: listenHost, listenPort: port, targetHost: args.TargetHost, targetPort: args.TargetPort}
 	m.mu.Lock()
 	m.sessions[args.SessionID] = session
 	m.mu.Unlock()

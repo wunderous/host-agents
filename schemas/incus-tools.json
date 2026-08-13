@@ -272,7 +272,10 @@
         },
         "instanceType": {
           "type": "string",
-          "enum": ["container", "virtual-machine"],
+          "enum": [
+            "container",
+            "virtual-machine"
+          ],
           "description": "Incus instance kind (default: container)"
         }
       },
@@ -1342,16 +1345,84 @@
   {
     "name": "configure_oci_storage",
     "title": "Configure OCI storage retention",
-    "description": "Persist an age-gated Podman image storage budget and optionally prune unused images.",
+    "description": "Persist an age-gated OCI image storage budget and optionally prune unused images.",
     "inputSchema": {
       "type": "object",
       "properties": {
-        "maxBytes": {"type": "integer", "minimum": 0},
-        "minAgeSeconds": {"type": "integer", "minimum": 3600},
-        "pruneNow": {"type": "boolean"}
+        "runtime": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "podman"
+          ]
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minAgeSeconds": {
+          "type": "integer",
+          "minimum": 3600
+        },
+        "pruneNow": {
+          "type": "boolean"
+        }
       }
     },
-    "outputSchema": {"type": "object"}
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "inspect_container_storage",
+    "title": "Inspect container runtime storage",
+    "description": "Inspect runtime-reported image, container, volume, and build-cache storage usage without changing state.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "podman"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "cleanup_container_storage",
+    "title": "Clean up container runtime storage",
+    "description": "Age-gated cleanup of unused images and supported build cache; containers, volumes, networks, and running image references are preserved.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "podman"
+          ]
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minAgeSeconds": {
+          "type": "integer",
+          "minimum": 3600
+        },
+        "dryRun": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
     "name": "build_and_push_oci_image",
@@ -1387,6 +1458,13 @@
         },
         "platform": {
           "type": "string"
+        },
+        "untagAfterPush": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Defaults to true when omitted: after a successful push the local tag is removed from the host image store while the image layers remain available to the age-gated storage policy. Set false to keep the pushed tag locally."
         }
       }
     },
@@ -1440,11 +1518,18 @@
         "tool": {
           "type": "string",
           "enum": [
+            "bun",
+            "gcc",
+            "g++",
             "go",
             "podman",
             "buildah",
             "buildkitd",
-            "cloudflared"
+            "cloudflared",
+            "helm",
+            "cmake",
+            "ninja",
+            "nvcc"
           ]
         }
       }
@@ -1500,82 +1585,6 @@
         "scope",
         "status"
       ]
-    }
-  },
-  {
-    "name": "configure_platform_agent",
-    "title": "Configure platform agent",
-    "description": "Write platform-mode host-agent env and optionally restart so the agent reverse-tunnels to a CPC MCP URL.",
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "mcpUrl",
-        "remoteAgentAuthToken",
-        "hostAuthToken"
-      ],
-      "properties": {
-        "mcpUrl": {
-          "type": "string"
-        },
-        "hostWsUrl": {
-          "type": "string"
-        },
-        "remoteAgentAuthToken": {
-          "type": "string"
-        },
-        "hostAuthToken": {
-          "type": "string"
-        },
-        "remoteAgentId": {
-          "type": "string"
-        },
-        "envFile": {
-          "type": "string"
-        },
-        "serviceName": {
-          "type": "string"
-        },
-        "restart": {
-          "type": "boolean"
-        },
-        "mcpHealthUrl": {
-          "type": "string"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "discover_cluster_ingress",
-    "title": "Discover cluster ingress",
-    "description": "Resolve Traefik/VM bridge endpoints for CPC web and MCP without kubectl port-forward.",
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "vmName"
-      ],
-      "properties": {
-        "vmName": {
-          "type": "string"
-        },
-        "webHostname": {
-          "type": "string"
-        },
-        "mcpHostname": {
-          "type": "string"
-        },
-        "traefikNamespace": {
-          "type": "string"
-        },
-        "traefikService": {
-          "type": "string"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
     }
   },
   {
@@ -4014,358 +4023,6 @@
     }
   },
   {
-    "name": "check_local_llm_prerequisites",
-    "title": "Check Local LLM Prerequisites",
-    "description": "Inspect local Ollama runtime prerequisites.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {}
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "list_local_llm_models",
-    "title": "List Local LLM Models",
-    "description": "List local Ollama models.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "includeChat": {
-          "type": "boolean"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "probe_local_llm",
-    "title": "Probe Local LLM",
-    "description": "Probe the local Ollama endpoint; optionally warm-load modelRef or modelPreset (granite|nemotron).",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "includeChat": {
-          "type": "boolean"
-        },
-        "modelRef": {
-          "type": "string"
-        },
-        "modelPreset": {
-          "type": "string",
-          "enum": [
-            "granite",
-            "nemotron"
-          ]
-        },
-        "numGpu": {
-          "type": "integer"
-        },
-        "numCtx": {
-          "type": "integer"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "install_local_llm_model",
-    "title": "Install Local LLM Model",
-    "description": "Install Ollama, pull modelRef or modelPreset (granite|nemotron), optionally createAs with numGpu/numCtx.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "modelRef": {
-          "type": "string"
-        },
-        "modelPreset": {
-          "type": "string",
-          "enum": [
-            "granite",
-            "nemotron"
-          ]
-        },
-        "numGpu": {
-          "type": "integer"
-        },
-        "numCtx": {
-          "type": "integer"
-        },
-        "createAs": {
-          "type": "string"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "configure_local_llm_model",
-    "title": "Configure Local LLM Model",
-    "description": "Create/replace a local Ollama tag with Modelfile parameters (numGpu/numCtx). Pass modelRef or modelPreset.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "modelRef": {
-          "type": "string"
-        },
-        "modelPreset": {
-          "type": "string",
-          "enum": [
-            "granite",
-            "nemotron"
-          ]
-        },
-        "fromRef": {
-          "type": "string"
-        },
-        "numGpu": {
-          "type": "integer"
-        },
-        "numCtx": {
-          "type": "integer"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "start_local_llm_runtime",
-    "title": "Start Local LLM Runtime",
-    "description": "Start Ollama.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {}
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "configure_local_llm_runtime",
-    "title": "Configure Local LLM Runtime",
-    "description": "Persist and apply Opute-managed Ollama GPU/runtime limits (gpuOverheadMiB, maxLoadedModels, numParallel, flashAttention) by re-rendering the managed systemd unit and restarting the runtime. Omitted fields keep current values.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "gpuOverheadMiB": {
-          "type": "integer"
-        },
-        "maxLoadedModels": {
-          "type": "integer"
-        },
-        "numParallel": {
-          "type": "integer"
-        },
-        "flashAttention": {
-          "type": "boolean"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "stop_local_llm_runtime",
-    "title": "Stop Local LLM Runtime",
-    "description": "Stop Ollama.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {}
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "remove_local_llm_model",
-    "title": "Remove Local LLM Model",
-    "description": "Remove an Ollama model.",
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "modelRef"
-      ],
-      "properties": {
-        "modelRef": {
-          "type": "string"
-        },
-        "purge": {
-          "type": "boolean"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "ensure_local_llm_relay",
-    "title": "Ensure Local LLM Relay",
-    "description": "Start an authenticated local relay.",
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "sessionId",
-        "listenHost",
-        "listenPort",
-        "targetHost",
-        "targetPort",
-        "allowedSourceIP",
-        "relayToken"
-      ],
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        },
-        "listenHost": {
-          "type": "string"
-        },
-        "listenPort": {
-          "type": "integer"
-        },
-        "targetHost": {
-          "type": "string"
-        },
-        "targetPort": {
-          "type": "integer"
-        },
-        "allowedSourceIP": {
-          "type": "string"
-        },
-        "relayToken": {
-          "type": "string"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "remove_local_llm_relay",
-    "title": "Remove Local LLM Relay",
-    "description": "Remove the local relay.",
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "sessionId"
-      ],
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "ensure_local_llm_k3s_proxy",
-    "title": "Ensure Local LLM K3s Proxy",
-    "description": "Deploy the compatibility K3s proxy.",
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "vmName",
-        "nodePort",
-        "relayHost",
-        "relayPort",
-        "relayToken",
-        "bearerKey"
-      ],
-      "properties": {
-        "vmName": {
-          "type": "string"
-        },
-        "namespace": {
-          "type": "string"
-        },
-        "secretName": {
-          "type": "string"
-        },
-        "configMapName": {
-          "type": "string"
-        },
-        "deploymentName": {
-          "type": "string"
-        },
-        "serviceName": {
-          "type": "string"
-        },
-        "containerImage": {
-          "type": "string"
-        },
-        "nodePort": {
-          "type": "integer"
-        },
-        "relayHost": {
-          "type": "string"
-        },
-        "relayPort": {
-          "type": "integer"
-        },
-        "relayToken": {
-          "type": "string"
-        },
-        "bearerKey": {
-          "type": "string"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "remove_local_llm_k3s_proxy",
-    "title": "Remove Local LLM K3s Proxy",
-    "description": "Remove the K3s proxy.",
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "vmName"
-      ],
-      "properties": {
-        "vmName": {
-          "type": "string"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
-    "name": "remove_local_llm_cloudflared_tunnel",
-    "title": "Remove Local LLM Cloudflared Tunnel",
-    "description": "Remove the local LLM connector.",
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "bindingId"
-      ],
-      "properties": {
-        "bindingId": {
-          "type": "string"
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
     "name": "apply_manifest",
     "title": "Apply Kubernetes manifest",
     "description": "Apply a generic Kubernetes manifest to a VM-backed cluster.",
@@ -4650,56 +4307,539 @@
     "name": "install_incus_stack",
     "title": "Install Incus virtualization stack",
     "description": "Install or upgrade Incus, QEMU, virglrenderer, and explicitly requested GPU container prerequisites.",
-    "inputSchema": {"type":"object","properties":{"incusPackage":{"type":"string"},"qemuPackage":{"type":"string"},"gpuPackages":{"type":"array","items":{"type":"string"}}}},
-    "outputSchema": {"type":"object"}
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "incusPackage": {
+          "type": "string"
+        },
+        "qemuPackage": {
+          "type": "string"
+        },
+        "gpuPackages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
     "name": "probe_incus_gpu",
     "title": "Probe Incus GPU capability",
     "description": "Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.",
-    "inputSchema": {"type":"object"},
-    "outputSchema": {"type":"object"}
+    "inputSchema": {
+      "type": "object"
+    },
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
     "name": "provision_container",
     "title": "Provision Incus system container",
     "description": "Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.",
-    "inputSchema": {"type":"object","required":["containerName"],"properties":{"containerName":{"type":"string"},"image":{"type":"string"},"cpus":{"type":"integer","minimum":1,"default":2,"description":"vCPU count (default: 2)"},"memory":{"type":"string","default":"2GiB","description":"Memory limit such as 2GiB (default: 2GiB)"},"disk":{"type":"string"},"gpu":{"type":"boolean"},"wslGpuLibs":{"type":"boolean"},"nesting":{"type":"boolean"},"port":{"type":"integer"},"modelVolume":{"type":"string"}}},
-    "outputSchema": {"type":"object"}
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "containerName"
+      ],
+      "properties": {
+        "containerName": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "cpus": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 2,
+          "description": "vCPU count (default: 2)"
+        },
+        "memory": {
+          "type": "string",
+          "default": "2GiB",
+          "description": "Memory limit such as 2GiB (default: 2GiB)"
+        },
+        "disk": {
+          "type": "string"
+        },
+        "gpu": {
+          "type": "boolean"
+        },
+        "wslGpuLibs": {
+          "type": "boolean"
+        },
+        "nesting": {
+          "type": "boolean"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "modelVolume": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
     "name": "probe_gpu_container",
     "title": "Probe system container GPU",
     "description": "Launch a disposable Incus system container, probe GPU visibility and NVML, then delete it.",
-    "inputSchema": {"type":"object"},
-    "outputSchema": {"type":"object"}
+    "inputSchema": {
+      "type": "object"
+    },
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
     "name": "reset_incus_stack",
     "title": "Reset Incus stack",
     "description": "Fail-closed, ownership-checked, confirmation-gated reset of explicitly selected disposable Incus instances. Returns redacted resumable phase evidence.",
-    "inputSchema": {"type":"object","required":["confirm","reinstall","disposableHostFingerprint","expectedHostFingerprint","disposableHostAuthorization"],"properties":{"instanceNames":{"type":"array","items":{"type":"string"}},"instancePrefix":{"type":"string"},"confirm":{"type":"boolean"},"reinstall":{"type":"boolean"},"dryRun":{"type":"boolean"},"disposableHostFingerprint":{"type":"string"},"expectedHostFingerprint":{"type":"string"},"disposableHostAuthorization":{"type":"string"}}},
-    "outputSchema": {"type":"object"}
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "confirm",
+        "reinstall",
+        "disposableHostFingerprint",
+        "expectedHostFingerprint",
+        "disposableHostAuthorization"
+      ],
+      "properties": {
+        "instanceNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "instancePrefix": {
+          "type": "string"
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "reinstall": {
+          "type": "boolean"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "disposableHostFingerprint": {
+          "type": "string"
+        },
+        "expectedHostFingerprint": {
+          "type": "string"
+        },
+        "disposableHostAuthorization": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
-    "name": "ensure_platform_postgres",
-    "title": "Ensure platform PostgreSQL",
-    "description": "Install or reconcile CloudNativePG and a SQL-gated platform PostgreSQL Cluster in the host-agent-managed K3s VM. Credentials remain CNPG-owned and are never returned.",
-    "inputSchema": {"type":"object","required":["vmName"],"properties":{"vmName":{"type":"string"},"clusterName":{"type":"string"},"namespace":{"type":"string"},"instances":{"type":"integer"},"storageClass":{"type":"string"},"storageSize":{"type":"string"},"retentionPolicy":{"type":"string","enum":["delete","retain"]},"localRelay":{"type":"object"}}},
-    "outputSchema": {"type":"object"}
+    "name": "reconcile_postgresql_service",
+    "title": "Reconcile PostgreSQL service",
+    "description": "Install or reconcile CloudNativePG and a SQL-gated caller-defined PostgreSQL service in an explicit K3s target. Credentials remain CNPG-owned and are never returned.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "instances": {
+          "type": "integer"
+        },
+        "storageClass": {
+          "type": "string"
+        },
+        "storageSize": {
+          "type": "string"
+        },
+        "retentionPolicy": {
+          "type": "string",
+          "enum": [
+            "delete",
+            "retain"
+          ]
+        },
+        "restartConsumers": {
+          "type": "boolean"
+        },
+        "localRelay": {
+          "type": "object"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
-    "name": "get_platform_postgres_status",
-    "title": "Get platform PostgreSQL status",
-    "description": "Read SQL-gated CloudNativePG platform PostgreSQL readiness without returning credentials.",
-    "inputSchema": {"type":"object","required":["vmName"],"properties":{"vmName":{"type":"string"},"clusterName":{"type":"string"},"namespace":{"type":"string"},"instances":{"type":"integer"}}},
-    "outputSchema": {"type":"object"}
+    "name": "reconcile_tidb_service",
+    "title": "Reconcile TiDB service",
+    "description": "Install or reconcile TiDB Operator and a SQL-gated TiDB platform cluster. Credentials remain operator-owned and are not returned.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "instances": {
+          "type": "integer"
+        },
+        "storageClass": {
+          "type": "string"
+        },
+        "storageSize": {
+          "type": "string"
+        },
+        "retentionPolicy": {
+          "type": "string",
+          "enum": [
+            "delete",
+            "retain"
+          ]
+        },
+        "localRelay": {
+          "type": "object"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
   },
   {
-    "name": "remove_platform_postgres",
-    "title": "Remove platform PostgreSQL",
-    "description": "Destructively remove the platform PostgreSQL CNPG Cluster and owned data while preserving the operator. Requires confirm=true.",
-    "inputSchema": {"type":"object","required":["vmName","confirm"],"properties":{"vmName":{"type":"string"},"clusterName":{"type":"string"},"namespace":{"type":"string"},"retentionPolicy":{"type":"string","enum":["delete","retain"]},"localRelay":{"type":"object"},"confirm":{"type":"boolean"}}},
-    "outputSchema": {"type":"object"}
+    "name": "get_tidb_service_status",
+    "title": "Get TiDB service status",
+    "description": "Read SQL-gated TiDB Operator platform readiness without returning credentials.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "instances": {
+          "type": "integer"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "remove_tidb_service",
+    "title": "Remove TiDB service",
+    "description": "Destructively remove the platform TidbCluster and owned data while preserving TiDB Operator. Requires confirm=true.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName",
+        "confirm"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "retentionPolicy": {
+          "type": "string",
+          "enum": [
+            "delete",
+            "retain"
+          ]
+        },
+        "localRelay": {
+          "type": "object"
+        },
+        "confirm": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_postgresql_service_status",
+    "title": "Get PostgreSQL service status",
+    "description": "Read SQL-gated CloudNativePG PostgreSQL service readiness without returning credentials.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "instances": {
+          "type": "integer"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "ensure_pgvector",
+    "title": "Ensure pgvector",
+    "description": "Reconcile a pinned pgvector CloudNativePG image and ensure the vector extension in selected databases. Credentials remain CNPG-owned and are never returned.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "databases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_pgvector_status",
+    "title": "Get pgvector status",
+    "description": "Read pgvector image and per-database extension readiness without changing the Cluster or databases.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "databases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "remove_postgresql_service",
+    "title": "Remove PostgreSQL service",
+    "description": "Destructively remove a caller-defined PostgreSQL CNPG service and owned data while preserving the operator. Requires confirm=true.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "vmName",
+        "confirm"
+      ],
+      "properties": {
+        "vmName": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "retentionPolicy": {
+          "type": "string",
+          "enum": [
+            "delete",
+            "retain"
+          ]
+        },
+        "localRelay": {
+          "type": "object"
+        },
+        "confirm": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "embed_texts",
+    "title": "Generate host-local embeddings",
+    "description": "Generate embeddings through the host-local, configured embedding service.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "texts"
+      ],
+      "properties": {
+        "texts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          }
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "model",
+        "dimensions",
+        "embeddings"
+      ]
+    }
+  },
+  {
+    "name": "reconcile_serving_assignment",
+    "title": "Reconcile generic serving assignment",
+    "description": "Validate and reconcile a product-neutral serving assignment against an explicit host target. Rejects VM or ambiguous targets and returns bounded readiness evidence.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "contractVersion",
+        "assignmentId",
+        "generation",
+        "idempotencyKey",
+        "service",
+        "mode",
+        "runtime",
+        "target",
+        "artifact",
+        "endpoints",
+        "readiness",
+        "exposure"
+      ],
+      "properties": {
+        "contractVersion": {"type": "string", "const": "serving-assignment.v1"},
+        "assignmentId": {"type": "string"},
+        "generation": {"type": "integer", "minimum": 1},
+        "idempotencyKey": {"type": "string"},
+        "service": {"type": "string"},
+        "mode": {"type": "string", "enum": ["dev-process", "oci-release"]},
+        "runtime": {"type": "string", "enum": ["process", "podman", "kubernetes"]},
+        "target": {"type": "object"},
+        "artifact": {"type": "object"},
+        "endpoints": {"type": "array", "minItems": 1},
+        "readiness": {"type": "array", "minItems": 1},
+        "exposure": {"type": "object"},
+        "serviceUnit": {"type": "string"},
+        "desiredState": {"type": "string", "enum": ["start", "restart"]}
+      }
+    },
+    "outputSchema": {"type": "object"}
+  },
+  {
+    "name": "configure_agent_connection",
+    "title": "Configure generic agent connection",
+    "description": "Write caller-supplied agent connection environment and optionally restart the declared service.",
+    "inputSchema": {"type": "object", "required": ["envFile", "environment"], "properties": {"envFile": {"type": "string"}, "environment": {"type": "object", "additionalProperties": {"type": "string"}}, "serviceName": {"type": "string"}, "restart": {"type": "boolean"}, "scope": {"type": "string", "enum": ["user", "system"]}}},
+    "outputSchema": {"type": "object"}
+  },
+  {
+    "name": "discover_service_ingress",
+    "title": "Discover service ingress",
+    "description": "Resolve caller-declared service ingress endpoints without product hostname inference.",
+    "inputSchema": {"type": "object", "required": ["vmName", "endpoints"], "properties": {"vmName": {"type": "string"}, "endpoints": {"type": "array", "items": {"type": "object"}}, "ingressNamespace": {"type": "string"}, "ingressService": {"type": "string"}}},
+    "outputSchema": {"type": "object"}
+  },
+  {
+    "name": "reconcile_postgresql_service",
+    "title": "Reconcile PostgreSQL service",
+    "description": "Reconcile a caller-defined PostgreSQL service and databases on an explicit Kubernetes target.",
+    "inputSchema": {"type": "object", "required": ["vmName", "databases", "consumerSecretName", "consumerSecretLabel", "serviceOwner", "servicePartOf"], "properties": {"vmName": {"type": "string"}, "clusterName": {"type": "string"}, "namespace": {"type": "string"}, "instances": {"type": "integer"}, "storageClass": {"type": "string"}, "storageSize": {"type": "string"}, "retentionPolicy": {"type": "string"}, "databases": {"type": "array", "items": {"type": "string"}}, "consumerSecretName": {"type": "string"}, "consumerSecretLabel": {"type": "string"}, "serviceOwner": {"type": "string"}, "servicePartOf": {"type": "string"}, "relayDeviceName": {"type": "string"}, "restartConsumers": {"type": "boolean"}, "localRelay": {"type": "object"}}},
+    "outputSchema": {"type": "object"}
+  },
+  {
+    "name": "get_postgresql_service_status",
+    "title": "Get PostgreSQL service status",
+    "description": "Read SQL-gated readiness for a caller-defined PostgreSQL service.",
+    "inputSchema": {"type": "object", "required": ["vmName", "databases", "consumerSecretName", "consumerSecretLabel", "serviceOwner", "servicePartOf"], "properties": {"vmName": {"type": "string"}, "clusterName": {"type": "string"}, "namespace": {"type": "string"}, "instances": {"type": "integer"}, "databases": {"type": "array", "items": {"type": "string"}}, "consumerSecretName": {"type": "string"}, "consumerSecretLabel": {"type": "string"}, "serviceOwner": {"type": "string"}, "servicePartOf": {"type": "string"}, "relayDeviceName": {"type": "string"}, "localRelay": {"type": "object"}}},
+    "outputSchema": {"type": "object"}
+  },
+  {
+    "name": "remove_postgresql_service",
+    "title": "Remove PostgreSQL service",
+    "description": "Remove a caller-defined PostgreSQL service after explicit confirmation.",
+    "inputSchema": {"type": "object", "required": ["vmName", "consumerSecretName", "serviceOwner", "servicePartOf", "confirm"], "properties": {"vmName": {"type": "string"}, "clusterName": {"type": "string"}, "namespace": {"type": "string"}, "consumerSecretName": {"type": "string"}, "consumerSecretLabel": {"type": "string"}, "serviceOwner": {"type": "string"}, "servicePartOf": {"type": "string"}, "retentionPolicy": {"type": "string"}, "confirm": {"type": "boolean"}}},
+    "outputSchema": {"type": "object"}
   }
 ]

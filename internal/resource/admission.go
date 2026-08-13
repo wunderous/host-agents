@@ -111,6 +111,7 @@ func ClassifyTool(tool string) Class {
 		name == "register_host_agent" || name == "get_host_health" || name == "cancel_operation" ||
 		name == "get_host_info" || name == "get_local_status" || name == "list_vms" ||
 		name == "list_clusters" || name == "list_agents" || name == "get_agent" ||
+		name == "inspect_container_storage" ||
 		strings.HasPrefix(name, "get_") || strings.HasPrefix(name, "list_") ||
 		strings.HasPrefix(name, "check_") {
 		return ClassControl
@@ -124,8 +125,8 @@ func ClassifyTool(tool string) Class {
 func isHeavyTool(name string) bool {
 	for _, candidate := range []string{
 		"install_incus_stack", "reset_incus_stack", "provision_container", "provision_vm", "create_vm",
-		"install_k3s", "install_postgresql", "ensure_oci_builder", "configure_oci_storage",
-		"ensure_platform_postgres", "remove_platform_postgres",
+		"install_k3s", "install_postgresql", "ensure_oci_builder", "configure_oci_storage", "cleanup_container_storage",
+		"reconcile_postgresql_service", "reconcile_postgresql_service", "ensure_pgvector", "remove_postgresql_service", "remove_postgresql_service",
 		"build_and_push_oci_image", "prepare_host_agent_artifacts", "stage_build_context",
 		"ensure_host_tool", "install_host_agent", "install_local_llm_model",
 		"configure_local_llm_model", "start_local_llm_runtime", "configure_local_llm_runtime", "ensure_cloudflared_tunnel",

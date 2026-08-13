@@ -5,6 +5,11 @@ import (
 	"testing"
 )
 
+type typedStructuredResult struct {
+	BinaryPath  string `json:"binaryPath"`
+	CudaEnabled bool   `json:"cudaEnabled"`
+}
+
 func TestBuildHostWorkerURL(t *testing.T) {
 	got := BuildHostWorkerURL("wss://mcp.example.com/mcp-agent/foo")
 	want := "wss://mcp.example.com/host/v1/connect"
@@ -44,5 +49,15 @@ func TestStreamFramesRoundTrip(t *testing.T) {
 	}
 	if decoded.StreamID != "stream-1" || decoded.Data != "hello" || decoded.EOF {
 		t.Fatalf("decoded stream_chunk = %+v", decoded)
+	}
+}
+
+func TestStructuredContentMapPreservesTypedResults(t *testing.T) {
+	got, err := structuredContentMap(typedStructuredResult{BinaryPath: "/opt/llama-server", CudaEnabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["binaryPath"] != "/opt/llama-server" || got["cudaEnabled"] != true {
+		t.Fatalf("typed structured result was not normalized: %#v", got)
 	}
 }

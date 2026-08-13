@@ -25,6 +25,7 @@ func TestProbeHostExposureReadyWithShim(t *testing.T) {
 		Hostname:    "e2e.example.com",
 		LocalTarget: server.URL,
 		RunToken:    "token",
+		Connector:   "host",
 	})
 	if err != nil {
 		t.Fatalf("ensure: %v", err)
@@ -47,7 +48,7 @@ func TestProbeHostExposureReadyWithShim(t *testing.T) {
 
 func TestEnsureCloudflaredTunnelRejectsUnsafeOrigin(t *testing.T) {
 	svc := NewHostOperationsService(Options{ProviderID: "incus"})
-	if _, err := svc.EnsureCloudflaredTunnel(EnsureCloudflaredTunnelArgs{BindingID: "binding", Hostname: "llm.example.com", LocalTarget: "file:///tmp/token", RunToken: "token"}); err == nil {
+	if _, err := svc.EnsureCloudflaredTunnel(EnsureCloudflaredTunnelArgs{BindingID: "binding", Hostname: "llm.example.com", LocalTarget: "file:///tmp/token", RunToken: "token", Connector: "host"}); err == nil {
 		t.Fatal("expected non-HTTP origin rejection")
 	}
 }

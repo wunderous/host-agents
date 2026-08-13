@@ -16,12 +16,14 @@ import (
 )
 
 type EnsureCloudflaredTunnelArgs struct {
-	BindingID   string
-	Hostname    string
-	LocalTarget string
-	RunToken    string
-	Quick       bool
-	Native      bool
+	BindingID         string
+	Hostname          string
+	LocalTarget       string
+	RunToken          string
+	Connector         string
+	AllowedLocalPorts []int
+	Quick             bool
+	Native            bool
 }
 
 type EnsureCloudflaredTunnelResult struct {
@@ -101,6 +103,9 @@ func (s *HostOperationsService) EnsureCloudflaredTunnel(args EnsureCloudflaredTu
 	if strings.TrimSpace(args.LocalTarget) == "" {
 		return nil, fmt.Errorf("localTarget is required")
 	}
+	if err := validateHostConnector(args.Connector, args.Hostname, target, args.AllowedLocalPorts); err != nil {
+		return nil, err
+	}
 
 	if exposureShimEnabled() {
 		if err := startExposureShim(args.BindingID, args.LocalTarget); err != nil {
@@ -149,6 +154,34 @@ func (s *HostOperationsService) EnsureCloudflaredTunnel(args EnsureCloudflaredTu
 	return nil, fmt.Errorf(
 		"cloudflared tunnel requires runToken on WSL co-host (Windows cloudflared) or a Windows host agent",
 	)
+}
+
+func validateHostConnector(connector, hostname string, target *url.URL, allowedPorts []int) error {
+	if strings.TrimSpace(connector) != "host" {
+		return fmt.Errorf("host connector requires connector=host")
+	}
+	if target.Hostname() != "127.0.0.1" && target.Hostname() != "localhost" {
+		return fmt.Errorf("host connector requires a loopback localTarget")
+	}
+	if target.Port() == "" {
+		return fmt.Errorf("host connector requires an explicit localTarget port")
+	}
+	if len(allowedPorts) > 0 {
+		allowed := false
+		for _, port := range allowedPorts {
+			if target.Port() == fmt.Sprintf("%d", port) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return fmt.Errorf("host connector localTarget port is not in the caller-provided allowlist")
+		}
+	}
+	if strings.TrimSpace(hostname) == "" || strings.ContainsAny(hostname, "\r\n\x00") {
+		return fmt.Errorf("host connector requires an explicit hostname")
+	}
+	return nil
 }
 
 func (s *HostOperationsService) ProbeHostExposure(args ProbeHostExposureArgs) (*ProbeHostExposureResult, error) {

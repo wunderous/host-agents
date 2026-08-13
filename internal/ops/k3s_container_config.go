@@ -120,3 +120,36 @@ func (s *HostOperationsService) waitForK3sNodeReady(ctx context.Context, vmName 
 	}
 	return fmt.Errorf("K3s API on '%s' did not report ready nodes within %s", vmName, timeout)
 }
+
+func (s *HostOperationsService) waitForContainerNetworkReady(ctx context.Context, vmName string, onData func(string), timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		info, infoErr := s.GetVMInfo(vmName, true)
+		if infoErr == nil && firstBridgeIPv4(info.IPv4) != "" {
+			route, routeErr := s.runVMExec(vmName, []string{"bash", "-lc", "grep -qE '^[^[:space:]]+[[:space:]]+00000000[[:space:]]' /proc/net/route"}, nil, 15*time.Second)
+			if routeErr == nil && route.ExitCode == 0 {
+				return nil
+			}
+		}
+		if onData != nil {
+			onData(fmt.Sprintf("Waiting for container network route on %s...", vmName))
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("container '%s' did not expose an IPv4 address and default route within %s", vmName, timeout)
+}
+
+func (s *HostOperationsService) k3sServiceDiagnostics(vmName string) string {
+	result, err := s.runVMExec(vmName, []string{"bash", "-lc", "systemctl --no-pager --full status k3s.service 2>&1; printf '\\n--- journal ---\\n'; journalctl -u k3s.service --no-pager -n 80 2>&1"}, nil, 45*time.Second)
+	if err != nil {
+		return errString(err, "K3s service diagnostics unavailable")
+	}
+	diagnostics := firstNonEmpty(result.Stdout, result.Stderr, "K3s service diagnostics were empty")
+	if len(diagnostics) > 16*1024 {
+		diagnostics = diagnostics[len(diagnostics)-(16*1024):]
+	}
+	return diagnostics
+}

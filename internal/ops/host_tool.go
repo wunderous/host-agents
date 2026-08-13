@@ -83,9 +83,6 @@ func (s *HostOperationsService) InstallIncusStack(args InstallIncusStackArgs, on
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-	if err := runPrivilegedPackageCommand(ctx, "usermod", "-aG", "incus-admin", currentUserName()); err != nil {
-		return nil, fmt.Errorf("grant Incus admin access: %w", err)
-	}
 	if err := s.configureZabblyIncusRepository(ctx, channel); err != nil {
 		return nil, fmt.Errorf("configure Incus package repository: %w", err)
 	}
@@ -111,6 +108,14 @@ func (s *HostOperationsService) InstallIncusStack(args InstallIncusStackArgs, on
 	}
 	if err := runPrivilegedPackageCommand(ctx, argsInstall[0], argsInstall[1:]...); err != nil {
 		return nil, fmt.Errorf("install virtualization packages: %w", err)
+	}
+	// The incus-admin group is created by the Incus package. Granting access
+	// before installation makes clean-host bootstrap fail with "group does not
+	// exist". A root-run bootstrap agent does not need the supplemental group.
+	if user := currentUserName(); user != "" && user != "root" {
+		if err := runPrivilegedPackageCommand(ctx, "usermod", "-aG", "incus-admin", user); err != nil {
+			return nil, fmt.Errorf("grant Incus admin access: %w", err)
+		}
 	}
 	if err := runPrivilegedPackageCommand(ctx, "systemctl", "enable", "--now", "incus.service"); err != nil {
 		return nil, fmt.Errorf("start Incus daemon: %w", err)
@@ -148,13 +153,44 @@ func (s *HostOperationsService) ensureIncusContainerRuntime(onData func(string))
 	if err != nil || profile.ExitCode != 0 {
 		return fmt.Errorf("inspect default profile: %s", firstNonEmpty(profile.Stderr, profile.Stdout, errString(err, "incus profile device show failed")))
 	}
-	if !strings.Contains(profile.Stdout, "root:") {
+	if !incusProfileHasDevice(profile.Stdout, "root") {
 		added, addErr := s.commandRunner([]string{"profile", "device", "add", "default", "root", "disk", "path=/", "pool=default"}, onData, 2*time.Minute)
 		if addErr != nil || added.ExitCode != 0 {
 			return fmt.Errorf("attach default root disk: %s", firstNonEmpty(added.Stderr, added.Stdout, errString(addErr, "incus profile device add failed")))
 		}
 	}
+	// A clean Incus install can have a default profile with only its root
+	// device. Reconcile the network device as part of the runtime contract so
+	// every system container receives an interface backed by the managed bridge.
+	if !incusProfileHasDevice(profile.Stdout, "eth0") {
+		added, addErr := s.commandRunner([]string{
+			"profile", "device", "add", "default", "eth0", "nic",
+			"nictype=bridged", "parent=incusbr0", "name=eth0",
+		}, onData, 2*time.Minute)
+		if addErr != nil || added.ExitCode != 0 {
+			return fmt.Errorf("attach default container network: %s", firstNonEmpty(added.Stderr, added.Stdout, errString(addErr, "incus profile network device add failed")))
+		}
+	} else {
+		for _, setting := range [][2]string{{"nictype", "bridged"}, {"parent", "incusbr0"}, {"name", "eth0"}} {
+			updated, updateErr := s.commandRunner([]string{
+				"profile", "device", "set", "default", "eth0", setting[0], setting[1],
+			}, onData, 2*time.Minute)
+			if updateErr != nil || updated.ExitCode != 0 {
+				return fmt.Errorf("reconcile default container network %s: %s", setting[0], firstNonEmpty(updated.Stderr, updated.Stdout, errString(updateErr, "incus profile network device update failed")))
+			}
+		}
+	}
 	return nil
+}
+
+func incusProfileHasDevice(profile, deviceName string) bool {
+	want := strings.TrimSpace(deviceName) + ":"
+	for _, line := range strings.Split(profile, "\n") {
+		if strings.TrimSpace(line) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func aptCandidate(packageName string) string {
@@ -301,12 +337,15 @@ func (s *HostOperationsService) EnsureHostTool(args EnsureHostToolArgs, onData f
 		return nil, fmt.Errorf("ensure_host_tool is unsupported on %s host agents", runtime.GOOS)
 	}
 	tool := strings.ToLower(strings.TrimSpace(args.Tool))
+	if tool == "bun" {
+		return s.ensureBunTool(onData)
+	}
 	if tool == "helm" {
 		return s.ensureHelmTool(onData)
 	}
 	packageName, ok := hostToolPackages[tool]
 	if !ok {
-		return nil, errors.New("tool must be one of go, podman, buildah, buildkitd, cloudflared, or helm")
+		return nil, errors.New("tool must be one of bun, gcc, g++, go, podman, buildah, buildkitd, cloudflared, helm, cmake, ninja, or nvcc")
 	}
 	if path, err := exec.LookPath(tool); err == nil {
 		return map[string]any{"tool": tool, "path": path, "available": true, "alreadyAvailable": true}, nil
@@ -330,6 +369,38 @@ func (s *HostOperationsService) EnsureHostTool(args EnsureHostToolArgs, onData f
 		return nil, fmt.Errorf("host tool %s was installed but remains unavailable: %w", tool, err)
 	}
 	return map[string]any{"tool": tool, "path": path, "available": true, "alreadyAvailable": false}, nil
+}
+
+func (s *HostOperationsService) ensureBunTool(onData func(string)) (map[string]any, error) {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return nil, errors.New("bun is not installed and user home is unavailable for a user-local install")
+	}
+	installDir := filepath.Join(home, ".bun", "bin")
+	bunPath := filepath.Join(installDir, "bun")
+	if _, statErr := os.Stat(bunPath); statErr == nil {
+		return map[string]any{"tool": "bun", "path": bunPath, "available": true, "alreadyAvailable": true}, nil
+	}
+	if onData != nil {
+		onData(fmt.Sprintf("Installing Bun into %s...", installDir))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	installScript := fmt.Sprintf(
+		`curl -fsSL https://bun.sh/install | bash -s -- --no-modify-shell && test -x %s`,
+		shellEscape(bunPath),
+	)
+	res, runErr := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", installScript}, onData, 0)
+	if runErr != nil {
+		return nil, runErr
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "bun install failed"))
+	}
+	if _, statErr := os.Stat(bunPath); statErr != nil {
+		return nil, fmt.Errorf("bun was installed but remains unavailable: %w", statErr)
+	}
+	return map[string]any{"tool": "bun", "path": bunPath, "available": true, "alreadyAvailable": false}, nil
 }
 
 func (s *HostOperationsService) ensureHelmTool(onData func(string)) (map[string]any, error) {
@@ -370,9 +441,14 @@ func (s *HostOperationsService) ensureHelmTool(onData func(string)) (map[string]
 }
 
 var hostToolPackages = map[string]string{
+	"gcc":         "gcc",
+	"g++":         "g++",
 	"go":          "golang-go",
 	"podman":      "podman",
 	"buildah":     "buildah",
 	"buildkitd":   "moby-buildkit",
 	"cloudflared": "cloudflared",
+	"cmake":       "cmake",
+	"ninja":       "ninja-build",
+	"nvcc":        "nvidia-cuda-toolkit",
 }

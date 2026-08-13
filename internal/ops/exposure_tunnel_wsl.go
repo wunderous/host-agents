@@ -18,6 +18,19 @@ import (
 	hostexec "github.com/wunderous/host-agents/internal/exec"
 )
 
+// wslRepoToWindowsPath converts a WSL-mounted Windows path for a generic
+// Windows-side helper invocation. It intentionally has no service knowledge.
+func wslRepoToWindowsPath(repoRoot string) string {
+	trimmed := strings.TrimPrefix(repoRoot, "/mnt/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) < 2 {
+		return repoRoot
+	}
+	drive := strings.ToUpper(parts[0])
+	rest := strings.Join(parts[1:], `\`)
+	return drive + `:\` + rest
+}
+
 const wslCloudflaredDownloadURL = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
 
 func useNativeWSLCloudflared() bool {
@@ -139,6 +152,32 @@ func isRunningInWSL() bool {
 	return strings.Contains(strings.ToLower(string(data)), "microsoft")
 }
 
+// windowsPowerShellExecutable resolves the Windows command explicitly instead
+// of relying on the service manager to preserve WSL's inherited Windows PATH.
+// Standalone host-agent services commonly run with a Linux-only PATH.
+func windowsPowerShellExecutable() string {
+	if configured := strings.TrimSpace(os.Getenv("OPUTE_WINDOWS_POWERSHELL_PATH")); configured != "" {
+		return configured
+	}
+	for _, candidate := range []string{
+		"/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+		"/mnt/c/Program Files/PowerShell/7/pwsh.exe",
+		"powershell.exe",
+		"pwsh.exe",
+	} {
+		if filepath.IsAbs(candidate) {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+			continue
+		}
+		if _, err := exec.LookPath(candidate); err == nil {
+			return candidate
+		}
+	}
+	return "powershell.exe"
+}
+
 func ensureWindowsCloudflaredViaWSL(s *HostOperationsService, args EnsureCloudflaredTunnelArgs) (*EnsureCloudflaredTunnelResult, error) {
 	token := strings.TrimSpace(args.RunToken)
 	if token == "" {
@@ -168,7 +207,7 @@ Start-Process -FilePath $binary -ArgumentList @('tunnel','run','--token',$token)
 `, windowsTokenPath)
 
 	result, err := s.hostCommandRunner(
-		[]string{"powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript},
+		[]string{windowsPowerShellExecutable(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript},
 		nil,
 		120*time.Second,
 	)
@@ -277,7 +316,7 @@ func isWSLWindowsCloudflaredRunning(bindingID string) bool {
 	}
 	result, err := hostexec.RunCommand(
 		[]string{
-			"powershell.exe",
+			windowsPowerShellExecutable(),
 			"-NoProfile",
 			"-Command",
 			"if (Get-Process cloudflared -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }",
@@ -303,7 +342,7 @@ func stopWSLWindowsCloudflaredTunnel(bindingID string) error {
 
 	result, err := hostexec.RunCommand(
 		[]string{
-			"powershell.exe",
+			windowsPowerShellExecutable(),
 			"-NoProfile",
 			"-Command",
 			"Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force",

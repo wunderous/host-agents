@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestEnsurePlatformPostgresAppliesOperatorBeforeCluster(t *testing.T) {
+func TestEnsurePostgreSQLServiceAppliesOperatorBeforeCluster(t *testing.T) {
 	service := validResetService()
 	applied := false
 	var order []string
@@ -42,13 +42,13 @@ func TestEnsurePlatformPostgresAppliesOperatorBeforeCluster(t *testing.T) {
 			return "", fmt.Errorf("unexpected call: %s", cmd)
 		}
 	}
-	spec, err := validatePlatformPostgresSpec(PlatformPostgresArgs{VMName: "opute-local"})
+	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := service.ensurePlatformPostgresOrdered(ctx, spec); err != nil {
+	if err := service.ensurePostgreSQLServiceOrdered(ctx, spec); err != nil {
 		t.Fatal(err)
 	}
 	operatorIndex, clusterIndex, crdIndex := -1, -1, -1
@@ -72,7 +72,7 @@ func TestEnsurePlatformPostgresAppliesOperatorBeforeCluster(t *testing.T) {
 	}
 }
 
-func TestEnsurePlatformPostgresNeverAppliesClusterWithoutCRD(t *testing.T) {
+func TestEnsurePostgreSQLServiceNeverAppliesClusterWithoutCRD(t *testing.T) {
 	service := validResetService()
 	clusterApplied := false
 	service.kubectlRunner = func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
@@ -90,10 +90,10 @@ func TestEnsurePlatformPostgresNeverAppliesClusterWithoutCRD(t *testing.T) {
 			return "", fmt.Errorf("unexpected call")
 		}
 	}
-	spec, _ := validatePlatformPostgresSpec(PlatformPostgresArgs{VMName: "opute-local"})
+	spec, _ := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if err := service.ensurePlatformPostgresOrdered(ctx, spec); err == nil {
+	if err := service.ensurePostgreSQLServiceOrdered(ctx, spec); err == nil {
 		t.Fatal("expected an error when the CNPG CRD never appears")
 	}
 	if clusterApplied {
@@ -101,7 +101,7 @@ func TestEnsurePlatformPostgresNeverAppliesClusterWithoutCRD(t *testing.T) {
 	}
 }
 
-func TestEnsurePlatformPostgresRequiresK3sReadyBeforeOperator(t *testing.T) {
+func TestEnsurePostgreSQLServiceRequiresK3sReadyBeforeOperator(t *testing.T) {
 	service := validResetService()
 	applies := 0
 	service.kubectlRunner = func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
@@ -115,10 +115,10 @@ func TestEnsurePlatformPostgresRequiresK3sReadyBeforeOperator(t *testing.T) {
 			return "", fmt.Errorf("unexpected call")
 		}
 	}
-	spec, _ := validatePlatformPostgresSpec(PlatformPostgresArgs{VMName: "opute-local"})
+	spec, _ := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if err := service.ensurePlatformPostgresOrdered(ctx, spec); err == nil {
+	if err := service.ensurePostgreSQLServiceOrdered(ctx, spec); err == nil {
 		t.Fatal("expected an error when K3s has no Ready node")
 	}
 	if applies != 0 {
@@ -126,10 +126,10 @@ func TestEnsurePlatformPostgresRequiresK3sReadyBeforeOperator(t *testing.T) {
 	}
 }
 
-func TestEnsurePlatformPostgresCompletesSQLGatedResult(t *testing.T) {
+func TestEnsurePostgreSQLServiceCompletesSQLGatedResult(t *testing.T) {
 	service := validResetService()
 	operatorApplied := false
-	consumerSecret := fmt.Sprintf(`{"data":{"platformDatabaseUrl":"%s","taskLedgerDatabaseUrl":"%s"}}`,
+	consumerSecret := fmt.Sprintf(`{"data":{"testDatabaseUrl":"%s","testLedgerDatabaseUrl":"%s"}}`,
 		base64.StdEncoding.EncodeToString([]byte("postgresql://opute:p@svc/opute")),
 		base64.StdEncoding.EncodeToString([]byte("postgresql://opute:p@svc/opute_task_ledger")))
 	service.kubectlRunner = func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
@@ -166,7 +166,7 @@ func TestEnsurePlatformPostgresCompletesSQLGatedResult(t *testing.T) {
 		case command == "get" && kubectlArgs[1] == "endpoints":
 			return `{"subsets":[{"addresses":[{"ip":"10.42.0.7"}]}]}`, nil
 		case command == "get" && kubectlArgs[1] == "secret":
-			if kubectlArgs[2] == "opute-platform-db" {
+			if kubectlArgs[2] == "test-db" {
 				return consumerSecret, nil
 			}
 			return fmt.Sprintf(`{"data":{"username":"%s","password":"%s"}}`,
@@ -184,7 +184,7 @@ func TestEnsurePlatformPostgresCompletesSQLGatedResult(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	result, err := service.EnsurePlatformPostgres(ctx, PlatformPostgresArgs{VMName: "opute-local"}, nil)
+	result, err := service.ReconcilePostgreSQLService(ctx, PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb", "test_ledger"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,42 +202,46 @@ func TestEnsurePlatformPostgresCompletesSQLGatedResult(t *testing.T) {
 	}
 }
 
-func TestValidatePlatformPostgresSpecDefaultsToCNPGContract(t *testing.T) {
-	spec, err := validatePlatformPostgresSpec(PlatformPostgresArgs{VMName: "opute-local"})
+func TestValidatePostgreSQLServiceSpecRequiresCallerIdentity(t *testing.T) {
+	_, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local"})
+	if err == nil {
+		t.Fatal("expected caller identity to be required")
+	}
+	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spec.ClusterName != platformPostgresClusterName || spec.Namespace != platformPostgresNamespace {
-		t.Fatalf("unexpected CNPG target: %#v", spec)
+	if spec.ClusterName != "test-postgres" || spec.Namespace != "test-system" {
+		t.Fatalf("unexpected target: %#v", spec)
 	}
 	if spec.Instances != 1 || spec.StorageClass != "local-path" || spec.RetentionPolicy != "delete" {
 		t.Fatalf("unexpected CNPG defaults: %#v", spec)
 	}
 }
 
-func TestValidatePlatformPostgresSpecRejectsUnsafeOrMismatchedInputs(t *testing.T) {
-	tests := []PlatformPostgresArgs{
+func TestValidatePostgreSQLServiceSpecRejectsUnsafeOrMismatchedInputs(t *testing.T) {
+	tests := []PostgreSQLServiceArgs{
 		{ClusterName: "missing-vm"},
 		{VMName: "vm", ClusterName: "Bad_Name"},
 		{VMName: "vm", Instances: 0, RetentionPolicy: "unknown"},
 		{VMName: "vm", Instances: 6},
 	}
 	for _, input := range tests {
-		if _, err := validatePlatformPostgresSpec(input); err == nil {
+		if _, err := validatePostgreSQLServiceSpec(input); err == nil {
 			t.Fatalf("expected validation failure for %#v", input)
 		}
 	}
 }
 
-func TestPlatformPostgresManifestsUseCloudNativePGAndNoHostService(t *testing.T) {
-	spec, err := validatePlatformPostgresSpec(PlatformPostgresArgs{
-		VMName: "opute-local", Instances: 3, StorageClass: "fast-local",
+func TestPostgreSQLServiceManifestsUseCloudNativePGAndNoHostService(t *testing.T) {
+	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{
+		VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Instances: 3, StorageClass: "fast-local", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	operator := renderPlatformPostgresOperatorManifest()
-	cluster := renderPlatformPostgresClusterManifest(spec)
+	operator := renderPostgreSQLServiceOperatorManifest()
+	cluster := renderPostgreSQLServiceClusterManifest(spec)
 	for _, value := range []string{
 		"kind: HelmChart",
 		"chart: cloudnative-pg",
@@ -246,7 +250,7 @@ func TestPlatformPostgresManifestsUseCloudNativePGAndNoHostService(t *testing.T)
 		"apiVersion: postgresql.cnpg.io/v1",
 		"instances: 3",
 		"storageClass: fast-local",
-		"opute.io/platform-postgres-retention-policy: delete",
+		"host-agent.io/retention-policy: delete",
 	} {
 		if !strings.Contains(operator+cluster, value) {
 			t.Fatalf("manifest missing %q:\n%s\n%s", value, operator, cluster)
@@ -260,15 +264,15 @@ func TestPlatformPostgresManifestsUseCloudNativePGAndNoHostService(t *testing.T)
 	}
 }
 
-func TestPlatformPostgresCreateDatabaseSQLUsesIdentifierQuoting(t *testing.T) {
-	sql := platformPostgresCreateDatabaseSQL("opute_task_ledger")
+func TestPostgreSQLServiceCreateDatabaseSQLUsesIdentifierQuoting(t *testing.T) {
+	sql := postgresqlServiceCreateDatabaseSQL("opute_task_ledger")
 	if sql != `CREATE DATABASE "opute_task_ledger"` {
 		t.Fatalf("unexpected CREATE DATABASE SQL: %q", sql)
 	}
 }
 
-func TestPlatformPostgresSQLScriptKeepsPasswordOffCommandLine(t *testing.T) {
-	script := platformPostgresSQLScript("opute-platform-postgres-rw.opute-system.svc", "opute", "SELECT 1")
+func TestPostgreSQLServiceSQLScriptKeepsPasswordOffCommandLine(t *testing.T) {
+	script := postgresqlServiceSQLScript("opute-platform-postgres-rw.opute-system.svc", "opute", "SELECT 1")
 	if strings.Contains(script, "password") || strings.Contains(script, "PGPASSWORD") {
 		t.Fatalf("SQL script should read pgpass from stdin, not expose a password:\n%s", script)
 	}
@@ -277,8 +281,8 @@ func TestPlatformPostgresSQLScriptKeepsPasswordOffCommandLine(t *testing.T) {
 	}
 }
 
-func TestPlatformPostgresResultDoesNotContainCredentials(t *testing.T) {
-	relay := PlatformPostgresRelayArgs{
+func TestPostgreSQLServiceResultDoesNotContainCredentials(t *testing.T) {
+	relay := PostgreSQLServiceRelayArgs{
 		SessionID: "session-1", ListenHost: "127.0.0.1",
 		RelayToken: strings.Repeat("s", 32),
 	}
@@ -287,16 +291,22 @@ func TestPlatformPostgresResultDoesNotContainCredentials(t *testing.T) {
 	}
 }
 
-func TestPlatformPostgresConsumerSecretUsesCNPGNamespaceAndBothURLs(t *testing.T) {
-	spec, err := validatePlatformPostgresSpec(PlatformPostgresArgs{
-		VMName:      "opute-local",
-		Namespace:   "opute-system",
-		ClusterName: "opute-platform-postgres",
+func TestPostgreSQLServiceConsumerSecretUsesCNPGNamespaceAndBothURLs(t *testing.T) {
+	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{
+		VMName:               "opute-local",
+		Namespace:            "opute-system",
+		ClusterName:          "opute-platform-postgres",
+		Databases:            []string{"opute", "opute_task_ledger"},
+		ConsumerSecretName:   "opute-platform-db",
+		ConsumerSecretLabel:  "host-agent.io/managed-postgres",
+		ServiceOwner:         "opute",
+		ServicePartOf:        "opute-platform",
+		ConsumerDatabaseKeys: map[string]string{"opute": "platformDatabaseUrl", "opute_task_ledger": "taskLedgerDatabaseUrl"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := renderPlatformPostgresConsumerSecret(spec, platformPostgresSecret{
+	manifest := renderPostgreSQLServiceConsumerSecret(spec, postgresqlServiceSecret{
 		Username: "opute",
 		Password: strings.Repeat("p", 32),
 	})

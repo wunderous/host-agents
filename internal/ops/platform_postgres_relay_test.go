@@ -13,7 +13,7 @@ import (
 	"github.com/wunderous/host-agents/internal/exec"
 )
 
-func TestPlatformPostgresRelayAuthenticatesAndRedactsToken(t *testing.T) {
+func TestPostgreSQLServiceRelayAuthenticatesAndRedactsToken(t *testing.T) {
 	target, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -28,9 +28,9 @@ func TestPlatformPostgresRelayAuthenticatesAndRedactsToken(t *testing.T) {
 		_, _ = io.Copy(conn, conn)
 	}()
 
-	manager := newPlatformPostgresRelayManager()
+	manager := newPostgreSQLServiceRelayManager()
 	token := strings.Repeat("r", 32)
-	descriptor, err := manager.start(PlatformPostgresRelayArgs{
+	descriptor, err := manager.start(PostgreSQLServiceRelayArgs{
 		SessionID:  "platform-db-test",
 		ListenHost: "127.0.0.1",
 		TargetHost: "127.0.0.1",
@@ -75,9 +75,9 @@ func TestPlatformPostgresRelayAuthenticatesAndRedactsToken(t *testing.T) {
 	}
 }
 
-func TestPlatformPostgresRelayExpires(t *testing.T) {
-	manager := newPlatformPostgresRelayManager()
-	descriptor, err := manager.start(PlatformPostgresRelayArgs{
+func TestPostgreSQLServiceRelayExpires(t *testing.T) {
+	manager := newPostgreSQLServiceRelayManager()
+	descriptor, err := manager.start(PostgreSQLServiceRelayArgs{
 		SessionID:  "platform-db-expiry",
 		ListenHost: "127.0.0.1",
 		TargetHost: "127.0.0.1",
@@ -113,7 +113,7 @@ func TestPlatformPostgresRelayExpires(t *testing.T) {
 	}
 }
 
-func TestPlatformPostgresRelayExpiryClosesActiveConnections(t *testing.T) {
+func TestPostgreSQLServiceRelayExpiryClosesActiveConnections(t *testing.T) {
 	target, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -130,9 +130,9 @@ func TestPlatformPostgresRelayExpiryClosesActiveConnections(t *testing.T) {
 		}
 	}()
 
-	manager := newPlatformPostgresRelayManager()
+	manager := newPostgreSQLServiceRelayManager()
 	token := strings.Repeat("a", 32)
-	descriptor, err := manager.start(PlatformPostgresRelayArgs{
+	descriptor, err := manager.start(PostgreSQLServiceRelayArgs{
 		SessionID:  "platform-db-expiry-active",
 		ListenHost: "127.0.0.1",
 		TargetHost: "127.0.0.1",
@@ -166,38 +166,38 @@ func TestPlatformPostgresRelayExpiryClosesActiveConnections(t *testing.T) {
 	t.Fatal("authenticated relay connection stayed open after automatic TTL expiry")
 }
 
-func TestEnsurePlatformPostgresRelayRestrictsTargets(t *testing.T) {
-	service := &HostOperationsService{platformPostgresRelay: newPlatformPostgresRelayManager()}
-	spec, err := validatePlatformPostgresSpec(PlatformPostgresArgs{VMName: "opute-local"})
+func TestEnsurePostgreSQLServiceRelayRestrictsTargets(t *testing.T) {
+	service := &HostOperationsService{postgresqlServiceRelay: newPostgreSQLServiceRelayManager()}
+	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}, RelayDeviceName: "test-postgres-rw"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	token := strings.Repeat("t", 32)
-	for _, args := range []PlatformPostgresRelayArgs{
+	for _, args := range []PostgreSQLServiceRelayArgs{
 		{SessionID: "relay-a", ListenHost: "127.0.0.1", TargetHost: "10.0.100.5", RelayToken: token},
 		{SessionID: "relay-b", ListenHost: "127.0.0.1", TargetHost: spec.ClusterName + "-rw." + spec.Namespace + ".svc", TargetPort: 5433, RelayToken: token},
 		{SessionID: "relay-c", ListenHost: "127.0.0.1", TargetHost: "opute.example.com", RelayToken: token},
 	} {
-		if _, err := service.ensurePlatformPostgresRelay(context.Background(), spec, args); err == nil {
+		if _, err := service.ensurePostgreSQLServiceRelay(context.Background(), spec, args); err == nil {
 			t.Fatalf("expected relay target restriction for %#v", args)
 		}
 	}
 	// The CNPG read/write Service (port 5432) and loopback port-forwards on
 	// any port are the only permitted targets; all must start and revoke.
-	for _, args := range []PlatformPostgresRelayArgs{
+	for _, args := range []PostgreSQLServiceRelayArgs{
 		{SessionID: "relay-svc", ListenHost: "127.0.0.1", TargetHost: spec.ClusterName + "-rw." + spec.Namespace + ".svc", RelayToken: token},
 		{SessionID: "relay-loop", ListenHost: "127.0.0.1", TargetHost: "127.0.0.1", RelayToken: token},
 		{SessionID: "relay-loop-port", ListenHost: "127.0.0.1", TargetHost: "127.0.0.1", TargetPort: 15432, RelayToken: token},
 	} {
-		if _, err := service.ensurePlatformPostgresRelay(context.Background(), spec, args); err != nil {
+		if _, err := service.ensurePostgreSQLServiceRelay(context.Background(), spec, args); err != nil {
 			t.Fatalf("expected relay target %s:%d to be accepted: %v", args.TargetHost, args.TargetPort, err)
 		}
-		service.revokeAllPlatformPostgresRelays()
+		service.revokeAllPostgreSQLServiceRelays()
 	}
 }
 
-func TestEnsurePlatformPostgresRelayCreatesHostForwardWhenTargetOmitted(t *testing.T) {
-	service := &HostOperationsService{platformPostgresRelay: newPlatformPostgresRelayManager()}
+func TestEnsurePostgreSQLServiceRelayCreatesHostForwardWhenTargetOmitted(t *testing.T) {
+	service := &HostOperationsService{postgresqlServiceRelay: newPostgreSQLServiceRelayManager()}
 	deviceAdds := 0
 	existingDevice := ""
 	service.commandRunnerFn = func(args []string, onData func(string), timeout time.Duration) (exec.Result, error) {
@@ -232,11 +232,11 @@ func TestEnsurePlatformPostgresRelayCreatesHostForwardWhenTargetOmitted(t *testi
 		}
 		return "", errors.New("unexpected kubectl call")
 	}
-	spec, err := validatePlatformPostgresSpec(PlatformPostgresArgs{VMName: "opute-local"})
+	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}, RelayDeviceName: "test-postgres-rw"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := service.ensurePlatformPostgresRelay(context.Background(), spec, PlatformPostgresRelayArgs{
+	first, err := service.ensurePostgreSQLServiceRelay(context.Background(), spec, PostgreSQLServiceRelayArgs{
 		SessionID:  "relay-managed",
 		ListenHost: "127.0.0.1",
 		RelayToken: strings.Repeat("m", 32),
@@ -247,14 +247,14 @@ func TestEnsurePlatformPostgresRelayCreatesHostForwardWhenTargetOmitted(t *testi
 	if deviceAdds != 1 {
 		t.Fatalf("expected exactly one proxy device add, got %d", deviceAdds)
 	}
-	if port, ok := first["targetPort"].(int); !ok || port <= 0 || port == platformPostgresServicePort {
+	if port, ok := first["targetPort"].(int); !ok || port <= 0 || port == postgresqlServicePort {
 		t.Fatalf("expected a positive non-default forward port in the descriptor: %#v", first)
 	}
-	service.revokeAllPlatformPostgresRelays()
+	service.revokeAllPostgreSQLServiceRelays()
 
 	// A second relay for the same Service must reuse the existing forward
 	// device instead of recreating it, so concurrent consumers stay stable.
-	second, err := service.ensurePlatformPostgresRelay(context.Background(), spec, PlatformPostgresRelayArgs{
+	second, err := service.ensurePostgreSQLServiceRelay(context.Background(), spec, PostgreSQLServiceRelayArgs{
 		SessionID:  "relay-managed-2",
 		ListenHost: "127.0.0.1",
 		RelayToken: strings.Repeat("n", 32),
@@ -268,5 +268,5 @@ func TestEnsurePlatformPostgresRelayCreatesHostForwardWhenTargetOmitted(t *testi
 	if first["targetPort"] != second["targetPort"] {
 		t.Fatalf("expected the same forward port to be reused: %v vs %v", first["targetPort"], second["targetPort"])
 	}
-	service.revokeAllPlatformPostgresRelays()
+	service.revokeAllPostgreSQLServiceRelays()
 }

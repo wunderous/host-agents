@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-type platformPostgresRelaySession struct {
+type postgresqlServiceRelaySession struct {
 	id          string
 	tokenHash   [sha256.Size]byte
 	listener    net.Listener
@@ -27,16 +27,16 @@ type platformPostgresRelaySession struct {
 	closed      bool
 }
 
-type platformPostgresRelayManager struct {
+type postgresqlServiceRelayManager struct {
 	mu       sync.Mutex
-	sessions map[string]*platformPostgresRelaySession
+	sessions map[string]*postgresqlServiceRelaySession
 }
 
-func newPlatformPostgresRelayManager() *platformPostgresRelayManager {
-	return &platformPostgresRelayManager{sessions: make(map[string]*platformPostgresRelaySession)}
+func newPostgreSQLServiceRelayManager() *postgresqlServiceRelayManager {
+	return &postgresqlServiceRelayManager{sessions: make(map[string]*postgresqlServiceRelaySession)}
 }
 
-func (m *platformPostgresRelayManager) start(args PlatformPostgresRelayArgs, targetHost string, targetPort int) (map[string]any, error) {
+func (m *postgresqlServiceRelayManager) start(args PostgreSQLServiceRelayArgs, targetHost string, targetPort int) (map[string]any, error) {
 	sessionID := strings.TrimSpace(args.SessionID)
 	if sessionID == "" {
 		return nil, errors.New("localRelay.sessionId is required")
@@ -71,10 +71,10 @@ func (m *platformPostgresRelayManager) start(args PlatformPostgresRelayArgs, tar
 
 	listener, err := net.Listen("tcp", net.JoinHostPort(listenHost, strconv.Itoa(args.ListenPort)))
 	if err != nil {
-		return nil, fmt.Errorf("listen for platform PostgreSQL relay: %w", err)
+		return nil, fmt.Errorf("listen for PostgreSQL service relay: %w", err)
 	}
 	hash := sha256.Sum256([]byte(token))
-	session := &platformPostgresRelaySession{
+	session := &postgresqlServiceRelaySession{
 		id:          sessionID,
 		tokenHash:   hash,
 		listener:    listener,
@@ -111,7 +111,7 @@ func (m *platformPostgresRelayManager) start(args PlatformPostgresRelayArgs, tar
 	}, nil
 }
 
-func (m *platformPostgresRelayManager) acceptLoop(session *platformPostgresRelaySession) {
+func (m *postgresqlServiceRelayManager) acceptLoop(session *postgresqlServiceRelaySession) {
 	for {
 		conn, err := session.listener.Accept()
 		if err != nil {
@@ -121,14 +121,14 @@ func (m *platformPostgresRelayManager) acceptLoop(session *platformPostgresRelay
 	}
 }
 
-func (m *platformPostgresRelayManager) handleConnection(session *platformPostgresRelaySession, client net.Conn) {
+func (m *postgresqlServiceRelayManager) handleConnection(session *postgresqlServiceRelaySession, client net.Conn) {
 	defer client.Close()
 	if !session.addConnection(client) || time.Now().After(session.expiresAt) {
 		return
 	}
 	defer session.removeConnection(client)
 	reader := bufio.NewReader(client)
-	line, err := readPlatformPostgresRelayTokenLine(reader)
+	line, err := readPostgreSQLServiceRelayTokenLine(reader)
 	if err != nil {
 		return
 	}
@@ -153,7 +153,7 @@ func (m *platformPostgresRelayManager) handleConnection(session *platformPostgre
 	<-errCh
 }
 
-func readPlatformPostgresRelayTokenLine(reader *bufio.Reader) (string, error) {
+func readPostgreSQLServiceRelayTokenLine(reader *bufio.Reader) (string, error) {
 	line := make([]byte, 0, 64)
 	for {
 		value, err := reader.ReadByte()
@@ -164,13 +164,13 @@ func readPlatformPostgresRelayTokenLine(reader *bufio.Reader) (string, error) {
 			return string(line), nil
 		}
 		if len(line) >= 512 {
-			return "", errors.New("platform PostgreSQL relay token line is too long")
+			return "", errors.New("PostgreSQL service relay token line is too long")
 		}
 		line = append(line, value)
 	}
 }
 
-func (s *platformPostgresRelaySession) addConnection(conn net.Conn) bool {
+func (s *postgresqlServiceRelaySession) addConnection(conn net.Conn) bool {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	if s.closed {
@@ -180,19 +180,19 @@ func (s *platformPostgresRelaySession) addConnection(conn net.Conn) bool {
 	return true
 }
 
-func (s *platformPostgresRelaySession) removeConnection(conn net.Conn) {
+func (s *postgresqlServiceRelaySession) removeConnection(conn net.Conn) {
 	s.connMu.Lock()
 	delete(s.connections, conn)
 	s.connMu.Unlock()
 }
 
-func (s *platformPostgresRelaySession) isOpen() bool {
+func (s *postgresqlServiceRelaySession) isOpen() bool {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	return !s.closed
 }
 
-func (s *platformPostgresRelaySession) close() {
+func (s *postgresqlServiceRelaySession) close() {
 	_ = s.listener.Close()
 	s.connMu.Lock()
 	s.closed = true
@@ -207,11 +207,11 @@ func (s *platformPostgresRelaySession) close() {
 	}
 }
 
-func (m *platformPostgresRelayManager) stop(sessionID string) bool {
+func (m *postgresqlServiceRelayManager) stop(sessionID string) bool {
 	return m.stopIfCurrent(sessionID, nil)
 }
 
-func (m *platformPostgresRelayManager) stopIfCurrent(sessionID string, expected *platformPostgresRelaySession) bool {
+func (m *postgresqlServiceRelayManager) stopIfCurrent(sessionID string, expected *postgresqlServiceRelaySession) bool {
 	m.mu.Lock()
 	session := m.sessions[sessionID]
 	if session == nil || (expected != nil && session != expected) {
@@ -224,7 +224,7 @@ func (m *platformPostgresRelayManager) stopIfCurrent(sessionID string, expected 
 	return true
 }
 
-func (m *platformPostgresRelayManager) stopAll() {
+func (m *postgresqlServiceRelayManager) stopAll() {
 	m.mu.Lock()
 	ids := make([]string, 0, len(m.sessions))
 	for id := range m.sessions {
@@ -246,26 +246,31 @@ func freeLoopbackPort() (int, error) {
 	return port, nil
 }
 
-// ensurePlatformPostgresHostForward creates an Incus proxy device on the K3s
+// ensurePostgreSQLServiceHostForward creates an Incus proxy device on the K3s
 // guest so the CNPG read/write Service is reachable on the host loopback. The
 // connect target is dialed from the container network namespace, where the
 // ClusterIP is routable through flannel; the host itself cannot resolve the
 // in-cluster Service DNS. The device is idempotent: an existing device whose
 // connect target matches the current Service ClusterIP is reused so concurrent
 // relays keep working; only a stale target triggers a recreate.
-func (s *HostOperationsService) ensurePlatformPostgresHostForward(ctx context.Context, spec platformPostgresSpec) (int, error) {
-	service, err := s.platformPostgresJSON(ctx, spec, []string{"get", "service", spec.ClusterName + "-rw", "-n", spec.Namespace}, "get platform PostgreSQL read/write service")
+func (s *HostOperationsService) ensurePostgreSQLServiceHostForward(ctx context.Context, spec postgresqlServiceSpec) (int, error) {
+	service, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "service", spec.ClusterName + "-rw", "-n", spec.Namespace}, "get PostgreSQL service read/write service")
 	if err != nil {
 		return 0, err
 	}
 	clusterIP := nestedString(service, "spec", "clusterIP")
 	if clusterIP == "" {
-		return 0, errors.New("platform PostgreSQL read/write Service has no clusterIP")
+		return 0, errors.New("PostgreSQL service read/write Service has no clusterIP")
 	}
-	deviceName := "opute-platform-postgres-rw"
+	deviceName := spec.RelayDeviceName
+	if deviceName == "" {
+		// Legacy in-process callers predate the generic operation contract. The
+		// advertised generic dispatch path always supplies this value explicitly.
+		deviceName = "opute-platform-postgres-rw"
+	}
 	existing, showErr := s.commandRunner([]string{"config", "device", "show", spec.VMName}, nil, 30*time.Second)
 	if showErr == nil && existing.ExitCode == 0 {
-		if strings.Contains(existing.Stdout, "connect: tcp:"+clusterIP+":"+strconv.Itoa(platformPostgresServicePort)) {
+		if strings.Contains(existing.Stdout, "connect: tcp:"+clusterIP+":"+strconv.Itoa(postgresqlServicePort)) {
 			if port := extractProxyDeviceListenPort(existing.Stdout); port > 0 {
 				return port, nil
 			}
@@ -279,10 +284,10 @@ func (s *HostOperationsService) ensurePlatformPostgresHostForward(ctx context.Co
 	added, err := s.commandRunner([]string{
 		"config", "device", "add", spec.VMName, deviceName, "proxy",
 		fmt.Sprintf("listen=tcp:127.0.0.1:%d", port),
-		fmt.Sprintf("connect=tcp:%s:%d", clusterIP, platformPostgresServicePort),
+		fmt.Sprintf("connect=tcp:%s:%d", clusterIP, postgresqlServicePort),
 	}, nil, 2*time.Minute)
 	if err != nil || added.ExitCode != 0 {
-		return 0, errors.New(firstNonEmpty(added.Stderr, added.Stdout, errString(err, "add platform PostgreSQL loopback forward failed")))
+		return 0, errors.New(firstNonEmpty(added.Stderr, added.Stdout, errString(err, "add PostgreSQL service loopback forward failed")))
 	}
 	return port, nil
 }
@@ -304,14 +309,14 @@ func extractProxyDeviceListenPort(output string) int {
 	return port
 }
 
-func (s *HostOperationsService) ensurePlatformPostgresRelay(ctx context.Context, spec platformPostgresSpec, args PlatformPostgresRelayArgs) (map[string]any, error) {
+func (s *HostOperationsService) ensurePostgreSQLServiceRelay(ctx context.Context, spec postgresqlServiceSpec, args PostgreSQLServiceRelayArgs) (map[string]any, error) {
 	targetHost := strings.TrimSpace(args.TargetHost)
 	targetPort := args.TargetPort
 	if targetHost == "" {
 		// Host-agent-managed forward: create the loopback proxy device and
 		// relay to it. Callers that already hold their own loopback
 		// port-forward may pass it explicitly.
-		forwardPort, err := s.ensurePlatformPostgresHostForward(ctx, spec)
+		forwardPort, err := s.ensurePostgreSQLServiceHostForward(ctx, spec)
 		if err != nil {
 			return nil, err
 		}
@@ -319,20 +324,20 @@ func (s *HostOperationsService) ensurePlatformPostgresRelay(ctx context.Context,
 		targetPort = forwardPort
 	}
 	if targetPort == 0 {
-		targetPort = platformPostgresServicePort
+		targetPort = postgresqlServicePort
 	}
 	expectedServiceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
 	if targetHost != expectedServiceHost && targetHost != "127.0.0.1" && targetHost != "::1" {
 		return nil, errors.New("localRelay.targetHost must be the CNPG read/write Service or a loopback port-forward")
 	}
-	if targetHost == expectedServiceHost && targetPort != platformPostgresServicePort {
-		return nil, fmt.Errorf("localRelay.targetPort must be %d when targeting the read/write Service", platformPostgresServicePort)
+	if targetHost == expectedServiceHost && targetPort != postgresqlServicePort {
+		return nil, fmt.Errorf("localRelay.targetPort must be %d when targeting the read/write Service", postgresqlServicePort)
 	}
-	return s.platformPostgresRelay.start(args, targetHost, targetPort)
+	return s.postgresqlServiceRelay.start(args, targetHost, targetPort)
 }
 
-func (s *HostOperationsService) revokeAllPlatformPostgresRelays() {
-	if s.platformPostgresRelay != nil {
-		s.platformPostgresRelay.stopAll()
+func (s *HostOperationsService) revokeAllPostgreSQLServiceRelays() {
+	if s.postgresqlServiceRelay != nil {
+		s.postgresqlServiceRelay.stopAll()
 	}
 }

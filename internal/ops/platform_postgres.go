@@ -12,32 +12,39 @@ import (
 )
 
 const (
-	platformPostgresOperatorRelease     = "cloudnativepg"
-	platformPostgresOperatorNamespace   = "cnpg-system"
-	platformPostgresClusterName         = "opute-platform-postgres"
-	platformPostgresNamespace           = "opute-system"
-	platformPostgresStorageSize         = "10Gi"
-	platformPostgresServicePort         = 5432
-	platformPostgresReadinessTimeout    = 15 * time.Minute
-	platformPostgresConsumerSecretName  = "opute-platform-db"
-	platformPostgresConsumerSecretLabel = "opute.io/managed-platform-postgres"
+	postgresqlServiceOperatorRelease   = "cloudnativepg"
+	postgresqlServiceOperatorNamespace = "cnpg-system"
+	postgresqlServiceStorageSize       = "10Gi"
+	postgresqlServicePort              = 5432
+	postgresqlServiceReadinessTimeout  = 15 * time.Minute
 )
 
-// PlatformPostgresArgs is the versioned host-agent input for the platform
+// PostgreSQLServiceArgs is the versioned host-agent input for the platform
 // PostgreSQL lifecycle. Credentials are owned by CNPG and are never accepted
 // from, written to, or returned by the host agent.
-type PlatformPostgresArgs struct {
-	VMName          string                     `json:"vmName,omitempty"`
-	ClusterName     string                     `json:"clusterName,omitempty"`
-	Namespace       string                     `json:"namespace,omitempty"`
-	Instances       int                        `json:"instances,omitempty"`
-	StorageClass    string                     `json:"storageClass,omitempty"`
-	StorageSize     string                     `json:"storageSize,omitempty"`
-	RetentionPolicy string                     `json:"retentionPolicy,omitempty"`
-	Relay           *PlatformPostgresRelayArgs `json:"localRelay,omitempty"`
+type PostgreSQLServiceArgs struct {
+	VMName           string                      `json:"vmName,omitempty"`
+	ClusterName      string                      `json:"clusterName,omitempty"`
+	Namespace        string                      `json:"namespace,omitempty"`
+	Instances        int                         `json:"instances,omitempty"`
+	StorageClass     string                      `json:"storageClass,omitempty"`
+	StorageSize      string                      `json:"storageSize,omitempty"`
+	RetentionPolicy  string                      `json:"retentionPolicy,omitempty"`
+	RestartConsumers *bool                       `json:"restartConsumers,omitempty"`
+	Relay            *PostgreSQLServiceRelayArgs `json:"localRelay,omitempty"`
+	// Generic callers may provide service-owned database and projection names.
+	// Empty values preserve the legacy compatibility defaults for existing
+	// clients while the neutral operation requires them at the dispatch layer.
+	Databases            []string          `json:"databases,omitempty"`
+	ConsumerSecretName   string            `json:"consumerSecretName,omitempty"`
+	ConsumerSecretLabel  string            `json:"consumerSecretLabel,omitempty"`
+	ServiceOwner         string            `json:"serviceOwner,omitempty"`
+	ServicePartOf        string            `json:"servicePartOf,omitempty"`
+	ConsumerDatabaseKeys map[string]string `json:"consumerDatabaseKeys,omitempty"`
+	RelayDeviceName      string            `json:"relayDeviceName,omitempty"`
 }
 
-type PlatformPostgresRelayArgs struct {
+type PostgreSQLServiceRelayArgs struct {
 	SessionID  string `json:"sessionId"`
 	ListenHost string `json:"listenHost"`
 	ListenPort int    `json:"listenPort,omitempty"`
@@ -47,22 +54,29 @@ type PlatformPostgresRelayArgs struct {
 	RelayToken string `json:"relayToken"`
 }
 
-type platformPostgresSpec struct {
-	VMName          string
-	ClusterName     string
-	Namespace       string
-	Instances       int
-	StorageClass    string
-	StorageSize     string
-	RetentionPolicy string
+type postgresqlServiceSpec struct {
+	VMName               string
+	ClusterName          string
+	Namespace            string
+	Instances            int
+	StorageClass         string
+	StorageSize          string
+	RetentionPolicy      string
+	Databases            []string
+	ConsumerSecretName   string
+	ConsumerSecretLabel  string
+	ServiceOwner         string
+	ServicePartOf        string
+	ConsumerDatabaseKeys map[string]string
+	RelayDeviceName      string
 }
 
-type platformPostgresSecret struct {
+type postgresqlServiceSecret struct {
 	Username string
 	Password string
 }
 
-type platformPostgresProbe struct {
+type postgresqlServiceProbe struct {
 	OperatorReady      bool
 	CRDPresent         bool
 	ClusterReady       bool
@@ -77,8 +91,8 @@ type platformPostgresProbe struct {
 	Password           string
 }
 
-func validatePlatformPostgresSpec(args PlatformPostgresArgs) (platformPostgresSpec, error) {
-	spec := platformPostgresSpec{
+func validatePostgreSQLServiceSpec(args PostgreSQLServiceArgs) (postgresqlServiceSpec, error) {
+	spec := postgresqlServiceSpec{
 		VMName:          strings.TrimSpace(args.VMName),
 		ClusterName:     strings.TrimSpace(args.ClusterName),
 		Namespace:       strings.TrimSpace(args.Namespace),
@@ -86,33 +100,89 @@ func validatePlatformPostgresSpec(args PlatformPostgresArgs) (platformPostgresSp
 		StorageClass:    strings.TrimSpace(args.StorageClass),
 		StorageSize:     strings.TrimSpace(args.StorageSize),
 		RetentionPolicy: strings.TrimSpace(args.RetentionPolicy),
+		RelayDeviceName: strings.TrimSpace(args.RelayDeviceName),
 	}
 	if spec.VMName == "" {
-		return platformPostgresSpec{}, errors.New("vmName is required")
+		return postgresqlServiceSpec{}, errors.New("vmName is required")
 	}
 	if spec.ClusterName == "" {
-		spec.ClusterName = platformPostgresClusterName
+		return postgresqlServiceSpec{}, errors.New("clusterName is required")
 	}
 	if spec.Namespace == "" {
-		spec.Namespace = platformPostgresNamespace
+		return postgresqlServiceSpec{}, errors.New("namespace is required")
 	}
 	if spec.Instances == 0 {
 		spec.Instances = 1
 	}
 	if spec.Instances < 1 || spec.Instances > 5 {
-		return platformPostgresSpec{}, errors.New("instances must be between 1 and 5")
+		return postgresqlServiceSpec{}, errors.New("instances must be between 1 and 5")
 	}
 	if spec.StorageClass == "" {
 		spec.StorageClass = "local-path"
 	}
 	if spec.StorageSize == "" {
-		spec.StorageSize = platformPostgresStorageSize
+		spec.StorageSize = postgresqlServiceStorageSize
 	}
 	if spec.RetentionPolicy == "" {
 		spec.RetentionPolicy = "delete"
 	}
 	if spec.RetentionPolicy != "delete" && spec.RetentionPolicy != "retain" {
-		return platformPostgresSpec{}, errors.New("retentionPolicy must be delete or retain")
+		return postgresqlServiceSpec{}, errors.New("retentionPolicy must be delete or retain")
+	}
+	if len(args.Databases) == 0 {
+		return postgresqlServiceSpec{}, errors.New("databases must contain at least one database")
+	} else {
+		seen := map[string]bool{}
+		for _, raw := range args.Databases {
+			database := strings.TrimSpace(raw)
+			if !postgresDatabaseIdentifier.MatchString(database) || seen[database] {
+				return postgresqlServiceSpec{}, errors.New("databases must be unique lowercase SQL identifiers")
+			}
+			seen[database] = true
+			spec.Databases = append(spec.Databases, database)
+		}
+	}
+	spec.ConsumerSecretName = strings.TrimSpace(args.ConsumerSecretName)
+	if spec.ConsumerSecretName == "" {
+		return postgresqlServiceSpec{}, errors.New("consumerSecretName is required")
+	}
+	spec.ConsumerSecretLabel = strings.TrimSpace(args.ConsumerSecretLabel)
+	if spec.ConsumerSecretLabel == "" {
+		return postgresqlServiceSpec{}, errors.New("consumerSecretLabel is required")
+	}
+	spec.ServiceOwner = strings.TrimSpace(args.ServiceOwner)
+	if spec.ServiceOwner == "" {
+		return postgresqlServiceSpec{}, errors.New("serviceOwner is required")
+	}
+	spec.ServicePartOf = strings.TrimSpace(args.ServicePartOf)
+	if spec.ServicePartOf == "" {
+		return postgresqlServiceSpec{}, errors.New("servicePartOf is required")
+	}
+	if spec.RelayDeviceName == "" && args.Relay != nil {
+		return postgresqlServiceSpec{}, errors.New("relayDeviceName is required when localRelay is requested")
+	}
+	spec.ConsumerDatabaseKeys = map[string]string{}
+	for _, database := range spec.Databases {
+		if key := strings.TrimSpace(args.ConsumerDatabaseKeys[database]); key != "" {
+			spec.ConsumerDatabaseKeys[database] = key
+		}
+	}
+	if len(spec.ConsumerDatabaseKeys) == 0 {
+		return postgresqlServiceSpec{}, errors.New("consumerDatabaseKeys must map every database to a Secret key")
+	}
+	for _, database := range spec.Databases {
+		if strings.TrimSpace(spec.ConsumerDatabaseKeys[database]) == "" {
+			return postgresqlServiceSpec{}, fmt.Errorf("consumerDatabaseKeys missing key for database %q", database)
+		}
+	}
+	for field, value := range map[string]string{
+		"consumerSecretName": spec.ConsumerSecretName,
+		"serviceOwner":       spec.ServiceOwner,
+		"servicePartOf":      spec.ServicePartOf,
+	} {
+		if !isSafeKubernetesName(value) {
+			return postgresqlServiceSpec{}, fmt.Errorf("%s is not a valid Kubernetes name/value", field)
+		}
 	}
 	for field, value := range map[string]string{
 		"clusterName":  spec.ClusterName,
@@ -120,11 +190,11 @@ func validatePlatformPostgresSpec(args PlatformPostgresArgs) (platformPostgresSp
 		"storageClass": spec.StorageClass,
 	} {
 		if !isSafeKubernetesName(value) {
-			return platformPostgresSpec{}, fmt.Errorf("%s is not a valid Kubernetes name/value", field)
+			return postgresqlServiceSpec{}, fmt.Errorf("%s is not a valid Kubernetes name/value", field)
 		}
 	}
 	if !isValidStorageSize(spec.StorageSize) {
-		return platformPostgresSpec{}, errors.New("storageSize must be a Kubernetes quantity such as 10Gi")
+		return postgresqlServiceSpec{}, errors.New("storageSize must be a Kubernetes quantity such as 10Gi")
 	}
 	return spec, nil
 }
@@ -159,7 +229,7 @@ func isSafeKubernetesName(value string) bool {
 	return value[0] != '-' && value[len(value)-1] != '-'
 }
 
-func renderPlatformPostgresOperatorManifest() string {
+func renderPostgreSQLServiceOperatorManifest() string {
 	return `apiVersion: helm.cattle.io/v1
 kind: HelmChart
 metadata:
@@ -176,24 +246,25 @@ spec:
 `
 }
 
-func renderPlatformPostgresClusterManifest(spec platformPostgresSpec) string {
-	retention := spec.RetentionPolicy
+func renderPostgreSQLServiceClusterManifest(spec postgresqlServiceSpec) string {
+	primaryDatabase := spec.Databases[0]
+	retentionAnnotation := "host-agent.io/retention-policy"
 	return fmt.Sprintf(`apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: %s
   namespace: %s
   annotations:
-    opute.io/platform-postgres-retention-policy: %s
+    %s: %s
   labels:
-    app.kubernetes.io/part-of: opute-platform
-    opute.io/ownership: platform-postgres
+    app.kubernetes.io/part-of: %s
+    app.kubernetes.io/managed-by: host-agent
 spec:
   instances: %d
   imageName: ghcr.io/cloudnative-pg/postgresql:16
   managed:
     roles:
-      - name: opute
+      - name: %s
         ensure: present
         login: true
         superuser: false
@@ -203,33 +274,33 @@ spec:
     storageClass: %s
   bootstrap:
     initdb:
-      database: opute
-      owner: opute
+      database: %s
+      owner: %s
       encoding: UTF8
       localeCType: C
       localeCollate: C
-`, spec.ClusterName, spec.Namespace, retention, spec.Instances, spec.StorageSize, spec.StorageClass)
+`, spec.ClusterName, spec.Namespace, retentionAnnotation, spec.RetentionPolicy, spec.ServicePartOf, spec.Instances, spec.ServiceOwner, spec.StorageSize, spec.StorageClass, primaryDatabase, spec.ServiceOwner)
 }
 
-func (s *HostOperationsService) applyPlatformPostgresManifest(ctx context.Context, spec platformPostgresSpec, manifest, label string) error {
+func (s *HostOperationsService) applyPostgreSQLServiceManifest(ctx context.Context, spec postgresqlServiceSpec, manifest, label string) error {
 	if _, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, []string{"apply", "-f", "-"}, []byte(manifest), label, 3*time.Minute); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *HostOperationsService) replacePlatformPostgresConsumerSecret(ctx context.Context, spec platformPostgresSpec, manifest string) error {
+func (s *HostOperationsService) replacePostgreSQLServiceConsumerSecret(ctx context.Context, spec postgresqlServiceSpec, manifest string) error {
 	if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{
-		"delete", "secret", platformPostgresConsumerSecretName,
+		"delete", "secret", spec.ConsumerSecretName,
 		"-n", spec.Namespace, "--ignore-not-found=true",
-	}, "replace platform PostgreSQL consumer Secret", defaultDiscoveryTimeout); err != nil {
+	}, "replace PostgreSQL service consumer Secret", defaultDiscoveryTimeout); err != nil {
 		return err
 	}
-	return s.applyPlatformPostgresManifest(ctx, spec, manifest, "apply platform PostgreSQL consumer Secret")
+	return s.applyPostgreSQLServiceManifest(ctx, spec, manifest, "apply PostgreSQL service consumer Secret")
 }
 
-func (s *HostOperationsService) ensurePlatformPostgresNamespace(ctx context.Context, spec platformPostgresSpec) error {
-	for _, namespace := range []string{spec.Namespace, platformPostgresOperatorNamespace} {
+func (s *HostOperationsService) ensurePostgreSQLServiceNamespace(ctx context.Context, spec postgresqlServiceSpec) error {
+	for _, namespace := range []string{spec.Namespace, postgresqlServiceOperatorNamespace} {
 		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"get", "namespace", namespace}, "get namespace", defaultDiscoveryTimeout); err == nil {
 			continue
 		}
@@ -240,7 +311,7 @@ func (s *HostOperationsService) ensurePlatformPostgresNamespace(ctx context.Cont
 	return nil
 }
 
-func (s *HostOperationsService) platformPostgresJSON(ctx context.Context, spec platformPostgresSpec, args []string, label string) (map[string]any, error) {
+func (s *HostOperationsService) postgresqlServiceJSON(ctx context.Context, spec postgresqlServiceSpec, args []string, label string) (map[string]any, error) {
 	raw, err := s.runKubernetesKubectlContext(ctx, spec.VMName, append(args, "-o", "json"), label, defaultDiscoveryTimeout)
 	if err != nil {
 		return nil, err
@@ -307,15 +378,15 @@ func nestedInt(value map[string]any, keys ...string) int {
 	return 0
 }
 
-func (s *HostOperationsService) platformPostgresOperatorReady(ctx context.Context, spec platformPostgresSpec) (bool, bool, error) {
-	crdPresent, err := s.platformPostgresCRDPresent(ctx, spec)
+func (s *HostOperationsService) postgresqlServiceOperatorReady(ctx context.Context, spec postgresqlServiceSpec) (bool, bool, error) {
+	crdPresent, err := s.postgresqlServiceCRDPresent(ctx, spec)
 	if err != nil {
 		return false, false, err
 	}
 	if !crdPresent {
 		return false, false, nil
 	}
-	deployments, err := s.platformPostgresJSON(ctx, spec, []string{"get", "deployments", "-n", platformPostgresOperatorNamespace, "-l", "app.kubernetes.io/name=cloudnative-pg"}, "get CloudNativePG operator")
+	deployments, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "deployments", "-n", postgresqlServiceOperatorNamespace, "-l", "app.kubernetes.io/name=cloudnative-pg"}, "get CloudNativePG operator")
 	if err != nil {
 		return false, true, nil
 	}
@@ -331,8 +402,8 @@ func (s *HostOperationsService) platformPostgresOperatorReady(ctx context.Contex
 	return false, true, nil
 }
 
-func (s *HostOperationsService) platformPostgresClusterReady(ctx context.Context, spec platformPostgresSpec) (bool, error) {
-	cluster, err := s.platformPostgresJSON(ctx, spec, []string{"get", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace}, "get platform PostgreSQL Cluster")
+func (s *HostOperationsService) postgresqlServiceClusterReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
+	cluster, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace}, "get PostgreSQL service Cluster")
 	if err != nil {
 		return false, nil
 	}
@@ -342,15 +413,15 @@ func (s *HostOperationsService) platformPostgresClusterReady(ctx context.Context
 	return strings.Contains(phase, "healthy") && instances == spec.Instances && readyInstances >= spec.Instances, nil
 }
 
-func (s *HostOperationsService) platformPostgresServiceReady(ctx context.Context, spec platformPostgresSpec) (bool, error) {
-	service, err := s.platformPostgresJSON(ctx, spec, []string{"get", "service", spec.ClusterName + "-rw", "-n", spec.Namespace}, "get platform PostgreSQL read/write service")
+func (s *HostOperationsService) postgresqlServiceReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
+	service, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "service", spec.ClusterName + "-rw", "-n", spec.Namespace}, "get PostgreSQL service read/write service")
 	if err != nil {
 		return false, nil
 	}
 	if nestedString(service, "spec", "clusterIP") == "" {
 		return false, nil
 	}
-	endpoints, err := s.platformPostgresJSON(ctx, spec, []string{"get", "endpoints", spec.ClusterName + "-rw", "-n", spec.Namespace}, "get platform PostgreSQL endpoints")
+	endpoints, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "endpoints", spec.ClusterName + "-rw", "-n", spec.Namespace}, "get PostgreSQL service endpoints")
 	if err != nil {
 		return false, nil
 	}
@@ -374,33 +445,37 @@ func decodeSecretValue(data map[string]any, key string) string {
 	return string(value)
 }
 
-func (s *HostOperationsService) platformPostgresSecret(ctx context.Context, spec platformPostgresSpec) (platformPostgresSecret, bool, error) {
-	secret, err := s.platformPostgresJSON(ctx, spec, []string{"get", "secret", spec.ClusterName + "-app", "-n", spec.Namespace}, "get platform PostgreSQL application secret")
+func (s *HostOperationsService) postgresqlServiceSecret(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceSecret, bool, error) {
+	secret, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "secret", spec.ClusterName + "-app", "-n", spec.Namespace}, "get PostgreSQL service application secret")
 	if err != nil {
-		return platformPostgresSecret{}, false, nil
+		return postgresqlServiceSecret{}, false, nil
 	}
 	data, _ := secret["data"].(map[string]any)
 	username := decodeSecretValue(data, "username")
 	password := decodeSecretValue(data, "password")
 	if username == "" || password == "" {
-		return platformPostgresSecret{}, false, nil
+		return postgresqlServiceSecret{}, false, nil
 	}
-	return platformPostgresSecret{Username: username, Password: password}, true, nil
+	return postgresqlServiceSecret{Username: username, Password: password}, true, nil
 }
 
-func (s *HostOperationsService) platformPostgresConsumerSecretReady(ctx context.Context, spec platformPostgresSpec) bool {
-	secret, err := s.platformPostgresJSON(ctx, spec, []string{"get", "secret", platformPostgresConsumerSecretName, "-n", spec.Namespace}, "get platform PostgreSQL consumer Secret")
+func (s *HostOperationsService) postgresqlServiceConsumerSecretReady(ctx context.Context, spec postgresqlServiceSpec) bool {
+	secret, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "secret", spec.ConsumerSecretName, "-n", spec.Namespace}, "get PostgreSQL consumer Secret")
 	if err != nil {
 		return false
 	}
 	data, _ := secret["data"].(map[string]any)
-	platformURL, _ := data["platformDatabaseUrl"].(string)
-	taskLedgerURL, _ := data["taskLedgerDatabaseUrl"].(string)
-	return strings.TrimSpace(platformURL) != "" && strings.TrimSpace(taskLedgerURL) != ""
+	for _, key := range spec.ConsumerDatabaseKeys {
+		value, _ := data[key].(string)
+		if strings.TrimSpace(value) == "" {
+			return false
+		}
+	}
+	return len(spec.ConsumerDatabaseKeys) > 0
 }
 
-func (s *HostOperationsService) platformPostgresPrimary(ctx context.Context, spec platformPostgresSpec) (string, error) {
-	pods, err := s.platformPostgresJSON(ctx, spec, []string{"get", "pods", "-n", spec.Namespace, "-l", "cnpg.io/cluster=" + spec.ClusterName + ",role=primary"}, "get platform PostgreSQL primary")
+func (s *HostOperationsService) postgresqlServicePrimary(ctx context.Context, spec postgresqlServiceSpec) (string, error) {
+	pods, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "pods", "-n", spec.Namespace, "-l", "cnpg.io/cluster=" + spec.ClusterName + ",role=primary"}, "get PostgreSQL service primary")
 	if err != nil {
 		return "", nil
 	}
@@ -442,19 +517,19 @@ func (s *HostOperationsService) platformPostgresPrimary(ctx context.Context, spe
 	return "", nil
 }
 
-func platformPostgresSQLScript(serviceHost, username, sql string) string {
+func postgresqlServiceSQLScript(serviceHost, username, sql string) string {
 	return fmt.Sprintf(`set -eu
 pgpass="$(mktemp)"
 trap 'rm -f "$pgpass"' EXIT
 cat >"$pgpass"
 chmod 600 "$pgpass"
 PGPASSFILE="$pgpass" psql -h %s -p %d -U %s -d postgres -v ON_ERROR_STOP=1 -Atqc %s
-`, shellEscape(serviceHost), platformPostgresServicePort, shellEscape(username), shellEscape(sql))
+`, shellEscape(serviceHost), postgresqlServicePort, shellEscape(username), shellEscape(sql))
 }
 
-func (s *HostOperationsService) runPlatformPostgresSQL(ctx context.Context, spec platformPostgresSpec, credentials platformPostgresSecret, pod, database, sql string) (string, error) {
+func (s *HostOperationsService) runPostgreSQLServiceSQL(ctx context.Context, spec postgresqlServiceSpec, credentials postgresqlServiceSecret, pod, database, sql string) (string, error) {
 	serviceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
-	script := platformPostgresSQLScript(serviceHost, credentials.Username, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database)))
+	script := postgresqlServiceSQLScript(serviceHost, credentials.Username, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database)))
 	if database != "postgres" {
 		script = fmt.Sprintf(`set -eu
 pgpass="$(mktemp)"
@@ -462,53 +537,55 @@ trap 'rm -f "$pgpass"' EXIT
 cat >"$pgpass"
 chmod 600 "$pgpass"
 PGPASSFILE="$pgpass" psql -h %s -p %d -U %s -d %s -v ON_ERROR_STOP=1 -Atqc %s
-`, shellEscape(serviceHost), platformPostgresServicePort, shellEscape(credentials.Username), shellEscape(database), shellEscape(sql))
+`, shellEscape(serviceHost), postgresqlServicePort, shellEscape(credentials.Username), shellEscape(database), shellEscape(sql))
 	}
 	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
 	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", script}
-	return s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "query platform PostgreSQL through read/write service", 60*time.Second)
+	return s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "query PostgreSQL service through read/write service", 60*time.Second)
 }
 
-func (s *HostOperationsService) ensurePlatformPostgresDatabase(ctx context.Context, spec platformPostgresSpec, credentials platformPostgresSecret, pod, database string) error {
+func (s *HostOperationsService) ensurePostgreSQLServiceDatabase(ctx context.Context, spec postgresqlServiceSpec, credentials postgresqlServiceSecret, pod, database string) error {
 	serviceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
 	checkSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database))
-	script := platformPostgresSQLScript(serviceHost, credentials.Username, checkSQL)
+	script := postgresqlServiceSQLScript(serviceHost, credentials.Username, checkSQL)
 	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
 	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", script}
-	result, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "check platform PostgreSQL database", 60*time.Second)
+	result, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "check PostgreSQL service database", 60*time.Second)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(result) != "" {
 		return nil
 	}
-	createSQL := platformPostgresCreateDatabaseSQL(database)
-	script = platformPostgresSQLScript(serviceHost, credentials.Username, createSQL)
+	createSQL := postgresqlServiceCreateDatabaseSQL(database)
+	script = postgresqlServiceSQLScript(serviceHost, credentials.Username, createSQL)
 	args[len(args)-1] = script
-	if _, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "create platform PostgreSQL database", 60*time.Second); err != nil {
+	if _, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "create PostgreSQL service database", 60*time.Second); err != nil {
 		return err
 	}
 	return nil
 }
 
-func platformPostgresCreateDatabaseSQL(database string) string {
+func postgresqlServiceCreateDatabaseSQL(database string) string {
 	identifier := `"` + strings.ReplaceAll(database, `"`, `""`) + `"`
 	return "CREATE DATABASE " + identifier
 }
 
-func platformPostgresDatabaseURL(spec platformPostgresSpec, credentials platformPostgresSecret, database string) string {
+func postgresqlServiceDatabaseURL(spec postgresqlServiceSpec, credentials postgresqlServiceSecret, database string) string {
 	connection := url.URL{
 		Scheme: "postgresql",
 		User:   url.UserPassword(credentials.Username, credentials.Password),
-		Host:   fmt.Sprintf("%s-rw.%s.svc:%d", spec.ClusterName, spec.Namespace, platformPostgresServicePort),
+		Host:   fmt.Sprintf("%s-rw.%s.svc:%d", spec.ClusterName, spec.Namespace, postgresqlServicePort),
 		Path:   "/" + database,
 	}
 	return connection.String()
 }
 
-func renderPlatformPostgresConsumerSecret(spec platformPostgresSpec, credentials platformPostgresSecret) string {
-	platformURL := platformPostgresDatabaseURL(spec, credentials, "opute")
-	taskLedgerURL := platformPostgresDatabaseURL(spec, credentials, "opute_task_ledger")
+func renderPostgreSQLServiceConsumerSecret(spec postgresqlServiceSpec, credentials postgresqlServiceSecret) string {
+	data := ""
+	for _, database := range spec.Databases {
+		data += fmt.Sprintf("  %s: %s\n", spec.ConsumerDatabaseKeys[database], base64.StdEncoding.EncodeToString([]byte(postgresqlServiceDatabaseURL(spec, credentials, database))))
+	}
 	return fmt.Sprintf(`apiVersion: v1
 kind: Secret
 metadata:
@@ -518,15 +595,11 @@ metadata:
     %s: "true"
 type: Opaque
 data:
-  platformDatabaseUrl: %s
-  taskLedgerDatabaseUrl: %s
-`, platformPostgresConsumerSecretName, spec.Namespace, platformPostgresConsumerSecretLabel,
-		base64.StdEncoding.EncodeToString([]byte(platformURL)),
-		base64.StdEncoding.EncodeToString([]byte(taskLedgerURL)))
+%s`, spec.ConsumerSecretName, spec.Namespace, spec.ConsumerSecretLabel, data)
 }
 
-func (s *HostOperationsService) restartPlatformPostgresConsumers(ctx context.Context, spec platformPostgresSpec) error {
-	deployments, err := s.platformPostgresJSON(ctx, spec, []string{"get", "deployments", "-n", spec.Namespace, "-l", platformPostgresConsumerSecretLabel}, "find platform PostgreSQL consumers")
+func (s *HostOperationsService) restartPostgreSQLServiceConsumers(ctx context.Context, spec postgresqlServiceSpec) error {
+	deployments, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "deployments", "-n", spec.Namespace, "-l", spec.ConsumerSecretLabel}, "find PostgreSQL consumers")
 	if err != nil {
 		// A CNPG-only VM may not have cell consumers yet. The Secret is still
 		// ready for the next Helm reconciliation.
@@ -539,26 +612,26 @@ func (s *HostOperationsService) restartPlatformPostgresConsumers(ctx context.Con
 		if name == "" {
 			continue
 		}
-		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"rollout", "restart", "deployment", name, "-n", spec.Namespace}, "restart platform PostgreSQL consumer", 2*time.Minute); err != nil {
+		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"rollout", "restart", "deployment", name, "-n", spec.Namespace}, "restart PostgreSQL service consumer", 2*time.Minute); err != nil {
 			return err
 		}
-		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"rollout", "status", "deployment", name, "-n", spec.Namespace, "--timeout=2m"}, "wait for platform PostgreSQL consumer", 3*time.Minute); err != nil {
+		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"rollout", "status", "deployment", name, "-n", spec.Namespace, "--timeout=2m"}, "wait for PostgreSQL service consumer", 3*time.Minute); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *HostOperationsService) probePlatformPostgres(ctx context.Context, spec platformPostgresSpec) (platformPostgresProbe, error) {
-	operatorReady, crdPresent, _ := s.platformPostgresOperatorReady(ctx, spec)
-	clusterReady, _ := s.platformPostgresClusterReady(ctx, spec)
-	serviceReady, _ := s.platformPostgresServiceReady(ctx, spec)
-	credentials, secretReady, _ := s.platformPostgresSecret(ctx, spec)
+func (s *HostOperationsService) probePostgreSQLService(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceProbe, error) {
+	operatorReady, crdPresent, _ := s.postgresqlServiceOperatorReady(ctx, spec)
+	clusterReady, _ := s.postgresqlServiceClusterReady(ctx, spec)
+	serviceReady, _ := s.postgresqlServiceReady(ctx, spec)
+	credentials, secretReady, _ := s.postgresqlServiceSecret(ctx, spec)
 	primary := ""
 	if serviceReady && secretReady {
-		primary, _ = s.platformPostgresPrimary(ctx, spec)
+		primary, _ = s.postgresqlServicePrimary(ctx, spec)
 	}
-	probe := platformPostgresProbe{
+	probe := postgresqlServiceProbe{
 		OperatorReady: operatorReady,
 		CRDPresent:    crdPresent,
 		ClusterReady:  clusterReady,
@@ -576,44 +649,40 @@ func (s *HostOperationsService) probePlatformPostgres(ctx context.Context, spec 
 		probe.Blockers = append(probe.Blockers, "CloudNativePG Cluster CRD is not present")
 	}
 	if !clusterReady {
-		probe.Blockers = append(probe.Blockers, "platform PostgreSQL Cluster is not healthy with the expected instance count")
+		probe.Blockers = append(probe.Blockers, "PostgreSQL service Cluster is not healthy with the expected instance count")
 	}
 	if !serviceReady {
-		probe.Blockers = append(probe.Blockers, "platform PostgreSQL read/write Service has no ready endpoint")
+		probe.Blockers = append(probe.Blockers, "PostgreSQL service read/write Service has no ready endpoint")
 	}
 	if !secretReady {
-		probe.Blockers = append(probe.Blockers, "platform PostgreSQL application Secret is missing required keys")
+		probe.Blockers = append(probe.Blockers, "PostgreSQL service application Secret is missing required keys")
 	}
 	if !probe.PrimaryReady {
-		probe.Blockers = append(probe.Blockers, "platform PostgreSQL primary pod is not ready")
+		probe.Blockers = append(probe.Blockers, "PostgreSQL service primary pod is not ready")
 	}
 	if probe.PrimaryReady && probe.SecretReady {
-		for _, database := range []string{"postgres", "opute"} {
-			if _, err := s.runPlatformPostgresSQL(ctx, spec, credentials, primary, database, "SELECT 1"); err != nil {
+		for _, database := range append([]string{"postgres"}, spec.Databases...) {
+			if _, err := s.runPostgreSQLServiceSQL(ctx, spec, credentials, primary, database, "SELECT 1"); err != nil {
 				probe.Blockers = append(probe.Blockers, "SQL SELECT 1 failed through the read/write Service")
 				return probe, nil
 			}
 		}
 		probe.SQLReady = true
-		if _, err := s.runPlatformPostgresSQL(ctx, spec, credentials, primary, "opute_task_ledger", "SELECT 1"); err == nil {
-			probe.TaskLedgerSQLReady = true
-		} else {
-			probe.Blockers = append(probe.Blockers, "Task Ledger PostgreSQL database is not SQL-ready")
-		}
+		probe.TaskLedgerSQLReady = true
 	}
 	return probe, nil
 }
 
-func (s *HostOperationsService) waitForPlatformPostgres(ctx context.Context, spec platformPostgresSpec) (platformPostgresProbe, error) {
-	deadline := time.NewTimer(platformPostgresReadinessTimeout)
+func (s *HostOperationsService) waitForPostgreSQLService(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceProbe, error) {
+	deadline := time.NewTimer(postgresqlServiceReadinessTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	var last platformPostgresProbe
+	var last postgresqlServiceProbe
 	for {
-		probe, err := s.probePlatformPostgres(ctx, spec)
+		probe, err := s.probePostgreSQLService(ctx, spec)
 		if err != nil {
-			return platformPostgresProbe{}, err
+			return postgresqlServiceProbe{}, err
 		}
 		last = probe
 		if probe.OperatorReady && probe.CRDPresent && probe.ClusterReady && probe.ServiceReady && probe.SecretReady && probe.PrimaryReady && probe.SQLReady {
@@ -621,27 +690,27 @@ func (s *HostOperationsService) waitForPlatformPostgres(ctx context.Context, spe
 		}
 		select {
 		case <-ctx.Done():
-			return platformPostgresProbe{}, ctx.Err()
+			return postgresqlServiceProbe{}, ctx.Err()
 		case <-deadline.C:
-			return platformPostgresProbe{}, fmt.Errorf("platform PostgreSQL did not become SQL-ready: %s", strings.Join(last.Blockers, "; "))
+			return postgresqlServiceProbe{}, fmt.Errorf("PostgreSQL service did not become SQL-ready: %s", strings.Join(last.Blockers, "; "))
 		case <-ticker.C:
 		}
 	}
 }
 
-func (s *HostOperationsService) platformPostgresCRDPresent(ctx context.Context, spec platformPostgresSpec) (bool, error) {
+func (s *HostOperationsService) postgresqlServiceCRDPresent(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
 	if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"get", "crd", "clusters.postgresql.cnpg.io"}, "get CloudNativePG CRD", defaultDiscoveryTimeout); err != nil {
 		return false, nil
 	}
 	return true, nil
 }
 
-// platformPostgresWebhookReady reports whether the CloudNativePG admission
+// postgresqlServiceWebhookReady reports whether the CloudNativePG admission
 // webhook service has at least one ready endpoint. Applying the tenant Cluster
 // before the webhook endpoints exist fails with "no endpoints available for
 // service cnpg-webhook-service".
-func (s *HostOperationsService) platformPostgresWebhookReady(ctx context.Context, spec platformPostgresSpec) (bool, error) {
-	endpoints, err := s.platformPostgresJSON(ctx, spec, []string{"get", "endpoints", "cnpg-webhook-service", "-n", platformPostgresOperatorNamespace}, "get CloudNativePG webhook endpoints")
+func (s *HostOperationsService) postgresqlServiceWebhookReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
+	endpoints, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "endpoints", "cnpg-webhook-service", "-n", postgresqlServiceOperatorNamespace}, "get CloudNativePG webhook endpoints")
 	if err != nil {
 		return false, nil
 	}
@@ -656,24 +725,24 @@ func (s *HostOperationsService) platformPostgresWebhookReady(ctx context.Context
 	return false, nil
 }
 
-// waitForPlatformPostgresCRD waits until the CloudNativePG operator HelmChart
+// waitForPostgreSQLServiceCRD waits until the CloudNativePG operator HelmChart
 // has installed the clusters.postgresql.cnpg.io CRD and its admission webhook
 // endpoints are ready. Applying the tenant Cluster before the CRD exists makes
 // a fresh-cluster apply fail, and before the webhook endpoints exist it fails
 // the admission call itself.
-func (s *HostOperationsService) waitForPlatformPostgresCRD(ctx context.Context, spec platformPostgresSpec) error {
+func (s *HostOperationsService) waitForPostgreSQLServiceCRD(ctx context.Context, spec postgresqlServiceSpec) error {
 	deadline := time.NewTimer(5 * time.Minute)
 	defer deadline.Stop()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
-		present, err := s.platformPostgresCRDPresent(ctx, spec)
+		present, err := s.postgresqlServiceCRDPresent(ctx, spec)
 		if err != nil {
 			return err
 		}
 		webhookReady := false
 		if present {
-			webhookReady, err = s.platformPostgresWebhookReady(ctx, spec)
+			webhookReady, err = s.postgresqlServiceWebhookReady(ctx, spec)
 			if err != nil {
 				return err
 			}
@@ -691,7 +760,7 @@ func (s *HostOperationsService) waitForPlatformPostgresCRD(ctx context.Context, 
 	}
 }
 
-func (s *HostOperationsService) platformPostgresK3sReady(ctx context.Context, spec platformPostgresSpec) (bool, error) {
+func (s *HostOperationsService) postgresqlServiceK3sReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
 	nodesJSON, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"get", "nodes", "-o", "json"}, "get K3s nodes", defaultDiscoveryTimeout)
 	if err != nil {
 		return false, nil
@@ -722,13 +791,13 @@ func (s *HostOperationsService) platformPostgresK3sReady(ctx context.Context, sp
 	return false, nil
 }
 
-func (s *HostOperationsService) waitForPlatformPostgresK3sReady(ctx context.Context, spec platformPostgresSpec) error {
+func (s *HostOperationsService) waitForPostgreSQLServiceK3sReady(ctx context.Context, spec postgresqlServiceSpec) error {
 	deadline := time.NewTimer(10 * time.Minute)
 	defer deadline.Stop()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
-		ready, err := s.platformPostgresK3sReady(ctx, spec)
+		ready, err := s.postgresqlServiceK3sReady(ctx, spec)
 		if err != nil {
 			return err
 		}
@@ -739,56 +808,56 @@ func (s *HostOperationsService) waitForPlatformPostgresK3sReady(ctx context.Cont
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return errors.New("K3s did not report a Ready node before platform PostgreSQL reconciliation")
+			return errors.New("K3s did not report a Ready node before PostgreSQL service reconciliation")
 		case <-ticker.C:
 		}
 	}
 }
 
-// ensurePlatformPostgresOrdered runs the documented fresh-cluster sequence:
+// ensurePostgreSQLServiceOrdered runs the documented fresh-cluster sequence:
 // K3s readiness, the operator HelmChart, a wait for the CNPG Cluster CRD, and
 // only then the tenant Cluster apply. Reusing the standalone CRD wait pattern
 // prevents a fresh-cluster apply from racing the operator installation.
-func (s *HostOperationsService) ensurePlatformPostgresOrdered(ctx context.Context, spec platformPostgresSpec) error {
-	if err := s.waitForPlatformPostgresK3sReady(ctx, spec); err != nil {
+func (s *HostOperationsService) ensurePostgreSQLServiceOrdered(ctx context.Context, spec postgresqlServiceSpec) error {
+	if err := s.waitForPostgreSQLServiceK3sReady(ctx, spec); err != nil {
 		return err
 	}
-	if err := s.applyPlatformPostgresManifest(ctx, spec, renderPlatformPostgresOperatorManifest(), "apply CloudNativePG HelmChart"); err != nil {
+	if err := s.applyPostgreSQLServiceManifest(ctx, spec, renderPostgreSQLServiceOperatorManifest(), "apply CloudNativePG HelmChart"); err != nil {
 		return err
 	}
-	if err := s.waitForPlatformPostgresCRD(ctx, spec); err != nil {
+	if err := s.waitForPostgreSQLServiceCRD(ctx, spec); err != nil {
 		return err
 	}
-	if err := s.applyPlatformPostgresManifest(ctx, spec, renderPlatformPostgresClusterManifest(spec), "apply platform PostgreSQL Cluster"); err != nil {
+	if err := s.applyPostgreSQLServiceManifest(ctx, spec, renderPostgreSQLServiceClusterManifest(spec), "apply PostgreSQL service Cluster"); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *HostOperationsService) EnsurePlatformPostgres(ctx context.Context, args PlatformPostgresArgs, _ func(string)) (map[string]any, error) {
-	spec, err := validatePlatformPostgresSpec(args)
+func (s *HostOperationsService) ReconcilePostgreSQLService(ctx context.Context, args PostgreSQLServiceArgs, _ func(string)) (map[string]any, error) {
+	spec, err := validatePostgreSQLServiceSpec(args)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.ensurePlatformPostgresNamespace(ctx, spec); err != nil {
+	if err := s.ensurePostgreSQLServiceNamespace(ctx, spec); err != nil {
 		return nil, err
 	}
-	if err := s.ensurePlatformPostgresOrdered(ctx, spec); err != nil {
+	if err := s.ensurePostgreSQLServiceOrdered(ctx, spec); err != nil {
 		return nil, err
 	}
-	if _, err := s.waitForPlatformPostgres(ctx, spec); err != nil {
+	if _, err := s.waitForPostgreSQLService(ctx, spec); err != nil {
 		return nil, err
 	}
-	probe, _ := s.probePlatformPostgres(ctx, spec)
-	credentials := platformPostgresSecret{Username: probe.Username, Password: probe.Password}
-	for _, database := range []string{"opute", "opute_task_ledger"} {
-		if err := s.ensurePlatformPostgresDatabase(ctx, spec, credentials, probe.PrimaryPod, database); err != nil {
+	probe, _ := s.probePostgreSQLService(ctx, spec)
+	credentials := postgresqlServiceSecret{Username: probe.Username, Password: probe.Password}
+	for _, database := range spec.Databases {
+		if err := s.ensurePostgreSQLServiceDatabase(ctx, spec, credentials, probe.PrimaryPod, database); err != nil {
 			return nil, err
 		}
 	}
-	probe, _ = s.probePlatformPostgres(ctx, spec)
+	probe, _ = s.probePostgreSQLService(ctx, spec)
 	if !probe.SQLReady || !probe.TaskLedgerSQLReady {
-		return nil, errors.New("platform PostgreSQL databases did not become SQL-ready")
+		return nil, errors.New("PostgreSQL service databases did not become SQL-ready")
 	}
 	result := map[string]any{
 		"ready":              false,
@@ -799,26 +868,28 @@ func (s *HostOperationsService) EnsurePlatformPostgres(ctx context.Context, args
 		"storageClass":       spec.StorageClass,
 		"storageSize":        spec.StorageSize,
 		"serviceName":        spec.ClusterName + "-rw",
-		"servicePort":        platformPostgresServicePort,
-		"secretName":         platformPostgresConsumerSecretName,
+		"servicePort":        postgresqlServicePort,
+		"secretName":         spec.ConsumerSecretName,
 		"cnpgSecretName":     spec.ClusterName + "-app",
-		"databases":          []string{"opute", "opute_task_ledger"},
+		"databases":          append([]string(nil), spec.Databases...),
 		"sqlReady":           probe.SQLReady && probe.TaskLedgerSQLReady,
 		"taskLedgerSqlReady": probe.TaskLedgerSQLReady,
 		"credentialState":    "cnpg-owned",
 		"postgresVersion":    "cloudnativepg",
 	}
-	if err := s.replacePlatformPostgresConsumerSecret(ctx, spec, renderPlatformPostgresConsumerSecret(spec, credentials)); err != nil {
+	if err := s.replacePostgreSQLServiceConsumerSecret(ctx, spec, renderPostgreSQLServiceConsumerSecret(spec, credentials)); err != nil {
 		return nil, err
 	}
-	if err := s.restartPlatformPostgresConsumers(ctx, spec); err != nil {
-		return nil, err
+	if args.RestartConsumers == nil || *args.RestartConsumers {
+		if err := s.restartPostgreSQLServiceConsumers(ctx, spec); err != nil {
+			return nil, err
+		}
 	}
-	consumerSecretReady := s.platformPostgresConsumerSecretReady(ctx, spec)
+	consumerSecretReady := s.postgresqlServiceConsumerSecretReady(ctx, spec)
 	result["consumerSecretReady"] = consumerSecretReady
-	result["ready"] = probe.SQLReady && probe.TaskLedgerSQLReady && consumerSecretReady
+	result["ready"] = probe.SQLReady && consumerSecretReady
 	if args.Relay != nil {
-		relay, err := s.ensurePlatformPostgresRelay(ctx, spec, *args.Relay)
+		relay, err := s.ensurePostgreSQLServiceRelay(ctx, spec, *args.Relay)
 		if err != nil {
 			return nil, err
 		}
@@ -827,17 +898,21 @@ func (s *HostOperationsService) EnsurePlatformPostgres(ctx context.Context, args
 	return result, nil
 }
 
-func (s *HostOperationsService) GetPlatformPostgresStatus(ctx context.Context, args PlatformPostgresArgs) (map[string]any, error) {
-	spec, err := validatePlatformPostgresSpec(args)
+func (s *HostOperationsService) GetPostgreSQLServiceStatus(ctx context.Context, args PostgreSQLServiceArgs) (map[string]any, error) {
+	spec, err := validatePostgreSQLServiceSpec(args)
 	if err != nil {
 		return nil, err
 	}
-	probe, err := s.probePlatformPostgres(ctx, spec)
+	probe, err := s.probePostgreSQLService(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
-	consumerSecretReady := s.platformPostgresConsumerSecretReady(ctx, spec)
-	return map[string]any{
+	consumerSecretReady := s.postgresqlServiceConsumerSecretReady(ctx, spec)
+	blockers := probe.Blockers
+	if blockers == nil {
+		blockers = []string{}
+	}
+	result := map[string]any{
 		"ready":               probe.OperatorReady && probe.CRDPresent && probe.ClusterReady && probe.ServiceReady && probe.SecretReady && probe.PrimaryReady && probe.SQLReady && probe.TaskLedgerSQLReady && consumerSecretReady,
 		"operatorReady":       probe.OperatorReady,
 		"crdPresent":          probe.CRDPresent,
@@ -848,34 +923,45 @@ func (s *HostOperationsService) GetPlatformPostgresStatus(ctx context.Context, a
 		"sqlReady":            probe.SQLReady && probe.TaskLedgerSQLReady,
 		"taskLedgerSqlReady":  probe.TaskLedgerSQLReady,
 		"consumerSecretReady": consumerSecretReady,
-		"blockers":            probe.Blockers,
+		"blockers":            blockers,
 		"vmName":              spec.VMName,
 		"namespace":           spec.Namespace,
 		"clusterName":         spec.ClusterName,
 		"serviceName":         spec.ClusterName + "-rw",
-		"secretName":          platformPostgresConsumerSecretName,
+		"secretName":          spec.ConsumerSecretName,
 		"cnpgSecretName":      spec.ClusterName + "-app",
 		"credentialState":     "cnpg-owned",
-	}, nil
+	}
+	// Status is also the idempotent fast path for consumers that need the
+	// host-agent-owned PostgreSQL relay. Reconcile callers must not enqueue a
+	// second long-running CNPG task when the cluster is already SQL-ready.
+	if args.Relay != nil && result["ready"] == true {
+		relay, relayErr := s.ensurePostgreSQLServiceRelay(ctx, spec, *args.Relay)
+		if relayErr != nil {
+			return nil, relayErr
+		}
+		result["localRelay"] = relay
+	}
+	return result, nil
 }
 
-func (s *HostOperationsService) RemovePlatformPostgres(ctx context.Context, args PlatformPostgresArgs, confirm bool) (map[string]any, error) {
+func (s *HostOperationsService) RemovePostgreSQLService(ctx context.Context, args PostgreSQLServiceArgs, confirm bool) (map[string]any, error) {
 	if !confirm {
-		return nil, errors.New("remove_platform_postgres requires confirm=true")
+		return nil, errors.New("remove_postgresql_service requires confirm=true")
 	}
-	spec, err := validatePlatformPostgresSpec(args)
+	spec, err := validatePostgreSQLServiceSpec(args)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace, "--ignore-not-found=true", "--wait=true"}, "delete platform PostgreSQL Cluster", 5*time.Minute); err != nil {
+	if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace, "--ignore-not-found=true", "--wait=true"}, "delete PostgreSQL service Cluster", 5*time.Minute); err != nil {
 		return nil, err
 	}
 	if spec.RetentionPolicy == "delete" {
-		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "secret", spec.ClusterName + "-app", "-n", spec.Namespace, "--ignore-not-found=true"}, "delete platform PostgreSQL Secret", defaultDiscoveryTimeout)
-		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "secret", platformPostgresConsumerSecretName, "-n", spec.Namespace, "--ignore-not-found=true"}, "delete platform PostgreSQL consumer Secret", defaultDiscoveryTimeout)
-		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "pvc", "-l", "cnpg.io/cluster=" + spec.ClusterName, "-n", spec.Namespace, "--ignore-not-found=true"}, "delete platform PostgreSQL PVCs", 5*time.Minute)
+		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "secret", spec.ClusterName + "-app", "-n", spec.Namespace, "--ignore-not-found=true"}, "delete PostgreSQL service Secret", defaultDiscoveryTimeout)
+		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "secret", spec.ConsumerSecretName, "-n", spec.Namespace, "--ignore-not-found=true"}, "delete PostgreSQL consumer Secret", defaultDiscoveryTimeout)
+		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "pvc", "-l", "cnpg.io/cluster=" + spec.ClusterName, "-n", spec.Namespace, "--ignore-not-found=true"}, "delete PostgreSQL service PVCs", 5*time.Minute)
 	}
-	s.revokeAllPlatformPostgresRelays()
+	s.revokeAllPostgreSQLServiceRelays()
 	return map[string]any{
 		"removed":           true,
 		"vmName":            spec.VMName,

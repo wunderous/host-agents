@@ -84,15 +84,20 @@ type HostOperationsService struct {
 	sqlSupervisor          *sqlConnectorSupervisor
 	guestBridgeRelay       *tcpRelayManager
 	localLLMRelay          *localLLMRelayManager
-	platformPostgresRelay  *platformPostgresRelayManager
+	postgresqlServiceRelay *postgresqlServiceRelayManager
 	allowInsecureDownloads bool
 	resourceSnapshot       func() map[string]any
-	// kubectlRunner is a test seam for the platform PostgreSQL ordering and
+	// kubectlRunner is a test seam for the PostgreSQL service ordering and
 	// readiness contract. When nil, the real guest-exec kubectl path is used.
 	kubectlRunner func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error)
 	// commandRunnerFn is a test seam for provider command execution (Incus
 	// CLI). When nil, the real provider runtime is used.
 	commandRunnerFn func(args []string, onData func(string), timeout time.Duration) (hostexec.Result, error)
+	// container command seams keep runtime adapter tests independent of an
+	// installed host runtime. They are intentionally scoped to this service.
+	containerLookPathFn         func(string) (string, error)
+	containerCommandFn          func(context.Context, string, ...string) ([]byte, error)
+	containerStreamingCommandFn func(context.Context, string, []string, func(string)) error
 }
 
 type Options struct {
@@ -131,7 +136,7 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		sqlSupervisor:           newSQLConnectorSupervisor(),
 		guestBridgeRelay:        newTCPRelayManager(),
 		localLLMRelay:           newPersistentLocalLLMRelayManagerAt(opts.RelayConfigDir),
-		platformPostgresRelay:   newPlatformPostgresRelayManager(),
+		postgresqlServiceRelay:  newPostgreSQLServiceRelayManager(),
 		allowInsecureDownloads:  opts.AllowInsecureDownloads,
 	}
 }
@@ -509,18 +514,19 @@ func (s *HostOperationsService) InstallK3s(ctx context.Context, args InstallK3sA
 	// Pin a concrete version by default. update.k3s.io channel resolution often
 	// 404s from guest NAT; the upstream script then treats "stable" as a GitHub
 	// release tag and fails on .../download/stable/sha256sum-amd64.txt.
-	// Download the installer to a file, then run with an explicit env so the
-	// version cannot be lost across pipes / login shells.
 	k3sVersion := strings.TrimSpace(args.Version)
 	if k3sVersion == "" {
 		k3sVersion = "v1.31.8+k3s1"
 	}
-	curlFlags := "-sfL"
+	// Keep curl's failure reason in the task result. Silent curl failures leave
+	// only the pin marker in the host-agent error, which is not enough to
+	// distinguish guest DNS, TLS, or upstream availability problems.
+	curlFlags := "-sSfL"
 	if s.allowInsecureDownloads {
 		// Some local VM images do not contain the host's corporate CA. Keep the
 		// weaker TLS behavior explicit and standalone-only; platform mode remains
 		// certificate-verifying by default.
-		curlFlags = "-k -sfL --retry 4 --retry-delay 2 --retry-connrefused"
+		curlFlags = "-k -sSfL --retry 4 --retry-delay 2 --retry-connrefused"
 	}
 	installArgs := args.InstallArgs
 	if target == "container" {
@@ -596,6 +602,11 @@ systemctl daemon-reload 2>/dev/null || true`
 	if err := s.waitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {
 		return nil, err
 	}
+	if target == "container" {
+		if err := s.waitForContainerNetworkReady(ctx, vmName, onData, 3*time.Minute); err != nil {
+			return nil, err
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -629,19 +640,31 @@ systemctl daemon-reload 2>/dev/null || true`
 			}
 		}
 	}
-	ensureCurl := `if ! command -v curl >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get install -y curl >/dev/null || (apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y curl >/dev/null); fi`
-	if res, err := s.runVMExecContext(ctx, vmName, []string{"bash", "-lc", ensureCurl}, onData, 0); err != nil || res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "failed to ensure curl in instance"))
+	if onData != nil {
+		onData(fmt.Sprintf("Downloading and checksum-verifying pinned K3s %s on the host before guest installation...", k3sVersion))
+	}
+	artifacts, err := downloadK3sGuestArtifacts(ctx, k3sVersion)
+	if err != nil {
+		return nil, fmt.Errorf("stage K3s artifacts from host: %w", err)
+	}
+	stageBinary, err := s.runVMExecWithStdinContext(ctx, vmName, []string{"sh", "-c", "tmp=$(mktemp) && cat > \"$tmp\" && chmod 0755 \"$tmp\" && mv -f \"$tmp\" /usr/local/bin/k3s"}, artifacts.Binary, onData, 5*time.Minute)
+	if err != nil || stageBinary.ExitCode != 0 {
+		return nil, fmt.Errorf("stage K3s binary in instance: %s", firstNonEmpty(stageBinary.Stderr, stageBinary.Stdout, errString(err, "guest binary staging failed")))
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	install, err := s.runVMExecContext(ctx, vmName, []string{"bash", "-c", installCmd}, onData, 15*time.Minute)
+	guestInstallCmd := fmt.Sprintf(
+		`tmp=$(mktemp) && cat > "$tmp" && chmod 0700 "$tmp" && env INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s%s sh "$tmp"; ec=$?; rm -f "$tmp"; exit $ec`,
+		shellEscape(k3sVersion),
+		execEnv,
+	)
+	install, err := s.runVMExecWithStdinContext(ctx, vmName, []string{"bash", "-c", guestInstallCmd}, artifacts.Installer, onData, 15*time.Minute)
 	if err != nil {
 		return nil, err
 	}
 	if install.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(install.Stderr, install.Stdout, "failed to install K3s in instance"))
+		return nil, fmt.Errorf("%s\nK3s service diagnostics:\n%s", firstNonEmpty(install.Stderr, install.Stdout, "failed to install K3s in instance"), s.k3sServiceDiagnostics(vmName))
 	}
 	if target == "container" {
 		changed, cfgErr := s.ensureContainerK3sKubeletConfig(vmName, onData)
@@ -654,7 +677,7 @@ systemctl daemon-reload 2>/dev/null || true`
 			}
 		}
 		if err := s.waitForK3sNodeReady(ctx, vmName, onData, 5*time.Minute); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w\nK3s service diagnostics:\n%s", err, s.k3sServiceDiagnostics(vmName))
 		}
 	} else if err := s.waitForVMServiceActive(vmName, "k3s", onData, 5*time.Minute); err != nil {
 		return nil, err

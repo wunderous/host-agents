@@ -60,7 +60,7 @@ func TestValidateLocalLLMRelayRejectsUnspecifiedListener(t *testing.T) {
 	}
 }
 
-func TestLocalLLMRelayRequiresSourceAndBearerAndForwardsV1AndApi(t *testing.T) {
+func TestLocalLLMRelayRequiresBearerForLlamaServer(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Host == "public.example" {
 			t.Fatalf("public Host header leaked to upstream: %s", r.Host)
@@ -77,25 +77,25 @@ func TestLocalLLMRelayRequiresSourceAndBearerAndForwardsV1AndApi(t *testing.T) {
 	}
 	defer m.stop("test-relay")
 	base := "http://127.0.0.1:" + strconv.Itoa(result["listenPort"].(int))
-	resp, err := http.Get(base + "/api/tags")
+	resp, err := http.Get(base + "/v1/models")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected /api bearer denial, got %d", resp.StatusCode)
+		t.Fatalf("expected llama-server bearer denial, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
-	reqApi, _ := http.NewRequest(http.MethodGet, base+"/api/tags", nil)
-	reqApi.Header.Set("Authorization", "Bearer "+strings.Repeat("r", 40))
-	resp, err = http.DefaultClient.Do(reqApi)
+	req, _ := http.NewRequest(http.MethodGet, base+"/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer "+strings.Repeat("r", 40))
+	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected forwarded /api request, got %d", resp.StatusCode)
+		t.Fatalf("expected forwarded llama-server request, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
-	req, _ := http.NewRequest(http.MethodGet, base+"/v1/models", nil)
+	req, _ = http.NewRequest(http.MethodGet, base+"/v1/models", nil)
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -117,19 +117,85 @@ func TestLocalLLMRelayRequiresSourceAndBearerAndForwardsV1AndApi(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestLocalLLMRelayForwardsRuntimeResidencyEndpoint(t *testing.T) {
+	psSeen := make(chan string, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/ps":
+			psSeen <- r.URL.Path
+			_, _ = io.WriteString(w, `{"models":[{"name":"qwen3.5-0.8b-opute-llama:latest","size_vram":2147483648}]}`)
+		case "/v1/models":
+			_, _ = io.WriteString(w, `{"data":[{"id":"qwen3.5-0.8b-opute-llama"}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	parts := strings.Split(upstream.Listener.Addr().String(), ":")
+	targetPort, _ := strconv.Atoi(parts[len(parts)-1])
+	m := newLocalLLMRelayManager()
+	result, err := m.start(context.Background(), LocalLLMRelayArgs{
+		SessionID: "residency-relay", ListenHost: "127.0.0.1", ListenPort: 0,
+		TargetHost: "127.0.0.1", TargetPort: targetPort,
+		RelayToken: strings.Repeat("r", 40), AllowedSourceIP: "127.0.0.1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.stop("residency-relay")
+	base := "http://127.0.0.1:" + strconv.Itoa(result["listenPort"].(int))
+
+	req, _ := http.NewRequest(http.MethodGet, base+"/api/ps", nil)
+	req.Header.Set("Authorization", "Bearer "+strings.Repeat("r", 40))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected forwarded /api/ps, got %d", resp.StatusCode)
+	}
+	select {
+	case <-psSeen:
+	case <-time.After(time.Second):
+		t.Fatal("upstream never received /api/ps")
+	}
+
+	req, _ = http.NewRequest(http.MethodGet, base+"/api/ps", nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected bearer denial for /api/ps, got %d", resp.StatusCode)
+	}
+
+	req, _ = http.NewRequest(http.MethodGet, base+"/api/tags", nil)
+	req.Header.Set("Authorization", "Bearer "+strings.Repeat("r", 40))
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected unlisted native path rejection, got %d", resp.StatusCode)
+	}
+}
+
 func TestLocalLLMRelayFlushesStreamingChatChunks(t *testing.T) {
 	flushed := make(chan struct{}, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/chat" {
+		if r.URL.Path != "/v1/chat/completions" {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			t.Fatal("upstream ResponseWriter must flush")
 		}
-		_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ready\"}}\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ready\"}}]}\n\n")
 		flusher.Flush()
 		select {
 		case flushed <- struct{}{}:
@@ -154,7 +220,7 @@ func TestLocalLLMRelayFlushesStreamingChatChunks(t *testing.T) {
 	base := "http://127.0.0.1:" + strconv.Itoa(result["listenPort"].(int))
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/chat", strings.NewReader(`{"stream":true}`))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/chat/completions", strings.NewReader(`{"stream":true}`))
 	req.Header.Set("Authorization", "Bearer "+strings.Repeat("r", 40))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -228,6 +294,61 @@ func TestLocalLLMRelayRotatesCredentialsForExistingSession(t *testing.T) {
 		}
 		resp.Body.Close()
 	}
+}
+
+func TestLocalLLMRelayReplacesTargetForExistingSession(t *testing.T) {
+	firstUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"backend":"first"}`)
+	}))
+	defer firstUpstream.Close()
+	secondUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"backend":"second"}`)
+	}))
+	defer secondUpstream.Close()
+
+	address := func(server *httptest.Server) (string, int) {
+		parts := strings.Split(server.Listener.Addr().String(), ":")
+		port, _ := strconv.Atoi(parts[len(parts)-1])
+		return "127.0.0.1", port
+	}
+	firstHost, firstPort := address(firstUpstream)
+	secondHost, secondPort := address(secondUpstream)
+	m := newLocalLLMRelayManager()
+	first := LocalLLMRelayArgs{
+		SessionID: "target-rotation-relay", ListenHost: "127.0.0.1", ListenPort: 0,
+		TargetHost: firstHost, TargetPort: firstPort, RelayToken: strings.Repeat("r", 40),
+		AllowedSourceIP: "127.0.0.1",
+	}
+	result, err := m.start(context.Background(), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.stop(first.SessionID)
+
+	second := first
+	second.TargetHost = secondHost
+	second.TargetPort = secondPort
+	rotated, err := m.start(context.Background(), second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	base := "http://127.0.0.1:" + strconv.Itoa(rotated["listenPort"].(int))
+	req, _ := http.NewRequest(http.MethodGet, base+"/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer "+first.RelayToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(body), `{"backend":"second"}`; got != want {
+		t.Fatalf("relay returned %s, want %s", got, want)
+	}
+	_ = result
 }
 
 func TestLocalLLMRelayReclaimsTrackedStalePort(t *testing.T) {

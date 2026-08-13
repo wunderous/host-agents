@@ -19,3 +19,16 @@ func TestIncusCandidateSatisfies(t *testing.T) {
 		}
 	}
 }
+
+func TestIncusProfileHasDevice(t *testing.T) {
+	profile := "devices:\n  eth0:\n    name: eth0\n  root:\n    path: /\n"
+	if !incusProfileHasDevice(profile, "eth0") {
+		t.Fatal("incusProfileHasDevice did not find eth0")
+	}
+	if !incusProfileHasDevice(profile, "root") {
+		t.Fatal("incusProfileHasDevice did not find root")
+	}
+	if incusProfileHasDevice(profile, "gpu") {
+		t.Fatal("incusProfileHasDevice found an absent device")
+	}
+}

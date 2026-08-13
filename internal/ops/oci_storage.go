@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -21,31 +20,35 @@ const (
 	minOciStorageBudgetBytes       int64 = 1 << 30
 )
 
-// ConfigureOciStorageArgs configures the host-local Podman image storage
-// budget. A zero MaxBytes disables enforcement. MinAgeSeconds protects newly
-// built images from an immediate cleanup pass.
+// ConfigureOciStorageArgs is retained for compatibility with the original
+// policy tool. Runtime is optional and defaults to auto (currently Podman).
 type ConfigureOciStorageArgs struct {
+	Runtime       string `json:"runtime,omitempty"`
 	MaxBytes      *int64 `json:"maxBytes,omitempty"`
 	MinAgeSeconds *int64 `json:"minAgeSeconds,omitempty"`
 	PruneNow      bool   `json:"pruneNow,omitempty"`
 }
 
+type InspectContainerStorageArgs struct {
+	Runtime string `json:"runtime,omitempty"`
+}
+
+type CleanupContainerStorageArgs struct {
+	Runtime       string `json:"runtime,omitempty"`
+	MaxBytes      *int64 `json:"maxBytes,omitempty"`
+	MinAgeSeconds *int64 `json:"minAgeSeconds,omitempty"`
+	DryRun        bool   `json:"dryRun,omitempty"`
+}
+
 type ociStoragePolicy struct {
-	MaxBytes      int64 `json:"maxBytes"`
-	MinAgeSeconds int64 `json:"minAgeSeconds"`
+	Runtime       string `json:"runtime,omitempty"`
+	MaxBytes      int64  `json:"maxBytes"`
+	MinAgeSeconds int64  `json:"minAgeSeconds"`
 }
 
-type podmanStorageDFEntry struct {
-	Type           string `json:"Type"`
-	RawSize        int64  `json:"RawSize"`
-	RawReclaimable int64  `json:"RawReclaimable"`
-}
-
-type podmanImage struct {
-	ID         string `json:"Id"`
-	Created    int64  `json:"Created"`
-	Containers int    `json:"Containers"`
-}
+// podmanImage remains as a compatibility alias for focused tests and callers
+// that were written against the original internal pruning helper.
+type podmanImage = containerImage
 
 func defaultOciStoragePolicy() ociStoragePolicy {
 	return ociStoragePolicy{MinAgeSeconds: defaultOciStorageMinAgeSeconds}
@@ -61,12 +64,15 @@ func validateOciStoragePolicy(policy ociStoragePolicy) error {
 	if policy.MinAgeSeconds < minOciStorageMinAgeSeconds || policy.MinAgeSeconds > maxOciStorageMinAgeSeconds {
 		return fmt.Errorf("minAgeSeconds must be between %d and %d", minOciStorageMinAgeSeconds, maxOciStorageMinAgeSeconds)
 	}
+	if policy.Runtime != "" && policy.Runtime != "auto" && policy.Runtime != "podman" {
+		return errors.New("runtime must be one of auto or podman")
+	}
 	return nil
 }
 
-func (s *HostOperationsService) loadOciStoragePolicy() (ociStoragePolicy, error) {
+func loadOciStoragePolicyAt(path string) (ociStoragePolicy, error) {
 	policy := defaultOciStoragePolicy()
-	path := strings.TrimSpace(s.ociStoragePolicyPath)
+	path = strings.TrimSpace(path)
 	if path == "" {
 		return policy, nil
 	}
@@ -89,11 +95,15 @@ func (s *HostOperationsService) loadOciStoragePolicy() (ociStoragePolicy, error)
 	return policy, nil
 }
 
-func (s *HostOperationsService) saveOciStoragePolicy(policy ociStoragePolicy) error {
+func (s *HostOperationsService) loadOciStoragePolicy() (ociStoragePolicy, error) {
+	return loadOciStoragePolicyAt(s.ociStoragePolicyPath)
+}
+
+func saveOciStoragePolicyAt(path string, policy ociStoragePolicy) error {
 	if err := validateOciStoragePolicy(policy); err != nil {
 		return err
 	}
-	path := strings.TrimSpace(s.ociStoragePolicyPath)
+	path = strings.TrimSpace(path)
 	if path == "" {
 		return errors.New("OCI storage policy path is not configured")
 	}
@@ -127,9 +137,198 @@ func (s *HostOperationsService) saveOciStoragePolicy(policy ociStoragePolicy) er
 	return nil
 }
 
-// ConfigureOciStorage persists the Podman image budget and optionally runs an
-// immediate safe prune. Enforcement is explicit and build-triggered; it is not
-// placed in the heartbeat path.
+func (s *HostOperationsService) saveOciStoragePolicy(policy ociStoragePolicy) error {
+	return saveOciStoragePolicyAt(s.ociStoragePolicyPath, policy)
+}
+
+// InspectContainerStorage reports runtime-reported storage categories without
+// changing images, containers, volumes, networks, or policy state.
+func (s *HostOperationsService) InspectContainerStorage(ctx context.Context, args InspectContainerStorageArgs) (map[string]any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if runtime.GOOS != "linux" {
+		return nil, fmt.Errorf("inspect_container_storage is unsupported on %s host agents", runtime.GOOS)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	policy, err := s.loadOciStoragePolicy()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(args.Runtime) != "" {
+		policy.Runtime = strings.ToLower(strings.TrimSpace(args.Runtime))
+	}
+	adapter, err := s.resolveContainerRuntime(ctx, policy.Runtime)
+	if err != nil {
+		return nil, err
+	}
+	report, err := adapter.Inspect(ctx, policy)
+	if err != nil {
+		return nil, err
+	}
+	return report.toMap(), nil
+}
+
+// CleanupContainerStorage removes only age-eligible unused images and asks the
+// selected adapter to prune supported build cache. It never invokes a broad
+// system prune and never force-removes image references.
+func (s *HostOperationsService) CleanupContainerStorage(ctx context.Context, args CleanupContainerStorageArgs, onData func(string)) (map[string]any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if runtime.GOOS != "linux" {
+		return nil, fmt.Errorf("cleanup_container_storage is unsupported on %s host agents", runtime.GOOS)
+	}
+	if err := s.requireSharedHostOwner("cleanup_container_storage"); err != nil {
+		return nil, err
+	}
+	policy, err := s.loadOciStoragePolicy()
+	if err != nil {
+		return nil, err
+	}
+	if args.Runtime != "" {
+		policy.Runtime = strings.ToLower(strings.TrimSpace(args.Runtime))
+	}
+	if args.MinAgeSeconds != nil {
+		policy.MinAgeSeconds = *args.MinAgeSeconds
+	}
+	if err := validateCleanupPolicy(policy, args.MaxBytes); err != nil {
+		return nil, err
+	}
+	adapter, err := s.resolveContainerRuntime(ctx, policy.Runtime)
+	if err != nil {
+		return nil, err
+	}
+	s.ociStorageMu.Lock()
+	defer s.ociStorageMu.Unlock()
+	return s.cleanupContainerStorageLocked(ctx, adapter, policy, args.MaxBytes, args.DryRun, onData)
+}
+
+func validateCleanupPolicy(policy ociStoragePolicy, maxBytes *int64) error {
+	if policy.MinAgeSeconds < minOciStorageMinAgeSeconds || policy.MinAgeSeconds > maxOciStorageMinAgeSeconds {
+		return fmt.Errorf("minAgeSeconds must be between %d and %d", minOciStorageMinAgeSeconds, maxOciStorageMinAgeSeconds)
+	}
+	if maxBytes != nil {
+		if *maxBytes < 0 {
+			return errors.New("maxBytes must be zero or positive")
+		}
+		if *maxBytes != 0 && *maxBytes < minOciStorageBudgetBytes {
+			return fmt.Errorf("maxBytes must be zero or at least %d", minOciStorageBudgetBytes)
+		}
+	}
+	return nil
+}
+
+func (s *HostOperationsService) cleanupContainerStorageLocked(ctx context.Context, adapter containerRuntimeAdapter, policy ociStoragePolicy, maxBytes *int64, dryRun bool, onData func(string)) (map[string]any, error) {
+	if maxBytes != nil {
+		policy.MaxBytes = *maxBytes
+	}
+	before, err := adapter.Inspect(ctx, policy)
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]any{
+		"runtime":                   adapter.Name(),
+		"cleanupScope":              []string{"images", "buildCache"},
+		"dryRun":                    dryRun,
+		"pruneAttempted":            false,
+		"prunedImageCount":          0,
+		"estimatedReclaimableBytes": int64(0),
+		"maxBytes":                  policy.MaxBytes,
+		"minAgeSeconds":             policy.MinAgeSeconds,
+		"before":                    before.toMap(),
+	}
+	warnings := append([]string{}, before.Warnings...)
+	cutoff := time.Now().Unix() - policy.MinAgeSeconds
+	images, err := adapter.ListImages(ctx)
+	if err != nil {
+		return nil, err
+	}
+	candidates := selectOciPruneCandidates(images, cutoff)
+	result["candidateImageCount"] = len(candidates)
+	var estimatedImageBytes int64
+	for _, image := range candidates {
+		estimatedImageBytes += image.Size
+	}
+	result["estimatedImageBytes"] = estimatedImageBytes
+	budget := int64(0)
+	if maxBytes != nil {
+		budget = *maxBytes
+	}
+	current := before
+	if dryRun {
+		result["estimatedReclaimableBytes"] = estimatedImageBytes + before.Categories["buildCache"].ReclaimableBytes
+	} else {
+		for _, image := range candidates {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if budget > 0 && current.TotalBytes <= budget {
+				break
+			}
+			if err := adapter.RemoveImage(ctx, image.ID); err != nil {
+				warnings = append(warnings, fmt.Sprintf("skipped image %s: %v", image.ID, err))
+				continue
+			}
+			result["pruneAttempted"] = true
+			result["prunedImageCount"] = result["prunedImageCount"].(int) + 1
+			if onData != nil {
+				onData(fmt.Sprintf("Pruned unused OCI image %s", image.ID))
+			}
+			if refreshed, refreshErr := adapter.Inspect(ctx, policy); refreshErr == nil {
+				current = refreshed
+			} else {
+				warnings = append(warnings, fmt.Sprintf("refresh storage after image %s: %v", image.ID, refreshErr))
+				break
+			}
+			if budget > 0 && current.TotalBytes <= budget {
+				break
+			}
+		}
+	}
+	afterImages := current
+	if !dryRun {
+		if refreshed, refreshErr := adapter.Inspect(ctx, policy); refreshErr == nil {
+			afterImages = refreshed
+		} else {
+			warnings = append(warnings, fmt.Sprintf("refresh storage after image cleanup: %v", refreshErr))
+		}
+	}
+	cacheBudget := int64(0)
+	if budget > 0 {
+		cacheBudget = maxInt64(0, budget-afterImages.Categories["images"].Bytes)
+	}
+	cacheSupported := afterImages.Categories["buildCache"].Supported
+	if dryRun {
+		result["buildCachePruneSupported"] = cacheSupported
+	} else if cacheSupported || budget == 0 {
+		attempted, reclaimed, cacheErr := adapter.PruneBuildCache(ctx, policy.MinAgeSeconds, cacheBudget, false, onData)
+		if cacheErr != nil {
+			warnings = append(warnings, cacheErr.Error())
+		} else {
+			result["pruneAttempted"] = result["pruneAttempted"].(bool) || attempted
+			result["prunedBuildCache"] = attempted
+			result["estimatedReclaimableBytes"] = result["estimatedReclaimableBytes"].(int64) + reclaimed
+		}
+	}
+	if !dryRun {
+		if refreshed, refreshErr := adapter.Inspect(ctx, policy); refreshErr == nil {
+			afterImages = refreshed
+		} else {
+			warnings = append(warnings, fmt.Sprintf("refresh storage after cache cleanup: %v", refreshErr))
+		}
+	}
+	result["after"] = afterImages.toMap()
+	if len(warnings) > 0 {
+		result["warnings"] = warnings
+	}
+	return result, nil
+}
+
+// ConfigureOciStorage persists the compatibility policy and optionally runs
+// the same safe cleanup operation used by the explicit cleanup tool.
 func (s *HostOperationsService) ConfigureOciStorage(ctx context.Context, args ConfigureOciStorageArgs, onData func(string)) (map[string]any, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -140,18 +339,12 @@ func (s *HostOperationsService) ConfigureOciStorage(ctx context.Context, args Co
 	if err := s.requireSharedHostOwner("configure_oci_storage"); err != nil {
 		return nil, err
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if _, err := exec.LookPath("podman"); err != nil {
-		return nil, errors.New("podman is required for OCI storage retention")
-	}
-
-	s.ociStorageMu.Lock()
-	defer s.ociStorageMu.Unlock()
 	policy, err := s.loadOciStoragePolicy()
 	if err != nil {
 		return nil, err
+	}
+	if args.Runtime != "" {
+		policy.Runtime = strings.ToLower(strings.TrimSpace(args.Runtime))
 	}
 	if args.MaxBytes != nil {
 		policy.MaxBytes = *args.MaxBytes
@@ -162,14 +355,32 @@ func (s *HostOperationsService) ConfigureOciStorage(ctx context.Context, args Co
 	if err := validateOciStoragePolicy(policy); err != nil {
 		return nil, err
 	}
+	s.ociStorageMu.Lock()
+	defer s.ociStorageMu.Unlock()
 	if err := s.saveOciStoragePolicy(policy); err != nil {
 		return nil, err
 	}
-	return s.enforceOciStoragePolicyLocked(ctx, policy, onData, args.PruneNow)
+	adapter, err := s.resolveContainerRuntime(ctx, policy.Runtime)
+	if err != nil {
+		return nil, err
+	}
+	if !args.PruneNow {
+		report, inspectErr := adapter.Inspect(ctx, policy)
+		if inspectErr != nil {
+			return nil, inspectErr
+		}
+		out := report.toMap()
+		out["policyUpdated"] = true
+		return out, nil
+	}
+	maxBytes := policy.MaxBytes
+	return s.cleanupContainerStorageLocked(ctx, adapter, policy, &maxBytes, false, onData)
 }
 
+// enforceOciStoragePolicy is called by image builds only. It is deliberately
+// not called by heartbeat processing.
 func (s *HostOperationsService) enforceOciStoragePolicy(ctx context.Context, builder string, onData func(string)) (map[string]any, error) {
-	if builder != "podman" || strings.TrimSpace(s.ociStoragePolicyPath) == "" {
+	if strings.TrimSpace(s.ociStoragePolicyPath) == "" || (builder != "podman" && builder != "auto") {
 		return nil, nil
 	}
 	s.ociStorageMu.Lock()
@@ -181,108 +392,11 @@ func (s *HostOperationsService) enforceOciStoragePolicy(ctx context.Context, bui
 	if policy.MaxBytes == 0 {
 		return nil, nil
 	}
-	return s.enforceOciStoragePolicyLocked(ctx, policy, onData, true)
-}
-
-func (s *HostOperationsService) enforceOciStoragePolicyLocked(ctx context.Context, policy ociStoragePolicy, onData func(string), prune bool) (map[string]any, error) {
-	status, err := podmanStorageStatus(ctx, policy)
+	adapter, err := s.resolveContainerRuntime(ctx, builder)
 	if err != nil {
 		return nil, err
 	}
-	status["prunedImageCount"] = 0
-	status["pruneAttempted"] = prune
-	if !prune || policy.MaxBytes == 0 || status["imageBytes"].(int64) <= policy.MaxBytes {
-		return status, nil
-	}
-
-	cutoff := time.Now().Unix() - policy.MinAgeSeconds
-	images, err := listPodmanImages(ctx)
-	if err != nil {
-		return nil, err
-	}
-	candidates := selectOciPruneCandidates(images, cutoff)
-	initialCandidateCount := len(candidates)
-	prunedCount := 0
-	for pass := 0; len(candidates) > 0; pass++ {
-		progress := false
-		for _, image := range candidates {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			if err := removePodmanImage(ctx, image.ID); err != nil {
-				if onData != nil {
-					onData(fmt.Sprintf("Skipping OCI image %s: %v", image.ID, err))
-				}
-				continue
-			}
-			progress = true
-			prunedCount++
-			if onData != nil {
-				onData(fmt.Sprintf("Pruned unused OCI image %s", image.ID))
-			}
-			status, err = podmanStorageStatus(ctx, policy)
-			if err != nil {
-				return nil, err
-			}
-			status["prunedImageCount"] = prunedCount
-			status["pruneAttempted"] = true
-			if status["imageBytes"].(int64) <= policy.MaxBytes {
-				break
-			}
-		}
-		if status["imageBytes"].(int64) <= policy.MaxBytes || !progress || pass >= initialCandidateCount {
-			break
-		}
-		images, err = listPodmanImages(ctx)
-		if err != nil {
-			return nil, err
-		}
-		candidates = selectOciPruneCandidates(images, cutoff)
-	}
-	status["remainingOverLimitBytes"] = maxInt64(0, status["imageBytes"].(int64)-policy.MaxBytes)
-	return status, nil
-}
-
-func podmanStorageStatus(ctx context.Context, policy ociStoragePolicy) (map[string]any, error) {
-	output, err := runPodman(ctx, "system", "df", "--format", "json")
-	if err != nil {
-		return nil, fmt.Errorf("inspect Podman storage: %w", err)
-	}
-	var entries []podmanStorageDFEntry
-	if err := json.Unmarshal(output, &entries); err != nil {
-		return nil, fmt.Errorf("parse Podman storage usage: %w", err)
-	}
-	var imageBytes, reclaimableBytes int64
-	for _, entry := range entries {
-		if strings.EqualFold(entry.Type, "Images") {
-			imageBytes = entry.RawSize
-			reclaimableBytes = entry.RawReclaimable
-			break
-		}
-	}
-	remainingOverLimitBytes := int64(0)
-	if policy.MaxBytes > 0 {
-		remainingOverLimitBytes = maxInt64(0, imageBytes-policy.MaxBytes)
-	}
-	return map[string]any{
-		"scope":                   "images-only",
-		"policy":                  map[string]any{"maxBytes": policy.MaxBytes, "minAgeSeconds": policy.MinAgeSeconds},
-		"imageBytes":              imageBytes,
-		"imageReclaimableBytes":   reclaimableBytes,
-		"remainingOverLimitBytes": remainingOverLimitBytes,
-	}, nil
-}
-
-func listPodmanImages(ctx context.Context) ([]podmanImage, error) {
-	output, err := runPodman(ctx, "images", "--format", "json")
-	if err != nil {
-		return nil, fmt.Errorf("list Podman images: %w", err)
-	}
-	var images []podmanImage
-	if err := json.Unmarshal(output, &images); err != nil {
-		return nil, fmt.Errorf("parse Podman images: %w", err)
-	}
-	return images, nil
+	return s.cleanupContainerStorageLocked(ctx, adapter, policy, &policy.MaxBytes, false, onData)
 }
 
 func selectOciPruneCandidates(images []podmanImage, cutoff int64) []podmanImage {
@@ -297,24 +411,6 @@ func selectOciPruneCandidates(images []podmanImage, cutoff int64) []podmanImage 
 		return candidates[i].Created < candidates[j].Created
 	})
 	return candidates
-}
-
-func removePodmanImage(ctx context.Context, imageID string) error {
-	_, err := runPodman(ctx, "image", "rm", "--force", imageID)
-	return err
-}
-
-func runPodman(ctx context.Context, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "podman", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		text := strings.TrimSpace(string(output))
-		if text != "" {
-			return nil, fmt.Errorf("%w: %s", err, text)
-		}
-		return nil, err
-	}
-	return output, nil
 }
 
 func maxInt64(left, right int64) int64 {

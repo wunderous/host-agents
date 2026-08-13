@@ -21,6 +21,24 @@ func TestValidateOciStoragePolicy(t *testing.T) {
 	}
 }
 
+func TestValidateCleanupPolicyUsesThePersistedBudgetFloor(t *testing.T) {
+	base := ociStoragePolicy{MinAgeSeconds: defaultOciStorageMinAgeSeconds}
+	for name, value := range map[string]int64{
+		"negative budget":  -1,
+		"too small budget": minOciStorageBudgetBytes - 1,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateCleanupPolicy(base, &value); err == nil {
+				t.Fatalf("expected cleanup budget validation error for %d", value)
+			}
+		})
+	}
+	zero := int64(0)
+	if err := validateCleanupPolicy(base, &zero); err != nil {
+		t.Fatalf("zero means no byte budget and should validate: %v", err)
+	}
+}
+
 func TestOciStoragePolicyPersistsAtomically(t *testing.T) {
 	path := t.TempDir() + "/oci-storage-policy.json"
 	service := &HostOperationsService{ociStoragePolicyPath: path}

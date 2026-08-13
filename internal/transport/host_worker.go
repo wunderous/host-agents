@@ -575,15 +575,41 @@ func (s *hostWorkerConn) handleAssign(frame hwpAssignFrame) {
 	}
 	payload := map[string]any{}
 	if result != nil && result.StructuredContent != nil {
-		if structured, ok := result.StructuredContent.(map[string]any); ok {
-			payload = structured
+		structured, err := structuredContentMap(result.StructuredContent)
+		if err != nil {
+			_ = s.writeJSON(map[string]any{
+				"type":        "fail",
+				"operationId": frame.OperationID,
+				"message":     fmt.Sprintf("serialize structured result: %v", err),
+			})
+			return
 		}
+		payload = structured
 	}
 	_ = s.writeJSON(map[string]any{
 		"type":        "complete",
 		"operationId": frame.OperationID,
 		"result":      payload,
 	})
+}
+
+// structuredContentMap normalizes both map-based and typed MCP structured
+// results before they cross the host-worker boundary.  The wire contract is
+// JSON, so rejecting typed structs here would silently turn successful host
+// operations into completed operations with an empty result.
+func structuredContentMap(value any) (map[string]any, error) {
+	if structured, ok := value.(map[string]any); ok {
+		return structured, nil
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	structured := map[string]any{}
+	if err := json.Unmarshal(encoded, &structured); err != nil {
+		return nil, err
+	}
+	return structured, nil
 }
 
 func (s *hostWorkerConn) handleAssignCancel(frame hwpAssignCancelFrame) {

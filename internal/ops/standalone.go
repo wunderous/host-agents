@@ -14,6 +14,7 @@ import (
 )
 
 var standaloneIdentifier = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+var postgresDatabaseIdentifier = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 
 type LocalPrerequisitesResult struct {
 	Provider       string            `json:"provider"`
@@ -261,7 +262,7 @@ metadata:
   name: %s
 ---
 %s---
-`, namespace, renderPlatformPostgresOperatorManifest())
+`, namespace, renderPostgreSQLServiceOperatorManifest())
 }
 
 func standalonePostgresClusterManifest(namespace, database string) string {
@@ -304,10 +305,10 @@ func (s *HostOperationsService) waitForStandalonePostgresCRD(ctx context.Context
 	}
 }
 
-func (s *HostOperationsService) standalonePostgresExecutionTarget(vmName, namespace string) (string, platformPostgresSecret, error) {
+func (s *HostOperationsService) standalonePostgresExecutionTarget(vmName, namespace string) (string, postgresqlServiceSecret, error) {
 	podsJSON, err := s.runKubernetesKubectlTimed(vmName, []string{"get", "pods", "-n", namespace, "-l", "cnpg.io/cluster=postgres,role=primary", "-o", "json"}, "find CloudNativePG primary", 30*time.Second)
 	if err != nil {
-		return "", platformPostgresSecret{}, err
+		return "", postgresqlServiceSecret{}, err
 	}
 	var pods struct {
 		Items []struct {
@@ -320,7 +321,7 @@ func (s *HostOperationsService) standalonePostgresExecutionTarget(vmName, namesp
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(podsJSON), &pods); err != nil {
-		return "", platformPostgresSecret{}, fmt.Errorf("parse CloudNativePG primary pods: %w", err)
+		return "", postgresqlServiceSecret{}, fmt.Errorf("parse CloudNativePG primary pods: %w", err)
 	}
 	pod := ""
 	for _, item := range pods.Items {
@@ -330,23 +331,23 @@ func (s *HostOperationsService) standalonePostgresExecutionTarget(vmName, namesp
 		}
 	}
 	if pod == "" {
-		return "", platformPostgresSecret{}, errors.New("CloudNativePG primary pod is not running")
+		return "", postgresqlServiceSecret{}, errors.New("CloudNativePG primary pod is not running")
 	}
 	secretJSON, err := s.runKubernetesKubectlTimed(vmName, []string{"get", "secret", "postgres-app", "-n", namespace, "-o", "json"}, "read CloudNativePG application Secret", 30*time.Second)
 	if err != nil {
-		return "", platformPostgresSecret{}, err
+		return "", postgresqlServiceSecret{}, err
 	}
 	var secret map[string]any
 	if err := json.Unmarshal([]byte(secretJSON), &secret); err != nil {
-		return "", platformPostgresSecret{}, fmt.Errorf("parse CloudNativePG application Secret: %w", err)
+		return "", postgresqlServiceSecret{}, fmt.Errorf("parse CloudNativePG application Secret: %w", err)
 	}
 	data, _ := secret["data"].(map[string]any)
 	username := decodeSecretValue(data, "username")
 	password := decodeSecretValue(data, "password")
 	if username == "" || password == "" {
-		return "", platformPostgresSecret{}, errors.New("CloudNativePG application Secret is incomplete")
+		return "", postgresqlServiceSecret{}, errors.New("CloudNativePG application Secret is incomplete")
 	}
-	return pod, platformPostgresSecret{Username: username, Password: password}, nil
+	return pod, postgresqlServiceSecret{Username: username, Password: password}, nil
 }
 
 func standalonePostgresSQLScript(username, database, sql string) string {

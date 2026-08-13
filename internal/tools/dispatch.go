@@ -34,6 +34,37 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		out := svc.DescribeHost()
 		return structuredResult(out, ""), nil
 
+	case "embed_texts":
+		texts, ok := args["texts"].([]any)
+		if !ok {
+			if typed, typedOK := args["texts"].([]string); typedOK {
+				texts = make([]any, len(typed))
+				for index, value := range typed {
+					texts[index] = value
+				}
+			}
+		}
+		values := make([]string, len(texts))
+		for index, value := range texts {
+			text, ok := value.(string)
+			if !ok {
+				return nil, fmt.Errorf("texts[%d] must be a string", index)
+			}
+			values[index] = text
+		}
+		out, err := svc.EmbedTexts(ctx, ops.EmbedTextsArgs{Texts: values})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "reconcile_serving_assignment":
+		out, err := svc.ReconcileServingAssignment(servingAssignmentArgs(args), onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Serving assignment reconciled."), nil
+
 	case "list_vms":
 		fast, _ := args["fast"].(bool)
 		out, err := svc.ListVMs(fast)
@@ -140,33 +171,35 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "System container GPU capability report generated"), nil
 
 	case "check_local_llm_prerequisites":
-		out, err := svc.CheckLocalLLMPrerequisites()
+		out, err := svc.CheckLlamaServerPrerequisites()
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, ""), nil
 
-	case "list_local_llm_models", "probe_local_llm":
-		if boolField(args, "prerequisites") {
-			out, err := svc.CheckLocalLLMPrerequisites()
-			if err != nil {
-				return nil, err
-			}
-			return structuredResult(out, ""), nil
+	case "ensure_local_llm_server_binary":
+		if localLLMRuntime(args) != "llama-cpp" {
+			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
 		}
-		modelRef, err := resolveLocalLLMModelArg(args)
-		if err != nil && stringField(args, "modelRef") == "" && stringField(args, "modelPreset") == "" {
-			modelRef = ""
-			err = nil
-		}
+		out, err := svc.EnsureLlamaServerBinary(ctx, ops.BuildLlamaServerBinaryArgs{
+			SourceURI:         stringField(args, "sourceUri"),
+			SourceSHA256:      stringField(args, "sourceSha256"),
+			SourceRevision:    stringField(args, "sourceRevision"),
+			OutputPath:        stringField(args, "outputPath"),
+			CudaArchitectures: stringField(args, "cudaArchitectures"),
+		}, onData)
 		if err != nil {
 			return nil, err
 		}
-		out, err := svc.ProbeLocalLLM(ctx, ops.ProbeLocalLLMArgs{
+		return structuredResult(out, "CUDA llama-server binary is built and verified"), nil
+
+	case "list_local_llm_models", "probe_local_llm":
+		if localLLMRuntime(args) != "llama-cpp" {
+			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
+		}
+		out, err := svc.ProbeLlamaServer(ctx, ops.ProbeLlamaServerArgs{
 			IncludeChat: boolField(args, "includeChat"),
-			ModelRef:    modelRef,
-			NumGpu:      optionalIntField(args, "numGpu"),
-			NumCtx:      optionalIntField(args, "numCtx"),
+			ModelRef:    stringField(args, "modelRef"),
 		})
 		if err != nil {
 			return nil, err
@@ -174,110 +207,136 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "install_local_llm_model":
-		modelRef, err := resolveLocalLLMModelArg(args)
-		if err != nil {
-			return nil, err
+		if localLLMRuntime(args) != "llama-cpp" {
+			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
 		}
-		out, err := svc.InstallLocalLLMModel(ctx, ops.InstallLocalLLMModelArgs{
-			ModelRef: modelRef,
-			CreateAs: stringField(args, "createAs"),
-			NumGpu:   optionalIntField(args, "numGpu"),
-			NumCtx:   optionalIntField(args, "numCtx"),
-			Template: stringField(args, "template"),
+		out, err := svc.InstallLlamaServerModel(ctx, ops.InstallLlamaServerModelArgs{
+			ModelRef:                stringField(args, "modelRef"),
+			ArtifactPath:            stringField(args, "artifactPath"),
+			ArtifactSHA256:          stringField(args, "artifactSha256"),
+			ArtifactURI:             stringField(args, "artifactUri"),
+			BaseModel:               stringField(args, "baseModel"),
+			Revision:                stringField(args, "revision"),
+			TokenizerRevision:       stringField(args, "tokenizerRevision"),
+			ChatTemplateHash:        stringField(args, "chatTemplateHash"),
+			Quantization:            stringField(args, "quantization"),
+			ChatTemplate:            stringField(args, "chatTemplate"),
+			ChatTemplateKwargs:      stringField(args, "chatTemplateKwargs"),
+			ContextSize:             intField(args, "contextSize"),
+			GpuLayers:               intField(args, "gpuLayers"),
+			BinaryPath:              stringField(args, "binaryPath"),
+			BinaryVersion:           stringField(args, "binaryVersion"),
+			BinarySHA256:            stringField(args, "binarySha256"),
+			BinaryURI:               stringField(args, "binaryUri"),
+			BinarySource:            stringField(args, "binarySource"),
+			SourceRevision:          stringField(args, "sourceRevision"),
+			SourceSHA256:            stringField(args, "sourceSha256"),
+			CudaEnabled:             boolField(args, "cudaEnabled"),
+			CudaArchitectures:       stringField(args, "cudaArchitectures"),
+			BinaryBuildSourceURI:    stringField(args, "binaryBuildSourceUri"),
+			BinaryBuildSourceSHA256: stringField(args, "binaryBuildSourceSha256"),
+			BinaryBuildRevision:     stringField(args, "binaryBuildRevision"),
+			Port:                    optionalIntField(args, "port"),
 		})
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, "Local Ollama model is ready"), nil
+		return structuredResult(out, "llama-server model is ready"), nil
 
 	case "configure_local_llm_model":
-		modelRef, err := resolveLocalLLMModelArg(args)
-		if err != nil {
-			return nil, err
+		if localLLMRuntime(args) != "llama-cpp" {
+			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
 		}
-		out, err := svc.ConfigureLocalLLMModel(ctx, ops.ConfigureLocalLLMModelArgs{
-			ModelRef: modelRef,
-			FromRef:  stringField(args, "fromRef"),
-			NumGpu:   optionalIntField(args, "numGpu"),
-			NumCtx:   optionalIntField(args, "numCtx"),
-			Template: stringField(args, "template"),
-		})
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Local Ollama model configuration applied"), nil
+		return nil, fmt.Errorf("configure_local_llm_model is retired; llama-server uses the pinned artifact manifest")
 
 	case "start_local_llm_runtime":
-		out, err := svc.StartLocalLLMRuntime(ctx)
+		if localLLMRuntime(args) != "llama-cpp" {
+			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
+		}
+		out, err := svc.StartLlamaServerRuntime(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, "Local Ollama runtime is ready"), nil
+		return structuredResult(out, "llama-server runtime is ready"), nil
 
 	case "configure_local_llm_runtime":
-		out, err := svc.ConfigureLocalLLMRuntime(ctx, ops.ConfigureLocalLLMRuntimeArgs{
-			GpuOverheadMiB:  optionalIntField(args, "gpuOverheadMiB"),
-			MaxLoadedModels: optionalIntField(args, "maxLoadedModels"),
-			NumParallel:     optionalIntField(args, "numParallel"),
-			FlashAttention:  optionalBoolField(args, "flashAttention"),
-		})
+		if localLLMRuntime(args) != "llama-cpp" {
+			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
+		}
+		return nil, fmt.Errorf("configure_local_llm_runtime is retired; configure llama-server through its pinned service manifest")
+
+	case "stop_local_llm_runtime":
+		if localLLMRuntime(args) != "llama-cpp" {
+			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
+		}
+		if err := svc.StopLlamaServerRuntime(ctx); err != nil {
+			return nil, err
+		}
+		return structuredResult(map[string]any{"stopped": true}, "llama-server runtime stopped"), nil
+
+	case "reconcile_postgresql_service":
+		out, err := svc.ReconcilePostgreSQLService(ctx, postgresqlServiceArgs(args), onData)
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, "Local Ollama runtime limits applied"), nil
-
-	case "stop_local_llm_runtime":
-		if err := svc.StopLocalLLMRuntime(ctx); err != nil {
+		return structuredResult(out, "PostgreSQL service is ready"), nil
+	case "get_postgresql_service_status":
+		out, err := svc.GetPostgreSQLServiceStatus(ctx, postgresqlServiceArgs(args))
+		if err != nil {
 			return nil, err
 		}
-		return structuredResult(map[string]any{"stopped": true}, "Local Ollama runtime stopped"), nil
+		return structuredResult(out, "PostgreSQL service status returned"), nil
+	case "remove_postgresql_service":
+		out, err := svc.RemovePostgreSQLService(ctx, postgresqlServiceArgs(args), boolField(args, "confirm"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "PostgreSQL service was removed"), nil
 
-	case "ensure_platform_postgres":
-		out, err := svc.EnsurePlatformPostgres(ctx, ops.PlatformPostgresArgs{
-			VMName:          stringField(args, "vmName"),
-			ClusterName:     stringField(args, "clusterName"),
-			Namespace:       stringField(args, "namespace"),
-			Instances:       intField(args, "instances"),
-			StorageClass:    stringField(args, "storageClass"),
-			StorageSize:     stringField(args, "storageSize"),
-			RetentionPolicy: stringField(args, "retentionPolicy"),
-			Relay:           platformPostgresRelayArgs(args),
+	case "reconcile_tidb_service":
+		out, err := svc.ReconcileTiDBService(ctx, ops.TiDBServiceArgs{VMName: stringField(args, "vmName"), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), PDReplicas: intField(args, "pdReplicas"), TiKVReplicas: intField(args, "tikvReplicas"), TiDBReplicas: intField(args, "tidbReplicas"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"), TiDBVersion: stringField(args, "tidbVersion"), RetentionPolicy: stringField(args, "retentionPolicy")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "TiDB service is ready"), nil
+
+	case "get_tidb_service_status":
+		out, err := svc.GetTiDBServiceStatus(ctx, ops.TiDBServiceArgs{VMName: stringField(args, "vmName"), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "TiDB service status returned"), nil
+
+	case "remove_tidb_service":
+		out, err := svc.RemoveTiDBService(ctx, ops.TiDBServiceArgs{VMName: stringField(args, "vmName"), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), RetentionPolicy: stringField(args, "retentionPolicy")}, boolField(args, "confirm"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "TiDB service was removed"), nil
+
+	case "ensure_pgvector":
+		out, err := svc.EnsurePgVector(ctx, ops.PgVectorArgs{
+			VMName:      stringField(args, "vmName"),
+			ClusterName: stringField(args, "clusterName"),
+			Namespace:   stringField(args, "namespace"),
+			Databases:   stringSliceField(args, "databases"),
 		}, onData)
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, "CloudNativePG platform PostgreSQL is ready"), nil
+		return structuredResult(out, "pgvector is ready"), nil
 
-	case "get_platform_postgres_status":
-		out, err := svc.GetPlatformPostgresStatus(ctx, ops.PlatformPostgresArgs{
-			VMName:          stringField(args, "vmName"),
-			ClusterName:     stringField(args, "clusterName"),
-			Namespace:       stringField(args, "namespace"),
-			Instances:       intField(args, "instances"),
-			StorageClass:    stringField(args, "storageClass"),
-			StorageSize:     stringField(args, "storageSize"),
-			RetentionPolicy: stringField(args, "retentionPolicy"),
+	case "get_pgvector_status":
+		out, err := svc.GetPgVectorStatus(ctx, ops.PgVectorArgs{
+			VMName:      stringField(args, "vmName"),
+			ClusterName: stringField(args, "clusterName"),
+			Namespace:   stringField(args, "namespace"),
+			Databases:   stringSliceField(args, "databases"),
 		})
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, "CloudNativePG platform PostgreSQL status returned"), nil
-
-	case "remove_platform_postgres":
-		out, err := svc.RemovePlatformPostgres(ctx, ops.PlatformPostgresArgs{
-			VMName:          stringField(args, "vmName"),
-			ClusterName:     stringField(args, "clusterName"),
-			Namespace:       stringField(args, "namespace"),
-			Instances:       intField(args, "instances"),
-			StorageClass:    stringField(args, "storageClass"),
-			StorageSize:     stringField(args, "storageSize"),
-			RetentionPolicy: stringField(args, "retentionPolicy"),
-			Relay:           platformPostgresRelayArgs(args),
-		}, boolField(args, "confirm"))
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "CloudNativePG platform PostgreSQL was removed"), nil
+		return structuredResult(out, "pgvector status returned"), nil
 
 	case "reset_incus_stack":
 		out, err := svc.ResetIncusStack(ctx, ops.ResetIncusStackArgs{
@@ -296,10 +355,10 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "Incus stack reset phase completed"), nil
 
 	case "remove_local_llm_model":
-		if err := svc.RemoveLocalLLMModel(ctx, stringField(args, "modelRef"), boolField(args, "purge")); err != nil {
-			return nil, err
+		if localLLMRuntime(args) != "llama-cpp" {
+			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
 		}
-		return structuredResult(map[string]any{"removed": true, "purged": boolField(args, "purge")}, "Local Ollama model removed"), nil
+		return structuredResult(map[string]any{"removed": false, "purged": false, "reason": "llama-server artifacts are retained by the artifact manifest"}, "llama-server model removal is not an inference operation"), nil
 
 	case "ensure_local_llm_relay":
 		out, err := svc.EnsureLocalLLMRelay(ctx, ops.LocalLLMRelayArgs{SessionID: stringField(args, "sessionId"), ListenHost: stringField(args, "listenHost"), ListenPort: intField(args, "listenPort"), TargetHost: stringField(args, "targetHost"), TargetPort: intField(args, "targetPort"), IncomingToken: stringField(args, "incomingToken"), UpstreamToken: stringField(args, "upstreamToken"), AllowedSourceCIDRs: stringSliceField(args, "allowedSourceCIDRs"), RelayToken: stringField(args, "relayToken"), AllowedSourceIP: stringField(args, "allowedSourceIP")})
@@ -354,20 +413,21 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
-	case "discover_cluster_ingress":
-		out, err := svc.DiscoverClusterIngress(ops.DiscoverClusterIngressArgs{
-			VMName:           vmNameFromArgs(args),
-			WebHostname:      stringField(args, "webHostname"),
-			McpHostname:      stringField(args, "mcpHostname"),
-			TraefikNamespace: stringField(args, "traefikNamespace"),
-			TraefikService:   stringField(args, "traefikService"),
-		})
+	case "discover_service_ingress":
+		rawEndpoints, _ := args["endpoints"].([]any)
+		endpoints := make([]ops.ServiceIngressEndpoint, 0, len(rawEndpoints))
+		for _, raw := range rawEndpoints {
+			if row, ok := raw.(map[string]any); ok {
+				endpoints = append(endpoints, ops.ServiceIngressEndpoint{Name: stringField(row, "name"), Hostname: stringField(row, "hostname")})
+			}
+		}
+		out, err := svc.DiscoverServiceIngress(ops.DiscoverServiceIngressArgs{VMName: vmNameFromArgs(args), Endpoints: endpoints, IngressNamespace: stringField(args, "ingressNamespace"), IngressService: stringField(args, "ingressService")})
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, "Discovered cluster ingress endpoints."), nil
+		return structuredResult(out, "Discovered service ingress endpoints."), nil
 
-	case "agent_shell":
+	case "agent_shell", "run_host_command":
 		command, _ := args["command"].(string)
 		command = strings.TrimSpace(command)
 		if command == "" {
@@ -447,12 +507,14 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "ensure_cloudflared_tunnel":
 		parsed := ops.EnsureCloudflaredTunnelArgs{
-			BindingID:   stringField(args, "bindingId"),
-			Hostname:    stringField(args, "hostname"),
-			LocalTarget: stringField(args, "localTarget"),
-			RunToken:    stringField(args, "runToken"),
-			Quick:       boolField(args, "quick"),
-			Native:      boolField(args, "native"),
+			BindingID:         stringField(args, "bindingId"),
+			Hostname:          stringField(args, "hostname"),
+			LocalTarget:       stringField(args, "localTarget"),
+			RunToken:          stringField(args, "runToken"),
+			Connector:         stringField(args, "connector"),
+			AllowedLocalPorts: intSliceField(args, "allowedLocalPorts"),
+			Quick:             boolField(args, "quick"),
+			Native:            boolField(args, "native"),
 		}
 		out, err := svc.EnsureCloudflaredTunnel(parsed)
 		if err != nil {
@@ -466,26 +528,6 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, "Local LLM Cloudflare connector removed"), nil
-
-	case "ensure_platform_opute_stack":
-		parsed := ops.EnsurePlatformOputeStackArgs{
-			RepoRoot: stringField(args, "repoRoot"),
-		}
-		out, err := svc.EnsurePlatformOputeStack(parsed)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Platform.opute.io stack is ready on 919x"), nil
-
-	case "provision_platform_opute_tunnel":
-		parsed := ops.ProvisionPlatformOputeTunnelArgs{
-			RepoRoot: stringField(args, "repoRoot"),
-		}
-		out, err := svc.ProvisionPlatformOputeTunnel(parsed)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Provisioned platform.opute.io Cloudflare tunnel"), nil
 
 	case "probe_host_exposure":
 		parsed := ops.ProbeHostExposureArgs{
@@ -639,11 +681,13 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "create_cloudflare_tunnel":
 		out, err := svc.EnsureCloudflaredTunnel(ops.EnsureCloudflaredTunnelArgs{
-			BindingID:   stringField(args, "bindingId"),
-			Hostname:    stringField(args, "hostname"),
-			LocalTarget: stringField(args, "localTarget"),
-			RunToken:    stringField(args, "runToken"),
-			Quick:       boolField(args, "quick"),
+			BindingID:         stringField(args, "bindingId"),
+			Hostname:          stringField(args, "hostname"),
+			LocalTarget:       stringField(args, "localTarget"),
+			RunToken:          stringField(args, "runToken"),
+			Connector:         stringField(args, "connector"),
+			AllowedLocalPorts: intSliceField(args, "allowedLocalPorts"),
+			Quick:             boolField(args, "quick"),
 		})
 		if err != nil {
 			return nil, err
@@ -802,7 +846,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "Service domain mapping removed."), nil
 
 	case "install_cloudflared_connector":
-		out, err := svc.InstallCloudflaredConnector(ops.InstallCloudflaredConnectorArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Token: stringField(args, "token"), Image: stringField(args, "image"), Replicas: intField(args, "replicas"), LocalTargets: cloudflaredLocalTargets(args["localTargets"])}, onData)
+		out, err := svc.InstallCloudflaredConnector(ops.InstallCloudflaredConnectorArgs{VMName: vmNameFromArgs(args), Target: stringField(args, "target"), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Token: stringField(args, "token"), Image: stringField(args, "image"), Replicas: intField(args, "replicas"), LocalTargets: cloudflaredLocalTargets(args["localTargets"])}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -829,30 +873,20 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, fmt.Sprintf("Applied service state '%s' to '%s'.", out["state"], out["serviceName"])), nil
 
-	case "configure_platform_agent":
-		var restart *bool
-		if raw, ok := args["restart"]; ok {
-			switch typed := raw.(type) {
-			case bool:
-				restart = &typed
+	case "configure_agent_connection":
+		env := map[string]string{}
+		if raw, ok := args["environment"].(map[string]any); ok {
+			for key, value := range raw {
+				if text, ok := value.(string); ok {
+					env[key] = text
+				}
 			}
 		}
-		out, err := svc.ConfigurePlatformAgent(ops.ConfigurePlatformAgentArgs{
-			McpURL:               stringField(args, "mcpUrl"),
-			HostWsURL:            stringField(args, "hostWsUrl"),
-			RemoteAgentAuthToken: stringField(args, "remoteAgentAuthToken"),
-			HostAuthToken:        stringField(args, "hostAuthToken"),
-			RemoteAgentID:        stringField(args, "remoteAgentId"),
-			EnvFile:              stringField(args, "envFile"),
-			ServiceName:          stringField(args, "serviceName"),
-			Restart:              restart,
-			McpHealthURL:         stringField(args, "mcpHealthUrl"),
-			McpRouteHost:         stringField(args, "mcpRouteHost"),
-		}, onData)
+		out, err := svc.ConfigureAgentConnection(ops.ConfigureAgentConnectionArgs{EnvFile: stringField(args, "envFile"), Environment: env, ServiceName: stringField(args, "serviceName"), Restart: optionalBoolField(args, "restart"), Scope: stringField(args, "scope")}, onData)
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, "Platform agent configuration written."), nil
+		return structuredResult(out, "Agent connection configuration written."), nil
 
 	case "ensure_docker":
 		out, err := svc.EnsureDocker(onData)
@@ -870,6 +904,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "configure_oci_storage":
 		out, err := svc.ConfigureOciStorage(ctx, ops.ConfigureOciStorageArgs{
+			Runtime:       stringField(args, "runtime"),
 			MaxBytes:      optionalInt64Field(args, "maxBytes"),
 			MinAgeSeconds: optionalInt64Field(args, "minAgeSeconds"),
 			PruneNow:      boolField(args, "pruneNow"),
@@ -879,6 +914,27 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, "OCI image storage retention policy applied."), nil
 
+	case "inspect_container_storage":
+		out, err := svc.InspectContainerStorage(ctx, ops.InspectContainerStorageArgs{
+			Runtime: stringField(args, "runtime"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Container runtime storage usage inspected."), nil
+
+	case "cleanup_container_storage":
+		out, err := svc.CleanupContainerStorage(ctx, ops.CleanupContainerStorageArgs{
+			Runtime:       stringField(args, "runtime"),
+			MaxBytes:      optionalInt64Field(args, "maxBytes"),
+			MinAgeSeconds: optionalInt64Field(args, "minAgeSeconds"),
+			DryRun:        boolField(args, "dryRun"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Container runtime storage cleanup completed."), nil
+
 	case "build_and_push_oci_image":
 		out, err := svc.BuildAndPushOciImage(ctx, ops.BuildAndPushOciImageArgs{
 			ContextDir:       stringField(args, "contextDir"),
@@ -887,6 +943,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			Builder:          stringField(args, "builder"),
 			InsecureRegistry: boolField(args, "insecureRegistry"),
 			Platform:         stringField(args, "platform"),
+			BuildArgs:        stringMapField(args, "buildArgs"),
 		}, onData)
 		if err != nil {
 			return nil, err
@@ -1070,12 +1127,12 @@ func stringField(args map[string]any, key string) string {
 	return strings.TrimSpace(v)
 }
 
-func platformPostgresRelayArgs(args map[string]any) *ops.PlatformPostgresRelayArgs {
+func postgresqlServiceRelayArgs(args map[string]any) *ops.PostgreSQLServiceRelayArgs {
 	raw, ok := args["localRelay"].(map[string]any)
 	if !ok || raw == nil {
 		return nil
 	}
-	return &ops.PlatformPostgresRelayArgs{
+	return &ops.PostgreSQLServiceRelayArgs{
 		SessionID:  stringField(raw, "sessionId"),
 		ListenHost: stringField(raw, "listenHost"),
 		ListenPort: intField(raw, "listenPort"),
@@ -1086,8 +1143,37 @@ func platformPostgresRelayArgs(args map[string]any) *ops.PlatformPostgresRelayAr
 	}
 }
 
+func postgresqlServiceArgs(args map[string]any) ops.PostgreSQLServiceArgs {
+	return ops.PostgreSQLServiceArgs{
+		VMName: stringField(args, "vmName"), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"),
+		Instances: intField(args, "instances"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"),
+		RetentionPolicy: stringField(args, "retentionPolicy"), RestartConsumers: optionalBoolField(args, "restartConsumers"),
+		Databases: uniqueStringSlice(stringSliceField(args, "databases")), ConsumerDatabaseKeys: stringMapField(args, "consumerDatabaseKeys"),
+		ConsumerSecretName: stringField(args, "consumerSecretName"), ConsumerSecretLabel: stringField(args, "consumerSecretLabel"),
+		ServiceOwner: stringField(args, "serviceOwner"), ServicePartOf: stringField(args, "servicePartOf"), RelayDeviceName: stringField(args, "relayDeviceName"),
+		Relay: postgresqlServiceRelayArgs(args),
+	}
+}
+
 func resolveLocalLLMModelArg(args map[string]any) (string, error) {
-	return ops.ResolveLocalLLMModelRef(stringField(args, "modelRef"), stringField(args, "modelPreset"))
+	if modelRef := stringField(args, "modelRef"); modelRef != "" {
+		return modelRef, nil
+	}
+	switch stringField(args, "modelPreset") {
+	case "", "qwen3.5", "qwen3.5-0.8b":
+		return "qwen3.5-0.8b/base-llama", nil
+	default:
+		return "", fmt.Errorf("unsupported llama-server model preset %q", stringField(args, "modelPreset"))
+	}
+}
+
+// localLLMRuntime defaults old payloads to the only supported production
+// runtime. Explicit legacy runtime values are rejected by the dispatch paths.
+func localLLMRuntime(args map[string]any) string {
+	if runtime := stringField(args, "runtime"); runtime != "" {
+		return runtime
+	}
+	return "llama-cpp"
 }
 
 func stringSliceField(args map[string]any, key string) []string {
@@ -1102,6 +1188,32 @@ func stringSliceField(args map[string]any, key string) []string {
 	for _, value := range values {
 		if text, ok := value.(string); ok {
 			result = append(result, text)
+		}
+	}
+	return result
+}
+
+func uniqueStringSlice(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func stringMapField(args map[string]any, key string) map[string]string {
+	raw, ok := args[key].(map[string]any)
+	if !ok || raw == nil {
+		return nil
+	}
+	result := make(map[string]string, len(raw))
+	for name, value := range raw {
+		if text, ok := value.(string); ok {
+			result[name] = text
 		}
 	}
 	return result
@@ -1133,6 +1245,42 @@ func intField(args map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+func intSliceField(args map[string]any, key string) []int {
+	values, ok := args[key].([]any)
+	if !ok {
+		if typed, typedOK := args[key].([]int); typedOK {
+			return typed
+		}
+		return nil
+	}
+	result := make([]int, 0, len(values))
+	for _, value := range values {
+		result = append(result, intValue(value))
+	}
+	return result
+}
+
+func intValue(value any) int {
+	switch v := value.(type) {
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case int32:
+		return int(v)
+	case json.Number:
+		n, err := v.Int64()
+		if err == nil {
+			return int(n)
+		}
+	}
+	return 0
 }
 
 func int64Field(args map[string]any, key string) int64 {
@@ -1261,6 +1409,39 @@ func installClusterAgentArgs(args map[string]any) ops.InstallClusterAgentArgs {
 		ResourceID:  stringField(args, "resourceId"),
 		Source:      stringField(args, "source"),
 	}
+}
+
+func servingAssignmentArgs(args map[string]any) ops.ServingAssignmentArgs {
+	return ops.ServingAssignmentArgs{
+		ContractVersion: stringField(args, "contractVersion"),
+		AssignmentID:    stringField(args, "assignmentId"),
+		Generation:      intField(args, "generation"),
+		IdempotencyKey:  stringField(args, "idempotencyKey"),
+		Service:         stringField(args, "service"),
+		Mode:            stringField(args, "mode"),
+		Runtime:         stringField(args, "runtime"),
+		Target:          mapField(args, "target"),
+		Artifact:        mapField(args, "artifact"),
+		Endpoints:       anySliceField(args, "endpoints"),
+		Readiness:       anySliceField(args, "readiness"),
+		Exposure:        mapField(args, "exposure"),
+		ServiceUnit:     stringField(args, "serviceUnit"),
+		DesiredState:    stringField(args, "desiredState"),
+	}
+}
+
+func mapField(args map[string]any, name string) map[string]any {
+	if value, ok := args[name].(map[string]any); ok {
+		return value
+	}
+	return nil
+}
+
+func anySliceField(args map[string]any, name string) []any {
+	if value, ok := args[name].([]any); ok {
+		return value
+	}
+	return nil
 }
 
 func execCommandArgs(args map[string]any) ops.ExecCommandArgs {

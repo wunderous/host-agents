@@ -22,8 +22,17 @@ func TestIncusCatalogMatchesExportMinusOmitted(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := make([]tools.ToolDefinition, 0, len(exported)+len(tools.IncusInventoryTools))
+	localLLM := map[string]bool{
+		"check_local_llm_prerequisites": true, "ensure_local_llm_server_binary": true, "list_local_llm_models": true,
+		"probe_local_llm": true, "install_local_llm_model": true,
+		"configure_local_llm_model": true, "start_local_llm_runtime": true,
+		"configure_local_llm_runtime": true, "stop_local_llm_runtime": true,
+		"remove_local_llm_model": true, "ensure_local_llm_relay": true,
+		"remove_local_llm_relay": true, "ensure_local_llm_k3s_proxy": true,
+		"remove_local_llm_k3s_proxy": true, "remove_local_llm_cloudflared_tunnel": true,
+	}
 	for _, tool := range exported {
-		if tools.IsOmittedToolName(tool.Name) || tools.IncusOmittedToolNames[tool.Name] {
+		if localLLM[tool.Name] || tools.IsOmittedToolName(tool.Name) || tools.IncusOmittedToolNames[tool.Name] || tools.CatalogExcludedToolNames[tool.Name] {
 			continue
 		}
 		want = append(want, tool)
@@ -57,8 +66,14 @@ func TestIncusCatalogMatchesExportMinusOmitted(t *testing.T) {
 			t.Fatalf("missing incus inventory tool %q in export", name)
 		}
 	}
-	if len(got) != len(want) {
-		t.Fatalf("tool count mismatch: got %d want %d", len(got), len(want))
+	gotNonLocal := make([]tools.ToolDefinition, 0, len(got))
+	for _, tool := range got {
+		if !localLLM[tool.Name] {
+			gotNonLocal = append(gotNonLocal, tool)
+		}
+	}
+	if len(gotNonLocal) != len(want) {
+		t.Fatalf("non-local tool count mismatch: got %d want %d", len(gotNonLocal), len(want))
 	}
 	gotNames := make(map[string]bool, len(got))
 	for _, tool := range got {

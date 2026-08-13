@@ -3,87 +3,464 @@
   "serverName": "host-agent",
   "provider": "incus",
   "transport": "http",
-  "supportedPlatforms": ["linux/amd64", "linux/arm64", "windows-client/wsl"],
+  "supportedPlatforms": [
+    "linux/amd64",
+    "linux/arm64",
+    "windows-client/wsl"
+  ],
   "smoke": {
-    "requiredTools": ["check_local_prerequisites", "get_local_status", "list_vms", "create_vm", "get_operation"],
-    "forbiddenTools": ["register_host_agent", "host_agent_heartbeat", "dispatch_host_operation", "agent_shell"]
+    "requiredTools": [
+      "check_local_prerequisites",
+      "get_local_status",
+      "list_vms",
+      "create_vm",
+      "get_operation"
+    ],
+    "forbiddenTools": [
+      "register_host_agent",
+      "host_agent_heartbeat",
+      "dispatch_host_operation",
+      "agent_shell"
+    ]
   },
   "tools": [
-    {"name": "get_host_info", "classification": "read_only", "support": "stable"},
-    {"name": "check_local_prerequisites", "classification": "read_only", "support": "stable"},
-    {"name": "get_local_status", "classification": "read_only", "support": "stable"},
-    {"name": "check_local_llm_prerequisites", "classification": "read_only", "support": "experimental"},
-    {"name": "list_local_llm_models", "classification": "read_only", "support": "experimental"},
-    {"name": "probe_local_llm", "classification": "read_only", "support": "experimental"},
-    {"name": "install_local_llm_model", "classification": "mutation", "support": "experimental"},
-    {"name": "configure_local_llm_model", "classification": "mutation", "support": "experimental"},
-    {"name": "start_local_llm_runtime", "classification": "mutation", "support": "experimental"},
-    {"name": "configure_local_llm_runtime", "classification": "mutation", "support": "experimental"},
-    {"name": "stop_local_llm_runtime", "classification": "mutation", "support": "experimental"},
-    {"name": "remove_local_llm_model", "classification": "destructive", "support": "experimental"},
-    {"name": "ensure_local_llm_relay", "classification": "credential_bearing", "support": "experimental"},
-    {"name": "remove_local_llm_relay", "classification": "destructive", "support": "experimental"},
-    {"name": "ensure_local_llm_k3s_proxy", "classification": "credential_bearing", "support": "legacy", "notes": "Deprecated nginx NodePort proxy; use generic relay + Traefik route instead."},
-    {"name": "remove_local_llm_k3s_proxy", "classification": "destructive", "support": "legacy", "notes": "Removes a legacy k3s proxy namespace; pass namespace when not using the one-release default."},
-    {"name": "ensure_cloudflared_tunnel", "classification": "credential_bearing", "support": "experimental"},
-    {"name": "remove_local_llm_cloudflared_tunnel", "classification": "destructive", "support": "experimental"},
-    {"name": "list_operations", "classification": "read_only", "support": "stable"},
-    {"name": "get_operation", "classification": "read_only", "support": "stable"},
-    {"name": "cancel_operation", "classification": "mutation", "support": "stable"},
-    {"name": "list_vms", "classification": "read_only", "support": "stable"},
-    {"name": "get_vm_info", "classification": "read_only", "support": "stable"},
-    {"name": "discover_cluster_ingress", "classification": "read_only", "support": "experimental"},
-    {"name": "create_vm", "classification": "mutation", "support": "stable"},
-    {"name": "provision_vm", "classification": "mutation", "support": "stable"},
-    {"name": "start_vm", "classification": "mutation", "support": "stable"},
-    {"name": "stop_vm", "classification": "mutation", "support": "stable"},
-    {"name": "restart_vm", "classification": "mutation", "support": "stable"},
-    {"name": "update_vm_resources", "classification": "mutation", "support": "experimental"},
-    {"name": "delete_vm", "classification": "destructive", "support": "stable"},
-    {"name": "install_k3s", "classification": "mutation", "support": "experimental"},
-    {"name": "get_k3s_status", "classification": "read_only", "support": "experimental"},
-    {"name": "restart_cluster", "classification": "mutation", "support": "experimental"},
-    {"name": "uninstall_k3s", "classification": "destructive", "support": "experimental"},
-    {"name": "list_namespaces", "classification": "read_only", "support": "experimental"},
-    {"name": "list_ingress_classes", "classification": "read_only", "support": "experimental"},
-    {"name": "list_pods", "classification": "read_only", "support": "experimental"},
-    {"name": "list_services", "classification": "read_only", "support": "experimental"},
-    {"name": "install_postgresql", "classification": "mutation", "support": "experimental", "notes": "CloudNativePG owns generated credentials; no password argument is accepted."},
-    {"name": "get_postgresql_status", "classification": "read_only", "support": "experimental"},
-    {"name": "delete_postgresql", "classification": "destructive", "support": "experimental"},
-    {"name": "apply_manifest", "classification": "credential_bearing", "support": "experimental"},
-    {"name": "put_k8s_secret", "classification": "credential_bearing", "support": "experimental"},
-    {"name": "get_k8s_resource", "classification": "read_only", "support": "experimental"},
-    {"name": "delete_k8s_resource", "classification": "destructive", "support": "experimental"},
-    {"name": "get_k8s_resource_status", "classification": "read_only", "support": "experimental"},
-    {"name": "install_oci_registry", "classification": "mutation", "support": "experimental"},
-    {"name": "get_oci_registry_status", "classification": "read_only", "support": "experimental"},
-    {"name": "delete_oci_registry", "classification": "destructive", "support": "experimental"},
-    {"name": "configure_k3s_registry", "classification": "mutation", "support": "experimental"},
-    {"name": "configure_service_domain", "classification": "mutation", "support": "experimental"},
-    {"name": "remove_service_domain", "classification": "destructive", "support": "experimental"},
-    {"name": "install_cloudflared_connector", "classification": "credential_bearing", "support": "experimental"},
-    {"name": "ensure_oci_builder", "classification": "mutation", "support": "experimental"},
-    {"name": "configure_oci_storage", "classification": "mutation", "support": "experimental"},
-    {"name": "build_and_push_oci_image", "classification": "mutation", "support": "experimental"},
-    {"name": "stage_build_context", "classification": "mutation", "support": "experimental"},
-    {"name": "ensure_host_tool", "classification": "mutation", "support": "experimental"},
-    {"name": "render_helm_template", "classification": "read_only", "support": "experimental"},
-    {"name": "prepare_host_agent_artifacts", "classification": "mutation", "support": "experimental"},
-    {"name": "set_host_service_state", "classification": "mutation", "support": "experimental"},
-    {"name": "configure_platform_agent", "classification": "credential_bearing", "support": "experimental"},
-    {"name": "delete_cloudflared_connector", "classification": "destructive", "support": "experimental"},
-    {"name": "install_incus_stack", "classification": "mutation", "support": "experimental"},
-    {"name": "reset_incus_stack", "classification": "destructive", "support": "experimental"},
-    {"name": "probe_incus_gpu", "classification": "read_only", "support": "experimental"},
-    {"name": "provision_container", "classification": "mutation", "support": "experimental"},
-    {"name": "probe_gpu_container", "classification": "read_only", "support": "experimental"},
-    {"name": "run_sql", "classification": "mutation", "support": "experimental"},
-    {"name": "create_cloudflare_tunnel", "classification": "credential_bearing", "support": "experimental"},
-    {"name": "get_cloudflare_tunnel_status", "classification": "read_only", "support": "experimental"},
-    {"name": "delete_cloudflare_tunnel", "classification": "destructive", "support": "experimental"},
-    {"name": "ensure_platform_postgres", "classification": "mutation", "support": "experimental"},
-    {"name": "get_platform_postgres_status", "classification": "read_only", "support": "experimental"},
-    {"name": "remove_platform_postgres", "classification": "destructive", "support": "experimental"}
+    {
+      "name": "run_host_command",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "reconcile_serving_assignment",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "embed_texts",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "get_host_info",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "check_local_prerequisites",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "get_local_status",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "check_local_llm_prerequisites",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "ensure_local_llm_server_binary",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "list_local_llm_models",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "probe_local_llm",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "install_local_llm_model",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "configure_local_llm_model",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "start_local_llm_runtime",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "configure_local_llm_runtime",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "stop_local_llm_runtime",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "remove_local_llm_model",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "ensure_local_llm_relay",
+      "classification": "credential_bearing",
+      "support": "experimental"
+    },
+    {
+      "name": "remove_local_llm_relay",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "ensure_local_llm_k3s_proxy",
+      "classification": "credential_bearing",
+      "support": "legacy",
+      "notes": "Deprecated nginx NodePort proxy; use generic relay + Traefik route instead."
+    },
+    {
+      "name": "remove_local_llm_k3s_proxy",
+      "classification": "destructive",
+      "support": "legacy",
+      "notes": "Removes a legacy k3s proxy namespace; pass namespace when not using the one-release default."
+    },
+    {
+      "name": "ensure_cloudflared_tunnel",
+      "classification": "credential_bearing",
+      "support": "experimental"
+    },
+    {
+      "name": "remove_local_llm_cloudflared_tunnel",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "list_operations",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "get_operation",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "cancel_operation",
+      "classification": "mutation",
+      "support": "stable"
+    },
+    {
+      "name": "list_vms",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "get_vm_info",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "create_vm",
+      "classification": "mutation",
+      "support": "stable"
+    },
+    {
+      "name": "provision_vm",
+      "classification": "mutation",
+      "support": "stable"
+    },
+    {
+      "name": "start_vm",
+      "classification": "mutation",
+      "support": "stable"
+    },
+    {
+      "name": "stop_vm",
+      "classification": "mutation",
+      "support": "stable"
+    },
+    {
+      "name": "restart_vm",
+      "classification": "mutation",
+      "support": "stable"
+    },
+    {
+      "name": "update_vm_resources",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "delete_vm",
+      "classification": "destructive",
+      "support": "stable"
+    },
+    {
+      "name": "install_k3s",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "get_k3s_status",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "restart_cluster",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "uninstall_k3s",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "list_namespaces",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "list_ingress_classes",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "list_pods",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "list_services",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "install_postgresql",
+      "classification": "mutation",
+      "support": "experimental",
+      "notes": "CloudNativePG owns generated credentials; no password argument is accepted."
+    },
+    {
+      "name": "get_postgresql_status",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "delete_postgresql",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "apply_manifest",
+      "classification": "credential_bearing",
+      "support": "experimental"
+    },
+    {
+      "name": "put_k8s_secret",
+      "classification": "credential_bearing",
+      "support": "experimental"
+    },
+    {
+      "name": "get_k8s_resource",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "delete_k8s_resource",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "get_k8s_resource_status",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "install_oci_registry",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "get_oci_registry_status",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "delete_oci_registry",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "configure_k3s_registry",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "configure_service_domain",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "remove_service_domain",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "install_cloudflared_connector",
+      "classification": "credential_bearing",
+      "support": "experimental"
+    },
+    {
+      "name": "ensure_oci_builder",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "configure_oci_storage",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "inspect_container_storage",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "cleanup_container_storage",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "build_and_push_oci_image",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "stage_build_context",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "ensure_host_tool",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "render_helm_template",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "prepare_host_agent_artifacts",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "set_host_service_state",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "delete_cloudflared_connector",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "install_incus_stack",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "reset_incus_stack",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "probe_incus_gpu",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "provision_container",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "probe_gpu_container",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "run_sql",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "create_cloudflare_tunnel",
+      "classification": "credential_bearing",
+      "support": "experimental"
+    },
+    {
+      "name": "get_cloudflare_tunnel_status",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "delete_cloudflare_tunnel",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "reconcile_tidb_service",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "get_tidb_service_status",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "remove_tidb_service",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "ensure_pgvector",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "get_pgvector_status",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "configure_agent_connection",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "discover_service_ingress",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "reconcile_postgresql_service",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "get_postgresql_service_status",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "remove_postgresql_service",
+      "classification": "destructive",
+      "support": "experimental"
+    }
   ]
 }

@@ -120,16 +120,16 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 			hostCapabilities := append([]string(nil), toolNames...)
 			seenLLM := false
 			for _, name := range hostCapabilities {
-				if name == "llm.ollama" {
+				if name == "llm.llama-cpp" {
 					seenLLM = true
 					break
 				}
 			}
 			if !seenLLM {
-				hostCapabilities = append(hostCapabilities, "llm.ollama")
+				hostCapabilities = append(hostCapabilities, "llm.llama-cpp")
 			}
 			// Start liveness before probing the optional host-local runtime. The
-			// probe can warm Ollama or stall on a broken local socket; that must
+			// probe can stall on an unavailable local server; that must
 			// not delay registration or make the host appear offline.
 			hb = heartbeat.Start(heartbeat.Options{
 				AgentID:              cfg.RemoteAgentID,
@@ -157,7 +157,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				// the control plane can still reject unsupported work before
 				// queueing a mutation. Installation and model state remain owned by
 				// host operations.
-				prereqs, prereqErr := svc.CheckLocalLLMPrerequisites()
+				prereqs, prereqErr := svc.CheckLlamaServerPrerequisites()
 				if prereqErr != nil || prereqs == nil {
 					if prereqErr != nil {
 						logger.Warn("local LLM capability probe failed", "err", prereqErr)
@@ -166,9 +166,9 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				}
 				hb.UpdateCapabilitySummary(map[string]any{
 					"llm": map[string]any{
-						"ollama": map[string]any{
+						"llama-cpp": map[string]any{
 							"supported":            prereqs.Supported,
-							"apiBaseUrl":           ops.OllamaLoopbackURL(0),
+							"apiBaseUrl":           "http://127.0.0.1:8080/v1",
 							"architectures":        []string{prereqs.Architecture},
 							"readyForInstall":      prereqs.ReadyForInstall,
 							"readyForGpuInference": prereqs.ReadyForGpuInference,

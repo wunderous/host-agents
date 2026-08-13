@@ -3,9 +3,28 @@
 package ops
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
+
+func TestWindowsPowerShellExecutableHonorsExplicitServiceConfiguration(t *testing.T) {
+	t.Setenv("OPUTE_WINDOWS_POWERSHELL_PATH", "/opt/opute/test-powershell.exe")
+	if got := windowsPowerShellExecutable(); got != "/opt/opute/test-powershell.exe" {
+		t.Fatalf("expected configured PowerShell path, got %q", got)
+	}
+}
+
+func TestWindowsPowerShellExecutableFindsWSLPathWhenAvailable(t *testing.T) {
+	os.Unsetenv("OPUTE_WINDOWS_POWERSHELL_PATH")
+	got := windowsPowerShellExecutable()
+	if got == "" {
+		t.Fatal("expected a PowerShell command")
+	}
+	if strings.Contains(got, "\\") {
+		t.Fatalf("expected a WSL-compatible command path, got %q", got)
+	}
+}
 
 func TestNativeLinuxCloudflaredUnitUsesValidTunnelFlagOrdering(t *testing.T) {
 	unit := nativeLinuxCloudflaredUnit(

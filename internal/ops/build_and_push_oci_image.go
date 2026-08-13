@@ -16,15 +16,22 @@ import (
 var safeOciImageRef = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/:@-]*$`)
 
 // BuildAndPushOciImageArgs builds a generic OCI image from a host-local context
-// directory and pushes it to a caller-selected registry. The host agent does not
-// know Opute application layout; the MCP client stages the build context.
+// directory and pushes it to a caller-selected registry. The host agent does
+// not know Opute application layout; the MCP client stages the build context.
 type BuildAndPushOciImageArgs struct {
-	ContextDir       string `json:"contextDir"`
-	Dockerfile       string `json:"dockerfile,omitempty"`
-	Image            string `json:"image"`
-	Builder          string `json:"builder,omitempty"`
-	InsecureRegistry bool   `json:"insecureRegistry,omitempty"`
-	Platform         string `json:"platform,omitempty"`
+	ContextDir       string            `json:"contextDir"`
+	Dockerfile       string            `json:"dockerfile,omitempty"`
+	Image            string            `json:"image"`
+	Builder          string            `json:"builder,omitempty"`
+	InsecureRegistry bool              `json:"insecureRegistry,omitempty"`
+	Platform         string            `json:"platform,omitempty"`
+	BuildArgs        map[string]string `json:"buildArgs,omitempty"`
+	// UntagAfterPush defaults to true when omitted: after a successful push
+	// the local tag of the built image is removed so a later --pull=never
+	// build cannot silently reuse a stale local tag, while the image layers
+	// remain available to the age-gated storage policy. Set it to false to
+	// keep the pushed tag in the local store.
+	UntagAfterPush *bool `json:"untagAfterPush,omitempty"`
 }
 
 // BuildAndPushOciImage ensures a builder is available, builds the image, and
@@ -47,6 +54,19 @@ func (s *HostOperationsService) BuildAndPushOciImage(ctx context.Context, args B
 	if !safeOciImageRef.MatchString(image) || strings.ContainsAny(image, " \t\r\n") {
 		return nil, errors.New("image reference contains invalid characters")
 	}
+
+	// Untag-after-push defaults to true. Removing the pushed tag from the
+	// local store is a deliberate storage-hygiene step: the image content is
+	// already durable in the caller-selected registry, and future local
+	// builds with the same tag must pull fresh from that registry instead of
+	// silently reusing a stale local digest. The image layers themselves are
+	// intentionally retained so the storage policy (not this operation)
+	// decides when they become reclaimable.
+	imageRepo, imageDigestOnly := splitOciImageRef(image)
+	untagAfterPush := true
+	if args.UntagAfterPush != nil {
+		untagAfterPush = *args.UntagAfterPush
+	}
 	absContext, err := filepath.Abs(contextDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve contextDir: %w", err)
@@ -66,22 +86,35 @@ func (s *HostOperationsService) BuildAndPushOciImage(ctx context.Context, args B
 	if _, err := os.Stat(dockerfilePath); err != nil {
 		return nil, fmt.Errorf("dockerfile not found: %s", dockerfilePath)
 	}
+	if err := validateOciBuildArgs(args.BuildArgs); err != nil {
+		return nil, err
+	}
 
 	builderInfo, err := s.EnsureOciBuilder(EnsureOciBuilderArgs{Builder: args.Builder}, onData)
 	if err != nil {
 		return nil, err
 	}
 	builder, _ := builderInfo["builder"].(string)
-	if builder == "" || builder == "buildkit" {
-		builder = "podman"
-		if path, lookErr := exec.LookPath("podman"); lookErr != nil {
-			_ = path
-			if _, lookErr = exec.LookPath("buildah"); lookErr == nil {
-				builder = "buildah"
-			} else {
-				return nil, errors.New("podman or buildah is required to build and push images")
-			}
+	var runtimeAdapter containerRuntimeAdapter
+	if builder == "podman" {
+		runtimeAdapter, err = s.resolveContainerRuntime(ctx, "podman")
+		if err != nil {
+			return nil, err
 		}
+	} else if builder == "buildkit" {
+		// BuildKit is retained as a legacy selection value, but this operation
+		// still uses the supported image-store path when possible.
+		if runtimeAdapter, err = s.resolveContainerRuntime(ctx, "auto"); err == nil {
+			builder = runtimeAdapter.Name()
+		} else if path, lookErr := s.containerLookPath("buildah"); lookErr == nil {
+			_ = path
+			builder = "buildah"
+		} else {
+			return nil, errors.New("Podman is required for runtime-backed OCI storage")
+		}
+	}
+	if args.InsecureRegistry && builder == "docker" {
+		return nil, errors.New("insecureRegistry requires Docker daemon registry configuration; the host agent does not mutate daemon configuration")
 	}
 	ociStorageBeforeBuild, err := s.enforceOciStoragePolicy(ctx, builder, onData)
 	if err != nil {
@@ -94,28 +127,22 @@ func (s *HostOperationsService) BuildAndPushOciImage(ctx context.Context, args B
 	}
 	buildCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer cancel()
-
-	var buildCmd *exec.Cmd
-	switch builder {
-	case "podman":
-		argv := []string{"build", "-f", dockerfilePath, "-t", image}
-		if platform != "" {
-			argv = append(argv, "--platform", platform)
+	if runtimeAdapter != nil {
+		if err := runtimeAdapter.Build(buildCtx, dockerfilePath, image, platform, absContext, args.BuildArgs, onData); err != nil {
+			return nil, fmt.Errorf("build image: %w", err)
 		}
-		argv = append(argv, absContext)
-		buildCmd = exec.CommandContext(buildCtx, "podman", argv...)
-	case "buildah":
+	} else if builder == "buildah" {
 		argv := []string{"bud", "-f", dockerfilePath, "-t", image}
 		if platform != "" {
 			argv = append(argv, "--platform", platform)
 		}
+		argv = appendOciBuildArgs(argv, args.BuildArgs)
 		argv = append(argv, absContext)
-		buildCmd = exec.CommandContext(buildCtx, "buildah", argv...)
-	default:
+		if err := s.runContainerStreamingCommand(buildCtx, "buildah", argv, onData); err != nil {
+			return nil, fmt.Errorf("build image: %w", err)
+		}
+	} else {
 		return nil, fmt.Errorf("unsupported builder %q for build_and_push_oci_image", builder)
-	}
-	if err := runStreamingCommand(buildCmd, onData); err != nil {
-		return nil, fmt.Errorf("build image: %w", err)
 	}
 
 	if onData != nil {
@@ -123,34 +150,58 @@ func (s *HostOperationsService) BuildAndPushOciImage(ctx context.Context, args B
 	}
 	pushCtx, pushCancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer pushCancel()
-	var pushCmd *exec.Cmd
-	switch builder {
-	case "podman":
-		argv := []string{"push"}
-		if args.InsecureRegistry {
-			argv = append(argv, "--tls-verify=false")
+	if runtimeAdapter != nil {
+		if err := runtimeAdapter.Push(pushCtx, image, args.InsecureRegistry, onData); err != nil {
+			return nil, fmt.Errorf("push image: %w", err)
 		}
-		argv = append(argv, image)
-		pushCmd = exec.CommandContext(pushCtx, "podman", argv...)
-	case "buildah":
-		argv := []string{"push"}
+	} else if builder == "buildah" {
+		pushArgs := []string{"push"}
 		if args.InsecureRegistry {
-			argv = append(argv, "--tls-verify=false")
+			pushArgs = append(pushArgs, "--tls-verify=false")
 		}
-		argv = append(argv, image)
-		pushCmd = exec.CommandContext(pushCtx, "buildah", argv...)
-	}
-	if err := runStreamingCommand(pushCmd, onData); err != nil {
-		return nil, fmt.Errorf("push image: %w", err)
+		pushArgs = append(pushArgs, image)
+		if err := s.runContainerStreamingCommand(pushCtx, "buildah", pushArgs, onData); err != nil {
+			return nil, fmt.Errorf("push image: %w", err)
+		}
 	}
 
 	result := map[string]any{
 		"image":            image,
 		"builder":          builder,
+		"runtime":          builder,
 		"contextDir":       absContext,
 		"dockerfile":       dockerfilePath,
 		"insecureRegistry": args.InsecureRegistry,
 		"pushed":           true,
+		"untagAfterPush":   untagAfterPush,
+	}
+	if untagAfterPush {
+		switch {
+		case runtimeAdapter == nil:
+			// The legacy Buildah path is build-only and has no runtime
+			// adapter; the pushed tag stays in place for that path.
+			result["untagSkippedReason"] = "legacy buildah path has no runtime adapter"
+		case imageDigestOnly:
+			// A digest-pinned reference has no removable local tag of its
+			// own; untagging it would target the hidden tag entry, which is
+			// not the hygiene intent for a pushed digest reference.
+			result["untagSkippedReason"] = "digest-pinned reference has no tag to remove"
+		default:
+			if untagErr := runtimeAdapter.Untag(ctx, image, onData); untagErr != nil {
+				// The image has already been pushed successfully. Preserve
+				// that result and surface the untag failure for diagnosis.
+				result["untagWarning"] = untagErr.Error()
+			} else {
+				result["untaggedImage"] = image
+				result["untaggedRepository"] = imageRepo
+				if onData != nil {
+					onData(fmt.Sprintf("Untagged local image %s (pushed content remains in %s)", image, imageRepo))
+				}
+			}
+		}
+	}
+	if len(args.BuildArgs) > 0 {
+		result["buildArgCount"] = len(args.BuildArgs)
 	}
 	if ociStorageBeforeBuild != nil {
 		result["ociStorageBeforeBuild"] = ociStorageBeforeBuild
@@ -163,6 +214,20 @@ func (s *HostOperationsService) BuildAndPushOciImage(ctx context.Context, args B
 		result["ociStorageAfterBuild"] = ociStorageAfterBuild
 	}
 	return result, nil
+}
+
+var safeOciBuildArgName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func validateOciBuildArgs(buildArgs map[string]string) error {
+	for name, value := range buildArgs {
+		if !safeOciBuildArgName.MatchString(name) {
+			return fmt.Errorf("buildArgs contains invalid name %q", name)
+		}
+		if strings.ContainsAny(value, "\x00\r\n") {
+			return fmt.Errorf("buildArgs[%s] contains an invalid control character", name)
+		}
+	}
+	return nil
 }
 
 func runStreamingCommand(cmd *exec.Cmd, onData func(string)) error {
