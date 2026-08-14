@@ -173,13 +173,23 @@ func ensureNativeLinuxCloudflared(s *HostOperationsService, args EnsureCloudflar
 	if err := os.WriteFile(unitPath, []byte(unit), 0600); err != nil {
 		return nil, err
 	}
-	for _, command := range [][]string{{"systemctl", "--user", "daemon-reload"}, {"systemctl", "--user", "enable", filepath.Base(unitPath)}, {"systemctl", "--user", "restart", filepath.Base(unitPath)}} {
+	unitName := filepath.Base(unitPath)
+	for _, command := range [][]string{{"systemctl", "--user", "daemon-reload"}, {"systemctl", "--user", "enable", unitName}, {"systemctl", "--user", "restart", unitName}} {
 		result, runErr := s.hostCommandRunner(command, nil, 30*time.Second)
 		if runErr != nil {
 			return nil, runErr
 		}
 		if result.ExitCode != 0 {
-			return nil, fmt.Errorf("cloudflared systemd operation failed")
+			// systemd may report a restart failure while the unit's
+			// Restart=always policy is already bringing the process back.
+			// The desired contract is observed service convergence, not the
+			// transient exit status of the control command. Only apply this
+			// recovery to restart; daemon-reload and enable failures remain
+			// configuration errors.
+			if len(command) == 4 && command[2] == "restart" && isNativeLinuxCloudflaredRunning(args.BindingID) {
+				continue
+			}
+			return nil, fmt.Errorf("cloudflared systemd operation failed (exit=%d)", result.ExitCode)
 		}
 	}
 	deadline := time.Now().Add(30 * time.Second)

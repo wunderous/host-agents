@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
@@ -84,6 +85,17 @@ func TestReconcileServingAssignmentDoesNotDuplicateLiveProcess(t *testing.T) {
 	args.Runtime = "process"
 	args.Mode = "dev-process"
 	args.Artifact = map[string]any{"kind": "source", "sourceDir": "/workspace", "command": []any{"sh", "-c", "exit 0"}}
+	// The shared dev stack may legitimately own port 9090. This test is about
+	// the assignment-scoped PID claim, so reserve a currently unused port for
+	// the synthetic unavailable endpoint instead of coupling the unit test to
+	// a workstation port.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("unable to reserve a test port: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+	args.Endpoints = []any{map[string]any{"name": "web", "port": port, "protocol": "http"}}
 	pidFile := servingPidFile(args.AssignmentID)
 	process := exec.Command("sleep", "30")
 	if err := process.Start(); err != nil {

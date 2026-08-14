@@ -79,9 +79,8 @@ install_agent_privilege_boundary() {
     id "$target_user" >/dev/null 2>&1 || fail "target host-agent user does not exist: $target_user"
   fi
 
-  # Host-agent package operations are deliberately limited to the commands
-  # needed by the allowlisted generic host-tool, Kubernetes, and Incus
-  # installers. The
+  # Host-agent operations are deliberately limited to the commands needed by
+  # the allowlisted generic host-tool, Kubernetes, and Incus installers. The
   # standalone service remains unprivileged; it can only invoke these commands
   # with sudo -n, so an interactive password prompt can never leak into an MCP
   # task or hang a deployment.
@@ -90,7 +89,7 @@ install_agent_privilege_boundary() {
   policy_tmp="$(mktemp)"
   trap 'rm -f "$policy_tmp"' RETURN
   cat > "$policy_tmp" <<EOF
-$target_user ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/dpkg, /usr/bin/install, /usr/bin/mkdir, /usr/bin/systemctl, /usr/bin/loginctl, /usr/sbin/usermod, /usr/local/bin/k3s
+$target_user ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/dpkg, /usr/bin/install, /usr/bin/mkdir, /usr/bin/systemctl, /usr/bin/loginctl, /usr/sbin/usermod, /usr/local/bin/k3s, /usr/bin/true, /usr/bin/test, /usr/bin/tee, /usr/bin/chmod, /usr/bin/rm, /usr/bin/readlink, /usr/bin/realpath, /usr/bin/sed, /usr/bin/tr, /usr/bin/awk, /usr/bin/grep, /usr/bin/head, /usr/bin/cut, /usr/bin/date, /usr/bin/sleep, /usr/bin/base64, /usr/bin/ln, /usr/bin/cp, /usr/bin/chown, /usr/bin/incus, /usr/sbin/iptables, /usr/local/lib/opute/setup-incus-nat.sh
 EOF
   if [[ "$(id -u)" -eq 0 ]]; then
     install -d -m 0755 /etc/sudoers.d
@@ -217,7 +216,10 @@ User=$TARGET_USER
 Environment=XDG_RUNTIME_DIR=/run/user/$(id -u "$TARGET_USER")
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u "$TARGET_USER")/bus
 ExecStart=$BIN_DEST --mode standalone --transport http
-Restart=on-failure
+# The bootstrap command may be invoked through this very MCP service. In that
+# case it deliberately restarts the unit and the current process exits cleanly;
+# always restart so a self-reconcile cannot strand the standalone endpoint.
+Restart=always
 RestartSec=5
 
 [Install]
