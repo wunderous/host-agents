@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -24,6 +25,15 @@ type K8sResourceArgs struct {
 	ResourceKind string `json:"resourceKind,omitempty"`
 	ResourceName string `json:"resourceName"`
 	Namespace    string `json:"namespace,omitempty"`
+}
+
+// K8sEventsArgs describes a bounded, read-only Kubernetes event query. The
+// host agent returns only event metadata and messages; it does not infer an
+// application or provider identity from the objects.
+type K8sEventsArgs struct {
+	VMName    string `json:"vmName"`
+	Namespace string `json:"namespace,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
 }
 
 func (s *HostOperationsService) DeleteK8sResource(args K8sResourceArgs, onData func(string)) (map[string]any, error) {
@@ -175,6 +185,86 @@ func (s *HostOperationsService) GetK8sResourceStatus(args K8sResourceArgs) (map[
 		}
 	}
 	return map[string]any{"vmName": resource.VMName, "resourceKind": resource.Kind, "resourceName": resource.ResourceName, "namespace": resource.Namespace, "status": status, "message": "Kubernetes resource inspected", "resource": object}, nil
+}
+
+// ListK8sEvents returns the most recent bounded Kubernetes events for an
+// explicit cluster target. It is intentionally generic so callers can
+// diagnose any controller or workload reconciliation failure without shell
+// access or product-specific knowledge in the host agent.
+func (s *HostOperationsService) ListK8sEvents(args K8sEventsArgs) (map[string]any, error) {
+	vmName := strings.TrimSpace(args.VMName)
+	if vmName == "" {
+		return nil, errors.New("vmName is required")
+	}
+	namespace := strings.TrimSpace(args.Namespace)
+	if namespace != "" {
+		if err := validateK8sIdentifier(namespace, "namespace"); err != nil {
+			return nil, err
+		}
+	}
+	limit := args.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	data, err := s.getKubernetesList(vmName, "events", namespace)
+	if err != nil {
+		return nil, err
+	}
+	items, ok := data["items"].([]any)
+	if !ok {
+		return map[string]any{"vmName": vmName, "namespace": namespace, "events": []any{}}, nil
+	}
+	// Kubernetes does not guarantee list ordering. Keep the response bounded
+	// and deterministic by sorting on the newest available event timestamp.
+	sort.SliceStable(items, func(i, j int) bool {
+		return eventTimestamp(items[i]) > eventTimestamp(items[j])
+	})
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	events := make([]map[string]any, 0, len(items))
+	for _, raw := range items {
+		object, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		metadata, _ := object["metadata"].(map[string]any)
+		involved, _ := object["involvedObject"].(map[string]any)
+		event := map[string]any{
+			"type":             stringValue(object["type"]),
+			"reason":           stringValue(object["reason"]),
+			"message":          stringValue(object["message"]),
+			"count":            object["count"],
+			"firstTimestamp":   stringValue(object["firstTimestamp"]),
+			"lastTimestamp":    stringValue(object["lastTimestamp"]),
+			"eventTime":        stringValue(object["eventTime"]),
+			"source":           object["source"],
+			"involvedObject":   involved,
+			"name":             stringValue(metadata["name"]),
+			"namespace":        stringValue(metadata["namespace"]),
+		}
+		events = append(events, event)
+	}
+	return map[string]any{"vmName": vmName, "namespace": namespace, "limit": limit, "events": events}, nil
+}
+
+func eventTimestamp(raw any) string {
+	object, _ := raw.(map[string]any)
+	for _, key := range []string{"eventTime", "lastTimestamp", "firstTimestamp"} {
+		if value, ok := object[key].(string); ok && value != "" {
+			return value
+		}
+	}
+	metadata, _ := object["metadata"].(map[string]any)
+	return stringValue(metadata["creationTimestamp"])
+}
+
+func stringValue(value any) string {
+	valueString, _ := value.(string)
+	return valueString
 }
 
 func objectPathString(object map[string]any, path ...string) (string, bool) {

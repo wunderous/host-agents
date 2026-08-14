@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	osuser "os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -189,11 +190,20 @@ func (s *HostOperationsService) waitForVMExecReady(vmName string, timeout time.D
 }
 
 func (s *HostOperationsService) RunAgentShell(command string, onData func(string)) (hostexec.Result, error) {
+	return s.RunAgentShellWithTimeout(command, 0, onData)
+}
+
+// RunAgentShellWithTimeout runs a caller-declared host command with an
+// explicit bounded execution budget. A zero timeout preserves the command
+// runner's no-deadline behavior for internal lifecycle calls; externally
+// dispatched commands should provide a positive timeout so the caller's
+// lifecycle has a finite, observable boundary.
+func (s *HostOperationsService) RunAgentShellWithTimeout(command string, timeout time.Duration, onData func(string)) (hostexec.Result, error) {
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return hostexec.Result{}, errors.New("command is required")
 	}
-	return s.runtime.RunHost([]string{"bash", "-lc", command}, onData, 0)
+	return s.runtime.RunHost([]string{"bash", "-lc", command}, onData, timeout)
 }
 
 // NewVMInteractiveCommand is the ownership-checked command factory for the
@@ -1052,6 +1062,15 @@ type SetHostServiceStateArgs struct {
 	Scope       string `json:"scope,omitempty"`
 }
 
+// EnsureHostServiceSupervisorArgs describes the lifecycle contract required by
+// a caller-owned host service. It is deliberately independent of any product,
+// service name, URL, or runtime: user-scoped services need a persistent
+// systemd user manager, while system-scoped services only need the system
+// manager to be reachable.
+type EnsureHostServiceSupervisorArgs struct {
+	Scope string `json:"scope,omitempty"`
+}
+
 var safeSystemdUnitName = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+$`)
 
 func restartServiceCommand(serviceName string) []string {
@@ -1130,12 +1149,78 @@ func (s *HostOperationsService) SetHostServiceState(args SetHostServiceStateArgs
 	} else {
 		command = append([]string{"sudo", "-n"}, command...)
 	}
+	if state == "restart" {
+		// Restarting the service that owns this MCP request necessarily tears
+		// down the request's transport. Schedule the generic lifecycle action
+		// and let the supervisor perform the handoff; callers must reconnect and
+		// probe readiness rather than waiting on a process that is being stopped.
+		command = append(command, "--no-block")
+	}
 	command = append(command, state, serviceName)
 	result, err := s.hostCommandRunner(command, onData, 0)
 	if err != nil || result.ExitCode != 0 {
 		return nil, fmt.Errorf("service state change failed: %s", firstNonEmpty(result.Stderr, result.Stdout, "command failed"))
 	}
-	return map[string]any{"serviceName": serviceName, "state": state, "scope": scope, "status": "applied"}, nil
+	status := "applied"
+	if state == "restart" {
+		status = "scheduled"
+	}
+	return map[string]any{"serviceName": serviceName, "state": state, "scope": scope, "status": status}, nil
+}
+
+// EnsureHostServiceSupervisor makes the host service lifecycle explicit. WSL
+// and other session-based Linux environments otherwise terminate a user
+// manager as soon as the last non-interactive session exits, taking every
+// caller-owned service and its listeners with it. The operation is idempotent
+// and reports observed supervisor state rather than claiming service health.
+func (s *HostOperationsService) EnsureHostServiceSupervisor(args EnsureHostServiceSupervisorArgs, onData func(string)) (map[string]any, error) {
+	if err := s.requireSharedHostOwner("ensure_host_service_supervisor"); err != nil {
+		return nil, err
+	}
+	scope := strings.ToLower(strings.TrimSpace(args.Scope))
+	if scope == "" {
+		scope = "user"
+	}
+	if scope != "user" && scope != "system" {
+		return nil, errors.New("scope must be user or system")
+	}
+	if scope == "system" {
+		result, err := s.hostCommandRunner([]string{provider.DefaultSystemctlPath, "is-system-running"}, onData, 10*time.Second)
+		if err != nil || (result.ExitCode != 0 && strings.TrimSpace(result.Stdout) == "") {
+			return nil, fmt.Errorf("system service supervisor is unavailable: %s", firstNonEmpty(result.Stderr, result.Stdout, "systemctl failed"))
+		}
+		return map[string]any{"scope": scope, "status": "ready", "persistent": true, "state": strings.TrimSpace(result.Stdout)}, nil
+	}
+	user := strings.TrimSpace(os.Getenv("USER"))
+	if user == "" {
+		identity, err := osuser.Current()
+		if err != nil {
+			return nil, fmt.Errorf("resolve host service user: %w", err)
+		}
+		user = identity.Username
+	}
+	if user == "" || strings.ContainsAny(user, "\r\n") {
+		return nil, errors.New("resolve host service user: invalid username")
+	}
+	command := []string{"loginctl", "enable-linger", user}
+	result, err := s.hostCommandRunner(command, onData, 15*time.Second)
+	if err != nil || result.ExitCode != 0 {
+		// A non-root host agent may have a narrowly scoped sudo policy prepared
+		// by the bootstrap installer. Never fall back to an interactive prompt.
+		result, err = s.hostCommandRunner([]string{"sudo", "-n", "loginctl", "enable-linger", user}, onData, 15*time.Second)
+	}
+	if err != nil || result.ExitCode != 0 {
+		return nil, fmt.Errorf("enable persistent user service supervisor: %s", firstNonEmpty(result.Stderr, result.Stdout, "loginctl failed"))
+	}
+	observed, err := s.hostCommandRunner([]string{"loginctl", "show-user", user, "-p", "Linger"}, onData, 15*time.Second)
+	if err != nil || observed.ExitCode != 0 || !strings.Contains(observed.Stdout, "Linger=yes") {
+		return nil, fmt.Errorf("verify persistent user service supervisor: %s", firstNonEmpty(observed.Stderr, observed.Stdout, "Linger=yes was not observed"))
+	}
+	bus, err := s.hostCommandRunner([]string{provider.DefaultSystemctlPath, "--user", "show-environment"}, onData, 15*time.Second)
+	if err != nil || bus.ExitCode != 0 {
+		return nil, fmt.Errorf("user service supervisor bus is unavailable: %s", firstNonEmpty(bus.Stderr, bus.Stdout, "systemctl --user failed"))
+	}
+	return map[string]any{"scope": scope, "status": "ready", "persistent": true, "user": user, "linger": true, "userBus": true}, nil
 }
 
 func (s *HostOperationsService) EnsureDocker(onData func(string)) (map[string]any, error) {

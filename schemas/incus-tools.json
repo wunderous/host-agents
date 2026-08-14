@@ -1588,6 +1588,24 @@
     }
   },
   {
+    "name": "ensure_host_service_supervisor",
+    "title": "Ensure host service supervisor",
+    "description": "Ensure the caller-declared host service supervisor is available and persistent; user-scoped services receive an idempotent persistent user-manager contract.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": ["user", "system"]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": ["scope", "status", "persistent"]
+    }
+  },
+  {
     "name": "ensure_k3d",
     "title": "Ensure k3d",
     "description": "Install k3d CLI on Windows hosts when missing (requires Docker Desktop already installed)",
@@ -2472,6 +2490,30 @@
         "message"
       ],
       "additionalProperties": true
+    }
+  },
+  {
+    "name": "list_k8s_events",
+    "title": "List Kubernetes Events",
+    "description": "List bounded, read-only Kubernetes events for an explicit cluster target.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": { "type": "string" },
+        "namespace": { "type": "string" },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+      },
+      "required": ["vmName"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": { "type": "string" },
+        "namespace": { "type": "string" },
+        "limit": { "type": "integer" },
+        "events": { "type": "array", "items": { "type": "object" } }
+      },
+      "required": ["events"]
     }
   },
   {

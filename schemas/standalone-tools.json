@@ -27,7 +27,15 @@
     {
       "name": "run_host_command",
       "classification": "mutation",
-      "support": "experimental"
+      "support": "experimental",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "timeoutMs": { "type": "integer", "minimum": 0, "maximum": 7200000 }
+        },
+        "required": ["command"]
+      }
     },
     {
       "name": "reconcile_serving_assignment",
@@ -278,6 +286,11 @@
       "support": "experimental"
     },
     {
+      "name": "list_k8s_events",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
       "name": "install_oci_registry",
       "classification": "mutation",
       "support": "experimental"
@@ -358,7 +371,17 @@
       "support": "experimental"
     },
     {
+      "name": "restart_host_service",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
       "name": "set_host_service_state",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "ensure_host_service_supervisor",
       "classification": "mutation",
       "support": "experimental"
     },

@@ -834,6 +834,39 @@ func (s *HostOperationsService) ensurePostgreSQLServiceOrdered(ctx context.Conte
 	return nil
 }
 
+func postgresqlServiceProbeReady(probe postgresqlServiceProbe) bool {
+	return probe.OperatorReady && probe.CRDPresent && probe.ClusterReady && probe.ServiceReady && probe.SecretReady && probe.PrimaryReady && probe.SQLReady && probe.TaskLedgerSQLReady
+}
+
+// probePostgreSQLServiceStable gives an already-running service a short
+// convergence window before the repair path is selected. K3s can briefly
+// return an incomplete object set while the API server and kubelet restore
+// watches; treating that single observation as a missing installation causes
+// an unnecessary Helm/Cluster reapply and can make the outage self-sustaining.
+func (s *HostOperationsService) probePostgreSQLServiceStable(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceProbe, error) {
+	var last postgresqlServiceProbe
+	for attempt := 0; attempt < 3; attempt++ {
+		probe, err := s.probePostgreSQLService(ctx, spec)
+		if err != nil {
+			return postgresqlServiceProbe{}, err
+		}
+		last = probe
+		if postgresqlServiceProbeReady(probe) {
+			return probe, nil
+		}
+		if attempt < 2 {
+			timer := time.NewTimer(2 * time.Second)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return postgresqlServiceProbe{}, ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	return last, nil
+}
+
 func (s *HostOperationsService) ReconcilePostgreSQLService(ctx context.Context, args PostgreSQLServiceArgs, _ func(string)) (map[string]any, error) {
 	spec, err := validatePostgreSQLServiceSpec(args)
 	if err != nil {
@@ -842,13 +875,19 @@ func (s *HostOperationsService) ReconcilePostgreSQLService(ctx context.Context, 
 	if err := s.ensurePostgreSQLServiceNamespace(ctx, spec); err != nil {
 		return nil, err
 	}
-	if err := s.ensurePostgreSQLServiceOrdered(ctx, spec); err != nil {
-		return nil, err
+	// Reconciliation is also the steady-state bootstrap path. Probe first so a
+	// ready service does not reinstall the operator, reapply the tenant Cluster,
+	// and tear down consumers on every caller restart. An incomplete service
+	// still follows the ordered repair path below.
+	probe, probeErr := s.probePostgreSQLServiceStable(ctx, spec)
+	if probeErr != nil || !postgresqlServiceProbeReady(probe) {
+		if err := s.ensurePostgreSQLServiceOrdered(ctx, spec); err != nil {
+			return nil, err
+		}
+		if probe, err = s.waitForPostgreSQLService(ctx, spec); err != nil {
+			return nil, err
+		}
 	}
-	if _, err := s.waitForPostgreSQLService(ctx, spec); err != nil {
-		return nil, err
-	}
-	probe, _ := s.probePostgreSQLService(ctx, spec)
 	credentials := postgresqlServiceSecret{Username: probe.Username, Password: probe.Password}
 	for _, database := range spec.Databases {
 		if err := s.ensurePostgreSQLServiceDatabase(ctx, spec, credentials, probe.PrimaryPod, database); err != nil {

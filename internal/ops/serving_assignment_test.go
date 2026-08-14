@@ -1,6 +1,9 @@
 package ops
 
 import (
+	"os"
+	"os/exec"
+	"strconv"
 	"testing"
 )
 
@@ -55,5 +58,54 @@ func TestReconcileServingAssignmentAllowsComposedProcessLifecycle(t *testing.T) 
 func TestServingPidFileIsAssignmentScoped(t *testing.T) {
 	if got := servingPidFile("public-edge-local-dev"); got != "/tmp/serving-assignment-public-edge-local-dev.pid" {
 		t.Fatalf("unexpected serving pid file: %s", got)
+	}
+}
+
+func TestClaimServingLaunchReclaimsDeadProcess(t *testing.T) {
+	args := genericServingAssignment()
+	args.AssignmentID = "restartable-service"
+
+	servingLaunches.Lock()
+	servingLaunches.started = make(map[string]bool)
+	servingLaunches.Unlock()
+	t.Cleanup(func() { releaseServingLaunch(args) })
+
+	if !claimServingLaunch(args) {
+		t.Fatal("expected first launch claim")
+	}
+	if !claimServingLaunch(args) {
+		t.Fatal("expected a dead process launch claim to be recoverable")
+	}
+}
+
+func TestReconcileServingAssignmentDoesNotDuplicateLiveProcess(t *testing.T) {
+	args := genericServingAssignment()
+	args.AssignmentID = "live-process-service"
+	args.Runtime = "process"
+	args.Mode = "dev-process"
+	args.Artifact = map[string]any{"kind": "source", "sourceDir": "/workspace", "command": []any{"sh", "-c", "exit 0"}}
+	pidFile := servingPidFile(args.AssignmentID)
+	process := exec.Command("sleep", "30")
+	if err := process.Start(); err != nil {
+		t.Skipf("sleep is unavailable on this test host: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = process.Process.Kill()
+		_ = process.Wait()
+	})
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(process.Process.Pid)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(pidFile) })
+
+	result, err := (&HostOperationsService{}).ReconcileServingAssignment(args, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["started"] == true {
+		t.Fatal("reconcile launched a duplicate while the assigned process was alive")
+	}
+	if result["starting"] != true {
+		t.Fatalf("expected starting state, got %#v", result)
 	}
 }

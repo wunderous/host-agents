@@ -72,6 +72,26 @@ func TestEnsurePostgreSQLServiceAppliesOperatorBeforeCluster(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLServiceProbeReadyRequiresSQLAndBothStores(t *testing.T) {
+	base := postgresqlServiceProbe{
+		OperatorReady:      true,
+		CRDPresent:         true,
+		ClusterReady:       true,
+		ServiceReady:       true,
+		SecretReady:        true,
+		PrimaryReady:       true,
+		SQLReady:           true,
+		TaskLedgerSQLReady: true,
+	}
+	if !postgresqlServiceProbeReady(base) {
+		t.Fatal("expected a complete SQL-gated probe to be ready")
+	}
+	base.TaskLedgerSQLReady = false
+	if postgresqlServiceProbeReady(base) {
+		t.Fatal("task-ledger readiness must be part of the steady-state fast path")
+	}
+}
+
 func TestEnsurePostgreSQLServiceNeverAppliesClusterWithoutCRD(t *testing.T) {
 	service := validResetService()
 	clusterApplied := false

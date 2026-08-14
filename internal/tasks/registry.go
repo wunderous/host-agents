@@ -213,6 +213,11 @@ func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 }
 
 var TaskAwareTools = map[string]bool{
+	// Generic host commands may legitimately outlive a single MCP request
+	// (for example, a caller-declared validation or service lifecycle job).
+	// Keep them on the standard task/polling contract instead of coupling
+	// their lifetime to the transport request.
+	"run_host_command":              true,
 	"install_incus_stack":           true,
 	"reset_incus_stack":             true,
 	"create_vm":                     true,

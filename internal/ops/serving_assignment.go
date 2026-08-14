@@ -60,7 +60,16 @@ func claimServingLaunch(args ServingAssignmentArgs) bool {
 	servingLaunches.Lock()
 	defer servingLaunches.Unlock()
 	if servingLaunches.started[key] {
-		return false
+		// A readiness poll can outlive the process it launched.  The
+		// assignment is still the same desired generation, but the observed
+		// process is no longer serving it.  Reclaim the in-memory launch
+		// marker so reconciliation can restore the declared state.  This is
+		// intentionally based on the generic assignment pid file rather than
+		// any product-specific process knowledge.
+		if servingProcessAlive(servingPidFile(args.AssignmentID)) {
+			return false
+		}
+		delete(servingLaunches.started, key)
 	}
 	servingLaunches.started[key] = true
 	return true
@@ -203,6 +212,12 @@ func servingPidFile(assignmentID string) string {
 	return "/tmp/serving-assignment-" + assignmentID + ".pid"
 }
 
+func servingTransientUnit(assignmentID string) string {
+	// Assignment IDs are already bounded by validateServingAssignment. Keep the
+	// derived unit name independently safe because it is passed to systemd.
+	return "opute-serving-" + strings.NewReplacer("/", "-", ":", "-", "@", "-", ".", "-").Replace(assignmentID)
+}
+
 func servingProcessAlive(pidFile string) bool {
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
@@ -293,39 +308,56 @@ func (s *HostOperationsService) ReconcileServingAssignment(args ServingAssignmen
 				}
 			}
 		}
-		if claimServingLaunch(args) {
+		// A healthy declared endpoint is already the desired state. This is
+		// important for hot-reloading source services: a route reconciliation
+		// must not start a second process and let its port guard terminate the
+		// existing owner. Launch only when the declared surface is unavailable.
+		if !allReady {
 			pidFile := servingPidFile(args.AssignmentID)
-			if !servingProcessAlive(pidFile) {
+			// A process can be alive while its declared endpoints are between
+			// hot-reload generations or still warming up. Do not let a second
+			// assignment identity launch another copy during that interval:
+			// generic source runtimes commonly use a port guard that terminates
+			// the first owner when the duplicate starts. A later reconciliation
+			// can retry once the owner exits or the endpoints become ready.
+			if servingProcessAlive(pidFile) {
+				result["starting"] = true
+			} else if claimServingLaunch(args) {
 				_ = os.Remove(pidFile)
-			}
-			if preStart := servingString(args.Artifact["preStartCommand"]); preStart != "" {
-				if _, err := s.RunAgentShell(preStart, onData); err != nil {
-					releaseServingLaunch(args)
-					return nil, fmt.Errorf("source artifact pre-start command failed: %w", err)
+				if preStart := servingString(args.Artifact["preStartCommand"]); preStart != "" {
+					if _, err := s.RunAgentShell(preStart, onData); err != nil {
+						releaseServingLaunch(args)
+						return nil, fmt.Errorf("source artifact pre-start command failed: %w", err)
+					}
 				}
+				// Run the caller-declared command in the host user's normal login
+				// environment. This keeps generic source assignments usable when the
+				// host runtime is installed through the user's profile rather than
+				// the system PATH.
+				// Execute the caller-declared environment in the same shell as the
+				// process. The assignment is the generic service boundary; losing
+				// these values here would make a valid service appear configured while
+				// its child observes a different runtime contract.
+				// Own a process session per assignment generation. Killing only the
+				// launcher PID leaves a service's watcher/worker tree alive after a
+				// source revision changes, so the next generation can keep serving old
+				// code and occupy the same endpoints. `setsid` makes the recorded PID
+				// the process-group leader; the group kill is generic and does not
+				// depend on the caller's runtime or service implementation.
+				// Keep the process outside the transient user-systemd manager. On
+				// hosts where that manager is session-scoped, reconciling another
+				// user service would otherwise terminate this unrelated serving
+				// assignment. The pidfile and process group remain assignment-scoped
+				// and are sufficient for idempotent restart/cleanup.
+				launch := fmt.Sprintf("pidfile=%s; unit=%s; systemctl --user stop \"$unit\" >/dev/null 2>&1 || true; terminate_tree() { target=\"$1\"; for child in $(pgrep -P \"$target\" 2>/dev/null || true); do terminate_tree \"$child\"; done; kill -TERM \"$target\" 2>/dev/null || true; }; if test -s \"$pidfile\"; then old=$(cat \"$pidfile\"); kill -TERM -- -\"$old\" 2>/dev/null || true; terminate_tree \"$old\"; fi; nohup setsid bash -lic %s >/tmp/serving-assignment-%s.log 2>&1 < /dev/null & echo $! >\"$pidfile\"", shellQuoteServing(pidFile), shellQuoteServing(servingTransientUnit(args.AssignmentID)), shellQuoteServing(command), args.AssignmentID)
+				if _, err := s.RunAgentShell(launch, onData); err != nil {
+					releaseServingLaunch(args)
+					return nil, err
+				}
+				result["started"] = true
+			} else {
+				result["starting"] = true
 			}
-			// Run the caller-declared command in the host user's normal login
-			// environment. This keeps generic source assignments usable when the
-			// host runtime is installed through the user's profile rather than
-			// the system PATH.
-			// Execute the caller-declared environment in the same shell as the
-			// process. The assignment is the generic service boundary; losing
-			// these values here would make a valid service appear configured while
-			// its child observes a different runtime contract.
-			// Own a process session per assignment generation. Killing only the
-			// launcher PID leaves a service's watcher/worker tree alive after a
-			// source revision changes, so the next generation can keep serving old
-			// code and occupy the same endpoints. `setsid` makes the recorded PID
-			// the process-group leader; the group kill is generic and does not
-			// depend on the caller's runtime or service implementation.
-			launch := fmt.Sprintf("pidfile=%s; terminate_tree() { target=\"$1\"; for child in $(pgrep -P \"$target\" 2>/dev/null || true); do terminate_tree \"$child\"; done; kill -TERM \"$target\" 2>/dev/null || true; }; if test -s \"$pidfile\"; then old=$(cat \"$pidfile\"); kill -TERM -- -\"$old\" 2>/dev/null || true; terminate_tree \"$old\"; fi; nohup setsid bash -lic %s >/tmp/serving-assignment-%s.log 2>&1 < /dev/null & echo $! >\"$pidfile\"", shellQuoteServing(pidFile), shellQuoteServing(command), args.AssignmentID)
-			if _, err := s.RunAgentShell(launch, onData); err != nil {
-				releaseServingLaunch(args)
-				return nil, err
-			}
-			result["started"] = true
-		} else if !allReady {
-			result["starting"] = true
 		}
 	}
 	if args.Runtime == "process" && args.ServiceUnit != "" {

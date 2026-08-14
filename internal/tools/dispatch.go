@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/ops"
@@ -433,7 +434,14 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		if command == "" {
 			return nil, fmt.Errorf("command is required")
 		}
-		res, err := svc.RunAgentShell(command, onData)
+		timeoutMs := intField(args, "timeoutMs")
+		if timeoutMs < 0 {
+			return nil, fmt.Errorf("timeoutMs must be non-negative")
+		}
+		if timeoutMs > 2*60*60*1000 {
+			return nil, fmt.Errorf("timeoutMs exceeds the two-hour maximum")
+		}
+		res, err := svc.RunAgentShellWithTimeout(command, time.Duration(timeoutMs)*time.Millisecond, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -803,6 +811,14 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
+	case "list_k8s_events":
+		limit, _ := args["limit"].(float64)
+		out, err := svc.ListK8sEvents(ops.K8sEventsArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Limit: int(limit)})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
 	case "install_oci_registry":
 		out, err := svc.InstallOCIRegistry(ops.InstallOCIRegistryArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Image: stringField(args, "image"), StorageSize: stringField(args, "storageSize"), StorageClass: stringField(args, "storageClass"), NodePort: intField(args, "nodePort")}, onData)
 		if err != nil {
@@ -872,6 +888,13 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Applied service state '%s' to '%s'.", out["state"], out["serviceName"])), nil
+
+	case "ensure_host_service_supervisor":
+		out, err := svc.EnsureHostServiceSupervisor(ops.EnsureHostServiceSupervisorArgs{Scope: stringField(args, "scope")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Host service supervisor is ready."), nil
 
 	case "configure_agent_connection":
 		env := map[string]string{}

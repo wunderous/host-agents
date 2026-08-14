@@ -236,16 +236,17 @@ The optional production-shaped local CPC companion is `opute-platform-opute-stac
 
 ## Shared agent-work coordination ledger
 
-When running from WSL, use the native Linux Bun at `/home/opute/.bun/bin/bun`
-and set `OPUTE_AGENT_WORK_COORDINATION_DIR` to the translated Windows-backed
-workspace (`/mnt/c/Users/<user>/AppData/Local/opute/agent-work-coordination`).
-Codex command shells are often non-interactive and may expose `bun.exe` while
-omitting native `bun` if the export occurs after `.bashrc`'s early return. Check
-`command -v bun`, `bun --version`, and `bd --version` before `make agent-work`;
-do not initialize a new `.beads` directory when the shared path is
-misconfigured. See `../opute/docs/agent-work-coordination.md`.
+Beads coordination is hosted inside native Windows on this workstation. Run
+the `agent-work` status/start/update/end commands from a native Windows shell
+using the authoritative Windows Beads/Dolt installation and workspace. When
+running repository scripts from WSL, use native Linux Bun for code only; do
+not expect or install a local Linux `bd`/`dolt` stack, and do not initialize
+`.beads`.
+A WSL session may use the translated Windows-backed directory only with an
+explicitly reachable Dolt endpoint; otherwise report it as untracked. See
+`../opute/docs/agent-work-coordination.md`.
 
-The validated native-Windows pairing is Beads `v1.1.2` and Dolt `v2.2.3`.
+The authoritative native-Windows pairing is Beads `v1.1.2` and Dolt `v2.2.3`.
 Windows sessions use the external `%LOCALAPPDATA%\opute\agent-work-coordination`
 directory and persistent user-scope `OPUTE_BD_PATH` / `OPUTE_DOLT_PATH`
 overrides. Verify with `bd --version`, `dolt version`, and `bd dolt show`.
@@ -273,7 +274,7 @@ For a milestone with spaces, prefer the wrapper:
 
 Use `--related=<id>` for possible impact and `--blocks=<id>` only for real sequencing dependencies. Finish with a final validation comment and `./scripts/agent-work end <id> --validation="go test ./..." --reason="validated"`. The Make target and wrapper both delegate to the canonical `../opute/scripts/agent-work-coordination.ts` adapter while marking the repository as `opute-host-agent` and preserving this checkout's current Git head.
 
-The adapter uses one external Beads v1.1.2 database in shared Dolt-server mode with `BD_DISABLE_METRICS=1`; no `.beads` directory is written to this checkout. Set `OPUTE_AGENT_WORK_COORDINATION_DIR` to the Windows/WSL-translated shared directory when both clients must see the same state, and configure both clients to use the same reachable Dolt server. Overlap and two-hour stale warnings are advisory and never lock or block edits. If coordination fails, report it and explicitly recognize the session as untracked before continuing. For a `3308` port conflict, inspect the listener from the current WSL/Windows environment and use `bd dolt status`/`bd dolt show`; never kill or reclaim an unverified process. A verified Dolt listener is a retryable diagnostic, while a non-Dolt listener or cross-OS endpoint mismatch must be repaired before tracking resumes. The ledger is separate from runtime/service ownership and does not replace the host-agent or dev-stack coordination rules.
+The adapter uses one external Beads v1.1.2 database in shared Dolt-server mode with `BD_DISABLE_METRICS=1`; no `.beads` directory is written to this checkout. Native Windows is the normal execution environment for the adapter and owns the authoritative workspace. A WSL client may set `OPUTE_AGENT_WORK_COORDINATION_DIR` to the translated Windows-backed directory only when an explicitly configured Dolt server is reachable from WSL; do not install a second Linux Beads/Dolt stack. Overlap and two-hour stale warnings are advisory and never lock or block edits. If coordination fails, report it and explicitly recognize the session as untracked before continuing. For a `3308` port conflict, inspect the listener from native Windows and use `bd dolt status`/`bd dolt show`; never kill or reclaim an unverified process. A verified Dolt listener is a retryable diagnostic, while a non-Dolt listener or cross-OS endpoint mismatch must be repaired before tracking resumes. The ledger is separate from runtime/service ownership and does not replace the host-agent or dev-stack coordination rules.
 
 ## Codebase Knowledge Graph (agent discovery — mandatory)
 

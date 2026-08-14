@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -344,6 +345,14 @@ func (s *HostOperationsService) RestartCluster(vmName string, onData func(string
 		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "k3s restart failed in VM"))
 	}
 	if err := s.waitForVMServiceActive(vmName, "k3s", onData, 5*time.Minute); err != nil {
+		return nil, err
+	}
+	// systemd active only proves that the process was started.  Callers of
+	// restart_cluster need a usable Kubernetes control plane, otherwise a
+	// subsequent reconciliation can race API/bootstrap resources such as
+	// service-account projections.  Reuse the generic K3s readiness contract
+	// and require consecutive API observations before returning success.
+	if err := s.waitForK3sNodeReady(context.Background(), vmName, onData, 5*time.Minute); err != nil {
 		return nil, err
 	}
 	return map[string]any{
