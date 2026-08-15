@@ -17,6 +17,11 @@ func TestClassifyTool(t *testing.T) {
 		{"list_vms", ClassControl},
 		{"configure_oci_storage", ClassHeavy},
 		{"build_and_push_oci_image", ClassHeavy},
+		// Serving reconciliation writes an explicit endpoint unit and waits for
+		// its bounded readiness contract. It is a normal host operation, not an
+		// exclusive resource-heavy workload, so unrelated normal work cannot
+		// starve public serving convergence.
+		{"ensure_cloudflared_tunnel", ClassNormal},
 		{"apply_manifest", ClassNormal},
 	} {
 		if got := ClassifyTool(test.tool); got != test.class {
@@ -45,6 +50,25 @@ func TestHeavyAdmissionIsSerialized(t *testing.T) {
 		t.Fatal("expected second heavy operation to remain blocked")
 	}
 	first()
+}
+
+func TestServingReconciliationCanCoexistWithNormalWork(t *testing.T) {
+	c, err := NewCoordinator(Config{LockDir: t.TempDir(), MaxNormal: 2, MaxHeavy: 1, MaxQueued: 2, DiskPaths: []string{t.TempDir()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := c.Acquire(context.Background(), "run_host_command")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first()
+
+	second, err := c.Acquire(context.Background(), "ensure_cloudflared_tunnel")
+	if err != nil {
+		t.Fatalf("serving reconciliation should not wait behind one normal operation: %v", err)
+	}
+	second()
 }
 
 func TestCoResidentCoordinatorsShareHeavyLock(t *testing.T) {

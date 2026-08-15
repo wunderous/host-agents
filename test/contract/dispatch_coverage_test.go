@@ -25,6 +25,7 @@ var requiredPlatformPostgresDispatch = []string{
 	"ensure_pgvector",
 	"get_pgvector_status",
 	"remove_postgresql_service",
+	"release_postgresql_service_relay",
 	"reset_incus_stack",
 }
 
@@ -111,7 +112,7 @@ func TestPlatformPostgresAndResetToolsHaveStandaloneCoverage(t *testing.T) {
 			t.Fatalf("platform/reset tool %q missing from standalone tool definitions", name)
 		}
 	}
-	for _, name := range []string{"reconcile_postgresql_service", "ensure_pgvector", "remove_postgresql_service", "reset_incus_stack"} {
+	for _, name := range []string{"reconcile_postgresql_service", "ensure_pgvector", "remove_postgresql_service", "release_postgresql_service_relay", "reset_incus_stack"} {
 		if !tools.IsStandaloneMutation(name) {
 			t.Fatalf("mutation tool %q must be a standalone mutation", name)
 		}

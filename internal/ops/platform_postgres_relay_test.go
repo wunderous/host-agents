@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -72,6 +74,250 @@ func TestPostgreSQLServiceRelayAuthenticatesAndRedactsToken(t *testing.T) {
 	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 	if _, err := conn.Read(make([]byte, 1)); err == nil {
 		t.Fatal("revocation left the authenticated connection open")
+	}
+}
+
+func TestPersistentPostgreSQLServiceRelayRestoresAfterAgentRestart(t *testing.T) {
+	target, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Close()
+	go func() {
+		conn, acceptErr := target.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = io.Copy(conn, conn)
+	}()
+
+	configDir := t.TempDir()
+	token := strings.Repeat("p", 32)
+	args := PostgreSQLServiceRelayArgs{
+		SessionID:  "persistent-platform-db",
+		ListenHost: "127.0.0.1",
+		TargetHost: "127.0.0.1",
+		TargetPort: target.Addr().(*net.TCPAddr).Port,
+		RelayToken: token,
+		Persistent: true,
+	}
+	firstManager := newPersistentPostgreSQLServiceRelayManagerAt(configDir)
+	first, err := firstManager.start(args, args.TargetHost, args.TargetPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstPort := first["listenPort"].(int)
+	if first["persistent"] != true {
+		t.Fatalf("expected persistent descriptor: %#v", first)
+	}
+	if _, ok := first["expiresAt"]; ok {
+		t.Fatalf("persistent descriptor must not expose an expiry: %#v", first)
+	}
+	entries, err := os.ReadDir(configDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected one persisted relay state, entries=%v err=%v", entries, err)
+	}
+	state, err := os.ReadFile(filepath.Join(configDir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(state), token) {
+		t.Fatal("persistent relay state contains the raw relay token")
+	}
+
+	// Simulate a host-agent process restart without invoking release: the
+	// desired relay state remains while the in-memory listener disappears.
+	firstManager.mu.Lock()
+	oldSession := firstManager.sessions[args.SessionID]
+	firstManager.mu.Unlock()
+	oldSession.close()
+
+	secondManager := newPersistentPostgreSQLServiceRelayManagerAt(configDir)
+	defer secondManager.stop(args.SessionID)
+	second, err := secondManager.start(args, args.TargetHost, args.TargetPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second["listenPort"] != firstPort || second["persistent"] != true {
+		t.Fatalf("restart did not restore the stable relay: first=%#v second=%#v", first, second)
+	}
+
+	conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(firstPort)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	payload := "restart-safe"
+	if _, err := conn.Write([]byte(token + "\n" + payload)); err != nil {
+		t.Fatal(err)
+	}
+	response := make([]byte, len(payload))
+	if _, err := io.ReadFull(conn, response); err != nil {
+		t.Fatal(err)
+	}
+	if string(response) != payload {
+		t.Fatalf("restored relay returned %q, want %q", response, payload)
+	}
+
+	if !secondManager.stop(args.SessionID) {
+		t.Fatal("expected persistent relay release to remove the active listener")
+	}
+	entries, err = os.ReadDir(configDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("relay release left persisted state: %v", entries)
+	}
+}
+
+func TestPostgreSQLServiceRelayConflictDoesNotRevokeOwner(t *testing.T) {
+	target, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Close()
+	go func() {
+		for {
+			conn, acceptErr := target.Accept()
+			if acceptErr != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				_, _ = io.Copy(conn, conn)
+			}()
+		}
+	}()
+
+	manager := newPostgreSQLServiceRelayManager()
+	ownerToken := strings.Repeat("o", 32)
+	conflictingToken := strings.Repeat("c", 32)
+	args := PostgreSQLServiceRelayArgs{
+		SessionID:  "owned-relay",
+		ListenHost: "127.0.0.1",
+		TargetHost: "127.0.0.1",
+		TargetPort: target.Addr().(*net.TCPAddr).Port,
+		RelayToken: ownerToken,
+		Persistent: true,
+	}
+	descriptor, err := manager.start(args, args.TargetHost, args.TargetPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.stop(args.SessionID)
+
+	conflict := args
+	conflict.RelayToken = conflictingToken
+	if _, err := manager.start(conflict, conflict.TargetHost, conflict.TargetPort); err == nil || !strings.Contains(err.Error(), "relay_session_conflict") {
+		t.Fatalf("conflicting owner must fail without replacing the active relay: %v", err)
+	}
+
+	if _, err := manager.stopOwned(args.SessionID, conflictingToken); err == nil || !strings.Contains(err.Error(), "relay_ownership_mismatch") {
+		t.Fatalf("wrong relay capability must not revoke the owner: %v", err)
+	}
+
+	conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(descriptor["listenPort"].(int))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	payload := "owner-still-connected"
+	if _, err := conn.Write([]byte(ownerToken + "\n" + payload)); err != nil {
+		t.Fatal(err)
+	}
+	response := make([]byte, len(payload))
+	if _, err := io.ReadFull(conn, response); err != nil {
+		t.Fatal(err)
+	}
+	if string(response) != payload {
+		t.Fatalf("incumbent relay returned %q, want %q", response, payload)
+	}
+
+	activeHandoff := args
+	activeHandoff.RelayToken = conflictingToken
+	activeHandoff.ReplaceExisting = true
+	if _, err := manager.start(activeHandoff, activeHandoff.TargetHost, activeHandoff.TargetPort); err == nil || !strings.Contains(err.Error(), "relay_session_conflict") {
+		t.Fatalf("persistent recovery must refuse to replace an active relay: %v", err)
+	}
+
+	removed, err := manager.stopOwned(args.SessionID, ownerToken)
+	if err != nil || !removed {
+		t.Fatalf("owner capability should release the relay: removed=%v err=%v", removed, err)
+	}
+}
+
+func TestPostgreSQLServiceRelayAllowsIdlePersistentRecoveryHandoff(t *testing.T) {
+	target, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Close()
+	go func() {
+		for {
+			conn, acceptErr := target.Accept()
+			if acceptErr != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				_, _ = io.Copy(conn, conn)
+			}()
+		}
+	}()
+
+	manager := newPostgreSQLServiceRelayManager()
+	oldToken := strings.Repeat("a", 32)
+	newToken := strings.Repeat("b", 32)
+	args := PostgreSQLServiceRelayArgs{
+		SessionID:  "recoverable-relay",
+		ListenHost: "127.0.0.1",
+		TargetHost: "127.0.0.1",
+		TargetPort: target.Addr().(*net.TCPAddr).Port,
+		RelayToken: oldToken,
+		Persistent: true,
+	}
+	oldDescriptor, err := manager.start(args, args.TargetHost, args.TargetPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPort := oldDescriptor["listenPort"].(int)
+
+	handoff := args
+	handoff.RelayToken = newToken
+	handoff.ReplaceExisting = true
+	newDescriptor, err := manager.start(handoff, handoff.TargetHost, handoff.TargetPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.stop(handoff.SessionID)
+	newPort := newDescriptor["listenPort"].(int)
+	if newPort == oldPort {
+		t.Fatalf("idle recovery should bind a fresh listener after closing the incumbent: old=%d new=%d", oldPort, newPort)
+	}
+
+	oldConn, oldDialErr := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(oldPort)), time.Second)
+	if oldDialErr == nil {
+		_ = oldConn.Close()
+		t.Fatalf("idle recovery left the incumbent listener open on port %d", oldPort)
+	}
+
+	conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(newPort)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	payload := "handoff-owner"
+	if _, err := conn.Write([]byte(newToken + "\n" + payload)); err != nil {
+		t.Fatal(err)
+	}
+	response := make([]byte, len(payload))
+	if _, err := io.ReadFull(conn, response); err != nil {
+		t.Fatal(err)
+	}
+	if string(response) != payload {
+		t.Fatalf("recovered relay returned %q, want %q", response, payload)
 	}
 }
 

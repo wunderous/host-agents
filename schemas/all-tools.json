@@ -5060,7 +5060,18 @@
           "type": "boolean"
         },
         "localRelay": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "sessionId": {"type": "string", "minLength": 1},
+            "listenHost": {"type": "string"},
+            "listenPort": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "targetHost": {"type": "string"},
+            "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "ttlSeconds": {"type": "integer", "minimum": 10, "maximum": 3600},
+            "relayToken": {"type": "string", "minLength": 32},
+            "persistent": {"type": "boolean"},
+            "replaceExisting": {"type": "boolean"}
+          }
         }
       }
     },
@@ -5200,6 +5211,20 @@
         },
         "instances": {
           "type": "integer"
+        },
+        "localRelay": {
+          "type": "object",
+          "properties": {
+            "sessionId": {"type": "string", "minLength": 1},
+            "listenHost": {"type": "string"},
+            "listenPort": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "targetHost": {"type": "string"},
+            "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "ttlSeconds": {"type": "integer", "minimum": 10, "maximum": 3600},
+            "relayToken": {"type": "string", "minLength": 32},
+            "persistent": {"type": "boolean"},
+            "replaceExisting": {"type": "boolean"}
+          }
         }
       }
     },
@@ -5303,6 +5328,28 @@
         },
         "confirm": {
           "type": "boolean"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "release_postgresql_service_relay",
+    "title": "Release PostgreSQL service relay",
+    "description": "Release one caller-owned PostgreSQL service relay without changing the underlying service or databases.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["sessionId", "relayToken"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relayToken": {
+          "type": "string",
+          "minLength": 32
         }
       }
     },

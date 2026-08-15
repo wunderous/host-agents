@@ -39,4 +39,7 @@ func TestNativeLinuxCloudflaredUnitUsesValidTunnelFlagOrdering(t *testing.T) {
 	if strings.Contains(unit, "tunnel run --no-autoupdate") {
 		t.Fatalf("cloudflared global option appears after run:\n%s", unit)
 	}
+	if strings.Contains(unit, "Opute-managed") {
+		t.Fatalf("host-agent unit description must remain product-neutral:\n%s", unit)
+	}
 }

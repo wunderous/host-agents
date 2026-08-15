@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -51,14 +52,66 @@ func TestReconcileServingAssignmentAllowsComposedProcessLifecycle(t *testing.T) 
 	args.Mode = "dev-process"
 	args.Runtime = "process"
 	args.Artifact = map[string]any{"kind": "source", "sourceDir": "/workspace", "hotReload": true, "command": []any{"bun", "run", "dev"}}
-	if _, err := (&HostOperationsService{}).ReconcileServingAssignment(args, nil); err != nil {
+	if err := validateServingAssignment(args); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestServingTransientUnitIsHostGeneric(t *testing.T) {
+	if got := servingTransientUnit("service/example:v1"); got != "host-serving-service-example-v1" {
+		t.Fatalf("unexpected generic serving unit: %s", got)
+	}
+}
+
+func TestServingLaunchUsesUserSystemdSupervisor(t *testing.T) {
+	command := servingLaunchCommand(servingPidFile("service-a"), "service-a", "cd '/workspace' && exec 'bun' 'run' 'dev'", "on-failure")
+	for _, want := range []string{"systemd-run --user", "--property=KillMode=control-group", "--property=Restart=on-failure", "--property=RestartSec=2s", "host-serving-service-a", "systemctl --user show"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("launch command missing %q: %s", want, command)
+		}
+	}
+}
+
+func TestServingRestartPolicyIsExplicitAndBounded(t *testing.T) {
+	args := genericServingAssignment()
+	args.Mode = "dev-process"
+	args.Runtime = "process"
+	args.Artifact = map[string]any{"kind": "source", "sourceDir": "/workspace", "command": []any{"bun", "run", "dev"}}
+	args.RestartPolicy = "on-failure"
+	if err := validateServingAssignment(args); err != nil {
+		t.Fatal(err)
+	}
+	args.RestartPolicy = "restart-forever"
+	if err := validateServingAssignment(args); err == nil {
+		t.Fatal("expected unknown restart policy to be rejected")
 	}
 }
 
 func TestServingPidFileIsAssignmentScoped(t *testing.T) {
 	if got := servingPidFile("public-edge-local-dev"); got != "/tmp/serving-assignment-public-edge-local-dev.pid" {
 		t.Fatalf("unexpected serving pid file: %s", got)
+	}
+}
+
+func TestServingAssignmentStateTracksDesiredGeneration(t *testing.T) {
+	args := genericServingAssignment()
+	args.AssignmentID = "stateful-service"
+	statePath := servingAssignmentStateFile(args.AssignmentID)
+	_ = os.Remove(statePath)
+	t.Cleanup(func() { _ = os.Remove(statePath) })
+
+	if servingAssignmentStateMatches(args) {
+		t.Fatal("missing assignment state must not claim the desired generation is active")
+	}
+	if err := recordServingAssignmentState(args); err != nil {
+		t.Fatal(err)
+	}
+	if !servingAssignmentStateMatches(args) {
+		t.Fatal("recorded assignment state did not match")
+	}
+	args.Generation++
+	if servingAssignmentStateMatches(args) {
+		t.Fatal("a new generation must require a lifecycle transition")
 	}
 }
 
@@ -95,7 +148,10 @@ func TestReconcileServingAssignmentDoesNotDuplicateLiveProcess(t *testing.T) {
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
-	args.Endpoints = []any{map[string]any{"name": "web", "port": port, "protocol": "http"}}
+	// MCP JSON decoding represents endpoint numbers as float64. Keep this
+	// regression on the wire-shaped value so a healthy assigned process cannot
+	// be relaunched merely because the caller crossed the MCP boundary.
+	args.Endpoints = []any{map[string]any{"name": "web", "port": float64(port), "protocol": "http"}}
 	pidFile := servingPidFile(args.AssignmentID)
 	process := exec.Command("sleep", "30")
 	if err := process.Start(); err != nil {

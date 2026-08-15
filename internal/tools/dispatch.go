@@ -293,6 +293,12 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, "PostgreSQL service was removed"), nil
+	case "release_postgresql_service_relay":
+		out, err := svc.ReleasePostgreSQLServiceRelay(stringField(args, "sessionId"), stringField(args, "relayToken"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "PostgreSQL service relay was released"), nil
 
 	case "reconcile_tidb_service":
 		out, err := svc.ReconcileTiDBService(ctx, ops.TiDBServiceArgs{VMName: stringField(args, "vmName"), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), PDReplicas: intField(args, "pdReplicas"), TiKVReplicas: intField(args, "tikvReplicas"), TiDBReplicas: intField(args, "tidbReplicas"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"), TiDBVersion: stringField(args, "tidbVersion"), RetentionPolicy: stringField(args, "retentionPolicy")}, onData)
@@ -1156,13 +1162,15 @@ func postgresqlServiceRelayArgs(args map[string]any) *ops.PostgreSQLServiceRelay
 		return nil
 	}
 	return &ops.PostgreSQLServiceRelayArgs{
-		SessionID:  stringField(raw, "sessionId"),
-		ListenHost: stringField(raw, "listenHost"),
-		ListenPort: intField(raw, "listenPort"),
-		TargetHost: stringField(raw, "targetHost"),
-		TargetPort: intField(raw, "targetPort"),
-		TTLSeconds: intField(raw, "ttlSeconds"),
-		RelayToken: stringField(raw, "relayToken"),
+		SessionID:       stringField(raw, "sessionId"),
+		ListenHost:      stringField(raw, "listenHost"),
+		ListenPort:      intField(raw, "listenPort"),
+		TargetHost:      stringField(raw, "targetHost"),
+		TargetPort:      intField(raw, "targetPort"),
+		TTLSeconds:      intField(raw, "ttlSeconds"),
+		RelayToken:      stringField(raw, "relayToken"),
+		Persistent:      boolField(raw, "persistent"),
+		ReplaceExisting: boolField(raw, "replaceExisting"),
 	}
 }
 
@@ -1450,6 +1458,7 @@ func servingAssignmentArgs(args map[string]any) ops.ServingAssignmentArgs {
 		Exposure:        mapField(args, "exposure"),
 		ServiceUnit:     stringField(args, "serviceUnit"),
 		DesiredState:    stringField(args, "desiredState"),
+		RestartPolicy:   stringField(args, "restartPolicy"),
 	}
 }
 

@@ -251,6 +251,10 @@ var TaskAwareTools = map[string]bool{
 	"delete_postgresql":             true,
 	"create_cloudflare_tunnel":      true,
 	"delete_cloudflare_tunnel":      true,
+	// Host-local serving reconciliation may need to wait for the service
+	// manager and connector process. Keep its lifetime on the standard MCP
+	// task contract rather than coupling it to the request transport.
+	"ensure_cloudflared_tunnel":     true,
 	"configure_k3s_load_balancer":   true,
 	"configure_k3s_ha_servers":      true,
 	"uninstall_k3s":                 true,

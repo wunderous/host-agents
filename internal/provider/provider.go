@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	DefaultIncusPath     = "incus"
-	DefaultSystemctlPath = "/usr/bin/systemctl"
+	DefaultIncusPath      = "incus"
+	DefaultSystemctlPath  = "/usr/bin/systemctl"
+	DefaultSystemdRunPath = "/usr/bin/systemd-run"
 )
 
 // ID identifies the VM provider runtime.

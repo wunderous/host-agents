@@ -52,6 +52,11 @@ type PostgreSQLServiceRelayArgs struct {
 	TargetPort int    `json:"targetPort,omitempty"`
 	TTLSeconds int    `json:"ttlSeconds,omitempty"`
 	RelayToken string `json:"relayToken"`
+	Persistent bool   `json:"persistent,omitempty"`
+	// ReplaceExisting permits an explicit persistent recovery handoff when a
+	// previous owner exited without releasing its relay. The manager still
+	// refuses the handoff while authenticated connections are active.
+	ReplaceExisting bool `json:"replaceExisting,omitempty"`
 }
 
 type postgresqlServiceSpec struct {

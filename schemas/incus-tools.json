@@ -4529,7 +4529,18 @@
           "type": "boolean"
         },
         "localRelay": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "sessionId": {"type": "string", "minLength": 1},
+            "listenHost": {"type": "string"},
+            "listenPort": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "targetHost": {"type": "string"},
+            "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "ttlSeconds": {"type": "integer", "minimum": 10, "maximum": 3600},
+            "relayToken": {"type": "string", "minLength": 32},
+            "persistent": {"type": "boolean"},
+            "replaceExisting": {"type": "boolean"}
+          }
         }
       }
     },
@@ -4573,7 +4584,18 @@
           ]
         },
         "localRelay": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "sessionId": {"type": "string", "minLength": 1},
+            "listenHost": {"type": "string"},
+            "listenPort": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "targetHost": {"type": "string"},
+            "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "ttlSeconds": {"type": "integer", "minimum": 10, "maximum": 3600},
+            "relayToken": {"type": "string", "minLength": 32},
+            "persistent": {"type": "boolean"},
+            "replaceExisting": {"type": "boolean"}
+          }
         }
       }
     },
@@ -4637,7 +4659,18 @@
           ]
         },
         "localRelay": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "sessionId": {"type": "string", "minLength": 1},
+            "listenHost": {"type": "string"},
+            "listenPort": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "targetHost": {"type": "string"},
+            "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "ttlSeconds": {"type": "integer", "minimum": 10, "maximum": 3600},
+            "relayToken": {"type": "string", "minLength": 32},
+            "persistent": {"type": "boolean"},
+            "replaceExisting": {"type": "boolean"}
+          }
         },
         "confirm": {
           "type": "boolean"
@@ -4669,6 +4702,20 @@
         },
         "instances": {
           "type": "integer"
+        },
+        "localRelay": {
+          "type": "object",
+          "properties": {
+            "sessionId": {"type": "string", "minLength": 1},
+            "listenHost": {"type": "string"},
+            "listenPort": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "targetHost": {"type": "string"},
+            "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "ttlSeconds": {"type": "integer", "minimum": 10, "maximum": 3600},
+            "relayToken": {"type": "string", "minLength": 32},
+            "persistent": {"type": "boolean"},
+            "replaceExisting": {"type": "boolean"}
+          }
         }
       }
     },
@@ -4768,7 +4815,18 @@
           ]
         },
         "localRelay": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "sessionId": {"type": "string", "minLength": 1},
+            "listenHost": {"type": "string"},
+            "listenPort": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "targetHost": {"type": "string"},
+            "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "ttlSeconds": {"type": "integer", "minimum": 10, "maximum": 3600},
+            "relayToken": {"type": "string", "minLength": 32},
+            "persistent": {"type": "boolean"},
+            "replaceExisting": {"type": "boolean"}
+          }
         },
         "confirm": {
           "type": "boolean"
@@ -4844,7 +4902,8 @@
         "readiness": {"type": "array", "minItems": 1},
         "exposure": {"type": "object"},
         "serviceUnit": {"type": "string"},
-        "desiredState": {"type": "string", "enum": ["start", "restart"]}
+        "desiredState": {"type": "string", "enum": ["start", "restart"]},
+        "restartPolicy": {"type": "string", "enum": ["no", "on-failure", "always"]}
       }
     },
     "outputSchema": {"type": "object"}
@@ -4867,14 +4926,14 @@
     "name": "reconcile_postgresql_service",
     "title": "Reconcile PostgreSQL service",
     "description": "Reconcile a caller-defined PostgreSQL service and databases on an explicit Kubernetes target.",
-    "inputSchema": {"type": "object", "required": ["vmName", "databases", "consumerSecretName", "consumerSecretLabel", "serviceOwner", "servicePartOf"], "properties": {"vmName": {"type": "string"}, "clusterName": {"type": "string"}, "namespace": {"type": "string"}, "instances": {"type": "integer"}, "storageClass": {"type": "string"}, "storageSize": {"type": "string"}, "retentionPolicy": {"type": "string"}, "databases": {"type": "array", "items": {"type": "string"}}, "consumerSecretName": {"type": "string"}, "consumerSecretLabel": {"type": "string"}, "serviceOwner": {"type": "string"}, "servicePartOf": {"type": "string"}, "relayDeviceName": {"type": "string"}, "restartConsumers": {"type": "boolean"}, "localRelay": {"type": "object"}}},
+    "inputSchema": {"type": "object", "required": ["vmName", "databases", "consumerSecretName", "consumerSecretLabel", "serviceOwner", "servicePartOf"], "properties": {"vmName": {"type": "string"}, "clusterName": {"type": "string"}, "namespace": {"type": "string"}, "instances": {"type": "integer"}, "storageClass": {"type": "string"}, "storageSize": {"type": "string"}, "retentionPolicy": {"type": "string"}, "databases": {"type": "array", "items": {"type": "string"}}, "consumerSecretName": {"type": "string"}, "consumerSecretLabel": {"type": "string"}, "serviceOwner": {"type": "string"}, "servicePartOf": {"type": "string"}, "relayDeviceName": {"type": "string"}, "restartConsumers": {"type": "boolean"}, "localRelay": {"type": "object", "properties": {"sessionId": {"type": "string", "minLength": 1}, "listenHost": {"type": "string"}, "listenPort": {"type": "integer", "minimum": 0, "maximum": 65535}, "targetHost": {"type": "string"}, "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535}, "ttlSeconds": {"type": "integer", "minimum": 10, "maximum": 3600}, "relayToken": {"type": "string", "minLength": 32}, "persistent": {"type": "boolean"}, "replaceExisting": {"type": "boolean"}}}}},
     "outputSchema": {"type": "object"}
   },
   {
     "name": "get_postgresql_service_status",
     "title": "Get PostgreSQL service status",
     "description": "Read SQL-gated readiness for a caller-defined PostgreSQL service.",
-    "inputSchema": {"type": "object", "required": ["vmName", "databases", "consumerSecretName", "consumerSecretLabel", "serviceOwner", "servicePartOf"], "properties": {"vmName": {"type": "string"}, "clusterName": {"type": "string"}, "namespace": {"type": "string"}, "instances": {"type": "integer"}, "databases": {"type": "array", "items": {"type": "string"}}, "consumerSecretName": {"type": "string"}, "consumerSecretLabel": {"type": "string"}, "serviceOwner": {"type": "string"}, "servicePartOf": {"type": "string"}, "relayDeviceName": {"type": "string"}, "localRelay": {"type": "object"}}},
+    "inputSchema": {"type": "object", "required": ["vmName", "databases", "consumerSecretName", "consumerSecretLabel", "serviceOwner", "servicePartOf"], "properties": {"vmName": {"type": "string"}, "clusterName": {"type": "string"}, "namespace": {"type": "string"}, "instances": {"type": "integer"}, "databases": {"type": "array", "items": {"type": "string"}}, "consumerSecretName": {"type": "string"}, "consumerSecretLabel": {"type": "string"}, "serviceOwner": {"type": "string"}, "servicePartOf": {"type": "string"}, "relayDeviceName": {"type": "string"}, "localRelay": {"type": "object", "properties": {"sessionId": {"type": "string", "minLength": 1}, "listenHost": {"type": "string"}, "listenPort": {"type": "integer", "minimum": 0, "maximum": 65535}, "targetHost": {"type": "string"}, "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535}, "ttlSeconds": {"type": "integer", "minimum": 10, "maximum": 3600}, "relayToken": {"type": "string", "minLength": 32}, "persistent": {"type": "boolean"}, "replaceExisting": {"type": "boolean"}}}}},
     "outputSchema": {"type": "object"}
   },
   {
@@ -4882,6 +4941,13 @@
     "title": "Remove PostgreSQL service",
     "description": "Remove a caller-defined PostgreSQL service after explicit confirmation.",
     "inputSchema": {"type": "object", "required": ["vmName", "consumerSecretName", "serviceOwner", "servicePartOf", "confirm"], "properties": {"vmName": {"type": "string"}, "clusterName": {"type": "string"}, "namespace": {"type": "string"}, "consumerSecretName": {"type": "string"}, "consumerSecretLabel": {"type": "string"}, "serviceOwner": {"type": "string"}, "servicePartOf": {"type": "string"}, "retentionPolicy": {"type": "string"}, "confirm": {"type": "boolean"}}},
+    "outputSchema": {"type": "object"}
+  },
+  {
+    "name": "release_postgresql_service_relay",
+    "title": "Release PostgreSQL service relay",
+    "description": "Release one caller-owned PostgreSQL service relay without changing the underlying service or databases.",
+    "inputSchema": {"type": "object", "required": ["sessionId", "relayToken"], "properties": {"sessionId": {"type": "string", "minLength": 1}, "relayToken": {"type": "string", "minLength": 32}}},
     "outputSchema": {"type": "object"}
   }
 ]

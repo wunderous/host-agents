@@ -28,3 +28,21 @@ func TestRestartHostServiceRejectsUnsafeUnitNames(t *testing.T) {
 		t.Fatal("unsafe systemd unit name matched")
 	}
 }
+
+func TestServiceStateRestartUsesDetachedUserSystemdJob(t *testing.T) {
+	want := []string{
+		provider.DefaultSystemdRunPath,
+		"--user",
+		"--unit=host-service-state-bootstrap-service",
+		"--collect",
+		"--no-block",
+		provider.DefaultSystemctlPath,
+		"--user",
+		"--no-block",
+		"restart",
+		"bootstrap.service",
+	}
+	if got := serviceStateCommand("bootstrap.service", "restart", "user"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
+	}
+}

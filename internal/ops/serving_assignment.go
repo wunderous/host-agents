@@ -1,8 +1,10 @@
 package ops
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -32,6 +34,7 @@ type ServingAssignmentArgs struct {
 	Exposure        map[string]any `json:"exposure"`
 	ServiceUnit     string         `json:"serviceUnit,omitempty"`
 	DesiredState    string         `json:"desiredState,omitempty"`
+	RestartPolicy   string         `json:"restartPolicy,omitempty"`
 }
 
 var servingIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$`)
@@ -84,6 +87,40 @@ func releaseServingLaunch(args ServingAssignmentArgs) {
 func servingString(value any) string {
 	text, _ := value.(string)
 	return strings.TrimSpace(text)
+}
+
+// MCP JSON numbers arrive as float64 after decoding into map[string]any,
+// while direct contract tests and internal callers may use an integer type.
+// Normalize the wire representation once so readiness and launch decisions
+// observe the same endpoint contract.
+func servingPort(value any) int {
+	switch port := value.(type) {
+	case int:
+		return port
+	case int8:
+		return int(port)
+	case int16:
+		return int(port)
+	case int32:
+		return int(port)
+	case int64:
+		return int(port)
+	case uint:
+		return int(port)
+	case uint8:
+		return int(port)
+	case uint16:
+		return int(port)
+	case uint32:
+		return int(port)
+	case uint64:
+		return int(port)
+	case float64:
+		if port >= 1 && port <= 65535 && port == math.Trunc(port) {
+			return int(port)
+		}
+	}
+	return 0
 }
 
 func validateServingTarget(target map[string]any) error {
@@ -162,6 +199,9 @@ func validateServingAssignment(args ServingAssignmentArgs) error {
 		return errors.New("at least one endpoint and readiness check are required")
 	}
 	if args.Runtime == "process" {
+		if args.RestartPolicy != "" && args.RestartPolicy != "no" && args.RestartPolicy != "on-failure" && args.RestartPolicy != "always" {
+			return fmt.Errorf("unsupported restartPolicy %q", args.RestartPolicy)
+		}
 		if args.ServiceUnit != "" {
 			if !servingSystemdUnit.MatchString(args.ServiceUnit) {
 				return errors.New("serviceUnit must be a valid systemd unit name")
@@ -175,6 +215,13 @@ func validateServingAssignment(args ServingAssignmentArgs) error {
 		}
 	}
 	return nil
+}
+
+func normalizedServingRestartPolicy(args ServingAssignmentArgs) string {
+	if args.RestartPolicy == "" {
+		return "no"
+	}
+	return args.RestartPolicy
 }
 
 func probeServingEndpoint(protocol string, port int, path string) (bool, string) {
@@ -209,13 +256,77 @@ func shellQuoteServing(value string) string {
 }
 
 func servingPidFile(assignmentID string) string {
-	return "/tmp/serving-assignment-" + assignmentID + ".pid"
+	return "/tmp/serving-assignment-" + servingFileToken(assignmentID) + ".pid"
+}
+
+func servingAssignmentStateFile(assignmentID string) string {
+	return "/tmp/serving-assignment-" + servingFileToken(assignmentID) + ".state.json"
+}
+
+type servingAssignmentState struct {
+	ContractVersion string `json:"contractVersion"`
+	AssignmentID    string `json:"assignmentId"`
+	Generation      int    `json:"generation"`
+	IdempotencyKey  string `json:"idempotencyKey"`
+}
+
+func servingAssignmentStateMatches(args ServingAssignmentArgs) bool {
+	data, err := os.ReadFile(servingAssignmentStateFile(args.AssignmentID))
+	if err != nil {
+		return false
+	}
+	var state servingAssignmentState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return false
+	}
+	return state.ContractVersion == args.ContractVersion &&
+		state.AssignmentID == args.AssignmentID &&
+		state.Generation == args.Generation &&
+		state.IdempotencyKey == args.IdempotencyKey
+}
+
+func recordServingAssignmentState(args ServingAssignmentArgs) error {
+	data, err := json.Marshal(servingAssignmentState{
+		ContractVersion: args.ContractVersion,
+		AssignmentID:    args.AssignmentID,
+		Generation:      args.Generation,
+		IdempotencyKey:  args.IdempotencyKey,
+	})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(servingAssignmentStateFile(args.AssignmentID), data, 0600)
 }
 
 func servingTransientUnit(assignmentID string) string {
 	// Assignment IDs are already bounded by validateServingAssignment. Keep the
 	// derived unit name independently safe because it is passed to systemd.
-	return "opute-serving-" + strings.NewReplacer("/", "-", ":", "-", "@", "-", ".", "-").Replace(assignmentID)
+	return "host-serving-" + servingFileToken(assignmentID)
+}
+
+func servingFileToken(value string) string {
+	return strings.NewReplacer("/", "-", ":", "-", "@", "-", ".", "-").Replace(value)
+}
+
+func servingSystemdUnitActive(unit string) bool {
+	return exec.Command("systemctl", "--user", "is-active", "--quiet", unit).Run() == nil
+}
+
+func servingLaunchCommand(pidFile, assignmentID, command, restartPolicy string) string {
+	unit := servingTransientUnit(assignmentID)
+	logToken := servingFileToken(assignmentID)
+	restartProperties := ""
+	if restartPolicy == "on-failure" || restartPolicy == "always" {
+		restartProperties = " --property=Restart=" + restartPolicy + " --property=RestartSec=2s"
+	}
+	return fmt.Sprintf(
+		"pidfile=%s; unit=%s; systemctl --user stop \"$unit\" >/dev/null 2>&1 || true; systemctl --user reset-failed \"$unit\" >/dev/null 2>&1 || true; terminate_tree() { target=\"$1\"; for child in $(pgrep -P \"$target\" 2>/dev/null || true); do terminate_tree \"$child\"; done; kill -TERM \"$target\" 2>/dev/null || true; }; if test -s \"$pidfile\"; then old=$(cat \"$pidfile\"); kill -TERM -- -\"$old\" 2>/dev/null || true; terminate_tree \"$old\"; fi; systemd-run --user --unit=\"$unit\" --collect --no-block --property=KillMode=control-group%s /bin/bash -lic %s >/tmp/serving-assignment-%s-supervisor.log 2>&1; for _ in $(seq 1 50); do pid=$(systemctl --user show \"$unit\" -p MainPID --value 2>/dev/null || true); if [[ \"$pid\" =~ ^[1-9][0-9]*$ ]] && kill -0 \"$pid\" 2>/dev/null; then printf '%%s\\n' \"$pid\" >\"$pidfile\"; exit 0; fi; sleep 0.1; done; echo \"serving supervisor did not expose a live main PID for $unit\" >&2; systemctl --user status \"$unit\" --no-pager 2>&1 || true; exit 1",
+		shellQuoteServing(pidFile),
+		shellQuoteServing(unit),
+		restartProperties,
+		shellQuoteServing(command),
+		logToken,
+	)
 }
 
 func servingProcessAlive(pidFile string) bool {
@@ -286,6 +397,8 @@ func (s *HostOperationsService) ReconcileServingAssignment(args ServingAssignmen
 		"status":          "accepted",
 	}
 	if args.Runtime == "process" {
+		restartPolicy := normalizedServingRestartPolicy(args)
+		result["restartPolicy"] = restartPolicy
 		command, _, err := servingArtifactCommand(args.Artifact)
 		if err != nil {
 			return nil, err
@@ -301,65 +414,86 @@ func (s *HostOperationsService) ReconcileServingAssignment(args ServingAssignmen
 			for _, endpointRaw := range args.Endpoints {
 				endpoint, endpointOK := endpointRaw.(map[string]any)
 				if endpointOK && servingString(endpoint["name"]) == endpointName {
-					port, _ := endpoint["port"].(int)
+					port := servingPort(endpoint["port"])
 					protocol := servingString(endpoint["protocol"])
 					ready, _ := probeServingEndpoint(protocol, port, path)
 					allReady = allReady && ready
 				}
 			}
 		}
-		// A healthy declared endpoint is already the desired state. This is
-		// important for hot-reloading source services: a route reconciliation
-		// must not start a second process and let its port guard terminate the
-		// existing owner. Launch only when the declared surface is unavailable.
-		if !allReady {
-			pidFile := servingPidFile(args.AssignmentID)
-			// A process can be alive while its declared endpoints are between
-			// hot-reload generations or still warming up. Do not let a second
-			// assignment identity launch another copy during that interval:
-			// generic source runtimes commonly use a port guard that terminates
-			// the first owner when the duplicate starts. A later reconciliation
-			// can retry once the owner exits or the endpoints become ready.
-			if servingProcessAlive(pidFile) {
+		pidFile := servingPidFile(args.AssignmentID)
+		preStart := servingString(args.Artifact["preStartCommand"])
+		managedUnitActive := servingSystemdUnitActive(servingTransientUnit(args.AssignmentID))
+		adoptUnmanagedReadyService := allReady && !managedUnitActive
+		if adoptUnmanagedReadyService && !servingProcessAlive(pidFile) && preStart == "" {
+			return nil, errors.New("declared serving endpoint is ready but is not owned by its host-systemd supervisor; preStartCommand is required for explicit adoption")
+		}
+		// A healthy declared endpoint is already the desired state only when its
+		// assignment-scoped supervisor is active. An endpoint left behind by a
+		// prior launcher must be explicitly adopted before the host agent can
+		// claim the serving contract; otherwise an agent restart can kill the
+		// process while the route still appears ready.
+		assignmentChanged := !servingAssignmentStateMatches(args)
+		if !allReady || adoptUnmanagedReadyService || assignmentChanged {
+			// A managed systemd unit is the lifecycle owner. During a bounded
+			// restart or warm-up, let its declared restart policy converge rather
+			// than launching a second process from the reconciliation caller.
+			if managedUnitActive && !assignmentChanged && !adoptUnmanagedReadyService {
 				result["starting"] = true
-			} else if claimServingLaunch(args) {
-				_ = os.Remove(pidFile)
-				if preStart := servingString(args.Artifact["preStartCommand"]); preStart != "" {
-					if _, err := s.RunAgentShell(preStart, onData); err != nil {
-						releaseServingLaunch(args)
-						return nil, fmt.Errorf("source artifact pre-start command failed: %w", err)
-					}
-				}
-				// Run the caller-declared command in the host user's normal login
-				// environment. This keeps generic source assignments usable when the
-				// host runtime is installed through the user's profile rather than
-				// the system PATH.
-				// Execute the caller-declared environment in the same shell as the
-				// process. The assignment is the generic service boundary; losing
-				// these values here would make a valid service appear configured while
-				// its child observes a different runtime contract.
-				// Own a process session per assignment generation. Killing only the
-				// launcher PID leaves a service's watcher/worker tree alive after a
-				// source revision changes, so the next generation can keep serving old
-				// code and occupy the same endpoints. `setsid` makes the recorded PID
-				// the process-group leader; the group kill is generic and does not
-				// depend on the caller's runtime or service implementation.
-				// Keep the process outside the transient user-systemd manager. On
-				// hosts where that manager is session-scoped, reconciling another
-				// user service would otherwise terminate this unrelated serving
-				// assignment. The pidfile and process group remain assignment-scoped
-				// and are sufficient for idempotent restart/cleanup.
-				launch := fmt.Sprintf("pidfile=%s; unit=%s; systemctl --user stop \"$unit\" >/dev/null 2>&1 || true; terminate_tree() { target=\"$1\"; for child in $(pgrep -P \"$target\" 2>/dev/null || true); do terminate_tree \"$child\"; done; kill -TERM \"$target\" 2>/dev/null || true; }; if test -s \"$pidfile\"; then old=$(cat \"$pidfile\"); kill -TERM -- -\"$old\" 2>/dev/null || true; terminate_tree \"$old\"; fi; nohup setsid bash -lic %s >/tmp/serving-assignment-%s.log 2>&1 < /dev/null & echo $! >\"$pidfile\"", shellQuoteServing(pidFile), shellQuoteServing(servingTransientUnit(args.AssignmentID)), shellQuoteServing(command), args.AssignmentID)
-				if _, err := s.RunAgentShell(launch, onData); err != nil {
-					releaseServingLaunch(args)
-					return nil, err
-				}
-				result["started"] = true
 			} else {
-				result["starting"] = true
+				// A process can be alive while its declared endpoints are between
+				// hot-reload generations or still warming up. Do not let a second
+				// assignment identity launch another copy during that interval:
+				// generic source runtimes commonly use a port guard that terminates
+				// the first owner when the duplicate starts. A later reconciliation
+				// can retry once the owner exits or the endpoints become ready.
+				pidAlive := servingProcessAlive(pidFile)
+				if pidAlive && !adoptUnmanagedReadyService && (!assignmentChanged || !managedUnitActive) {
+					result["starting"] = true
+				} else if claimServingLaunch(args) {
+					if !pidAlive {
+						_ = os.Remove(pidFile)
+					}
+					if adoptUnmanagedReadyService && preStart != "" {
+						if _, err := s.RunAgentShell(preStart, onData); err != nil {
+							releaseServingLaunch(args)
+							return nil, fmt.Errorf("source artifact pre-start command failed: %w", err)
+						}
+					}
+					// Run the caller-declared command in the host user's normal login
+					// environment. This keeps generic source assignments usable when the
+					// host runtime is installed through the user's profile rather than
+					// the system PATH.
+					// Execute the caller-declared environment in the same shell as the
+					// process. The assignment is the generic service boundary; losing
+					// these values here would make a valid service appear configured while
+					// its child observes a different runtime contract.
+					// Own a process session per assignment generation. Killing only the
+					// launcher PID leaves a service's watcher/worker tree alive after a
+					// source revision changes, so the next generation can keep serving old
+					// code and occupy the same endpoints. `setsid` makes the recorded PID
+					// the process-group leader; the group kill is generic and does not
+					// depend on the caller's runtime or service implementation.
+					// The user-systemd unit is the generic lifecycle owner. It survives
+					// a host-agent process restart while retaining assignment-scoped stop
+					// and replacement semantics.
+					launch := servingLaunchCommand(pidFile, args.AssignmentID, command, restartPolicy)
+					if _, err := s.RunAgentShell(launch, onData); err != nil {
+						releaseServingLaunch(args)
+						return nil, err
+					}
+					if err := recordServingAssignmentState(args); err != nil {
+						releaseServingLaunch(args)
+						return nil, fmt.Errorf("record serving assignment state: %w", err)
+					}
+					result["started"] = true
+				} else {
+					result["starting"] = true
+				}
 			}
 		}
 	}
+
 	if args.Runtime == "process" && args.ServiceUnit != "" {
 		serviceResult, err := s.SetHostServiceState(SetHostServiceStateArgs{
 			ServiceName: args.ServiceUnit,
@@ -379,12 +513,7 @@ func (s *HostOperationsService) ReconcileServingAssignment(args ServingAssignmen
 		}
 		name := servingString(endpoint["name"])
 		protocol := servingString(endpoint["protocol"])
-		port, ok := endpoint["port"].(float64)
-		if !ok {
-			if integer, integerOK := endpoint["port"].(int); integerOK {
-				port = float64(integer)
-			}
-		}
+		port := servingPort(endpoint["port"])
 		path := "/"
 		for _, rawCheck := range args.Readiness {
 			check, checkOK := rawCheck.(map[string]any)
@@ -392,7 +521,7 @@ func (s *HostOperationsService) ReconcileServingAssignment(args ServingAssignmen
 				path = servingString(check["path"])
 			}
 		}
-		ready, message := probeServingEndpoint(protocol, int(port), path)
+		ready, message := probeServingEndpoint(protocol, port, path)
 		readiness = append(readiness, map[string]any{"name": name, "ready": ready, "message": message})
 	}
 	result["readiness"] = readiness

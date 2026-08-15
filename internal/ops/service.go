@@ -125,6 +125,10 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 	if ownershipMode != "enforce" {
 		ownershipMode = "audit"
 	}
+	postgresRelayConfigDir := strings.TrimSpace(opts.RelayConfigDir)
+	if postgresRelayConfigDir != "" {
+		postgresRelayConfigDir = filepath.Join(postgresRelayConfigDir, "postgresql-service-relays")
+	}
 	return &HostOperationsService{
 		runtime:                 rt,
 		toolsFn:                 toolsFn,
@@ -137,7 +141,7 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		sqlSupervisor:           newSQLConnectorSupervisor(),
 		guestBridgeRelay:        newTCPRelayManager(),
 		localLLMRelay:           newPersistentLocalLLMRelayManagerAt(opts.RelayConfigDir),
-		postgresqlServiceRelay:  newPostgreSQLServiceRelayManager(),
+		postgresqlServiceRelay:  newPersistentPostgreSQLServiceRelayManagerAt(postgresRelayConfigDir),
 		allowInsecureDownloads:  opts.AllowInsecureDownloads,
 	}
 }
@@ -1095,6 +1099,41 @@ func serviceStatusCommand(serviceName string) []string {
 	return []string{provider.DefaultSystemctlPath, "is-active", serviceName}
 }
 
+func serviceStateUnit(serviceName string) string {
+	return "host-service-state-" + strings.NewReplacer("/", "-", ":", "-", "@", "-", ".", "-").Replace(serviceName)
+}
+
+func serviceStateCommand(serviceName, state, scope string) []string {
+	if state == "restart" && scope == "user" {
+		// A user-systemd transient job is outside the target service's cgroup.
+		// This matters when the target is the MCP process serving this request:
+		// systemctl can enqueue the restart and return a truthful scheduled
+		// result before the current agent is stopped.
+		return []string{
+			provider.DefaultSystemdRunPath,
+			"--user",
+			"--unit=" + serviceStateUnit(serviceName),
+			"--collect",
+			"--no-block",
+			provider.DefaultSystemctlPath,
+			"--user",
+			"--no-block",
+			"restart",
+			serviceName,
+		}
+	}
+	command := []string{provider.DefaultSystemctlPath}
+	if scope == "user" {
+		command = append(command, "--user")
+	} else {
+		command = append([]string{"sudo", "-n"}, command...)
+	}
+	if state == "restart" {
+		command = append(command, "--no-block")
+	}
+	return append(command, state, serviceName)
+}
+
 func (s *HostOperationsService) RestartHostService(args RestartHostServiceArgs, onData func(string)) (map[string]string, error) {
 	if err := s.requireSharedHostOwner("restart_host_service"); err != nil {
 		return nil, err
@@ -1143,20 +1182,7 @@ func (s *HostOperationsService) SetHostServiceState(args SetHostServiceStateArgs
 	if state != "start" && state != "stop" && state != "restart" && state != "enable" && state != "disable" {
 		return nil, errors.New("state must be start, stop, restart, enable, or disable")
 	}
-	command := []string{provider.DefaultSystemctlPath}
-	if scope == "user" {
-		command = append(command, "--user")
-	} else {
-		command = append([]string{"sudo", "-n"}, command...)
-	}
-	if state == "restart" {
-		// Restarting the service that owns this MCP request necessarily tears
-		// down the request's transport. Schedule the generic lifecycle action
-		// and let the supervisor perform the handoff; callers must reconnect and
-		// probe readiness rather than waiting on a process that is being stopped.
-		command = append(command, "--no-block")
-	}
-	command = append(command, state, serviceName)
+	command := serviceStateCommand(serviceName, state, scope)
 	result, err := s.hostCommandRunner(command, onData, 0)
 	if err != nil || result.ExitCode != 0 {
 		return nil, fmt.Errorf("service state change failed: %s", firstNonEmpty(result.Stderr, result.Stdout, "command failed"))

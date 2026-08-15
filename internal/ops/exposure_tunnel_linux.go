@@ -3,6 +3,7 @@
 package ops
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -126,7 +127,7 @@ func nativeLinuxCloudflaredPaths(bindingID string) (unitPath, envPath string, er
 
 func nativeLinuxCloudflaredUnit(bindingID, envPath, binary, pidPath string) string {
 	return fmt.Sprintf(`[Unit]
-Description=Opute-managed Cloudflared connector (%s)
+Description=Managed Cloudflared connector (%s)
 After=network-online.target
 
 [Service]
@@ -164,17 +165,25 @@ func ensureNativeLinuxCloudflared(s *HostOperationsService, args EnsureCloudflar
 	// systemd EnvironmentFile accepts single-quoted values; escape the only
 	// character that could terminate that quoting form.
 	escapedToken := strings.ReplaceAll(args.RunToken, "'", "'\\''")
-	if err := os.WriteFile(envPath, []byte("TUNNEL_TOKEN='"+escapedToken+"'\n"), 0600); err != nil {
+	desiredEnv := []byte("TUNNEL_TOKEN='" + escapedToken + "'\n")
+	pidPath := envPath + ".pid"
+	desiredUnit := nativeLinuxCloudflaredUnit(args.BindingID, envPath, binary, pidPath)
+	existingEnv, envReadErr := os.ReadFile(envPath)
+	existingUnit, unitReadErr := os.ReadFile(unitPath)
+	if envReadErr == nil && unitReadErr == nil && bytes.Equal(existingEnv, desiredEnv) && bytes.Equal(existingUnit, []byte(desiredUnit)) {
+		if _, statErr := os.Stat(pidPath); statErr == nil && isNativeLinuxCloudflaredRunning(args.BindingID) {
+			return &EnsureCloudflaredTunnelResult{BindingID: args.BindingID, Hostname: args.Hostname, LocalTarget: args.LocalTarget, TunnelStatus: "connected", ServiceRunning: true}, nil
+		}
+	}
+	if err := os.WriteFile(envPath, desiredEnv, 0600); err != nil {
 		return nil, err
 	}
-	pidPath := envPath + ".pid"
 	_ = os.Remove(pidPath)
-	unit := nativeLinuxCloudflaredUnit(args.BindingID, envPath, binary, pidPath)
-	if err := os.WriteFile(unitPath, []byte(unit), 0600); err != nil {
+	if err := os.WriteFile(unitPath, []byte(desiredUnit), 0600); err != nil {
 		return nil, err
 	}
 	unitName := filepath.Base(unitPath)
-	for _, command := range [][]string{{"systemctl", "--user", "daemon-reload"}, {"systemctl", "--user", "enable", unitName}, {"systemctl", "--user", "restart", unitName}} {
+	for _, command := range [][]string{{"systemctl", "--user", "daemon-reload"}, {"systemctl", "--user", "enable", unitName}, {"systemctl", "--user", "--no-block", "restart", unitName}} {
 		result, runErr := s.hostCommandRunner(command, nil, 30*time.Second)
 		if runErr != nil {
 			return nil, runErr
@@ -186,7 +195,7 @@ func ensureNativeLinuxCloudflared(s *HostOperationsService, args EnsureCloudflar
 			// transient exit status of the control command. Only apply this
 			// recovery to restart; daemon-reload and enable failures remain
 			// configuration errors.
-			if len(command) == 4 && command[2] == "restart" && isNativeLinuxCloudflaredRunning(args.BindingID) {
+			if len(command) == 5 && command[2] == "--no-block" && command[3] == "restart" && isNativeLinuxCloudflaredRunning(args.BindingID) {
 				continue
 			}
 			return nil, fmt.Errorf("cloudflared systemd operation failed (exit=%d)", result.ExitCode)

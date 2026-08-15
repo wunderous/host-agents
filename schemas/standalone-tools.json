@@ -484,6 +484,11 @@
       "name": "remove_postgresql_service",
       "classification": "destructive",
       "support": "experimental"
+    },
+    {
+      "name": "release_postgresql_service_relay",
+      "classification": "mutation",
+      "support": "experimental"
     }
   ]
 }

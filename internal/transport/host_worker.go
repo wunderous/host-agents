@@ -17,6 +17,11 @@ import (
 
 const hostWorkerProtocolVersion = "hwp/1"
 
+const (
+	hostWorkerTransportCanceledCode = "host_worker_transport_canceled"
+	hostOperationCanceledCode       = "host_operation_cancelled"
+)
+
 type hwpServerFrame struct {
 	Type string `json:"type"`
 }
@@ -129,8 +134,13 @@ type hostWorkerConn struct {
 	host    *hostmcp.Server
 	mu      sync.Mutex
 	pending map[string]chan syncResult
-	assigns map[string]context.CancelFunc
+	assigns map[string]*hostWorkerAssignment
 	streams map[string]hostWorkerStream
+}
+
+type hostWorkerAssignment struct {
+	cancel       context.CancelFunc
+	cancelReason string
 }
 
 type hostWorkerStream struct {
@@ -208,7 +218,7 @@ func connectHostWorkerOnce(ctx context.Context, host *hostmcp.Server, wsURL, age
 		logger:  logger,
 		host:    host,
 		pending: make(map[string]chan syncResult),
-		assigns: make(map[string]context.CancelFunc),
+		assigns: make(map[string]*hostWorkerAssignment),
 		streams: make(map[string]hostWorkerStream),
 	}
 
@@ -233,7 +243,7 @@ func connectHostWorkerOnce(ctx context.Context, host *hostmcp.Server, wsURL, age
 	select {
 	case err := <-readErrCh:
 		cancelHeartbeat()
-		session.cancelAllAssigns()
+		session.cancelAllAssigns(hostWorkerTransportCanceledCode)
 		session.cancelAllStreams()
 		_ = conn.Close()
 		if err == nil {
@@ -242,7 +252,7 @@ func connectHostWorkerOnce(ctx context.Context, host *hostmcp.Server, wsURL, age
 		return err
 	case <-ctx.Done():
 		cancelHeartbeat()
-		session.cancelAllAssigns()
+		session.cancelAllAssigns(hostWorkerTransportCanceledCode)
 		session.cancelAllStreams()
 		_ = conn.Close()
 		<-readErrCh
@@ -269,12 +279,12 @@ func (s *hostWorkerConn) runHeartbeat(ctx context.Context) {
 	}
 }
 
-func (s *hostWorkerConn) cancelAllAssigns() {
+func (s *hostWorkerConn) cancelAllAssigns(reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for id, cancel := range s.assigns {
-		cancel()
-		delete(s.assigns, id)
+	for _, assignment := range s.assigns {
+		assignment.cancelReason = reason
+		assignment.cancel()
 	}
 }
 
@@ -508,11 +518,13 @@ func (s *hostWorkerConn) handleSyncCall(frame hwpSyncCallFrame) {
 
 func (s *hostWorkerConn) handleAssign(frame hwpAssignFrame) {
 	assignCtx, cancel := context.WithCancel(context.Background())
+	assignment := &hostWorkerAssignment{cancel: cancel}
 	s.mu.Lock()
 	if prior, ok := s.assigns[frame.OperationID]; ok {
-		prior()
+		prior.cancelReason = hostOperationCanceledCode
+		prior.cancel()
 	}
-	s.assigns[frame.OperationID] = cancel
+	s.assigns[frame.OperationID] = assignment
 	s.mu.Unlock()
 
 	_ = s.writeJSON(map[string]any{
@@ -538,13 +550,20 @@ func (s *hostWorkerConn) handleAssign(frame hwpAssignFrame) {
 
 	result, err := s.host.DispatchTool(assignCtx, frame.Action, args, onData)
 	s.mu.Lock()
-	delete(s.assigns, frame.OperationID)
+	cancelReason := assignment.cancelReason
+	if current, ok := s.assigns[frame.OperationID]; ok && current == assignment {
+		delete(s.assigns, frame.OperationID)
+	}
 	s.mu.Unlock()
 
 	if assignCtx.Err() != nil {
+		if cancelReason == "" {
+			cancelReason = hostWorkerTransportCanceledCode
+		}
 		_ = s.writeJSON(map[string]any{
 			"type":        "fail",
 			"operationId": frame.OperationID,
+			"code":        cancelReason,
 			"message":     assignCtx.Err().Error(),
 		})
 		return
@@ -614,10 +633,10 @@ func structuredContentMap(value any) (map[string]any, error) {
 
 func (s *hostWorkerConn) handleAssignCancel(frame hwpAssignCancelFrame) {
 	s.mu.Lock()
-	cancel, ok := s.assigns[frame.OperationID]
+	assignment, ok := s.assigns[frame.OperationID]
 	if ok {
-		cancel()
-		delete(s.assigns, frame.OperationID)
+		assignment.cancelReason = hostOperationCanceledCode
+		assignment.cancel()
 	}
 	s.mu.Unlock()
 }
