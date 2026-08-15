@@ -82,7 +82,7 @@ is Linux-only; Windows users must run the server inside WSL.
 
 - **Repository:** https://github.com/wunderous/host-agents
 - **Go module:** `github.com/wunderous/host-agents`
-- **Platform monorepo:** sibling checkout at `../opute-host-agent` when developing against [opute](https://github.com/opute-io/opute)
+- **Platform monorepo:** sibling checkout at `../opute` when developing against [opute](https://github.com/opute-io/opute)
 
 ## Phases
 

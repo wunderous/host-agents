@@ -58,6 +58,16 @@ do not add LLM retrieval, live topology discovery, entity-ID guessing, or provid
 Keep host IDs and provider state in the control-plane/tool-result contract, and preserve the existing host authorization,
 heartbeat, tracing, and execution boundaries.
 
+The control-plane inference engine is Cordis-core with AI SDK v7 as the
+preferred runtime adapter; Ax is a migration-only legacy boundary and must not
+be added here. Cordis/Opute owns plugin orchestration, context, authorization,
+entity resolution, requirements, dependency closure, and evidence; the runtime
+adapter only runs the adapted model-facing projection. The host agent is below
+both layers and must receive an explicit resolved assignment. Do not add
+Cordis, AI SDK, Ax, model discovery, ranking, entity resolution, or
+business-level recovery here. Return typed, truthful observations so the
+control plane can update its evidence ledger.
+
 ## Generic execution guidelines
 
 The Host Agent must not know that Opute Platform exists. It is a reusable host
