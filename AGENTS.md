@@ -135,6 +135,18 @@ Verify a `reverse tunnel connected` log line and, after HWP R1 rollout, **`host 
 treat it as an onboarding-token mismatch: `MCP_AUTH_TOKEN` must be the per-host
 `opha_*` token, not the CPC bearer (see `../opute/AGENTS.md`, **Host Agent Registration And Heartbeat**).
 
+**Co-resident caller identity (2026-08-19).** The Go agent does not derive a
+durable host identity from a machine fingerprint. Each caller supplies its own
+`OPUTE_REMOTE_AGENT_ID` and `OPUTE_HOST_AGENT_INSTANCE`, and the per-host
+onboarding token must match that exact durable row. Public platform-mode and
+local-dev processes may share a physical fingerprint but must use distinct
+IDs/tokens (ordinary Opute local-dev is `host-local-dev`; `local-bridge-host`
+is only an explicit caller override). An unauthorized heartbeat is an
+identity/token parity failure; inspect the exact process environment and
+running binary before restarting. Keep serving assignments generic and
+require the caller's explicit top-level host routing metadata; do not add
+Opute-specific defaults to Go.
+
 **Unit topology on this workstation (2026-08-03, do not regress).** The platform agent is
 the **plain unit** `opute-host-agent.service` (binary `~/.local/share/opute/opute-host-agent`).
 The per-instance template units `opute-host-agent@host-zephyrus-8a224c89.service` and

@@ -26,4 +26,20 @@ func TestBuildBaseClusterDetailDoesNotInventRuntimeMetrics(t *testing.T) {
 	if detail.VMName != "opute-dev-cnpg" {
 		t.Fatalf("vmName = %q, want backing VM identity", detail.VMName)
 	}
+	if detail.ID != "k3s-opute-dev-cnpg" {
+		t.Fatalf("id = %q, want typed k3s cluster identifier", detail.ID)
+	}
+}
+
+func TestParseClusterNodesPreservesSchemaFieldsWhenAgeIsUnavailable(t *testing.T) {
+	nodes := parseClusterNodes("node-a Ready v1.32.6+k3s1\n", "fallback")
+	if len(nodes) != 1 {
+		t.Fatalf("nodes = %#v, want one node", nodes)
+	}
+	if nodes[0].Age != "" {
+		t.Fatalf("age = %q, want empty unavailable value", nodes[0].Age)
+	}
+	if nodes[0].Roles == "" || nodes[0].Version == "" {
+		t.Fatalf("node = %#v, want schema-complete role and version fields", nodes[0])
+	}
 }

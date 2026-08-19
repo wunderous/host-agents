@@ -12,9 +12,9 @@ type ClusterListResult struct {
 type ClusterNode struct {
 	Name    string `json:"name"`
 	Status  string `json:"status"`
-	Roles   string `json:"roles,omitempty"`
-	Age     string `json:"age,omitempty"`
-	Version string `json:"version,omitempty"`
+	Roles   string `json:"roles"`
+	Age     string `json:"age"`
+	Version string `json:"version"`
 }
 
 type ClusterDetail struct {
@@ -124,7 +124,10 @@ func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
 	nodeCount := 0
 
 	detail := ClusterDetail{
-		ID:            fmt.Sprintf("k3s:%s", vm.Name),
+		// Cluster ids are typed entity identifiers on the Platform boundary.
+		// Keep the provider namespace while using the shared identifier charset;
+		// the old colon form was rejected by the MCP output schema.
+		ID:            fmt.Sprintf("k3s-%s", vm.Name),
 		Name:          vm.Name,
 		Status:        status,
 		Provider:      "k3s",
