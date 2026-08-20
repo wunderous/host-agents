@@ -29,6 +29,16 @@ func DispatchTool(ctx context.Context, svc *ops.HostOperationsService, name stri
 	return result, nil
 }
 
+func listClustersFastArg(args map[string]any) bool {
+	// Cluster inventory is a control-plane list operation. Keep the default
+	// bounded and provider-independent; callers that need live node and
+	// version probes can request the slower detail path explicitly.
+	if requested, ok := args["fast"].(bool); ok {
+		return requested
+	}
+	return true
+}
+
 func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
 	switch name {
 	case "get_host_info":
@@ -75,8 +85,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "list_clusters":
-		fast, _ := args["fast"].(bool)
-		out, err := svc.ListClusters(fast)
+		out, err := svc.ListClusters(listClustersFastArg(args))
 		if err != nil {
 			return nil, err
 		}

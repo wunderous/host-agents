@@ -2,6 +2,18 @@ package tools
 
 import "testing"
 
+func TestListClustersDefaultsToFastInventory(t *testing.T) {
+	if !listClustersFastArg(map[string]any{}) {
+		t.Fatal("list_clusters without fast must use the bounded inventory path")
+	}
+}
+
+func TestListClustersHonorsExplicitDetailMode(t *testing.T) {
+	if listClustersFastArg(map[string]any{"fast": false}) {
+		t.Fatal("list_clusters fast=false must preserve the explicit detail request")
+	}
+}
+
 func TestResolveLocalLLMModelArgUsesQwen35Default(t *testing.T) {
 	for _, preset := range []string{"", "qwen3.5", "qwen3.5-0.8b"} {
 		modelRef, err := resolveLocalLLMModelArg(map[string]any{"modelPreset": preset})
