@@ -19,6 +19,7 @@ type Config struct {
 	OwnershipMode                    string
 	SharedHostOwnerInstance          string
 	StandaloneStateDir               string
+	SQLiteDatabaseRoot               string
 	StandaloneAllowMutations         bool
 	StandaloneAllowInsecureDownloads bool
 	StandaloneInstanceID             string
@@ -64,6 +65,10 @@ func Load() Config {
 	if stateDir == "" {
 		stateDir = filepath.Join(instanceRoot, "state")
 	}
+	sqliteDatabaseRoot := strings.TrimSpace(envValue("OPUTE_HOST_AGENT_SQLITE_ROOT"))
+	if sqliteDatabaseRoot == "" {
+		sqliteDatabaseRoot = filepath.Join(instanceRoot, "databases")
+	}
 	relayDir := strings.TrimSpace(envValue("OPUTE_HOST_AGENT_RELAY_DIR"))
 	if relayDir == "" {
 		relayDir = filepath.Join(instanceRoot, "local-llm-relays")
@@ -103,6 +108,7 @@ func Load() Config {
 		OwnershipMode:                    normalizeOwnershipMode(envValue("OPUTE_INCUS_OWNERSHIP_MODE")),
 		SharedHostOwnerInstance:          strings.TrimSpace(envValue("OPUTE_SHARED_HOST_OWNER_INSTANCE")),
 		StandaloneStateDir:               stateDir,
+		SQLiteDatabaseRoot:               sqliteDatabaseRoot,
 		StandaloneAllowMutations:         os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
 		StandaloneAllowInsecureDownloads: os.Getenv("OPUTE_STANDALONE_ALLOW_INSECURE_DOWNLOADS") == "true",
 		StandaloneInstanceID:             strings.TrimSpace(envValue("OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID")),

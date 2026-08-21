@@ -6,7 +6,8 @@ import (
 )
 
 // LocalLLMPrerequisitesResult is the runtime-neutral capability report used by
-// the host agent. Production supports only the managed llama-server runtime.
+// the host agent. llama-server remains available as an alternate runtime;
+// Ollama is the default host-wide runtime.
 type LocalLLMPrerequisitesResult struct {
 	Supported                bool     `json:"supported"`
 	SystemdUserAvailable     bool     `json:"systemdUserAvailable"`
@@ -30,6 +31,12 @@ type LocalLLMPrerequisitesResult struct {
 	LlamaServerBuildRevision string   `json:"llamaServerBuildRevision,omitempty"`
 	LlamaServerBinarySHA256  string   `json:"llamaServerBinarySha256,omitempty"`
 	LlamaServerServiceActive bool     `json:"llamaServerServiceActive"`
+	OllamaBinaryPresent      bool     `json:"ollamaBinaryPresent"`
+	OllamaServiceActive      bool     `json:"ollamaServiceActive"`
+	OllamaAPIBaseURL         string   `json:"ollamaApiBaseUrl,omitempty"`
+	OllamaModel              string   `json:"ollamaModel,omitempty"`
+	OllamaNumParallel        int      `json:"ollamaNumParallel,omitempty"`
+	OllamaMaxLoadedModels    int      `json:"ollamaMaxLoadedModels,omitempty"`
 	RuntimeGpuAccelerated    bool     `json:"runtimeGpuAccelerated,omitempty"`
 	RuntimeSizeVramBytes     int64    `json:"runtimeSizeVramBytes,omitempty"`
 	RuntimeLoadedModel       string   `json:"runtimeLoadedModel,omitempty"`
@@ -46,6 +53,7 @@ type LocalLLMModelResult struct {
 }
 
 type LocalLLMProbeResult struct {
+	Runtime            string                `json:"runtime,omitempty"`
 	APIBaseURL         string                `json:"apiBaseUrl"`
 	ModelRef           string                `json:"modelRef,omitempty"`
 	ArtifactURI        string                `json:"artifactUri,omitempty"`
@@ -74,6 +82,8 @@ type LocalLLMProbeResult struct {
 	LoadError          string                `json:"loadError,omitempty"`
 	RemediationHints   []string              `json:"remediationHints,omitempty"`
 	ContextLength      int                   `json:"contextLength,omitempty"`
+	MaxParallel        int                   `json:"maxParallel,omitempty"`
+	MaxLoadedModels    int                   `json:"maxLoadedModels,omitempty"`
 }
 
 func nvidiaSmiCommand() []string {

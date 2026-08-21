@@ -31,20 +31,24 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "command": { "type": "string", "minLength": 1 },
-          "timeoutMs": { "type": "integer", "minimum": 0, "maximum": 7200000 }
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7200000
+          }
         },
-        "required": ["command"]
+        "required": [
+          "command"
+        ]
       }
     },
     {
       "name": "reconcile_serving_assignment",
       "classification": "mutation",
-      "support": "experimental"
-    },
-    {
-      "name": "embed_texts",
-      "classification": "read_only",
       "support": "experimental"
     },
     {
@@ -451,16 +455,6 @@
       "support": "experimental"
     },
     {
-      "name": "ensure_pgvector",
-      "classification": "mutation",
-      "support": "experimental"
-    },
-    {
-      "name": "get_pgvector_status",
-      "classification": "read_only",
-      "support": "experimental"
-    },
-    {
       "name": "configure_agent_connection",
       "classification": "mutation",
       "support": "experimental"
@@ -469,6 +463,21 @@
       "name": "discover_service_ingress",
       "classification": "read_only",
       "support": "experimental"
+    },
+    {
+      "name": "ensure_sqlite_database",
+      "classification": "mutation",
+      "support": "stable"
+    },
+    {
+      "name": "get_sqlite_database_status",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "remove_sqlite_database",
+      "classification": "destructive",
+      "support": "stable"
     },
     {
       "name": "reconcile_postgresql_service",

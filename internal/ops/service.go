@@ -80,6 +80,7 @@ type HostOperationsService struct {
 	sharedHostOwnerInstance string
 	resetCheckpointPath     string
 	ociStoragePolicyPath    string
+	sqliteDatabaseRoot      string
 	ociStorageMu            sync.Mutex
 
 	sqlSupervisor          *sqlConnectorSupervisor
@@ -102,16 +103,18 @@ type HostOperationsService struct {
 }
 
 type Options struct {
-	ProviderID              provider.ID
-	ToolsForProvider        func(providerID string) []string
-	AllowInsecureDownloads  bool
-	InstanceID              string
-	AgentID                 string
-	OwnershipMode           string
-	RelayConfigDir          string
-	ResetCheckpointPath     string
-	OciStoragePolicyPath    string
-	SharedHostOwnerInstance string
+	ProviderID                provider.ID
+	ToolsForProvider          func(providerID string) []string
+	AllowInsecureDownloads    bool
+	InstanceID                string
+	AgentID                   string
+	OwnershipMode             string
+	RelayConfigDir            string
+	SharedHostResourceLockDir string
+	ResetCheckpointPath       string
+	OciStoragePolicyPath      string
+	SQLiteDatabaseRoot        string
+	SharedHostOwnerInstance   string
 }
 
 func NewHostOperationsService(opts Options) *HostOperationsService {
@@ -138,9 +141,10 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		sharedHostOwnerInstance: strings.TrimSpace(opts.SharedHostOwnerInstance),
 		resetCheckpointPath:     resolveResetCheckpointPath(opts.ResetCheckpointPath, opts.RelayConfigDir),
 		ociStoragePolicyPath:    strings.TrimSpace(opts.OciStoragePolicyPath),
+		sqliteDatabaseRoot:      strings.TrimSpace(opts.SQLiteDatabaseRoot),
 		sqlSupervisor:           newSQLConnectorSupervisor(),
 		guestBridgeRelay:        newTCPRelayManager(),
-		localLLMRelay:           newPersistentLocalLLMRelayManagerAt(opts.RelayConfigDir),
+		localLLMRelay:           newPersistentLocalLLMRelayManagerAtWithLock(opts.RelayConfigDir, opts.SharedHostResourceLockDir),
 		postgresqlServiceRelay:  newPersistentPostgreSQLServiceRelayManagerAt(postgresRelayConfigDir),
 		allowInsecureDownloads:  opts.AllowInsecureDownloads,
 	}

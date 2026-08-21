@@ -22,8 +22,6 @@ var requiredTunnelInventoryDispatch = []string{
 var requiredPlatformPostgresDispatch = []string{
 	"reconcile_postgresql_service",
 	"get_postgresql_service_status",
-	"ensure_pgvector",
-	"get_pgvector_status",
 	"remove_postgresql_service",
 	"release_postgresql_service_relay",
 	"reset_incus_stack",
@@ -112,7 +110,7 @@ func TestPlatformPostgresAndResetToolsHaveStandaloneCoverage(t *testing.T) {
 			t.Fatalf("platform/reset tool %q missing from standalone tool definitions", name)
 		}
 	}
-	for _, name := range []string{"reconcile_postgresql_service", "ensure_pgvector", "remove_postgresql_service", "release_postgresql_service_relay", "reset_incus_stack"} {
+	for _, name := range []string{"reconcile_postgresql_service", "remove_postgresql_service", "release_postgresql_service_relay", "reset_incus_stack"} {
 		if !tools.IsStandaloneMutation(name) {
 			t.Fatalf("mutation tool %q must be a standalone mutation", name)
 		}
@@ -120,8 +118,22 @@ func TestPlatformPostgresAndResetToolsHaveStandaloneCoverage(t *testing.T) {
 	if tools.IsStandaloneMutation("get_postgresql_service_status") {
 		t.Fatal("get_postgresql_service_status must remain read-only")
 	}
-	if tools.IsStandaloneMutation("get_pgvector_status") {
-		t.Fatal("get_pgvector_status must remain read-only")
+}
+
+func TestSQLiteProvisioningToolsHaveDispatchAndStandaloneCoverage(t *testing.T) {
+	dispatched := loadDispatchToolNames(t)
+	incus, err := tools.HostToolDefinitionsForProvider("incus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := make(map[string]bool, len(incus))
+	for _, tool := range incus {
+		catalog[tool.Name] = true
+	}
+	for _, name := range []string{"ensure_sqlite_database", "get_sqlite_database_status", "remove_sqlite_database"} {
+		if !dispatched[name] || !catalog[name] || !tools.StandaloneToolNames[name] {
+			t.Fatalf("SQLite provisioning tool %q is missing dispatch, catalog, or standalone coverage", name)
+		}
 	}
 }
 

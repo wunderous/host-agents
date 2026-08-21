@@ -70,6 +70,23 @@ disable_previous_user_unit() {
   fi
 }
 
+disable_previous_system_unit() {
+  [[ "$SERVICE_SCOPE" == "user" ]] || return 0
+  # The standalone bootstrap listener is single-owner. Older installs could
+  # leave the system-scoped unit enabled while a user-scoped install enabled
+  # the same unit name and port, producing an endless user-service bind loop.
+  # Reconcile the opposite scope before starting the selected owner; do not
+  # silently accept two supervisors for one MCP endpoint.
+  if [[ "$(id -u)" -eq 0 ]]; then
+    systemctl disable --now opute-bootstrap-mcp.service >/dev/null 2>&1 || true
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo -n systemctl disable --now opute-bootstrap-mcp.service >/dev/null 2>&1 || true
+  fi
+  if systemctl is-active --quiet opute-bootstrap-mcp.service 2>/dev/null; then
+    fail "system-scoped opute-bootstrap-mcp.service still owns the standalone listener"
+  fi
+}
+
 install_agent_privilege_boundary() {
   local target_user="${OPUTE_HOST_AGENT_TARGET_USER:-${SUDO_USER:-}}"
   [[ -n "$target_user" ]] || fail "OPUTE_HOST_AGENT_TARGET_USER is required for privilege-boundary preparation"
@@ -170,6 +187,7 @@ else
   OPUTE_HOST_AGENT_TARGET_USER="$(id -un)" install_agent_privilege_boundary
 fi
 disable_previous_user_unit
+disable_previous_system_unit
 reconcile_existing_standalone_listener
 if getent group incus-admin >/dev/null 2>&1 && ! id -nG "$(id -un)" | tr ' ' '\n' | grep -qx incus-admin; then
   # Incus exposes its control socket to incus-admin. Reconcile this once as

@@ -40,14 +40,16 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	svc := ops.NewHostOperationsService(ops.Options{
-		ProviderID:              provider.NormalizeProviderID(cfg.ProviderID),
-		InstanceID:              cfg.InstanceID,
-		AgentID:                 cfg.RemoteAgentID,
-		OwnershipMode:           cfg.OwnershipMode,
-		RelayConfigDir:          cfg.RelayConfigDir,
-		OciStoragePolicyPath:    filepath.Join(cfg.HostResourceLockDir, "oci-storage-policy.json"),
-		SharedHostOwnerInstance: cfg.SharedHostOwnerInstance,
-		AllowInsecureDownloads:  cfg.AgentMode == "standalone" && cfg.StandaloneAllowInsecureDownloads,
+		ProviderID:                provider.NormalizeProviderID(cfg.ProviderID),
+		InstanceID:                cfg.InstanceID,
+		AgentID:                   cfg.RemoteAgentID,
+		OwnershipMode:             cfg.OwnershipMode,
+		RelayConfigDir:            cfg.RelayConfigDir,
+		SharedHostResourceLockDir: cfg.HostResourceLockDir,
+		OciStoragePolicyPath:      filepath.Join(cfg.HostResourceLockDir, "oci-storage-policy.json"),
+		SQLiteDatabaseRoot:        cfg.SQLiteDatabaseRoot,
+		SharedHostOwnerInstance:   cfg.SharedHostOwnerInstance,
+		AllowInsecureDownloads:    cfg.AgentMode == "standalone" && cfg.StandaloneAllowInsecureDownloads,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)
 			if err != nil {
@@ -118,15 +120,21 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				}, nil
 			}
 			hostCapabilities := append([]string(nil), toolNames...)
-			seenLLM := false
+			seenLlama := false
+			seenOllama := false
 			for _, name := range hostCapabilities {
 				if name == "llm.llama-cpp" {
-					seenLLM = true
-					break
+					seenLlama = true
+				}
+				if name == "llm.ollama" {
+					seenOllama = true
 				}
 			}
-			if !seenLLM {
+			if !seenLlama {
 				hostCapabilities = append(hostCapabilities, "llm.llama-cpp")
+			}
+			if !seenOllama {
+				hostCapabilities = append(hostCapabilities, "llm.ollama")
 			}
 			// Start liveness before probing the optional host-local runtime. The
 			// probe can stall on an unavailable local server; that must
@@ -157,34 +165,40 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 				// the control plane can still reject unsupported work before
 				// queueing a mutation. Installation and model state remain owned by
 				// host operations.
-				prereqs, prereqErr := svc.CheckLlamaServerPrerequisites()
-				if prereqErr != nil || prereqs == nil {
-					if prereqErr != nil {
-						logger.Warn("local LLM capability probe failed", "err", prereqErr)
-					}
+				llama, llamaErr := svc.CheckLlamaServerPrerequisites()
+				ollama, ollamaErr := svc.CheckOllamaPrerequisites()
+				if llamaErr != nil && ollamaErr != nil {
+					logger.Warn("local LLM capability probe failed", "llamaError", llamaErr, "ollamaError", ollamaErr)
 					return
 				}
-				hb.UpdateCapabilitySummary(map[string]any{
-					"llm": map[string]any{
-						"llama-cpp": map[string]any{
-							"supported":            prereqs.Supported,
-							"apiBaseUrl":           "http://127.0.0.1:8080/v1",
-							"architectures":        []string{prereqs.Architecture},
-							"readyForInstall":      prereqs.ReadyForInstall,
-							"readyForGpuInference": prereqs.ReadyForGpuInference,
-							"gpu": map[string]any{
-								"available":          prereqs.NvidiaSmiOk,
-								"vendor":             strings.TrimSpace(prereqs.GPU),
-								"nvidiaSmiOk":        prereqs.NvidiaSmiOk,
-								"cudaLibraryPresent": prereqs.CudaLibraryPresent,
-								"dxgDevicePresent":   prereqs.DxgDevicePresent,
-								"runtimeAccelerated": prereqs.RuntimeGpuAccelerated,
-							},
-							"blockers":         prereqs.Blockers,
-							"remediationHints": prereqs.RemediationHints,
-						},
-					},
-				})
+				// CapabilitySummary is validated by the platform registration
+				// schema. Keep collection fields as arrays even when there are no
+				// entries; a nil Go slice would otherwise encode as JSON null.
+				nonNilStrings := func(values []string) []string {
+					if values == nil {
+						return []string{}
+					}
+					return values
+				}
+				llm := map[string]any{}
+				if llama != nil {
+					llm["llama-cpp"] = map[string]any{
+						"supported": llama.Supported, "apiBaseUrl": "http://127.0.0.1:8080/v1",
+						"architectures": []string{llama.Architecture}, "readyForInstall": llama.ReadyForInstall,
+						"readyForGpuInference": llama.ReadyForGpuInference, "blockers": nonNilStrings(llama.Blockers),
+						"remediationHints": nonNilStrings(llama.RemediationHints),
+					}
+				}
+				if ollama != nil {
+					llm["ollama"] = map[string]any{
+						"supported": ollama.Supported, "apiBaseUrl": ollama.OllamaAPIBaseURL,
+						"architectures": []string{ollama.Architecture}, "readyForInstall": ollama.ReadyForInstall,
+						"readyForGpuInference": ollama.ReadyForGpuInference, "numParallel": ollama.OllamaNumParallel,
+						"maxLoadedModels": ollama.OllamaMaxLoadedModels, "blockers": nonNilStrings(ollama.Blockers),
+						"remediationHints": nonNilStrings(ollama.RemediationHints),
+					}
+				}
+				hb.UpdateCapabilitySummary(map[string]any{"llm": llm})
 				logger.Info("local LLM capability probe completed")
 			}()
 		}

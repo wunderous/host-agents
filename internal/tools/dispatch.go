@@ -45,29 +45,35 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		out := svc.DescribeHost()
 		return structuredResult(out, ""), nil
 
-	case "embed_texts":
-		texts, ok := args["texts"].([]any)
-		if !ok {
-			if typed, typedOK := args["texts"].([]string); typedOK {
-				texts = make([]any, len(typed))
-				for index, value := range typed {
-					texts[index] = value
-				}
-			}
-		}
-		values := make([]string, len(texts))
-		for index, value := range texts {
-			text, ok := value.(string)
-			if !ok {
-				return nil, fmt.Errorf("texts[%d] must be a string", index)
-			}
-			values[index] = text
-		}
-		out, err := svc.EmbedTexts(ctx, ops.EmbedTextsArgs{Texts: values})
+	case "ensure_sqlite_database":
+		out, err := svc.EnsureSQLiteDatabase(ctx, ops.SQLiteDatabaseArgs{
+			ConsumerID:   stringField(args, "consumerId"),
+			DatabaseName: stringField(args, "databaseName"),
+		})
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, ""), nil
+		return structuredResult(out, "SQLite database provisioned."), nil
+
+	case "get_sqlite_database_status":
+		out, err := svc.GetSQLiteDatabaseStatus(ctx, ops.SQLiteDatabaseArgs{
+			ConsumerID:   stringField(args, "consumerId"),
+			DatabaseName: stringField(args, "databaseName"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "SQLite database status returned."), nil
+
+	case "remove_sqlite_database":
+		out, err := svc.RemoveSQLiteDatabase(ctx, ops.SQLiteDatabaseArgs{
+			ConsumerID:   stringField(args, "consumerId"),
+			DatabaseName: stringField(args, "databaseName"),
+		}, boolField(args, "confirm"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "SQLite database removed."), nil
 
 	case "reconcile_serving_assignment":
 		out, err := svc.ReconcileServingAssignment(servingAssignmentArgs(args), onData)
@@ -181,7 +187,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "System container GPU capability report generated"), nil
 
 	case "check_local_llm_prerequisites":
-		out, err := svc.CheckLlamaServerPrerequisites()
+		out, err := svc.CheckOllamaPrerequisites()
 		if err != nil {
 			return nil, err
 		}
@@ -204,21 +210,38 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "CUDA llama-server binary is built and verified"), nil
 
 	case "list_local_llm_models", "probe_local_llm":
-		if localLLMRuntime(args) != "llama-cpp" {
-			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
+		var out any
+		var err error
+		if localLLMRuntime(args) == "llama-cpp" {
+			out, err = svc.ProbeLlamaServer(ctx, ops.ProbeLlamaServerArgs{IncludeChat: boolField(args, "includeChat"), ModelRef: stringField(args, "modelRef")})
+		} else if localLLMRuntime(args) == "ollama" {
+			out, err = svc.ProbeOllama(ctx, ops.ProbeOllamaArgs{IncludeChat: boolField(args, "includeChat"), ModelRef: stringField(args, "modelRef")})
+		} else {
+			return nil, fmt.Errorf("unsupported local LLM runtime %q; expected ollama or llama-cpp", localLLMRuntime(args))
 		}
-		out, err := svc.ProbeLlamaServer(ctx, ops.ProbeLlamaServerArgs{
-			IncludeChat: boolField(args, "includeChat"),
-			ModelRef:    stringField(args, "modelRef"),
-		})
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, ""), nil
 
 	case "install_local_llm_model":
+		if localLLMRuntime(args) == "ollama" {
+			modelRef, err := resolveLocalLLMModelArg(args)
+			if err != nil {
+				return nil, err
+			}
+			setDefault := true
+			if _, present := args["setDefault"]; present {
+				setDefault = boolField(args, "setDefault")
+			}
+			out, err := svc.InstallOllamaModel(ctx, ops.InstallOllamaModelArgs{ModelRef: modelRef, Port: optionalIntField(args, "port"), SetDefault: setDefault})
+			if err != nil {
+				return nil, err
+			}
+			return structuredResult(out, "Ollama model is ready"), nil
+		}
 		if localLLMRuntime(args) != "llama-cpp" {
-			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
+			return nil, fmt.Errorf("unsupported local LLM runtime %q; expected ollama or llama-cpp", localLLMRuntime(args))
 		}
 		out, err := svc.InstallLlamaServerModel(ctx, ops.InstallLlamaServerModelArgs{
 			ModelRef:                stringField(args, "modelRef"),
@@ -254,12 +277,22 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "llama-server model is ready"), nil
 
 	case "configure_local_llm_model":
+		if localLLMRuntime(args) == "ollama" {
+			return nil, fmt.Errorf("Ollama model configuration is owned by the shared host runtime; use install_local_llm_model")
+		}
 		if localLLMRuntime(args) != "llama-cpp" {
 			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
 		}
 		return nil, fmt.Errorf("configure_local_llm_model is retired; llama-server uses the pinned artifact manifest")
 
 	case "start_local_llm_runtime":
+		if localLLMRuntime(args) == "ollama" {
+			out, err := svc.StartOllamaRuntime(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return structuredResult(out, "shared Ollama runtime is ready"), nil
+		}
 		if localLLMRuntime(args) != "llama-cpp" {
 			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
 		}
@@ -270,12 +303,21 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "llama-server runtime is ready"), nil
 
 	case "configure_local_llm_runtime":
+		if localLLMRuntime(args) == "ollama" {
+			return nil, fmt.Errorf("Ollama runtime configuration is host-wide and pinned to one process, two resident models, and one request at a time")
+		}
 		if localLLMRuntime(args) != "llama-cpp" {
 			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
 		}
 		return nil, fmt.Errorf("configure_local_llm_runtime is retired; configure llama-server through its pinned service manifest")
 
 	case "stop_local_llm_runtime":
+		if localLLMRuntime(args) == "ollama" {
+			if err := svc.StopOllamaRuntime(ctx); err != nil {
+				return nil, err
+			}
+			return structuredResult(map[string]any{"stopped": false, "shared": true, "reason": "shared Ollama runtime remains available to other Platform instances"}, "shared Ollama runtime left running"), nil
+		}
 		if localLLMRuntime(args) != "llama-cpp" {
 			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
 		}
@@ -330,30 +372,6 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, "TiDB service was removed"), nil
 
-	case "ensure_pgvector":
-		out, err := svc.EnsurePgVector(ctx, ops.PgVectorArgs{
-			VMName:      stringField(args, "vmName"),
-			ClusterName: stringField(args, "clusterName"),
-			Namespace:   stringField(args, "namespace"),
-			Databases:   stringSliceField(args, "databases"),
-		}, onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "pgvector is ready"), nil
-
-	case "get_pgvector_status":
-		out, err := svc.GetPgVectorStatus(ctx, ops.PgVectorArgs{
-			VMName:      stringField(args, "vmName"),
-			ClusterName: stringField(args, "clusterName"),
-			Namespace:   stringField(args, "namespace"),
-			Databases:   stringSliceField(args, "databases"),
-		})
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "pgvector status returned"), nil
-
 	case "reset_incus_stack":
 		out, err := svc.ResetIncusStack(ctx, ops.ResetIncusStackArgs{
 			InstanceNames:               stringSliceField(args, "instanceNames"),
@@ -371,6 +389,9 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "Incus stack reset phase completed"), nil
 
 	case "remove_local_llm_model":
+		if localLLMRuntime(args) == "ollama" {
+			return structuredResult(map[string]any{"removed": false, "purged": false, "shared": true, "reason": "Ollama model artifacts are shared host state; use the host Ollama lifecycle for explicit garbage collection"}, "shared Ollama model retained"), nil
+		}
 		if localLLMRuntime(args) != "llama-cpp" {
 			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
 		}
@@ -1201,19 +1222,22 @@ func resolveLocalLLMModelArg(args map[string]any) (string, error) {
 	}
 	switch stringField(args, "modelPreset") {
 	case "", "qwen3.5", "qwen3.5-0.8b":
-		return "qwen3.5-0.8b/base-llama", nil
+		if localLLMRuntime(args) == "llama-cpp" {
+			return "qwen3.5-0.8b/base-llama", nil
+		}
+		return "qwen3.5:0.8b", nil
 	default:
-		return "", fmt.Errorf("unsupported llama-server model preset %q", stringField(args, "modelPreset"))
+		return "", fmt.Errorf("unsupported local LLM model preset %q", stringField(args, "modelPreset"))
 	}
 }
 
-// localLLMRuntime defaults old payloads to the only supported production
-// runtime. Explicit legacy runtime values are rejected by the dispatch paths.
+// localLLMRuntime defaults new payloads to the shared Ollama runtime. The
+// llama-cpp path remains available only when explicitly selected.
 func localLLMRuntime(args map[string]any) string {
 	if runtime := stringField(args, "runtime"); runtime != "" {
 		return runtime
 	}
-	return "llama-cpp"
+	return "ollama"
 }
 
 func stringSliceField(args map[string]any, key string) []string {

@@ -20,9 +20,13 @@ func TestResolveLocalLLMModelArgUsesQwen35Default(t *testing.T) {
 		if err != nil {
 			t.Fatalf("preset %q: %v", preset, err)
 		}
-		if modelRef != "qwen3.5-0.8b/base-llama" {
+		if modelRef != "qwen3.5:0.8b" {
 			t.Fatalf("preset %q resolved to %q", preset, modelRef)
 		}
+	}
+	modelRef, err := resolveLocalLLMModelArg(map[string]any{"runtime": "llama-cpp", "modelPreset": "qwen3.5"})
+	if err != nil || modelRef != "qwen3.5-0.8b/base-llama" {
+		t.Fatalf("explicit llama-cpp preset resolved to %q: %v", modelRef, err)
 	}
 }
 

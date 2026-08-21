@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -126,6 +129,8 @@ func TestLocalLLMRelayForwardsRuntimeResidencyEndpoint(t *testing.T) {
 			_, _ = io.WriteString(w, `{"models":[{"name":"qwen3.5-0.8b-opute-llama:latest","size_vram":2147483648}]}`)
 		case "/v1/models":
 			_, _ = io.WriteString(w, `{"data":[{"id":"qwen3.5-0.8b-opute-llama"}]}`)
+		case "/api/embed":
+			_, _ = io.WriteString(w, `{"embeddings":[[0.1,0.2]]}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -169,6 +174,18 @@ func TestLocalLLMRelayForwardsRuntimeResidencyEndpoint(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected bearer denial for /api/ps, got %d", resp.StatusCode)
+	}
+
+	req, _ = http.NewRequest(http.MethodPost, base+"/api/embed", strings.NewReader(`{"model":"granite","input":["hello"]}`))
+	req.Header.Set("Authorization", "Bearer "+strings.Repeat("r", 40))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected forwarded /api/embed, got %d", resp.StatusCode)
 	}
 
 	req, _ = http.NewRequest(http.MethodGet, base+"/api/tags", nil)
@@ -243,6 +260,103 @@ func TestLocalLLMRelayFlushesStreamingChatChunks(t *testing.T) {
 	case <-flushed:
 	case <-time.After(time.Second):
 		t.Fatal("upstream never flushed")
+	}
+}
+
+func TestLocalLLMRelaysSerializeInferenceAcrossAgentProcesses(t *testing.T) {
+	var inFlight int32
+	var maxInFlight int32
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{}, 2)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		current := atomic.AddInt32(&inFlight, 1)
+		for {
+			previous := atomic.LoadInt32(&maxInFlight)
+			if current <= previous || atomic.CompareAndSwapInt32(&maxInFlight, previous, current) {
+				break
+			}
+		}
+		entered <- struct{}{}
+		<-release
+		atomic.AddInt32(&inFlight, -1)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer upstream.Close()
+	parts := strings.Split(upstream.Listener.Addr().String(), ":")
+	targetPort, _ := strconv.Atoi(parts[len(parts)-1])
+	lockDir := t.TempDir()
+	newManager := func() *localLLMRelayManager {
+		return &localLLMRelayManager{sessions: map[string]*localLLMRelaySession{}, requestLock: newHostRequestLock(lockDir)}
+	}
+	first, second := newManager(), newManager()
+	start := func(m *localLLMRelayManager, sessionID string) string {
+		result, err := m.start(context.Background(), LocalLLMRelayArgs{
+			SessionID: sessionID, ListenHost: "127.0.0.1", ListenPort: 0,
+			TargetHost: "127.0.0.1", TargetPort: targetPort,
+			RelayToken: strings.Repeat("r", 40), AllowedSourceIP: "127.0.0.1",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.stop(sessionID) })
+		return "http://127.0.0.1:" + strconv.Itoa(result["listenPort"].(int))
+	}
+	firstURL := start(first, "first-inference-relay")
+	secondURL := start(second, "second-inference-relay")
+	request := func(base string) error {
+		req, err := http.NewRequest(http.MethodPost, base+"/v1/chat/completions", strings.NewReader(`{"stream":false}`))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+strings.Repeat("r", 40))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("inference returned HTTP %d", resp.StatusCode)
+		}
+		return nil
+	}
+	var wg sync.WaitGroup
+	errors := make(chan error, 2)
+	wg.Add(1)
+	go func() { defer wg.Done(); errors <- request(firstURL) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("first inference never reached upstream")
+	}
+	wg.Add(1)
+	go func() { defer wg.Done(); errors <- request(secondURL) }()
+	select {
+	case <-entered:
+		t.Fatal("second inference bypassed the shared request lock")
+	case <-time.After(100 * time.Millisecond):
+	}
+	release <- struct{}{}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("second inference never reached upstream after first completed")
+	}
+	release <- struct{}{}
+	wg.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := atomic.LoadInt32(&maxInFlight); got != 1 {
+		t.Fatalf("upstream observed %d concurrent inference requests", got)
 	}
 }
 

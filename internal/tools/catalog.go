@@ -118,7 +118,9 @@ func postgresqlServiceRelaySchema() map[string]any {
 
 func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	needed := map[string]bool{
-		"embed_texts":                      true,
+		"ensure_sqlite_database":           true,
+		"get_sqlite_database_status":       true,
+		"remove_sqlite_database":           true,
 		"reconcile_serving_assignment":     true,
 		"configure_agent_connection":       true,
 		"discover_service_ingress":         true,
@@ -151,8 +153,6 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"delete_cloudflared_connector":     true,
 		"configure_service_domain":         true,
 		"remove_service_domain":            true,
-		"ensure_pgvector":                  true,
-		"get_pgvector_status":              true,
 		"reset_incus_stack":                true,
 	}
 	seen := make(map[string]bool, len(needed))
@@ -165,7 +165,11 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		return defs
 	}
 	defs = append(defs, ToolDefinition{
-		Name: "embed_texts", Title: "Generate host-local embeddings", Description: "Generate embeddings through the host-local, configured embedding service. The endpoint and model are controlled by the host agent.", InputSchema: map[string]any{"type": "object", "required": []string{"texts"}, "properties": map[string]any{"texts": map[string]any{"type": "array", "minItems": 1, "maxItems": 32, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 8192}}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"model", "dimensions", "embeddings"}},
+		Name: "ensure_sqlite_database", Title: "Ensure isolated SQLite database", Description: "Provision an isolated caller-scoped SQLite database file. The caller owns schema and migrations; the host agent owns only the file lifecycle.", InputSchema: map[string]any{"type": "object", "required": []string{"consumerId", "databaseName"}, "properties": map[string]any{"consumerId": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`}, "databaseName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"provider", "consumerId", "databaseName", "path", "exists"}},
+	}, ToolDefinition{
+		Name: "get_sqlite_database_status", Title: "Get SQLite database status", Description: "Inspect an isolated caller-scoped SQLite database file without changing its schema or data.", InputSchema: map[string]any{"type": "object", "required": []string{"consumerId", "databaseName"}, "properties": map[string]any{"consumerId": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`}, "databaseName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"provider", "consumerId", "databaseName", "path", "exists"}},
+	}, ToolDefinition{
+		Name: "remove_sqlite_database", Title: "Remove isolated SQLite database", Description: "Remove an isolated caller-scoped SQLite database and its sidecars after explicit confirmation.", InputSchema: map[string]any{"type": "object", "required": []string{"consumerId", "databaseName", "confirm"}, "properties": map[string]any{"consumerId": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`}, "databaseName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`}, "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"provider", "consumerId", "databaseName", "path", "exists"}},
 	}, ToolDefinition{
 		Name: "reconcile_serving_assignment", Title: "Reconcile generic serving assignment", Description: "Validate and reconcile a product-neutral serving assignment against an explicit host target. Rejects VM or ambiguous targets and returns bounded readiness evidence.", InputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "assignmentId", "generation", "idempotencyKey", "service", "mode", "runtime", "target", "artifact", "endpoints", "readiness", "exposure"}, "properties": map[string]any{"contractVersion": map[string]any{"type": "string", "const": "serving-assignment.v1"}, "assignmentId": map[string]any{"type": "string"}, "generation": map[string]any{"type": "integer", "minimum": 1}, "idempotencyKey": map[string]any{"type": "string"}, "service": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"dev-process", "oci-release"}}, "runtime": map[string]any{"type": "string", "enum": []string{"process", "podman", "kubernetes"}}, "target": map[string]any{"type": "object"}, "artifact": map[string]any{"type": "object"}, "endpoints": map[string]any{"type": "array", "minItems": 1}, "readiness": map[string]any{"type": "array", "minItems": 1}, "exposure": map[string]any{"type": "object"}, "serviceUnit": map[string]any{"type": "string"}, "desiredState": map[string]any{"type": "string", "enum": []string{"start", "restart"}}, "restartPolicy": map[string]any{"type": "string", "enum": []string{"no", "on-failure", "always"}}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
@@ -261,14 +265,6 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Name: "remove_tidb_service", Title: "Remove TiDB service", Description: "Destructively remove a caller-defined TidbCluster. Requires confirm=true.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "clusterName", "namespace", "confirm"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name: "get_postgresql_service_status", Title: "Get PostgreSQL service status", Description: "Read SQL-gated CloudNativePG PostgreSQL service readiness without returning credentials. When already ready, an optional localRelay is reconciled without enqueueing a second CNPG task.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}, "localRelay": postgresqlServiceRelaySchema()}}, OutputSchema: map[string]any{"type": "object"},
-	}, ToolDefinition{
-		Name: "ensure_pgvector", Title: "Ensure pgvector", Description: "Reconcile a pinned pgvector CloudNativePG image and ensure the vector extension in selected databases. Credentials remain CNPG-owned and are never returned.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
-			"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "databases": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1},
-		}}, OutputSchema: map[string]any{"type": "object"},
-	}, ToolDefinition{
-		Name: "get_pgvector_status", Title: "Get pgvector status", Description: "Read pgvector image and per-database extension readiness without changing the Cluster or databases.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
-			"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "databases": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1},
-		}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name: "remove_postgresql_service", Title: "Remove PostgreSQL service", Description: "Destructively remove a caller-defined PostgreSQL CNPG service and owned data while preserving the operator. Requires confirm=true.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "confirm"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "localRelay": postgresqlServiceRelaySchema(), "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
@@ -406,6 +402,8 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 }
 
 func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
+	runtimeEnum := []string{"ollama", "llama-cpp"}
+	llamaRuntimeEnum := []string{"llama-cpp"}
 	seen := make(map[string]bool, len(defs))
 	for _, d := range defs {
 		seen[d.Name] = true
@@ -413,16 +411,16 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 	inputs := map[string]map[string]any{
 		"check_local_llm_prerequisites": {"type": "object", "properties": map[string]any{}},
 		"ensure_local_llm_server_binary": {"type": "object", "properties": map[string]any{
-			"runtime":           map[string]any{"type": "string", "enum": []string{"llama-cpp"}},
+			"runtime":           map[string]any{"type": "string", "enum": llamaRuntimeEnum},
 			"sourceUri":         map[string]any{"type": "string", "format": "uri"},
 			"sourceSha256":      map[string]any{"type": "string"},
 			"sourceRevision":    map[string]any{"type": "string"},
 			"outputPath":        map[string]any{"type": "string"},
 			"cudaArchitectures": map[string]any{"type": "string"},
 		}},
-		"list_local_llm_models": {"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": []string{"llama-cpp"}}, "includeChat": map[string]any{"type": "boolean"}}},
+		"list_local_llm_models": {"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": runtimeEnum}, "includeChat": map[string]any{"type": "boolean"}}},
 		"probe_local_llm": {"type": "object", "properties": map[string]any{
-			"runtime":     map[string]any{"type": "string", "enum": []string{"llama-cpp"}},
+			"runtime":     map[string]any{"type": "string", "enum": runtimeEnum},
 			"includeChat": map[string]any{"type": "boolean"},
 			"modelRef":    map[string]any{"type": "string"},
 			"modelPreset": map[string]any{"type": "string", "enum": []string{"qwen3.5", "qwen3.5-0.8b"}},
@@ -430,11 +428,12 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"numCtx":      map[string]any{"type": "integer"},
 		}},
 		"install_local_llm_model": {"type": "object", "properties": map[string]any{
-			"runtime":                 map[string]any{"type": "string", "enum": []string{"llama-cpp"}},
+			"runtime":                 map[string]any{"type": "string", "enum": runtimeEnum},
 			"modelFamily":             map[string]any{"type": "string"},
 			"modelVariant":            map[string]any{"type": "string"},
 			"installSource":           map[string]any{"type": "string"},
 			"modelRef":                map[string]any{"type": "string"},
+			"setDefault":              map[string]any{"type": "boolean", "description": "For Ollama, keep this model as the default chat/runtime model; set false for an embedding-only resident model."},
 			"modelPreset":             map[string]any{"type": "string", "enum": []string{"qwen3.5", "qwen3.5-0.8b"}},
 			"createAs":                map[string]any{"type": "string"},
 			"numGpu":                  map[string]any{"type": "integer"},
@@ -474,14 +473,14 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"numCtx":      map[string]any{"type": "integer"},
 			"template":    map[string]any{"type": "string"},
 		}},
-		"start_local_llm_runtime": {"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": []string{"llama-cpp"}}, "runtimeId": map[string]any{"type": "string"}}},
+		"start_local_llm_runtime": {"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": runtimeEnum}, "runtimeId": map[string]any{"type": "string"}}},
 		"configure_local_llm_runtime": {"type": "object", "properties": map[string]any{
 			"gpuOverheadMiB":  map[string]any{"type": "integer"},
 			"maxLoadedModels": map[string]any{"type": "integer"},
 			"numParallel":     map[string]any{"type": "integer"},
 			"flashAttention":  map[string]any{"type": "boolean"},
 		}},
-		"stop_local_llm_runtime": {"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": []string{"llama-cpp"}}, "runtimeId": map[string]any{"type": "string"}}},
+		"stop_local_llm_runtime": {"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": runtimeEnum}, "runtimeId": map[string]any{"type": "string"}}},
 		"remove_local_llm_model": {"type": "object", "required": []string{"modelRef"}, "properties": map[string]any{"modelRef": map[string]any{"type": "string"}, "purge": map[string]any{"type": "boolean"}}},
 		"ensure_local_llm_relay": {"type": "object", "required": []string{"sessionId", "listenHost", "listenPort", "targetHost", "targetPort", "incomingToken", "allowedSourceCIDRs"}, "properties": map[string]any{"upstreamToken": map[string]any{"type": "string"}, "allowedSourceCIDRs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}},
 		"remove_local_llm_relay": {"type": "object", "required": []string{"sessionId"}, "properties": map[string]any{}},
@@ -497,33 +496,34 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}
 	for name, schema := range inputs {
 		if !seen[name] {
-			desc := "Opute-managed local llama-server operation"
+			desc := "Opute-managed local LLM operation"
 			switch name {
 			case "check_local_llm_prerequisites":
-				desc = "Inspect local llama-server readiness and GPU/CUDA diagnostics."
+				desc = "Inspect shared Ollama readiness and alternate llama-cpp GPU/CUDA diagnostics."
 			case "ensure_local_llm_server_binary":
 				desc = "Build and verify a pinned CUDA llama-server binary from source on the host."
 			case "install_local_llm_model":
-				desc = "Exclusively switch the resident generation model: unload the current model, then load and GPU-verify the requested pinned artifact."
+				desc = "Install or adopt a model in the shared Ollama runtime, or explicitly select the alternate llama-cpp runtime."
 			case "configure_local_llm_model":
 				desc = "Configure a local llama-server GGUF artifact."
 			case "start_local_llm_runtime":
-				desc = "Start/restart the Opute-managed llama-server unit with one generation model resident."
+				desc = "Start the one host-wide Ollama service or the explicitly selected llama-cpp service."
 			case "configure_local_llm_runtime":
-				desc = "Persist and apply Opute-managed llama-server runtime settings."
+				desc = "Inspect the host-wide runtime policy: two resident Ollama models and one serialized request."
 			case "probe_local_llm":
-				desc = "Probe llama-server readiness, loaded model identity, and GPU residency."
+				desc = "Probe local LLM readiness, loaded model identity, and runtime residency."
 			case "stop_local_llm_runtime":
-				desc = "Unload the resident generation model without deleting artifacts or tool embeddings."
+				desc = "Stop the alternate llama-cpp runtime; shared Ollama remains running for other Platform instances."
 			case "remove_local_llm_model":
-				desc = "Remove a local llama-server artifact adoption record."
+				desc = "Remove an alternate llama-cpp adoption record; shared Ollama artifacts are retained."
 			}
 			defs = append(defs, ToolDefinition{Name: name, Title: name, Description: desc, InputSchema: schema, OutputSchema: map[string]any{"type": "object"}})
 		}
 	}
 	// The checked-in schema snapshots may still contain retired local-LLM
 	// definitions. Replace those entries at catalog assembly time so the
-	// host-agent MCP contract advertises only the managed llama-server runtime.
+	// host-agent MCP contract advertises the shared Ollama default plus the
+	// explicitly selectable llama-cpp alternate.
 	localNames := make(map[string]struct{}, len(inputs))
 	for name := range inputs {
 		localNames[name] = struct{}{}

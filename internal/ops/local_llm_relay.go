@@ -31,10 +31,11 @@ type localLLMRelaySession struct {
 }
 
 type localLLMRelayManager struct {
-	mu        sync.Mutex
-	sessions  map[string]*localLLMRelaySession
-	persist   bool
-	configDir string
+	mu          sync.Mutex
+	sessions    map[string]*localLLMRelaySession
+	persist     bool
+	configDir   string
+	requestLock *hostRequestLock
 }
 
 func newLocalLLMRelayManager() *localLLMRelayManager {
@@ -50,7 +51,11 @@ func newPersistentLocalLLMRelayManager() *localLLMRelayManager {
 }
 
 func newPersistentLocalLLMRelayManagerAt(configDir string) *localLLMRelayManager {
-	manager := &localLLMRelayManager{sessions: map[string]*localLLMRelaySession{}, persist: true, configDir: strings.TrimSpace(configDir)}
+	return newPersistentLocalLLMRelayManagerAtWithLock(configDir, "")
+}
+
+func newPersistentLocalLLMRelayManagerAtWithLock(configDir, lockDir string) *localLLMRelayManager {
+	manager := &localLLMRelayManager{sessions: map[string]*localLLMRelaySession{}, persist: true, configDir: strings.TrimSpace(configDir), requestLock: newHostRequestLock(strings.TrimSpace(lockDir))}
 	manager.restore()
 	return manager
 }
@@ -164,10 +169,9 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		// llama-server exposes the OpenAI-compatible /v1 surface plus the
-		// read-only Ollama-compatible /api/ps residency endpoint that the
-		// control plane uses to label the loaded model runtime.
-		allowedPath := strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/v1" || r.URL.Path == "/api/ps"
+		// Both llama-server and Ollama expose the OpenAI-compatible /v1 surface.
+		// Ollama also needs its read-only native inspection endpoints.
+		allowedPath := strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/v1" || r.URL.Path == "/api/ps" || r.URL.Path == "/api/tags" || r.URL.Path == "/api/version" || r.URL.Path == "/api/embed"
 		if !allowedPath {
 			http.NotFound(w, r)
 			return
@@ -189,6 +193,14 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 		// The public hostname is only for the edge route. Keep the upstream Host
 		// header local to avoid virtual-host surprises.
 		r.Host = target.Host
+		if r.Method == http.MethodPost && (strings.HasPrefix(r.URL.Path, "/v1/") || strings.HasPrefix(r.URL.Path, "/api/embed")) {
+			release, lockErr := m.requestLock.acquire(r.Context())
+			if lockErr != nil {
+				http.Error(w, "inference request cancelled", http.StatusRequestTimeout)
+				return
+			}
+			defer release()
+		}
 		proxy.ServeHTTP(w, r)
 	})
 	listenHost := args.ListenHost
