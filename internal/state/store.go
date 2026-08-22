@@ -19,6 +19,24 @@ type Store struct {
 	closeErr  error
 }
 
+// PlanRecord is the durable envelope for a host-plan.v1 run. PlanJSON and
+// StateJSON contain only caller-approved, redacted JSON; secrets must be
+// represented by references before a plan reaches this boundary.
+type PlanRecord struct {
+	RunID           string
+	PlanID          string
+	Generation      int
+	IdempotencyKey  string
+	DocumentHash    string
+	CatalogRevision string
+	Status          string
+	PlanJSON        string
+	StateJSON       string
+	CreatedAt       string
+	UpdatedAt       string
+	ErrorMessage    string
+}
+
 func Open(dir string) (*Store, error) {
 	if strings.TrimSpace(dir) == "" {
 		return nil, fmt.Errorf("state directory is required")
@@ -44,11 +62,99 @@ func Open(dir string) (*Store, error) {
         updated_at TEXT NOT NULL,
         result_json TEXT,
         error_message TEXT
-    ); UPDATE operations SET status = 'unknown', updated_at = datetime('now') WHERE status = 'working';`); err != nil {
+    );
+    CREATE TABLE IF NOT EXISTS plan_runs (
+        run_id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL,
+        generation INTEGER NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        document_hash TEXT NOT NULL,
+        catalog_revision TEXT NOT NULL,
+        status TEXT NOT NULL,
+        plan_json TEXT NOT NULL,
+        state_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        error_message TEXT,
+        UNIQUE(plan_id, generation, idempotency_key)
+    );
+    UPDATE operations SET status = 'unknown', updated_at = datetime('now') WHERE status = 'working';
+    UPDATE plan_runs SET status = 'unknown', updated_at = datetime('now') WHERE status IN ('working', 'running');`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initialize standalone state: %w", err)
 	}
 	return store, nil
+}
+
+// CreatePlan inserts a new run. The boolean reports whether this call inserted
+// the record instead of returning an existing run with the same identity.
+func (s *Store) CreatePlan(record PlanRecord) (PlanRecord, bool, error) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if record.CreatedAt == "" {
+		record.CreatedAt = now
+	}
+	if record.UpdatedAt == "" {
+		record.UpdatedAt = now
+	}
+	_, err := s.db.Exec(`INSERT INTO plan_runs(
+        run_id, plan_id, generation, idempotency_key, document_hash,
+        catalog_revision, status, plan_json, state_json, created_at, updated_at,
+        error_message
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    ON CONFLICT(plan_id, generation, idempotency_key) DO NOTHING`,
+		record.RunID, record.PlanID, record.Generation, record.IdempotencyKey,
+		record.DocumentHash, record.CatalogRevision, record.Status,
+		record.PlanJSON, record.StateJSON, record.CreatedAt, record.UpdatedAt)
+	if err != nil {
+		return PlanRecord{}, false, err
+	}
+	created := false
+	if existing, found, getErr := s.FindPlan(record.PlanID, record.Generation, record.IdempotencyKey); getErr != nil {
+		return PlanRecord{}, false, getErr
+	} else if found {
+		created = existing.RunID == record.RunID
+		return existing, created, nil
+	}
+	return PlanRecord{}, false, fmt.Errorf("plan run was not persisted: %s", record.RunID)
+}
+
+func (s *Store) FindPlan(planID string, generation int, idempotencyKey string) (PlanRecord, bool, error) {
+	row := s.db.QueryRow(`SELECT run_id, plan_id, generation, idempotency_key,
+        document_hash, catalog_revision, status, plan_json, state_json,
+        created_at, updated_at, COALESCE(error_message, '')
+        FROM plan_runs WHERE plan_id = ? AND generation = ? AND idempotency_key = ?`,
+		planID, generation, idempotencyKey)
+	return scanPlan(row)
+}
+
+func (s *Store) GetPlan(runID string) (PlanRecord, bool, error) {
+	row := s.db.QueryRow(`SELECT run_id, plan_id, generation, idempotency_key,
+        document_hash, catalog_revision, status, plan_json, state_json,
+        created_at, updated_at, COALESCE(error_message, '')
+        FROM plan_runs WHERE run_id = ?`, runID)
+	return scanPlan(row)
+}
+
+func (s *Store) UpdatePlan(runID, status, stateJSON, errorMessage string) error {
+	_, err := s.db.Exec(`UPDATE plan_runs SET status = ?, state_json = ?,
+        updated_at = ?, error_message = NULLIF(?, '') WHERE run_id = ?`,
+		status, stateJSON, time.Now().UTC().Format(time.RFC3339Nano), errorMessage, runID)
+	return err
+}
+
+func scanPlan(row rowScanner) (PlanRecord, bool, error) {
+	var record PlanRecord
+	if err := row.Scan(
+		&record.RunID, &record.PlanID, &record.Generation, &record.IdempotencyKey,
+		&record.DocumentHash, &record.CatalogRevision, &record.Status,
+		&record.PlanJSON, &record.StateJSON, &record.CreatedAt, &record.UpdatedAt,
+		&record.ErrorMessage,
+	); err == sql.ErrNoRows {
+		return PlanRecord{}, false, nil
+	} else if err != nil {
+		return PlanRecord{}, false, err
+	}
+	return record, true, nil
 }
 
 func (s *Store) Close() error {

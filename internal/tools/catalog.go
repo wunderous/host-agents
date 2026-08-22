@@ -154,6 +154,11 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"configure_service_domain":         true,
 		"remove_service_domain":            true,
 		"reset_incus_stack":                true,
+		"validate_host_plan":               true,
+		"run_host_plan":                    true,
+		"get_host_plan_run":                true,
+		"get_capability_catalog":           true,
+		"open_assistant_session":           true,
 	}
 	seen := make(map[string]bool, len(needed))
 	for _, definition := range defs {
@@ -385,6 +390,36 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "ingressName": map[string]any{"type": "string"},
 		}},
 		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:         "validate_host_plan",
+		Title:        "Validate host plan",
+		Description:  "Validate a generic host-plan.v1 document against the current authorized capability catalog without changing host state.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"plan"}, "properties": map[string]any{"plan": map[string]any{}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"valid", "contractVersion", "catalogRevision"}},
+	}, ToolDefinition{
+		Name:         "run_host_plan",
+		Title:        "Run host plan",
+		Description:  "Execute an explicit generic host-plan.v1 document with durable idempotency, readiness validation, recovery, and resume state.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"plan"}, "properties": map[string]any{"plan": map[string]any{}, "resume": map[string]any{"type": "boolean"}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
+	}, ToolDefinition{
+		Name:         "get_host_plan_run",
+		Title:        "Get host plan run",
+		Description:  "Read the durable status, node results, and revision metadata for a host-plan.v1 run.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"runId"}, "properties": map[string]any{"runId": map[string]any{"type": "string", "minLength": 1}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "nodes"}},
+	}, ToolDefinition{
+		Name:         "get_capability_catalog",
+		Title:        "Get capability catalog",
+		Description:  "Return the immutable authorized capability snapshot and revision used for typed proposals and host plans.",
+		InputSchema:  map[string]any{"type": "object"},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"providerId", "catalogRevision", "tools"}},
+	}, ToolDefinition{
+		Name:         "open_assistant_session",
+		Title:        "Open assistant session",
+		Description:  "Negotiate the bounded assistant-session.v1 contract and bind the client to the current capability revision.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"sessionId", "supportedContractVersions"}, "properties": map[string]any{"sessionId": map[string]any{"type": "string", "minLength": 1}, "supportedContractVersions": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}}, "catalogRevision": map[string]any{"type": "string"}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "sessionId", "catalogRevision"}},
 	})
 	// Keep the embedded JSON catalogs authoritative where a definition already
 	// exists, while allowing the Go catalog to fill newly implemented generic
@@ -423,6 +458,8 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"runtime":     map[string]any{"type": "string", "enum": runtimeEnum},
 			"includeChat": map[string]any{"type": "boolean"},
 			"modelRef":    map[string]any{"type": "string"},
+			"model":       map[string]any{"type": "string", "description": "Generic alias for modelRef."},
+			"role":        map[string]any{"type": "string", "enum": []string{"language", "embedding"}},
 			"modelPreset": map[string]any{"type": "string", "enum": []string{"qwen3.5", "qwen3.5-0.8b"}},
 			"numGpu":      map[string]any{"type": "integer"},
 			"numCtx":      map[string]any{"type": "integer"},
@@ -433,6 +470,8 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"modelVariant":            map[string]any{"type": "string"},
 			"installSource":           map[string]any{"type": "string"},
 			"modelRef":                map[string]any{"type": "string"},
+			"model":                   map[string]any{"type": "string", "description": "Generic alias for modelRef."},
+			"role":                    map[string]any{"type": "string", "enum": []string{"language", "embedding"}, "description": "Generic model role. Embedding models are not made the chat default unless setDefault is explicit."},
 			"setDefault":              map[string]any{"type": "boolean", "description": "For Ollama, keep this model as the default chat/runtime model; set false for an embedding-only resident model."},
 			"modelPreset":             map[string]any{"type": "string", "enum": []string{"qwen3.5", "qwen3.5-0.8b"}},
 			"createAs":                map[string]any{"type": "string"},

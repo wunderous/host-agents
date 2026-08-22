@@ -5195,5 +5195,83 @@
     "_meta": {
       "needsApproval": true
     }
+  },
+  {
+    "name": "validate_host_plan",
+    "title": "Validate host plan",
+    "description": "Validate a generic host-plan.v1 document against the current authorized capability catalog without changing host state.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "plan": {}
+      },
+      "required": ["plan"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": ["valid", "contractVersion", "catalogRevision"]
+    }
+  },
+  {
+    "name": "run_host_plan",
+    "title": "Run host plan",
+    "description": "Execute an explicit generic host-plan.v1 document with durable idempotency, readiness validation, recovery, and resume state.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "plan": {},
+        "resume": {"type": "boolean"}
+      },
+      "required": ["plan"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": ["runId", "status", "catalogRevision"]
+    },
+    "_meta": {"needsApproval": true}
+  },
+  {
+    "name": "get_host_plan_run",
+    "title": "Get host plan run",
+    "description": "Read the durable status, node results, and revision metadata for a host-plan.v1 run.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "runId": {"type": "string", "minLength": 1}
+      },
+      "required": ["runId"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": ["runId", "status", "nodes"]
+    }
+  },
+  {
+    "name": "get_capability_catalog",
+    "title": "Get capability catalog",
+    "description": "Return the immutable authorized capability snapshot and revision used for typed proposals and host plans.",
+    "inputSchema": {"type": "object"},
+    "outputSchema": {
+      "type": "object",
+      "required": ["providerId", "catalogRevision", "tools"]
+    }
+  },
+  {
+    "name": "open_assistant_session",
+    "title": "Open assistant session",
+    "description": "Negotiate the bounded assistant-session.v1 contract and bind the client to the current capability revision.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {"type": "string", "minLength": 1},
+        "supportedContractVersions": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "catalogRevision": {"type": "string"}
+      },
+      "required": ["sessionId", "supportedContractVersions"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": ["contractVersion", "sessionId", "catalogRevision"]
+    }
   }
 ]

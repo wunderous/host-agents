@@ -9,7 +9,7 @@ func TestRenderOllamaSystemdUnitUsesSharedConcurrencyPolicy(t *testing.T) {
 	unit, err := renderOllamaSystemdUnit(OllamaRuntimeConfig{
 		Port:            11434,
 		BinaryPath:      "/usr/local/bin/ollama",
-		ModelRef:        "qwen3.5:0.8b",
+		ModelRef:        "qwen3.5:2b",
 		ModelsDirectory: "/var/lib/opute/ollama/models",
 	})
 	if err != nil {
@@ -36,10 +36,10 @@ func TestOllamaModelNamesMatchTags(t *testing.T) {
 		right string
 		want  bool
 	}{
-		{"qwen3.5:0.8b", "qwen3.5:0.8b", true},
-		{"qwen3.5:0.8b", "qwen3.5:0.8b:latest", true},
+		{"qwen3.5:2b", "qwen3.5:2b", true},
+		{"qwen3.5:2b", "qwen3.5:2b:latest", true},
 		{"hf.co/mradermacher/granite-embedding-small-english-r2-GGUF:Q4_K_M", "hf.co/mradermacher/granite-embedding-small-english-r2-GGUF:Q4_K_M", true},
-		{"other-model", "qwen3.5:0.8b", false},
+		{"other-model", "qwen3.5:2b", false},
 	} {
 		if got := ollamaModelNamesMatch(test.left, test.right); got != test.want {
 			t.Fatalf("ollamaModelNamesMatch(%q, %q) = %v, want %v", test.left, test.right, got, test.want)

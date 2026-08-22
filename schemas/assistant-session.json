@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opute.dev/schemas/assistant-session.v1.json",
+  "title": "Assistant session contract",
+  "type": "object",
+  "required": ["contractVersions", "sessionId", "turnId", "catalogRevision", "input"],
+  "properties": {
+    "contractVersions": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "sessionId": {"type": "string", "minLength": 1},
+    "turnId": {"type": "string", "minLength": 1},
+    "catalogRevision": {"type": "string", "minLength": 1},
+    "transportCatalogRevision": {"type": "string", "minLength": 1},
+    "contextRevision": {"type": "string"},
+    "semanticVocabularyRevision": {"type": "string"},
+    "embeddingProviderRevision": {"type": "string"},
+    "conversationCompactionRevision": {"type": "string"},
+    "surfacePolicyRevision": {"type": "string"},
+    "input": {"type": "string", "minLength": 1},
+    "references": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/entityReference"}},
+    "observations": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/observation"}},
+    "toolCallHistory": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/toolCallHistory"}},
+    "capabilities": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "required": ["operationId", "catalogRevision"],
+        "properties": {
+          "operationId": {"type": "string", "minLength": 1},
+          "catalogRevision": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "entityReference": {
+      "type": "object",
+      "required": ["originalToken", "kind", "canonicalField", "canonicalValue", "provider", "source", "selectionMethod", "catalogRevision"],
+      "properties": {
+        "originalToken": {"type": "string"},
+        "kind": {"type": "string"},
+        "canonicalField": {"type": "string"},
+        "canonicalValue": {"type": "string"},
+        "displayName": {"type": "string"},
+        "provider": {"type": "string"},
+        "source": {"type": "string"},
+        "selectionMethod": {"type": "string"},
+        "catalogRevision": {"type": "string"},
+        "contextRevision": {"type": "string"},
+        "evidence": {"type": "array", "maxItems": 16, "items": {"type": "object"}}
+      }
+    },
+    "observation": {
+      "type": "object",
+      "required": ["kind", "canonicalField", "canonicalValue", "source", "revision"],
+      "properties": {
+        "kind": {"type": "string"},
+        "canonicalField": {"type": "string"},
+        "canonicalValue": {"type": "string"},
+        "displayName": {"type": "string"},
+        "provider": {"type": "string"},
+        "source": {"type": "string"},
+        "revision": {"type": "string"},
+        "value": {}
+      }
+    },
+    "toolCallHistory": {
+      "type": "object",
+      "required": ["callId", "toolName", "turnId", "arguments", "status"],
+      "properties": {
+        "callId": {"type": "string", "minLength": 1},
+        "toolName": {"type": "string", "minLength": 1},
+        "turnId": {"type": "string", "minLength": 1},
+        "arguments": {},
+        "status": {"type": "string", "enum": ["success", "error"]}
+      }
+    },
+    "typedCommandProposal": {
+      "type": "object",
+      "required": ["proposalId", "kind", "catalogRevision", "requiresApproval"],
+      "properties": {
+        "proposalId": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "enum": ["command", "assistant-session.v1"]},
+        "capability": {"type": "string", "minLength": 1},
+        "arguments": {"type": "object"},
+        "plan": {},
+        "references": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/entityReference"}},
+        "catalogRevision": {"type": "string", "minLength": 1},
+        "effect": {"type": "string", "enum": ["read", "mutation", "destructive", "credential_bearing"]},
+        "requiresApproval": {"type": "boolean"}
+      }
+    },
+    "sessionEvent": {
+      "type": "object",
+      "required": ["sessionId", "turnId", "sequence", "kind", "catalogRevision", "createdAt"],
+      "properties": {
+        "sessionId": {"type": "string", "minLength": 1},
+        "turnId": {"type": "string", "minLength": 1},
+        "sequence": {"type": "integer", "minimum": 0, "maximum": 127},
+        "kind": {"type": "string", "enum": [
+          "turn.started", "command.proposed", "approval.required", "clarification.required",
+          "tool.call", "tool.result", "setup.node.started", "setup.node.completed",
+          "setup.node.failed", "turn.completed", "error"
+        ]},
+        "catalogRevision": {"type": "string", "minLength": 1},
+        "contextRevision": {"type": "string"},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "payload": {}
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "contractVersion": "host-plan.v1",
+  "planId": "live-standalone-read-only",
+  "generation": 1,
+  "idempotencyKey": "live-standalone-read-only-1",
+  "nodes": [
+    {
+      "id": "host-info",
+      "action": {
+        "tool": "get_host_info",
+        "args": {}
+      }
+    }
+  ]
+}

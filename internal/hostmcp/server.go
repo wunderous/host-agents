@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
 	"github.com/wunderous/host-agents/internal/console"
 	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/resource"
@@ -31,18 +32,32 @@ type Server struct {
 	state          *state.Store
 	admission      *resource.Coordinator
 	mu             sync.Mutex
+	catalogMu      sync.RWMutex
+	planMu         sync.Mutex
+	planWG         sync.WaitGroup
+	closed         bool
+	planCancels    map[string]context.CancelFunc
 	toolDefs       []tools.ToolDefinition
+	catalog        tools.CapabilityCatalogSnapshot
+	registry       *capabilitycatalog.Registry
+	dynamic        map[string]CapabilityImplementation
 }
 
+// CapabilityImplementation is a trusted, already-installed host adapter. It
+// is deliberately a typed function boundary: registering metadata never loads
+// code, accepts shell text, or creates an executable capability by itself.
+type CapabilityImplementation func(context.Context, map[string]any) (*mcp.CallToolResult, error)
+
 type Options struct {
-	ProviderID     string
-	Ops            *ops.HostOperationsService
-	Logger         *slog.Logger
-	Standalone     bool
-	AllowMutations bool
-	StateDir       string
-	Version        string
-	Admission      *resource.Coordinator
+	ProviderID             string
+	Ops                    *ops.HostOperationsService
+	Logger                 *slog.Logger
+	Standalone             bool
+	AllowMutations         bool
+	StateDir               string
+	Version                string
+	Admission              *resource.Coordinator
+	AllowedImplementations map[string]bool
 }
 
 func NewServer(opts Options) (*Server, error) {
@@ -62,6 +77,32 @@ func NewServer(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	capabilityDefs := append([]tools.ToolDefinition(nil), catalog...)
+	if opts.Standalone {
+		capabilityDefs = append(capabilityDefs, tools.StandaloneToolDefinitions()...)
+		if all, loadErr := tools.LoadAllToolDefinitions("all"); loadErr == nil {
+			for _, def := range all {
+				if tools.StandaloneToolNames[def.Name] {
+					capabilityDefs = append(capabilityDefs, def)
+				}
+			}
+		}
+	}
+	capabilityCatalog := tools.BuildCapabilityCatalog(providerID, capabilityDefs)
+	knownResourceKinds := map[string]bool{
+		"host": true, "vm": true, "container": true, "incus": true, "network": true,
+		"storage": true, "image": true, "profile": true, "k3s": true, "cloudflared": true,
+		"tunnel": true, "model": true, "language": true, "embedding": true, "database": true,
+		"service": true, "operation": true, "plan": true,
+	}
+	for _, descriptor := range capabilityCatalog.Tools {
+		for _, kind := range descriptor.ResourceKinds {
+			knownResourceKinds[kind] = true
+		}
+	}
+	registry := capabilitycatalog.NewRegistry(capabilityCatalog, capabilitycatalog.Options{
+		ProviderID: providerID, KnownResourceKinds: knownResourceKinds, AllowedImplementations: opts.AllowedImplementations,
+	})
 	capabilities := &mcp.ServerCapabilities{
 		Tools:     &mcp.ToolCapabilities{ListChanged: true},
 		Resources: &mcp.ResourceCapabilities{ListChanged: true},
@@ -93,8 +134,12 @@ func NewServer(opts Options) (*Server, error) {
 		allowMutations: opts.AllowMutations,
 		toolDefs:       catalog,
 		admission:      opts.Admission,
+		catalog:        capabilityCatalog,
+		registry:       registry,
+		dynamic:        make(map[string]CapabilityImplementation),
+		planCancels:    make(map[string]context.CancelFunc),
 	}
-	if opts.Standalone {
+	if opts.Standalone || strings.TrimSpace(opts.StateDir) != "" {
 		store, err := state.Open(opts.StateDir)
 		if err != nil {
 			return nil, err
@@ -108,12 +153,30 @@ func NewServer(opts Options) (*Server, error) {
 // Close releases standalone-owned resources. Platform mode is also safe to
 // close, which keeps shutdown behavior consistent across profiles.
 func (s *Server) Close() error {
-	if s == nil || s.state == nil {
+	if s == nil {
 		return nil
 	}
-	err := s.state.Close()
+	s.planMu.Lock()
+	if s.closed {
+		s.planMu.Unlock()
+		s.planWG.Wait()
+		return nil
+	}
+	s.closed = true
+	for runID, cancel := range s.planCancels {
+		cancel()
+		delete(s.planCancels, runID)
+	}
+	s.planMu.Unlock()
+	s.planWG.Wait()
+	s.planMu.Lock()
+	store := s.state
 	s.state = nil
-	return err
+	s.planMu.Unlock()
+	if store == nil {
+		return nil
+	}
+	return store.Close()
 }
 
 func (s *Server) MCP() *mcp.Server {
@@ -124,18 +187,64 @@ func (s *Server) Ops() *ops.HostOperationsService {
 	return s.ops
 }
 
+// CatalogSnapshot returns the immutable capability snapshot used by MCP
+// registration and plan revision checks. Dynamic registration replaces the
+// server's current snapshot and invalidates older client revisions.
+func (s *Server) CatalogSnapshot() tools.CapabilityCatalogSnapshot {
+	s.catalogMu.RLock()
+	defer s.catalogMu.RUnlock()
+	return cloneCatalogSnapshot(s.catalog)
+}
+
+func cloneCatalogSnapshot(snapshot tools.CapabilityCatalogSnapshot) tools.CapabilityCatalogSnapshot {
+	snapshot.Tools = append([]tools.CapabilityDescriptor(nil), snapshot.Tools...)
+	return snapshot
+}
+
+// RegisterCapability adds a typed capability bound to a trusted host
+// implementation and publishes a new catalog revision. It is intended for a
+// provider adapter during startup; callers must refresh clients after success.
+func (s *Server) RegisterCapability(registration capabilitycatalog.Registration, implementation CapabilityImplementation) error {
+	if s == nil || implementation == nil {
+		return fmt.Errorf("server and capability implementation are required")
+	}
+	if s.registry == nil {
+		return fmt.Errorf("capability registry is unavailable")
+	}
+	if err := s.registry.Register(registration); err != nil {
+		return err
+	}
+	snapshot := s.registry.Snapshot()
+	s.catalogMu.Lock()
+	s.catalog = snapshot
+	s.dynamic[registration.Descriptor.OperationID] = implementation
+	s.catalogMu.Unlock()
+	s.addRegisteredCapability(registration.Descriptor)
+	return nil
+}
+
 // DispatchTool is the single execution boundary for MCP, task, and HWP
 // callers. Keeping admission here prevents one transport from bypassing the
 // host-wide policy when two agent instances share WSL/Incus resources.
 func (s *Server) DispatchTool(ctx context.Context, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
 	if s.admission == nil {
-		return tools.DispatchTool(ctx, s.ops, name, args, onData)
+		return s.dispatchRegisteredOrBuiltIn(ctx, name, args, onData)
 	}
 	release, err := s.admission.Acquire(ctx, name)
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
 	defer release()
+	return s.dispatchRegisteredOrBuiltIn(ctx, name, args, onData)
+}
+
+func (s *Server) dispatchRegisteredOrBuiltIn(ctx context.Context, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
+	s.catalogMu.RLock()
+	implementation := s.dynamic[name]
+	s.catalogMu.RUnlock()
+	if implementation != nil {
+		return implementation(ctx, args)
+	}
 	return tools.DispatchTool(ctx, s.ops, name, args, onData)
 }
 
@@ -182,8 +291,9 @@ func (s *Server) CloseHostStream(operationID string) {
 }
 
 func (s *Server) registerTools() {
+	snapshot := s.CatalogSnapshot()
 	if s.standalone {
-		s.registerStandaloneTools()
+		s.registerStandaloneTools(snapshot)
 		return
 	}
 	allDefs, err := tools.LoadAllToolDefinitions("all")
@@ -203,11 +313,11 @@ func (s *Server) registerTools() {
 			continue
 		}
 		registered[def.Name] = true
-		s.addRegisteredTool(def)
+		s.addRegisteredTool(def, snapshot)
 	}
 }
 
-func (s *Server) registerStandaloneTools() {
+func (s *Server) registerStandaloneTools(snapshot tools.CapabilityCatalogSnapshot) {
 	defs := tools.StandaloneToolDefinitions()
 	all, err := tools.LoadAllToolDefinitions("all")
 	if err == nil {
@@ -223,17 +333,15 @@ func (s *Server) registerStandaloneTools() {
 			continue
 		}
 		seen[def.Name] = true
-		s.addRegisteredTool(def)
+		s.addRegisteredTool(def, snapshot)
 	}
 }
 
-func (s *Server) addRegisteredTool(def tools.ToolDefinition) {
+func (s *Server) addRegisteredTool(def tools.ToolDefinition, snapshot tools.CapabilityCatalogSnapshot) {
 	tool := &mcp.Tool{
 		Name:        def.Name,
 		Description: def.Description,
-	}
-	if s.standalone {
-		tool.Meta = tools.StandaloneToolMetadata(def.Name)
+		Meta:        tools.CapabilityMeta(def, snapshot),
 	}
 	if def.InputSchema != nil {
 		tool.InputSchema = def.InputSchema
@@ -247,15 +355,52 @@ func (s *Server) addRegisteredTool(def tools.ToolDefinition) {
 	})
 }
 
+func (s *Server) addRegisteredCapability(descriptor tools.CapabilityDescriptor) {
+	tool := &mcp.Tool{
+		Name:        descriptor.Name,
+		Description: descriptor.Description,
+		Meta: map[string]any{
+			"catalogRevision": s.CatalogSnapshot().Revision,
+			"capability":      descriptor,
+		},
+		InputSchema:  descriptor.InputSchema,
+		OutputSchema: descriptor.OutputSchema,
+	}
+	name := descriptor.Name
+	s.mcpServer.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return s.handleToolCall(ctx, req, name)
+	})
+}
+
 func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, name string) (*mcp.CallToolResult, error) {
 	args := map[string]any{}
-	if len(req.Params.Arguments) > 0 {
+	if req.Params != nil && len(req.Params.Arguments) > 0 {
 		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 			return tools.ErrorResult(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
 	}
-	if s.standalone && tools.IsStandaloneMutation(name) && !s.allowMutations {
+	dynamicEffect := s.dynamicEffect(name)
+	if s.standalone && (tools.IsStandaloneMutation(name) || (dynamicEffect != "" && dynamicEffect != "read")) && !s.allowMutations {
 		return tools.ErrorResult(fmt.Errorf("standalone mutations are disabled; set OPUTE_STANDALONE_ALLOW_MUTATIONS=true")), nil
+	}
+	switch name {
+	case "validate_host_plan":
+		return s.handleValidateHostPlan(args)
+	case "run_host_plan":
+		return s.handleRunHostPlan(args)
+	case "get_host_plan_run":
+		return s.handleGetHostPlanRun(args)
+	case "get_capability_catalog":
+		return s.handleGetCapabilityCatalog()
+	case "open_assistant_session":
+		return s.handleOpenAssistantSession(args)
+	}
+	if name == "cancel_operation" {
+		if id, _ := args["operationId"].(string); id != "" {
+			if result, handled := s.cancelHostPlan(id); handled {
+				return result, nil
+			}
+		}
 	}
 	if s.standalone {
 		switch name {
@@ -318,6 +463,20 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 	}
 	onData := func(chunk string) {}
 	return s.DispatchTool(ctx, name, args, onData)
+}
+
+func (s *Server) dynamicEffect(name string) string {
+	s.catalogMu.RLock()
+	defer s.catalogMu.RUnlock()
+	if _, ok := s.dynamic[name]; !ok {
+		return ""
+	}
+	for _, descriptor := range s.catalog.Tools {
+		if descriptor.Name == name {
+			return descriptor.Effect
+		}
+	}
+	return ""
 }
 
 func structuredResult(value any, text string) *mcp.CallToolResult {

@@ -310,7 +310,7 @@ func TestPostgreSQLServiceCreateDatabaseSQLUsesIdentifierQuoting(t *testing.T) {
 }
 
 func TestPostgreSQLServiceSQLScriptKeepsPasswordOffCommandLine(t *testing.T) {
-	script := postgresqlServiceSQLScript("opute-platform-postgres-rw.opute-system.svc", "opute", "SELECT 1")
+	script := postgresqlServiceSQLScript("opute-platform-postgres-rw.opute-system.svc", "opute", "postgres", "SELECT 1")
 	if strings.Contains(script, "password") || strings.Contains(script, "PGPASSWORD") {
 		t.Fatalf("SQL script should read pgpass from stdin, not expose a password:\n%s", script)
 	}

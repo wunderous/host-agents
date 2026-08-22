@@ -2,20 +2,31 @@
 
 Go implementation of the Opute host agent (replaces `@opute/mcp-host-agent`).
 
-## Standalone local MCP server
+## Standalone Go experience
 
-The standalone profile is an independently runnable local MCP server for Linux
-with Incus. It is compatible with standards-compliant **Streamable HTTP MCP
-clients** and does not require Opute Platform, Bridge, an onboarding token, or
-a reverse tunnel. Mutations are denied by default. Default listen address is
-`http://127.0.0.1:3014/mcp`.
+`opute-host-agent` is the single-binary standalone experience. It runs the typed
+Host Agent MCP server and a full-screen Bubble Tea TUI in one process, connected
+by the MCP SDK's in-memory transport. The TUI provides a styled output viewport,
+command history, catalog-backed suggestions, scroll controls, cancellation, and
+interactive approval/entity prompts. It does not require Opute Platform, Bridge,
+an onboarding token, or a reverse tunnel. Mutations are denied by default.
 
-Run a local build:
+Build and launch the combined local TUI:
 
 ```bash
 OPUTE_INFRA_PROVIDER_ID=incus \
 OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone" \
-./dist/opute-host-agent --mode standalone --transport http
+./dist/opute-host-agent
+```
+
+The same binary also supports explicit modes:
+
+```bash
+# MCP server only, for external clients; default HTTP endpoint is :3014/mcp
+./dist/opute-host-agent serve --mode standalone --transport http
+
+# TUI attached to an existing MCP server
+./dist/opute-host-agent tui --url http://127.0.0.1:3014/mcp
 ```
 
 Or via the npm helper:
@@ -37,6 +48,18 @@ Generic Streamable HTTP client configuration:
   }
 }
 ```
+
+The TUI discovers the server's revisioned capability catalog, generates completion
+from `tools/list`, validates typed arguments, requires approval for mutations,
+and supports `setup validate|graph|apply|status|resume|cancel`. `/assistant on`
+is optional and only accepts a structured proposal from the configured
+`OPUTE_TUI_MODEL_URL`; deterministic mode remains the fallback when no model is
+configured. Entity references use explicit authorized observations and never
+turn an unknown name into an opaque ID.
+
+When stdin or stdout is not a terminal, the binary uses the same command engine
+through its line-oriented fallback so scripts and automated tests remain
+deterministic. Interactive terminal sessions use the full-screen TUI.
 
 The following are verified Streamable HTTP MCP client examples for VS Code,
 Claude Desktop, and Cursor (gate: `opute/scripts/validate-standalone-mcp-client.ts`
@@ -105,6 +128,7 @@ Or from this directory:
 
 ```bash
 make build
+# builds the single canonical opute-host-agent binary
 make test
 make artifacts   # host-agent-linux-x64.gz, host-agent-linux-arm64.gz
 make standalone-http-smoke
@@ -112,7 +136,10 @@ make standalone-lifecycle-gate   # explicit Incus integration gate
 npm --prefix npm/local-host-agent test
 ```
 
-Release artifacts match platform onboarding names: `host-agent-linux-x64.gz` and `host-agent-linux-arm64.gz`.
+Release artifacts use the platform onboarding names
+`host-agent-linux-x64.gz` and `host-agent-linux-arm64.gz`. Each artifact
+contains the canonical `opute-host-agent` binary and supports combined,
+server-only, and attached-TUI modes.
 
 ## CI and releases
 
@@ -130,7 +157,8 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-The release attaches both `.gz` binaries and a `SHA256SUMS` manifest. Download from the public GitHub Release or use the npm launcher:
+The release attaches the host-agent `.gz` binaries plus a `SHA256SUMS` manifest.
+Download from the public GitHub Release or use the npm launcher:
 
 ```bash
 gh release download v0.2.0 --repo wunderous/host-agents

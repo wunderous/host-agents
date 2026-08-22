@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -14,78 +13,25 @@ import (
 	"github.com/wunderous/host-agents/internal/config"
 	"github.com/wunderous/host-agents/internal/fingerprint"
 	"github.com/wunderous/host-agents/internal/heartbeat"
-	"github.com/wunderous/host-agents/internal/hostmcp"
-	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/provider"
-	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/state"
-	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/internal/transport"
 	"github.com/wunderous/host-agents/internal/version"
 )
 
 // Run starts the host agent and blocks until shutdown.
 func Run(ctx context.Context, logger *slog.Logger) error {
-	cfg := config.Load()
-	if err := validateConfig(cfg); err != nil {
-		return err
-	}
-	if logger == nil {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	}
-
-	toolNames, err := tools.HostToolNamesForProvider(cfg.ProviderID)
+	runtime, err := NewRuntime(logger)
 	if err != nil {
 		return err
 	}
-
-	svc := ops.NewHostOperationsService(ops.Options{
-		ProviderID:                provider.NormalizeProviderID(cfg.ProviderID),
-		InstanceID:                cfg.InstanceID,
-		AgentID:                   cfg.RemoteAgentID,
-		OwnershipMode:             cfg.OwnershipMode,
-		RelayConfigDir:            cfg.RelayConfigDir,
-		SharedHostResourceLockDir: cfg.HostResourceLockDir,
-		OciStoragePolicyPath:      filepath.Join(cfg.HostResourceLockDir, "oci-storage-policy.json"),
-		SQLiteDatabaseRoot:        cfg.SQLiteDatabaseRoot,
-		SharedHostOwnerInstance:   cfg.SharedHostOwnerInstance,
-		AllowInsecureDownloads:    cfg.AgentMode == "standalone" && cfg.StandaloneAllowInsecureDownloads,
-		ToolsForProvider: func(providerID string) []string {
-			names, err := tools.HostToolNamesForProvider(providerID)
-			if err != nil {
-				return nil
-			}
-			return names
-		},
-	})
-	admission, err := resource.NewCoordinator(resource.Config{
-		LockDir:                 cfg.HostResourceLockDir,
-		MaxNormal:               cfg.HostResourceMaxNormal,
-		MaxHeavy:                cfg.HostResourceMaxHeavy,
-		MaxQueued:               cfg.HostResourceMaxQueued,
-		MinAvailableMemoryBytes: cfg.HostResourceMinMemoryBytes,
-		MinAvailableDiskBytes:   cfg.HostResourceMinDiskBytes,
-		DiskPaths:               cfg.HostResourceDiskPaths,
-	})
-	if err != nil {
-		return err
-	}
-	svc.SetResourceSnapshot(admission.Metadata)
-
-	hostServer, err := hostmcp.NewServer(hostmcp.Options{
-		ProviderID:     cfg.ProviderID,
-		Ops:            svc,
-		Logger:         logger,
-		Standalone:     cfg.AgentMode == "standalone",
-		AllowMutations: cfg.StandaloneAllowMutations,
-		StateDir:       cfg.StandaloneStateDir,
-		Version:        version.Version,
-		Admission:      admission,
-	})
-	if err != nil {
-		return err
-	}
-	defer hostServer.Close()
+	defer runtime.Close()
+	cfg := runtime.cfg
+	logger = runtime.logger
+	toolNames := runtime.toolNames
+	svc := runtime.svc
+	admission := runtime.admission
+	hostServer := runtime.host
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

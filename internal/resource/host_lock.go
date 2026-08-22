@@ -12,7 +12,7 @@ type hostLock interface {
 
 func newHostLock(dir string) (hostLock, error) {
 	if dir == "" {
-		dir = filepath.Join(os.TempDir(), "opute-host-resource-coordinator")
+		dir = filepath.Join(os.TempDir(), "opute-host-agent-resource-coordinator")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err

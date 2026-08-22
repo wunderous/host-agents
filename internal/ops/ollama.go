@@ -17,7 +17,7 @@ import (
 
 const (
 	defaultOllamaPort     = 11434
-	defaultOllamaModel    = "qwen3.5:0.8b"
+	defaultOllamaModel    = "qwen3.5:2b"
 	ollamaServiceName     = "opute-ollama.service"
 	ollamaNumParallel     = 1
 	ollamaMaxLoadedModels = 2

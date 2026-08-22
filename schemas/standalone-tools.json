@@ -164,6 +164,31 @@
       "support": "stable"
     },
     {
+      "name": "validate_host_plan",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "run_host_plan",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "get_host_plan_run",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "get_capability_catalog",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "open_assistant_session",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
       "name": "list_vms",
       "classification": "read_only",
       "support": "stable"

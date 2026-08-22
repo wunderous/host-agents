@@ -10,4 +10,5 @@ fi
 
 export OPUTE_AGENT_WORK_REPOSITORY=opute-host-agent
 export OPUTE_AGENT_WORK_REPO_ROOT="$repo_root"
+. "$opute_root/scripts/agent-work-env.sh"
 exec "$bun_command" --cwd "$opute_root" scripts/agent-work-coordination.ts "$@"

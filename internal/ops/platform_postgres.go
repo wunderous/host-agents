@@ -522,7 +522,7 @@ func (s *HostOperationsService) postgresqlServicePrimary(ctx context.Context, sp
 	return "", nil
 }
 
-func postgresqlServiceSQLScript(serviceHost, username, sql string) string {
+func postgresqlServiceSQLScript(serviceHost, username, database, sql string) string {
 	return fmt.Sprintf(`set -eu
 pgpass_dir="${TMPDIR:-/controller/tmp}"
 if [ ! -d "$pgpass_dir" ] || [ ! -w "$pgpass_dir" ]; then
@@ -532,26 +532,18 @@ pgpass="$(mktemp "$pgpass_dir/opute-pgpass.XXXXXX")"
 trap 'rm -f "$pgpass"' EXIT
 cat >"$pgpass"
 chmod 600 "$pgpass"
-PGPASSFILE="$pgpass" psql -h %s -p %d -U %s -d postgres -v ON_ERROR_STOP=1 -Atqc %s
-`, shellEscape(serviceHost), postgresqlServicePort, shellEscape(username), shellEscape(sql))
+PGPASSFILE="$pgpass" psql -h %s -p %d -U %s -d %s -v ON_ERROR_STOP=1 -Atqc %s
+`, shellEscape(serviceHost), postgresqlServicePort, shellEscape(username), shellEscape(database), shellEscape(sql))
 }
 
 func (s *HostOperationsService) runPostgreSQLServiceSQL(ctx context.Context, spec postgresqlServiceSpec, credentials postgresqlServiceSecret, pod, database, sql string) (string, error) {
 	serviceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
-	script := postgresqlServiceSQLScript(serviceHost, credentials.Username, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database)))
-	if database != "postgres" {
-		script = fmt.Sprintf(`set -eu
-pgpass_dir="${TMPDIR:-/controller/tmp}"
-if [ ! -d "$pgpass_dir" ] || [ ! -w "$pgpass_dir" ]; then
-  pgpass_dir="/tmp"
-fi
-pgpass="$(mktemp "$pgpass_dir/opute-pgpass.XXXXXX")"
-trap 'rm -f "$pgpass"' EXIT
-cat >"$pgpass"
-chmod 600 "$pgpass"
-PGPASSFILE="$pgpass" psql -h %s -p %d -U %s -d %s -v ON_ERROR_STOP=1 -Atqc %s
-`, shellEscape(serviceHost), postgresqlServicePort, shellEscape(credentials.Username), shellEscape(database), shellEscape(sql))
-	}
+	script := postgresqlServiceSQLScript(
+		serviceHost,
+		credentials.Username,
+		database,
+		fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database)),
+	)
 	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
 	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", script}
 	return s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "query PostgreSQL service through read/write service", 60*time.Second)
@@ -560,7 +552,7 @@ PGPASSFILE="$pgpass" psql -h %s -p %d -U %s -d %s -v ON_ERROR_STOP=1 -Atqc %s
 func (s *HostOperationsService) ensurePostgreSQLServiceDatabase(ctx context.Context, spec postgresqlServiceSpec, credentials postgresqlServiceSecret, pod, database string) error {
 	serviceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
 	checkSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database))
-	script := postgresqlServiceSQLScript(serviceHost, credentials.Username, checkSQL)
+	script := postgresqlServiceSQLScript(serviceHost, credentials.Username, "postgres", checkSQL)
 	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
 	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", script}
 	result, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "check PostgreSQL service database", 60*time.Second)
@@ -571,7 +563,7 @@ func (s *HostOperationsService) ensurePostgreSQLServiceDatabase(ctx context.Cont
 		return nil
 	}
 	createSQL := postgresqlServiceCreateDatabaseSQL(database)
-	script = postgresqlServiceSQLScript(serviceHost, credentials.Username, createSQL)
+	script = postgresqlServiceSQLScript(serviceHost, credentials.Username, "postgres", createSQL)
 	args[len(args)-1] = script
 	if _, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "create PostgreSQL service database", 60*time.Second); err != nil {
 		return err

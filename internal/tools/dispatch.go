@@ -210,12 +210,15 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "CUDA llama-server binary is built and verified"), nil
 
 	case "list_local_llm_models", "probe_local_llm":
+		if _, err := localLLMModelRole(args); err != nil {
+			return nil, err
+		}
 		var out any
 		var err error
 		if localLLMRuntime(args) == "llama-cpp" {
-			out, err = svc.ProbeLlamaServer(ctx, ops.ProbeLlamaServerArgs{IncludeChat: boolField(args, "includeChat"), ModelRef: stringField(args, "modelRef")})
+			out, err = svc.ProbeLlamaServer(ctx, ops.ProbeLlamaServerArgs{IncludeChat: boolField(args, "includeChat"), ModelRef: localLLMModelRef(args)})
 		} else if localLLMRuntime(args) == "ollama" {
-			out, err = svc.ProbeOllama(ctx, ops.ProbeOllamaArgs{IncludeChat: boolField(args, "includeChat"), ModelRef: stringField(args, "modelRef")})
+			out, err = svc.ProbeOllama(ctx, ops.ProbeOllamaArgs{IncludeChat: boolField(args, "includeChat"), ModelRef: localLLMModelRef(args)})
 		} else {
 			return nil, fmt.Errorf("unsupported local LLM runtime %q; expected ollama or llama-cpp", localLLMRuntime(args))
 		}
@@ -225,12 +228,16 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "install_local_llm_model":
+		role, err := localLLMModelRole(args)
+		if err != nil {
+			return nil, err
+		}
 		if localLLMRuntime(args) == "ollama" {
 			modelRef, err := resolveLocalLLMModelArg(args)
 			if err != nil {
 				return nil, err
 			}
-			setDefault := true
+			setDefault := role != "embedding"
 			if _, present := args["setDefault"]; present {
 				setDefault = boolField(args, "setDefault")
 			}
@@ -243,8 +250,12 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		if localLLMRuntime(args) != "llama-cpp" {
 			return nil, fmt.Errorf("unsupported local LLM runtime %q; expected ollama or llama-cpp", localLLMRuntime(args))
 		}
+		modelRef, err := resolveLocalLLMModelArg(args)
+		if err != nil {
+			return nil, err
+		}
 		out, err := svc.InstallLlamaServerModel(ctx, ops.InstallLlamaServerModelArgs{
-			ModelRef:                stringField(args, "modelRef"),
+			ModelRef:                modelRef,
 			ArtifactPath:            stringField(args, "artifactPath"),
 			ArtifactSHA256:          stringField(args, "artifactSha256"),
 			ArtifactURI:             stringField(args, "artifactUri"),
@@ -1217,11 +1228,18 @@ func postgresqlServiceArgs(args map[string]any) ops.PostgreSQLServiceArgs {
 }
 
 func resolveLocalLLMModelArg(args map[string]any) (string, error) {
-	if modelRef := stringField(args, "modelRef"); modelRef != "" {
+	if modelRef, err := explicitLocalLLMModelRef(args); err != nil {
+		return "", err
+	} else if modelRef != "" {
 		return modelRef, nil
 	}
 	switch stringField(args, "modelPreset") {
-	case "", "qwen3.5", "qwen3.5-0.8b":
+	case "", "qwen3.5":
+		if localLLMRuntime(args) == "llama-cpp" {
+			return "qwen3.5-0.8b/base-llama", nil
+		}
+		return "qwen3.5:2b", nil
+	case "qwen3.5-0.8b":
 		if localLLMRuntime(args) == "llama-cpp" {
 			return "qwen3.5-0.8b/base-llama", nil
 		}
@@ -1229,6 +1247,37 @@ func resolveLocalLLMModelArg(args map[string]any) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported local LLM model preset %q", stringField(args, "modelPreset"))
 	}
+}
+
+func explicitLocalLLMModelRef(args map[string]any) (string, error) {
+	modelRef := stringField(args, "modelRef")
+	model := stringField(args, "model")
+	if modelRef != "" && model != "" && modelRef != model {
+		return "", fmt.Errorf("model and modelRef must identify the same model when both are supplied")
+	}
+	if model != "" {
+		return model, nil
+	}
+	return modelRef, nil
+}
+
+func localLLMModelRef(args map[string]any) string {
+	model, err := explicitLocalLLMModelRef(args)
+	if err != nil {
+		return ""
+	}
+	return model
+}
+
+func localLLMModelRole(args map[string]any) (string, error) {
+	role := stringField(args, "role")
+	if role == "" {
+		return "language", nil
+	}
+	if role != "language" && role != "embedding" {
+		return "", fmt.Errorf("unsupported model role %q; expected language or embedding", role)
+	}
+	return role, nil
 }
 
 // localLLMRuntime defaults new payloads to the shared Ollama runtime. The

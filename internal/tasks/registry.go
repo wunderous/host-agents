@@ -63,16 +63,36 @@ func (r *Registry) CreateWithCancel(toolName string, toolArgs map[string]any, tt
 	return r.create(toolName, toolArgs, ttl, description, metadata, cancel)
 }
 
+// CreateWithID restores a durable operation identity after a process restart.
+// A working in-memory record is reused; a completed/failed/cancelled record is
+// replaced only when the caller explicitly resumes it.
+func (r *Registry) CreateWithID(taskID, toolName string, toolArgs map[string]any, ttl time.Duration, description string, metadata map[string]any, cancel func()) *Record {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if existing, ok := r.tasks[taskID]; ok && existing.Status == StatusWorking {
+		return existing
+	}
+	rec := newRecord(taskID, toolName, toolArgs, ttl, description, metadata, cancel)
+	r.tasks[taskID] = rec
+	return rec
+}
+
 func (r *Registry) create(toolName string, toolArgs map[string]any, ttl time.Duration, description string, metadata map[string]any, cancel func()) *Record {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	id := uuid.NewString()
+	rec := newRecord(id, toolName, toolArgs, ttl, description, metadata, cancel)
+	r.tasks[id] = rec
+	return rec
+}
+
+func newRecord(taskID, toolName string, toolArgs map[string]any, ttl time.Duration, description string, metadata map[string]any, cancel func()) *Record {
 	if ttl <= 0 {
 		ttl = DefaultTTL
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	id := uuid.NewString()
-	rec := &Record{
-		TaskID:        id,
+	return &Record{
+		TaskID:        taskID,
 		ToolName:      toolName,
 		ToolArgs:      toolArgs,
 		Status:        StatusWorking,
@@ -85,8 +105,6 @@ func (r *Registry) create(toolName string, toolArgs map[string]any, ttl time.Dur
 		resultCh:      make(chan ToolResult, 1),
 		cancel:        cancel,
 	}
-	r.tasks[id] = rec
-	return rec
 }
 
 func (r *Registry) Get(taskID string) (*Record, bool) {
@@ -270,4 +288,5 @@ var TaskAwareTools = map[string]bool{
 	"configure_local_llm_runtime": true,
 	"stop_local_llm_runtime":      true,
 	"remove_local_llm_model":      true,
+	"run_host_plan":               true,
 }
