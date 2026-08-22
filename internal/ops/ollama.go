@@ -30,8 +30,6 @@ type OllamaRuntimeConfig struct {
 	ModelRef        string `json:"modelRef"`
 	BinaryPath      string `json:"binaryPath"`
 	ModelsDirectory string `json:"modelsDirectory,omitempty"`
-	NumParallel     int    `json:"numParallel"`
-	MaxLoadedModels int    `json:"maxLoadedModels"`
 }
 
 type ProbeOllamaArgs struct {
@@ -70,11 +68,9 @@ func defaultOllamaRuntimeConfig() OllamaRuntimeConfig {
 	}
 	return OllamaRuntimeConfig{
 		Port:            port,
-		ModelRef:        ollamaFirstNonEmpty(strings.TrimSpace(os.Getenv("OPUTE_OLLAMA_MODEL")), defaultOllamaModel),
+		ModelRef:        firstNonEmpty(strings.TrimSpace(os.Getenv("OPUTE_OLLAMA_MODEL")), defaultOllamaModel),
 		BinaryPath:      binaryPath,
 		ModelsDirectory: strings.TrimSpace(os.Getenv("OLLAMA_MODELS")),
-		NumParallel:     ollamaNumParallel,
-		MaxLoadedModels: ollamaMaxLoadedModels,
 	}
 }
 
@@ -104,11 +100,6 @@ func loadOllamaRuntimeConfig() OllamaRuntimeConfig {
 	if strings.TrimSpace(persisted.ModelsDirectory) != "" {
 		cfg.ModelsDirectory = strings.TrimSpace(persisted.ModelsDirectory)
 	}
-	// Ollama is a host-wide shared runtime. These are safety invariants, not
-	// per-instance tuning knobs: inference must remain serialized and both the
-	// chat and embedding models must be allowed to stay resident together.
-	cfg.NumParallel = ollamaNumParallel
-	cfg.MaxLoadedModels = ollamaMaxLoadedModels
 	return cfg
 }
 
@@ -125,10 +116,6 @@ func saveOllamaRuntimeConfig(cfg OllamaRuntimeConfig) error {
 		return err
 	}
 	return os.WriteFile(path, append(data, '\n'), 0600)
-}
-
-func ollamaSystemctlUser(ctx context.Context, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, "systemctl", append([]string{"--user"}, args...)...)
 }
 
 func renderOllamaSystemdUnit(cfg OllamaRuntimeConfig) (string, error) {
@@ -191,11 +178,11 @@ func (s *HostOperationsService) ensureOllamaRuntime(ctx context.Context, cfg Oll
 		if err := os.WriteFile(unitPath, []byte(unit), 0600); err != nil {
 			return err
 		}
-		if output, err := ollamaSystemctlUser(ctx, "daemon-reload").CombinedOutput(); err != nil {
+		if output, err := systemctlUser(ctx, "daemon-reload").CombinedOutput(); err != nil {
 			return fmt.Errorf("reload Ollama systemd unit: %w: %s", err, strings.TrimSpace(string(output)))
 		}
 	}
-	if output, err := ollamaSystemctlUser(ctx, "enable", "--now", ollamaServiceName).CombinedOutput(); err != nil {
+	if output, err := systemctlUser(ctx, "enable", "--now", ollamaServiceName).CombinedOutput(); err != nil {
 		return fmt.Errorf("start shared Ollama systemd unit: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return waitForOllamaAPI(ctx, cfg.Port)
@@ -246,8 +233,8 @@ func (s *HostOperationsService) CheckOllamaPrerequisites() (*LocalLLMPrerequisit
 		ModelsDirectory:       cfg.ModelsDirectory,
 		OllamaAPIBaseURL:      fmt.Sprintf("http://127.0.0.1:%d/v1", cfg.Port),
 		OllamaModel:           cfg.ModelRef,
-		OllamaNumParallel:     cfg.NumParallel,
-		OllamaMaxLoadedModels: cfg.MaxLoadedModels,
+		OllamaNumParallel:     ollamaNumParallel,
+		OllamaMaxLoadedModels: ollamaMaxLoadedModels,
 	}
 	if _, err := s.hostCommandRunner([]string{"systemctl", "--user", "show-environment"}, nil, 10*time.Second); err == nil {
 		result.SystemdUserAvailable = true
@@ -418,13 +405,4 @@ func ollamaModelNamesMatch(left, right string) bool {
 	}
 	a, b := normalize(left), normalize(right)
 	return a != "" && b != "" && (a == b || strings.HasSuffix(a, "/"+b) || strings.HasSuffix(b, "/"+a))
-}
-
-func ollamaFirstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }

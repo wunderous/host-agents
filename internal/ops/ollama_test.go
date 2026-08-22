@@ -10,8 +10,6 @@ func TestRenderOllamaSystemdUnitUsesSharedConcurrencyPolicy(t *testing.T) {
 		Port:            11434,
 		BinaryPath:      "/usr/local/bin/ollama",
 		ModelRef:        "qwen3.5:0.8b",
-		NumParallel:     1,
-		MaxLoadedModels: 2,
 		ModelsDirectory: "/var/lib/opute/ollama/models",
 	})
 	if err != nil {

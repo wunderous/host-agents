@@ -432,7 +432,7 @@ func llamaReady(ctx context.Context, cfg LlamaServerConfig) bool {
 	return false
 }
 
-func llamaSystemctlUser(ctx context.Context, args ...string) *exec.Cmd {
+func systemctlUser(ctx context.Context, args ...string) *exec.Cmd {
 	commandArgs := append([]string{"--user"}, args...)
 	command := exec.CommandContext(ctx, "systemctl", commandArgs...)
 	if runtime.GOOS == "linux" {
@@ -516,7 +516,7 @@ func (s *HostOperationsService) startLlamaServerRuntime(ctx context.Context, cfg
 		commands = append(commands, []string{"enable", "--now", "opute-llama-server.service"})
 	}
 	for _, args := range commands {
-		if output, err := llamaSystemctlUser(ctx, args...).CombinedOutput(); err != nil {
+		if output, err := systemctlUser(ctx, args...).CombinedOutput(); err != nil {
 			return fmt.Errorf("llama-server systemd operation failed: %w: %s", err, strings.TrimSpace(string(output)))
 		}
 	}
@@ -737,7 +737,7 @@ func (s *HostOperationsService) StartLlamaServerRuntime(ctx context.Context) (*L
 }
 
 func (s *HostOperationsService) StopLlamaServerRuntime(ctx context.Context) error {
-	output, err := llamaSystemctlUser(ctx, "disable", "--now", "opute-llama-server.service").CombinedOutput()
+	output, err := systemctlUser(ctx, "disable", "--now", "opute-llama-server.service").CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))
 		lowerMessage := strings.ToLower(message)

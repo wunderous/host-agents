@@ -151,19 +151,25 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, _ error) {
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 	}
+	allowedSources := make([]*net.IPNet, 0, len(args.AllowedSourceCIDRs))
+	for _, source := range args.AllowedSourceCIDRs {
+		if _, cidr, err := net.ParseCIDR(strings.TrimSpace(source)); err == nil {
+			allowedSources = append(allowedSources, cidr)
+		}
+	}
+	allowedSourceIP := net.ParseIP(strings.TrimSpace(args.AllowedSourceIP))
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 		remoteIP := net.ParseIP(remoteHost)
 		allowed := false
-		for _, source := range args.AllowedSourceCIDRs {
-			_, cidr, parseErr := net.ParseCIDR(strings.TrimSpace(source))
-			if parseErr == nil && remoteIP != nil && cidr.Contains(remoteIP) {
+		for _, cidr := range allowedSources {
+			if remoteIP != nil && cidr.Contains(remoteIP) {
 				allowed = true
 				break
 			}
 		}
-		if len(args.AllowedSourceCIDRs) == 0 && args.AllowedSourceIP != "" && remoteIP != nil {
-			allowed = remoteIP.Equal(net.ParseIP(args.AllowedSourceIP))
+		if len(args.AllowedSourceCIDRs) == 0 && remoteIP != nil && allowedSourceIP != nil {
+			allowed = remoteIP.Equal(allowedSourceIP)
 		}
 		if err != nil || !allowed {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -209,12 +215,6 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 		return nil, err
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	allowedSources := make([]*net.IPNet, 0, len(args.AllowedSourceCIDRs))
-	for _, source := range args.AllowedSourceCIDRs {
-		if _, cidr, err := net.ParseCIDR(strings.TrimSpace(source)); err == nil {
-			allowedSources = append(allowedSources, cidr)
-		}
-	}
 	incoming := args.IncomingToken
 	if incoming == "" {
 		incoming = args.RelayToken
