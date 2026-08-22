@@ -905,7 +905,7 @@ func (s *HostOperationsService) ReconcilePostgreSQLService(ctx context.Context, 
 	// and tear down consumers on every caller restart. An incomplete service
 	// still follows the ordered repair path below.
 	probe, probeErr := s.probePostgreSQLServiceStable(ctx, spec)
-	if probeErr != nil || !postgresqlServiceProbeReady(probe) {
+	if probeErr != nil || !postgresqlServiceInfrastructureReady(probe) {
 		if err := s.ensurePostgreSQLServiceOrdered(ctx, spec); err != nil {
 			return nil, err
 		}
