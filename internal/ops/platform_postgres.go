@@ -524,7 +524,11 @@ func (s *HostOperationsService) postgresqlServicePrimary(ctx context.Context, sp
 
 func postgresqlServiceSQLScript(serviceHost, username, sql string) string {
 	return fmt.Sprintf(`set -eu
-pgpass="$(mktemp)"
+pgpass_dir="${TMPDIR:-/controller/tmp}"
+if [ ! -d "$pgpass_dir" ] || [ ! -w "$pgpass_dir" ]; then
+  pgpass_dir="/tmp"
+fi
+pgpass="$(mktemp "$pgpass_dir/opute-pgpass.XXXXXX")"
 trap 'rm -f "$pgpass"' EXIT
 cat >"$pgpass"
 chmod 600 "$pgpass"
@@ -537,7 +541,11 @@ func (s *HostOperationsService) runPostgreSQLServiceSQL(ctx context.Context, spe
 	script := postgresqlServiceSQLScript(serviceHost, credentials.Username, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database)))
 	if database != "postgres" {
 		script = fmt.Sprintf(`set -eu
-pgpass="$(mktemp)"
+pgpass_dir="${TMPDIR:-/controller/tmp}"
+if [ ! -d "$pgpass_dir" ] || [ ! -w "$pgpass_dir" ]; then
+  pgpass_dir="/tmp"
+fi
+pgpass="$(mktemp "$pgpass_dir/opute-pgpass.XXXXXX")"
 trap 'rm -f "$pgpass"' EXIT
 cat >"$pgpass"
 chmod 600 "$pgpass"
@@ -666,14 +674,18 @@ func (s *HostOperationsService) probePostgreSQLService(ctx context.Context, spec
 		probe.Blockers = append(probe.Blockers, "PostgreSQL service primary pod is not ready")
 	}
 	if probe.PrimaryReady && probe.SecretReady {
-		for _, database := range append([]string{"postgres"}, spec.Databases...) {
-			if _, err := s.runPostgreSQLServiceSQL(ctx, spec, credentials, primary, database, "SELECT 1"); err != nil {
-				probe.Blockers = append(probe.Blockers, "SQL SELECT 1 failed through the read/write Service")
-				return probe, nil
-			}
+		if _, err := s.runPostgreSQLServiceSQL(ctx, spec, credentials, primary, "postgres", "SELECT 1"); err != nil {
+			probe.Blockers = append(probe.Blockers, fmt.Sprintf("SQL SELECT 1 failed through the read/write Service for postgres: %s", err.Error()))
+			return probe, nil
 		}
 		probe.SQLReady = true
 		probe.TaskLedgerSQLReady = true
+		for _, database := range spec.Databases {
+			if _, err := s.runPostgreSQLServiceSQL(ctx, spec, credentials, primary, database, "SELECT 1"); err != nil {
+				probe.TaskLedgerSQLReady = false
+				probe.Blockers = append(probe.Blockers, fmt.Sprintf("SQL SELECT 1 failed through the read/write Service for %s: %s", database, err.Error()))
+			}
+		}
 	}
 	return probe, nil
 }
@@ -690,7 +702,7 @@ func (s *HostOperationsService) waitForPostgreSQLService(ctx context.Context, sp
 			return postgresqlServiceProbe{}, err
 		}
 		last = probe
-		if probe.OperatorReady && probe.CRDPresent && probe.ClusterReady && probe.ServiceReady && probe.SecretReady && probe.PrimaryReady && probe.SQLReady {
+		if postgresqlServiceInfrastructureReady(probe) {
 			return probe, nil
 		}
 		select {
@@ -841,6 +853,14 @@ func (s *HostOperationsService) ensurePostgreSQLServiceOrdered(ctx context.Conte
 
 func postgresqlServiceProbeReady(probe postgresqlServiceProbe) bool {
 	return probe.OperatorReady && probe.CRDPresent && probe.ClusterReady && probe.ServiceReady && probe.SecretReady && probe.PrimaryReady && probe.SQLReady && probe.TaskLedgerSQLReady
+}
+
+// postgresqlServiceInfrastructureReady is the convergence gate used before
+// service-owned databases are reconciled. The system database must be
+// reachable, but a configured database may legitimately be absent until the
+// reconciliation step creates it.
+func postgresqlServiceInfrastructureReady(probe postgresqlServiceProbe) bool {
+	return probe.OperatorReady && probe.CRDPresent && probe.ClusterReady && probe.ServiceReady && probe.SecretReady && probe.PrimaryReady && probe.SQLReady
 }
 
 // probePostgreSQLServiceStable gives an already-running service a short

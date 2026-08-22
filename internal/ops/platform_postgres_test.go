@@ -92,6 +92,24 @@ func TestPostgreSQLServiceProbeReadyRequiresSQLAndBothStores(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLServiceInfrastructureReadyAllowsDatabaseCreation(t *testing.T) {
+	base := postgresqlServiceProbe{
+		OperatorReady: true,
+		CRDPresent:    true,
+		ClusterReady:  true,
+		ServiceReady:  true,
+		SecretReady:   true,
+		PrimaryReady:  true,
+		SQLReady:      true,
+	}
+	if !postgresqlServiceInfrastructureReady(base) {
+		t.Fatal("system database readiness should allow configured database reconciliation")
+	}
+	if postgresqlServiceProbeReady(base) {
+		t.Fatal("steady-state readiness must still require configured databases")
+	}
+}
+
 func TestEnsurePostgreSQLServiceNeverAppliesClusterWithoutCRD(t *testing.T) {
 	service := validResetService()
 	clusterApplied := false
@@ -298,6 +316,9 @@ func TestPostgreSQLServiceSQLScriptKeepsPasswordOffCommandLine(t *testing.T) {
 	}
 	if !strings.Contains(script, "cat >\"$pgpass\"") || !strings.Contains(script, "PGPASSFILE=\"$pgpass\"") {
 		t.Fatalf("SQL script does not use an ephemeral stdin-backed pgpass file:\n%s", script)
+	}
+	if !strings.Contains(script, `pgpass_dir="${TMPDIR:-/controller/tmp}"`) || !strings.Contains(script, `mktemp "$pgpass_dir/opute-pgpass.XXXXXX"`) {
+		t.Fatalf("SQL script should select a writable CNPG temp directory:\n%s", script)
 	}
 }
 
