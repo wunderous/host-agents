@@ -257,6 +257,7 @@ func (r *Registry) Update(taskID string, responses map[string]any) (*Record, boo
 
 func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 	out := map[string]any{
+		"resultType":     "complete",
 		"taskId":         rec.TaskID,
 		"status":         rec.Status,
 		"createdAt":      rec.CreatedAt,
@@ -279,7 +280,12 @@ func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 	if len(rec.InputRequests) > 0 {
 		out["inputRequests"] = cloneMap(rec.InputRequests)
 	}
-	if rec.ToolResult != nil {
+	if rec.Status == StatusFailed {
+		out["error"] = map[string]any{
+			"code":    -32603,
+			"message": rec.StatusMessage,
+		}
+	} else if rec.Status == StatusCompleted && rec.ToolResult != nil {
 		out["result"] = map[string]any{
 			"structuredContent": rec.ToolResult.StructuredContent,
 			"content":           rec.ToolResult.Content,
@@ -287,6 +293,21 @@ func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 		}
 	}
 	return out
+}
+
+// ToCreateTaskResult projects the normative 2026-07-28 flat task handle. The
+// terminal result is deliberately not included: it is available only through
+// tasks/get after the task reaches a terminal state.
+func (r *Registry) ToCreateTaskResult(rec *Record) map[string]any {
+	return map[string]any{
+		"resultType":     "task",
+		"taskId":         rec.TaskID,
+		"status":         rec.Status,
+		"createdAt":      rec.CreatedAt,
+		"lastUpdatedAt":  rec.LastUpdatedAt,
+		"ttlMs":          rec.TTL,
+		"pollIntervalMs": rec.PollInterval,
+	}
 }
 
 func cloneMap(value map[string]any) map[string]any {

@@ -97,7 +97,10 @@ func TestMCPInputRequiredTaskRoundTripOverHTTP(t *testing.T) {
 		"_meta":     meta,
 	}
 	created := call(1, "tools/call", callParams)
-	taskID, ok := created["structuredContent"].(map[string]any)["taskId"].(string)
+	if created["resultType"] != "task" {
+		t.Fatalf("task creation resultType = %#v, want task", created["resultType"])
+	}
+	taskID, ok := created["taskId"].(string)
 	if !ok || taskID == "" {
 		t.Fatalf("task creation result = %#v", created)
 	}
@@ -107,12 +110,15 @@ func TestMCPInputRequiredTaskRoundTripOverHTTP(t *testing.T) {
 		t.Fatalf("input-required task projection = %#v", get)
 	}
 	update := call(3, "tasks/update", map[string]any{"taskId": taskID, "inputResponses": map[string]any{"response": true}, "_meta": meta})
-	if len(update) != 0 {
-		t.Fatalf("tasks/update result = %#v, want empty result", update)
+	if update["resultType"] != "complete" {
+		t.Fatalf("tasks/update result = %#v, want resultType=complete", update)
 	}
 	completed := call(4, "tasks/get", getParams)
-	if completed["status"] != "completed" {
+	if completed["status"] != "completed" || completed["resultType"] != "complete" {
 		t.Fatalf("completed task projection = %#v", completed)
+	}
+	if _, ok := completed["result"].(map[string]any); !ok {
+		t.Fatalf("completed task omitted inline result: %#v", completed)
 	}
 }
 
@@ -230,7 +236,7 @@ func TestMCPTasksList(t *testing.T) {
 	}
 }
 
-func TestMCPTaskResultServesInlineToolResult(t *testing.T) {
+func TestMCPTasksGetServesInlineToolResult(t *testing.T) {
 	hs := newTestServer(t)
 	rec := hs.Tasks().Create("probe_tool", map[string]any{"vmName": "probe"}, 0, "Executing probe_tool...", nil)
 	hs.Tasks().Complete(rec.TaskID, tasks.ToolResult{
@@ -241,21 +247,22 @@ func TestMCPTaskResultServesInlineToolResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := hs.HandleExtensionMethod("tasks/result", params)
+	result, err := hs.HandleExtensionMethod("tasks/get", params)
 	if err != nil {
-		t.Fatalf("tasks/result: %v", err)
+		t.Fatalf("tasks/get: %v", err)
 	}
 	m, ok := result.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected result type %T", result)
 	}
-	if m["isError"] != false {
-		t.Fatalf("expected isError=false: %+v", m)
+	inline, ok := m["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing inline result: %+v", m)
 	}
-	if _, ok := m["structuredContent"]; !ok {
-		t.Fatalf("missing structuredContent: %+v", m)
+	if _, ok := inline["structuredContent"]; !ok {
+		t.Fatalf("missing structuredContent in inline result: %+v", m)
 	}
-	if _, err := hs.HandleExtensionMethod("tasks/result", json.RawMessage(`{"taskId":"missing"}`)); err == nil {
+	if _, err := hs.HandleExtensionMethod("tasks/get", json.RawMessage(`{"taskId":"missing"}`)); err == nil {
 		t.Fatal("expected task-not-found error for unknown task id")
 	}
 }

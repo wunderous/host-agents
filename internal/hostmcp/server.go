@@ -712,14 +712,8 @@ func (s *Server) createInputRequestTask(args map[string]any) (*mcp.CallToolResul
 		_ = s.state.Create(rec.TaskID, "request_task_input", desc)
 	}
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: desc}},
-		StructuredContent: map[string]any{
-			"resultType":     "task",
-			"taskId":         rec.TaskID,
-			"status":         rec.Status,
-			"ttlMs":          rec.TTL,
-			"pollIntervalMs": rec.PollInterval,
-		},
+		Content:           []mcp.Content{&mcp.TextContent{Text: desc}},
+		StructuredContent: s.tasks.ToCreateTaskResult(rec),
 	}, nil
 }
 
@@ -819,14 +813,8 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 		}
 	}(rec.TaskID)
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: desc}},
-		StructuredContent: map[string]any{
-			"resultType":     "task",
-			"taskId":         rec.TaskID,
-			"status":         rec.Status,
-			"ttlMs":          rec.TTL,
-			"pollIntervalMs": rec.PollInterval,
-		},
+		Content:           []mcp.Content{&mcp.TextContent{Text: desc}},
+		StructuredContent: s.tasks.ToCreateTaskResult(rec),
 	}, nil
 }
 
@@ -880,7 +868,7 @@ func redactSensitiveTaskValue(value any) any {
 	}
 }
 
-// HandleExtensionMethod serves tasks/* and custom resources/* when go-sdk lacks native task support.
+// HandleExtensionMethod serves Tasks and custom resources when go-sdk lacks native task support.
 func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (any, error) {
 	switch method {
 	case "server/discover":
@@ -912,25 +900,6 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 			return nil, fmt.Errorf("task not found: %s", p.TaskID)
 		}
 		return s.tasks.ToGetTaskResult(rec), nil
-	case "tasks/result":
-		var p struct {
-			TaskID string `json:"taskId"`
-		}
-		if err := json.Unmarshal(params, &p); err != nil {
-			return nil, err
-		}
-		rec, ok := s.tasks.Get(p.TaskID)
-		if !ok {
-			return nil, fmt.Errorf("task not found: %s", p.TaskID)
-		}
-		if rec.ToolResult == nil {
-			return nil, fmt.Errorf("task has no result yet: %s", p.TaskID)
-		}
-		return map[string]any{
-			"content":           rec.ToolResult.Content,
-			"structuredContent": rec.ToolResult.StructuredContent,
-			"isError":           rec.ToolResult.IsError,
-		}, nil
 	case "tasks/cancel":
 		var p struct {
 			TaskID string `json:"taskId"`
@@ -942,7 +911,7 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		if !ok || rec == nil {
 			return nil, fmt.Errorf("cannot cancel task: %s", p.TaskID)
 		}
-		return map[string]any{}, nil
+		return map[string]any{"resultType": "complete"}, nil
 	case "tasks/update":
 		var p struct {
 			TaskID         string         `json:"taskId"`
@@ -963,7 +932,7 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		if _, ok := s.tasks.Update(p.TaskID, p.InputResponses); !ok {
 			return nil, fmt.Errorf("task cannot accept input: %s", p.TaskID)
 		}
-		return map[string]any{}, nil
+		return map[string]any{"resultType": "complete"}, nil
 	case "resources/list":
 		return s.listTaskResources()
 	case "resources/read":

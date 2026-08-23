@@ -70,7 +70,7 @@ func TestTaskAugmentedResultUsesMCPCreateTaskShape(t *testing.T) {
 	if !ok || content["resultType"] != "task" {
 		t.Fatalf("task result = %#v", result.StructuredContent)
 	}
-	for _, key := range []string{"taskId", "status", "ttlMs", "pollIntervalMs"} {
+	for _, key := range []string{"taskId", "status", "createdAt", "lastUpdatedAt", "ttlMs", "pollIntervalMs"} {
 		if _, exists := content[key]; !exists {
 			t.Fatalf("task result missing %q: %#v", key, content)
 		}
@@ -104,7 +104,7 @@ func TestInputRequiredTaskUsesTasksUpdate(t *testing.T) {
 		"taskId":         taskID,
 		"inputResponses": map[string]any{"response": true},
 	})
-	if updated, err := server.HandleExtensionMethod("tasks/update", updateParams); err != nil || len(updated.(map[string]any)) != 0 {
+	if updated, err := server.HandleExtensionMethod("tasks/update", updateParams); err != nil || updated.(map[string]any)["resultType"] != "complete" {
 		t.Fatalf("tasks/update = %#v, err=%v", updated, err)
 	}
 	updated, ok := server.Tasks().Get(taskID)

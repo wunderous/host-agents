@@ -221,13 +221,12 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 		"task":      map[string]any{"ttl": 60_000},
 		"_meta":     meta,
 	})
-	structured, ok := created["structuredContent"].(map[string]any)
-	if !ok {
-		t.Fatalf("request_task_input creation = %#v", created)
+	if created["resultType"] != "task" {
+		t.Fatalf("request_task_input resultType = %#v, want task", created["resultType"])
 	}
-	taskID, ok := structured["taskId"].(string)
+	taskID, ok := created["taskId"].(string)
 	if !ok || taskID == "" {
-		t.Fatalf("request_task_input task identity = %#v", structured)
+		t.Fatalf("request_task_input task identity = %#v", created)
 	}
 	get := callRaw(12, "tasks/get", map[string]any{"taskId": taskID, "_meta": meta})
 	if get["status"] != "input_required" || get["inputRequests"] == nil {
@@ -235,8 +234,11 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 	}
 	callRaw(13, "tasks/update", map[string]any{"taskId": taskID, "inputResponses": map[string]any{"response": true}, "_meta": meta})
 	completed := callRaw(14, "tasks/get", map[string]any{"taskId": taskID, "_meta": meta})
-	if completed["status"] != "completed" {
+	if completed["status"] != "completed" || completed["resultType"] != "complete" {
 		t.Fatalf("completed task = %#v", completed)
+	}
+	if _, ok := completed["result"].(map[string]any); !ok {
+		t.Fatalf("completed task omitted inline result = %#v", completed)
 	}
 
 	readOnly := ""

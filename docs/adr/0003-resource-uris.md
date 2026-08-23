@@ -35,9 +35,9 @@ and must not be substituted for `vm:<tenant>:<id>` or another entity URI.
 
 The server speaks MCP revision `2026-07-28` per request, advertises the Tasks
 extension through `server/discover`, returns `resultType: "task"` for task-
-augmented calls, and keeps final task results inline in `tasks/get`. The local
-`tasks/result` compatibility method is not used as the normative completion
-path.
+augmented calls, and keeps final task results inline in `tasks/get`. There is
+no local `tasks/result` compatibility method; terminal state is served only
+through the standard `tasks/get` response.
 
 ## Consequences
 
