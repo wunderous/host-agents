@@ -404,21 +404,21 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "PostgreSQL service relay was released"), nil
 
 	case "reconcile_tidb_service":
-		out, err := svc.ReconcileTiDBService(ctx, ops.TiDBServiceArgs{VMName: stringField(args, "vmName"), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), PDReplicas: intField(args, "pdReplicas"), TiKVReplicas: intField(args, "tikvReplicas"), TiDBReplicas: intField(args, "tidbReplicas"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"), TiDBVersion: stringField(args, "tidbVersion"), RetentionPolicy: stringField(args, "retentionPolicy")}, onData)
+		out, err := svc.ReconcileTiDBService(ctx, ops.TiDBServiceArgs{VMName: vmNameFromArgs(args), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), PDReplicas: intField(args, "pdReplicas"), TiKVReplicas: intField(args, "tikvReplicas"), TiDBReplicas: intField(args, "tidbReplicas"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"), TiDBVersion: stringField(args, "tidbVersion"), RetentionPolicy: stringField(args, "retentionPolicy")}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "TiDB service is ready"), nil
 
 	case "get_tidb_service_status":
-		out, err := svc.GetTiDBServiceStatus(ctx, ops.TiDBServiceArgs{VMName: stringField(args, "vmName"), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace")})
+		out, err := svc.GetTiDBServiceStatus(ctx, ops.TiDBServiceArgs{VMName: vmNameFromArgs(args), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace")})
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "TiDB service status returned"), nil
 
 	case "remove_tidb_service":
-		out, err := svc.RemoveTiDBService(ctx, ops.TiDBServiceArgs{VMName: stringField(args, "vmName"), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), RetentionPolicy: stringField(args, "retentionPolicy")}, boolField(args, "confirm"))
+		out, err := svc.RemoveTiDBService(ctx, ops.TiDBServiceArgs{VMName: vmNameFromArgs(args), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), RetentionPolicy: stringField(args, "retentionPolicy")}, boolField(args, "confirm"))
 		if err != nil {
 			return nil, err
 		}
@@ -728,7 +728,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "K3s installation completed."), nil
 
 	case "get_k3s_status":
-		vmName := stringField(args, "vmName")
+		vmName := vmNameFromArgs(args)
 		out, err := svc.GetK3sStatus(vmName)
 		if err != nil {
 			return nil, err
@@ -745,7 +745,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "install_postgresql":
 		out, err := svc.InstallPostgreSQL(ops.InstallPostgreSQLArgs{
-			VMName:    stringField(args, "vmName"),
+			VMName:    vmNameFromArgs(args),
 			Namespace: stringField(args, "namespace"),
 			Database:  stringField(args, "database"),
 		}, onData)
@@ -755,21 +755,21 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "PostgreSQL is ready."), nil
 
 	case "get_postgresql_status":
-		out, err := svc.GetPostgreSQLStatus(stringField(args, "vmName"), stringField(args, "namespace"))
+		out, err := svc.GetPostgreSQLStatus(vmNameFromArgs(args), stringField(args, "namespace"))
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, ""), nil
 
 	case "delete_postgresql":
-		out, err := svc.DeletePostgreSQL(stringField(args, "vmName"), stringField(args, "namespace"), onData)
+		out, err := svc.DeletePostgreSQL(vmNameFromArgs(args), stringField(args, "namespace"), onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "PostgreSQL deleted."), nil
 
 	case "run_sql":
-		out, err := svc.RunSQL(stringField(args, "vmName"), stringField(args, "namespace"), stringField(args, "database"), stringField(args, "sql"))
+		out, err := svc.RunSQL(vmNameFromArgs(args), stringField(args, "namespace"), stringField(args, "database"), stringField(args, "sql"))
 		if err != nil {
 			return nil, err
 		}
@@ -1161,7 +1161,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "k3d is installed."), nil
 
 	case "list_namespaces":
-		vmName := stringField(args, "vmName")
+		vmName := vmNameFromArgs(args)
 		namespaces, err := svc.ListNamespaces(vmName)
 		if err != nil {
 			return nil, err
@@ -1170,7 +1170,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "list_storage_classes":
-		vmName := stringField(args, "vmName")
+		vmName := vmNameFromArgs(args)
 		storageClasses, err := svc.ListStorageClasses(vmName)
 		if err != nil {
 			return nil, err
@@ -1179,7 +1179,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "list_ingress_classes":
-		vmName := stringField(args, "vmName")
+		vmName := vmNameFromArgs(args)
 		ingressClasses, err := svc.ListIngressClasses(vmName)
 		if err != nil {
 			return nil, err
@@ -1187,7 +1187,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(map[string]any{"classes": ingressClasses, "ingressClasses": ingressClasses}, ""), nil
 
 	case "list_pods":
-		vmName := stringField(args, "vmName")
+		vmName := vmNameFromArgs(args)
 		namespace := stringField(args, "namespace")
 		pods, err := svc.ListPods(vmName, namespace)
 		if err != nil {
@@ -1196,7 +1196,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(map[string]any{"pods": pods}, ""), nil
 
 	case "list_services":
-		vmName := stringField(args, "vmName")
+		vmName := vmNameFromArgs(args)
 		namespace := stringField(args, "namespace")
 		services, err := svc.ListServices(vmName, namespace)
 		if err != nil {
@@ -1205,7 +1205,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(map[string]any{"services": services}, ""), nil
 
 	case "list_deployments":
-		vmName := stringField(args, "vmName")
+		vmName := vmNameFromArgs(args)
 		namespace := stringField(args, "namespace")
 		deployments, err := svc.ListDeployments(vmName, namespace)
 		if err != nil {
@@ -1300,7 +1300,7 @@ func postgresqlServiceRelayArgs(args map[string]any) *ops.PostgreSQLServiceRelay
 
 func postgresqlServiceArgs(args map[string]any) ops.PostgreSQLServiceArgs {
 	return ops.PostgreSQLServiceArgs{
-		VMName: stringField(args, "vmName"), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"),
+		VMName: vmNameFromArgs(args), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"),
 		Instances: intField(args, "instances"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"),
 		RetentionPolicy: stringField(args, "retentionPolicy"), RestartConsumers: optionalBoolField(args, "restartConsumers"),
 		Databases: uniqueStringSlice(stringSliceField(args, "databases")), ConsumerDatabaseKeys: stringMapField(args, "consumerDatabaseKeys"),
@@ -1577,7 +1577,7 @@ func installK3sArgs(args map[string]any) ops.InstallK3sArgs {
 	}
 	return ops.InstallK3sArgs{
 		Target:      stringField(args, "target"),
-		VMName:      stringField(args, "vmName"),
+		VMName:      vmNameFromArgs(args),
 		ClusterID:   stringField(args, "clusterId"),
 		InstallArgs: installArgs,
 	}
@@ -1586,14 +1586,14 @@ func installK3sArgs(args map[string]any) ops.InstallK3sArgs {
 func uninstallK3sArgs(args map[string]any) ops.UninstallK3sArgs {
 	return ops.UninstallK3sArgs{
 		Target:    stringField(args, "target"),
-		VMName:    stringField(args, "vmName"),
+		VMName:    vmNameFromArgs(args),
 		ClusterID: stringField(args, "clusterId"),
 	}
 }
 
 func installClusterAgentArgs(args map[string]any) ops.InstallClusterAgentArgs {
 	return ops.InstallClusterAgentArgs{
-		VMName:      stringField(args, "vmName"),
+		VMName:      vmNameFromArgs(args),
 		ClusterID:   stringField(args, "clusterId"),
 		ClusterName: stringField(args, "clusterName"),
 		AgentID:     stringField(args, "agentId"),
