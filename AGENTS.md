@@ -202,3 +202,32 @@ Recipe/runtime E2E findings (2026-08-23):
   managed-cluster projection, verify `source=k3s-host`, and only then execute
   through the host agent. The deployed public test now completes without an
   explicit `hostId`; VM-backed rows remain on their normal downstream path.
+
+Shared-host runtime reconciliation findings (2026-08-23):
+
+- **An enabled-but-losing user unit races the port at every boot.** Two user
+  units binding `127.0.0.1:11434` (the provider bundle's `ollama.service` and
+  the generated `opute-ollama.service`) with no `Conflicts=` produce a silent
+  boot race; the loser crash-loops under `Restart=on-failure` (observed
+  ~2,200 consecutive restarts across days). `ensureOllamaRuntime` now retires
+  its own unit (`systemctl --user disable --now`) when the API probe succeeds
+  and `is-active --quiet` shows the generated unit is not the serving owner.
+  Note `is-active --quiet` is true only for `active` — `activating`
+  (auto-restart) already identifies the loser. Runtime-skip alone is not
+  reconciliation: enabled state must match the runtime decision or the race
+  returns on the next boot.
+- **Relay persistence is per-instance; re-onboarding strands it.** Relay
+  sessions persist to `~/.config/opute/instances/<identity>/local-llm-relays/`
+  (Go-default JSON field names) and restore on agent start. Re-onboarding
+  creates a new instance directory, so desired-state left on the retired
+  identity never restores — a healthy agent with no listener. The Opute-side
+  tunnel watchdog now imports stranded sessions from retired instances and
+  restarts the agent to rebind; relay mutations still route only to the
+  owning platform-mode instance.
+- **A timer-driven oneshot is healthy while `inactive (dead)`.** The tunnel
+  watchdog service shows `inactive (dead)` between 3-minute ticks; verify the
+  trigger timer (`systemctl --user list-timers`) and the journal before
+  declaring the watchdog down. Diagnose shared-host regressions with the
+  lease-holder PID, listener inventory (`ss -tln`), and journal restart
+  counters — file mtimes across instance directories proved the stranding
+  above where process state alone looked healthy.

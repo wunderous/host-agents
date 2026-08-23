@@ -1,12 +1,14 @@
 package ops
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -229,4 +231,91 @@ func TestWarmOllamaModelUsesSelectedReferenceAndKeepAlive(t *testing.T) {
 	if keepAlive, ok := received.KeepAlive.(float64); !ok || keepAlive != -1 {
 		t.Fatalf("keep_alive = %#v, want -1", received.KeepAlive)
 	}
+}
+
+func TestRetireOllamaUnitRacedByExternalOwner(t *testing.T) {
+	unitDir := filepath.Join(t.TempDir(), ".config", "systemd", "user")
+	t.Setenv("HOME", filepath.Dir(filepath.Dir(filepath.Dir(unitDir))))
+	if err := os.MkdirAll(unitDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	original := runSystemctlUser
+	t.Cleanup(func() { runSystemctlUser = original })
+
+	t.Run("without generated unit", func(t *testing.T) {
+		var calls [][]string
+		runSystemctlUser = func(_ context.Context, args ...string) (string, error) {
+			calls = append(calls, args)
+			return "", nil
+		}
+		if err := retireOllamaUnitRacedByExternalOwner(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if len(calls) != 0 {
+			t.Fatalf("expected no systemctl calls, got %v", calls)
+		}
+	})
+
+	t.Run("keeps unit that serves the port", func(t *testing.T) {
+		unitPath := filepath.Join(unitDir, ollamaServiceName)
+		if err := os.WriteFile(unitPath, []byte("[Unit]\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Remove(unitPath) }()
+		var calls [][]string
+		runSystemctlUser = func(_ context.Context, args ...string) (string, error) {
+			calls = append(calls, args)
+			if args[0] == "is-active" {
+				return "", nil
+			}
+			t.Fatalf("unexpected disable of serving unit: %v", args)
+			return "", nil
+		}
+		if err := retireOllamaUnitRacedByExternalOwner(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if len(calls) != 1 || calls[0][0] != "is-active" {
+			t.Fatalf("expected only is-active probe, got %v", calls)
+		}
+	})
+
+	t.Run("disables raced unit", func(t *testing.T) {
+		unitPath := filepath.Join(unitDir, ollamaServiceName)
+		if err := os.WriteFile(unitPath, []byte("[Unit]\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Remove(unitPath) }()
+		var disabled [][]string
+		runSystemctlUser = func(_ context.Context, args ...string) (string, error) {
+			if args[0] == "is-active" {
+				return "activating", fmt.Errorf("unit is auto-restarting")
+			}
+			disabled = append(disabled, args)
+			return "", nil
+		}
+		if err := retireOllamaUnitRacedByExternalOwner(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if len(disabled) != 1 || !slices.Equal(disabled[0], []string{"disable", "--now", ollamaServiceName}) {
+			t.Fatalf("expected disable --now %s, got %v", ollamaServiceName, disabled)
+		}
+	})
+
+	t.Run("surfaces disable failure", func(t *testing.T) {
+		unitPath := filepath.Join(unitDir, ollamaServiceName)
+		if err := os.WriteFile(unitPath, []byte("[Unit]\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Remove(unitPath) }()
+		runSystemctlUser = func(_ context.Context, args ...string) (string, error) {
+			if args[0] == "is-active" {
+				return "", fmt.Errorf("inactive")
+			}
+			return "reload failed", fmt.Errorf("exit status 1")
+		}
+		if err := retireOllamaUnitRacedByExternalOwner(t.Context()); err == nil {
+			t.Fatal("expected error when disable fails")
+		}
+	})
 }

@@ -266,7 +266,7 @@ func (s *HostOperationsService) ensureOllamaRuntime(ctx context.Context, cfg Oll
 	// required: starting the generated unit in parallel would compete for the
 	// same port and can put systemd into a restart loop.
 	if err := probeOllamaAPI(ctx, cfg.Port); err == nil {
-		return nil
+		return retireOllamaUnitRacedByExternalOwner(ctx)
 	}
 	unit, err := renderOllamaSystemdUnit(cfg)
 	if err != nil {
@@ -293,6 +293,35 @@ func (s *HostOperationsService) ensureOllamaRuntime(ctx context.Context, cfg Oll
 		return fmt.Errorf("start shared Ollama systemd unit: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return waitForOllamaAPI(ctx, cfg.Port)
+}
+
+// An external owner (for example the provider bundle's ollama.service) can
+// serve the shared port while the generated unit is still enabled from an
+// earlier install. The enabled-but-losing unit then races the owner for the
+// bind at every boot and crash-loops. Disable it once the API is provably
+// served elsewhere; re-enabling happens naturally on the next ensure that
+// finds the port free.
+func retireOllamaUnitRacedByExternalOwner(ctx context.Context) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	unitPath := filepath.Join(home, ".config", "systemd", "user", ollamaServiceName)
+	if _, statErr := os.Stat(unitPath); statErr != nil {
+		return nil
+	}
+	if _, err := runSystemctlUser(ctx, "is-active", "--quiet", ollamaServiceName); err == nil {
+		return nil
+	}
+	if output, err := runSystemctlUser(ctx, "disable", "--now", ollamaServiceName); err != nil {
+		return fmt.Errorf("retire raced Ollama unit %s: %w: %s", ollamaServiceName, err, output)
+	}
+	return nil
+}
+
+var runSystemctlUser = func(ctx context.Context, args ...string) (string, error) {
+	output, err := systemctlUser(ctx, args...).CombinedOutput()
+	return strings.TrimSpace(string(output)), err
 }
 
 func probeOllamaAPI(ctx context.Context, port int) error {
