@@ -41,9 +41,11 @@ type Record struct {
 	TTL           int64          `json:"ttl"`
 	PollInterval  int            `json:"pollInterval"`
 	Logs          []string       `json:"logs,omitempty"`
+	InputRequests map[string]any `json:"inputRequests,omitempty"`
 	ToolResult    *ToolResult    `json:"-"`
 	resultCh      chan ToolResult
 	cancel        func()
+	resume        func(map[string]any)
 }
 
 type Registry struct {
@@ -61,6 +63,21 @@ func (r *Registry) Create(toolName string, toolArgs map[string]any, ttl time.Dur
 
 func (r *Registry) CreateWithCancel(toolName string, toolArgs map[string]any, ttl time.Duration, description string, metadata map[string]any, cancel func()) *Record {
 	return r.create(toolName, toolArgs, ttl, description, metadata, cancel)
+}
+
+// CreateWithInput creates a task that pauses before execution until the
+// standard tasks/update method supplies every requested response. The resume
+// callback runs after the registry returns to working state.
+func (r *Registry) CreateWithInput(toolName string, toolArgs map[string]any, ttl time.Duration, description string, metadata map[string]any, cancel func(), inputRequests map[string]any, resume func(map[string]any)) *Record {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rec := newRecord(uuid.NewString(), toolName, toolArgs, ttl, description, metadata, cancel)
+	rec.Status = StatusInputRequired
+	rec.StatusMessage = "The task requires input before it can continue."
+	rec.InputRequests = cloneMap(inputRequests)
+	rec.resume = resume
+	r.tasks[rec.TaskID] = rec
+	return rec
 }
 
 // CreateWithID restores a durable operation identity after a process restart.
@@ -201,6 +218,43 @@ func (r *Registry) Cancel(taskID string) (*Record, bool) {
 	return rec, true
 }
 
+// Update applies only responses keyed by currently outstanding input
+// requests. Unknown or already-satisfied keys are ignored per MCP Tasks.
+// When all requests are satisfied, the task resumes exactly once.
+func (r *Registry) Update(taskID string, responses map[string]any) (*Record, bool) {
+	r.mu.Lock()
+	rec, ok := r.tasks[taskID]
+	if !ok || rec.Status != StatusInputRequired {
+		r.mu.Unlock()
+		return rec, ok
+	}
+	if rec.InputRequests == nil {
+		rec.InputRequests = map[string]any{}
+	}
+	accepted := map[string]any{}
+	for key, value := range responses {
+		if _, outstanding := rec.InputRequests[key]; !outstanding {
+			continue
+		}
+		accepted[key] = value
+		delete(rec.InputRequests, key)
+	}
+	if len(rec.InputRequests) != 0 {
+		rec.LastUpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		r.mu.Unlock()
+		return rec, true
+	}
+	rec.Status = StatusWorking
+	rec.StatusMessage = "Input received; resuming the task."
+	rec.LastUpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	resume := rec.resume
+	r.mu.Unlock()
+	if resume != nil {
+		resume(accepted)
+	}
+	return rec, true
+}
+
 func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 	out := map[string]any{
 		"taskId":         rec.TaskID,
@@ -222,6 +276,9 @@ func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 	if rec.StatusMessage != "" {
 		out["statusMessage"] = rec.StatusMessage
 	}
+	if len(rec.InputRequests) > 0 {
+		out["inputRequests"] = cloneMap(rec.InputRequests)
+	}
 	if rec.ToolResult != nil {
 		out["result"] = map[string]any{
 			"structuredContent": rec.ToolResult.StructuredContent,
@@ -232,12 +289,24 @@ func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 	return out
 }
 
+func cloneMap(value map[string]any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	out := make(map[string]any, len(value))
+	for key, item := range value {
+		out[key] = item
+	}
+	return out
+}
+
 var TaskAwareTools = map[string]bool{
 	// Generic host commands may legitimately outlive a single MCP request
 	// (for example, a caller-declared validation or service lifecycle job).
 	// Keep them on the standard task/polling contract instead of coupling
 	// their lifetime to the transport request.
 	"run_host_command":              true,
+	"request_task_input":            true,
 	"install_incus_stack":           true,
 	"reset_incus_stack":             true,
 	"create_vm":                     true,

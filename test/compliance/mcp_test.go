@@ -1,6 +1,7 @@
 package compliance_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/hostmcp"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/provider"
 	"github.com/wunderous/host-agents/internal/tasks"
@@ -19,6 +21,10 @@ import (
 )
 
 func newTestServer(t *testing.T) *hostmcp.Server {
+	return newTestServerMode(t, false)
+}
+
+func newTestServerMode(t *testing.T, standalone bool) *hostmcp.Server {
 	t.Helper()
 	svc := ops.NewHostOperationsService(ops.Options{
 		ProviderID: provider.IDIncus,
@@ -30,11 +36,84 @@ func newTestServer(t *testing.T) *hostmcp.Server {
 			return names
 		},
 	})
-	hs, err := hostmcp.NewServer(hostmcp.Options{ProviderID: "incus", Ops: svc})
+	hs, err := hostmcp.NewServer(hostmcp.Options{ProviderID: "incus", Ops: svc, Standalone: standalone, AllowMutations: standalone, StateDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
 	return hs
+}
+
+func TestMCPInputRequiredTaskRoundTripOverHTTP(t *testing.T) {
+	hs := newTestServerMode(t, true)
+	httpSrv := transport.NewHTTPServer(transport.HTTPOptions{HostServer: hs, BindHost: "127.0.0.1", Port: 0})
+	ts := httptest.NewServer(httpSrv.Handler())
+	defer ts.Close()
+	meta, err := mcphttp.ModernRequestEnvelope("compliance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(id int, method string, params map[string]any) map[string]any {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if err := mcphttp.ApplyStreamableHTTPRequestHeaders(req); err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Mcp-Method", method)
+		if method == "tools/call" {
+			if err := mcphttp.ApplyToolsCallRequestHeaders(req, "request_task_input"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var envelope map[string]any
+		if err := json.NewDecoder(res.Body).Decode(&envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope["error"] != nil {
+			t.Fatalf("%s error: %#v", method, envelope["error"])
+		}
+		result, ok := envelope["result"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s result = %#v", method, envelope)
+		}
+		return result
+	}
+	callParams := map[string]any{
+		"name":      "request_task_input",
+		"arguments": map[string]any{"prompt": "Continue?", "responseType": "boolean"},
+		"task":      map[string]any{"ttl": 60_000},
+		"_meta":     meta,
+	}
+	created := call(1, "tools/call", callParams)
+	taskID, ok := created["structuredContent"].(map[string]any)["taskId"].(string)
+	if !ok || taskID == "" {
+		t.Fatalf("task creation result = %#v", created)
+	}
+	getParams := map[string]any{"taskId": taskID, "_meta": meta}
+	get := call(2, "tasks/get", getParams)
+	if get["status"] != "input_required" || get["inputRequests"] == nil {
+		t.Fatalf("input-required task projection = %#v", get)
+	}
+	update := call(3, "tasks/update", map[string]any{"taskId": taskID, "inputResponses": map[string]any{"response": true}, "_meta": meta})
+	if len(update) != 0 {
+		t.Fatalf("tasks/update result = %#v, want empty result", update)
+	}
+	completed := call(4, "tasks/get", getParams)
+	if completed["status"] != "completed" {
+		t.Fatalf("completed task projection = %#v", completed)
+	}
 }
 
 func TestMCPInitializeAndGetHostInfo(t *testing.T) {

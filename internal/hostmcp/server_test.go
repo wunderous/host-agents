@@ -18,6 +18,7 @@ import (
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
 	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
@@ -73,6 +74,45 @@ func TestTaskAugmentedResultUsesMCPCreateTaskShape(t *testing.T) {
 		if _, exists := content[key]; !exists {
 			t.Fatalf("task result missing %q: %#v", key, content)
 		}
+	}
+}
+
+func TestInputRequiredTaskUsesTasksUpdate(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	result, err := server.createInputRequestTask(map[string]any{
+		"prompt":       "Continue the validation?",
+		"responseType": "boolean",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, ok := result.StructuredContent.(map[string]any)
+	if !ok || envelope["status"] != tasks.StatusInputRequired {
+		t.Fatalf("create envelope = %#v", result.StructuredContent)
+	}
+	taskID, _ := envelope["taskId"].(string)
+	getParams, _ := json.Marshal(map[string]string{"taskId": taskID})
+	getResult, err := server.HandleExtensionMethod("tasks/get", getParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+	getMap := getResult.(map[string]any)
+	if getMap["status"] != tasks.StatusInputRequired || getMap["inputRequests"] == nil {
+		t.Fatalf("tasks/get input projection = %#v", getMap)
+	}
+	updateParams, _ := json.Marshal(map[string]any{
+		"taskId":         taskID,
+		"inputResponses": map[string]any{"response": true},
+	})
+	if updated, err := server.HandleExtensionMethod("tasks/update", updateParams); err != nil || len(updated.(map[string]any)) != 0 {
+		t.Fatalf("tasks/update = %#v, err=%v", updated, err)
+	}
+	updated, ok := server.Tasks().Get(taskID)
+	if !ok || updated.Status != tasks.StatusCompleted {
+		t.Fatalf("task after update = %#v", updated)
+	}
+	if updated.ToolResult == nil || updated.ToolResult.StructuredContent.(map[string]any)["response"] != true {
+		t.Fatalf("task result = %#v", updated.ToolResult)
 	}
 }
 

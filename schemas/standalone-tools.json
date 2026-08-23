@@ -47,6 +47,36 @@
       }
     },
     {
+      "name": "request_task_input",
+      "classification": "read_only",
+      "support": "experimental",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "responseType": {
+            "type": "string",
+            "enum": [
+              "string",
+              "boolean"
+            ]
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "response"
+        ]
+      }
+    },
+    {
       "name": "probe_openai_compatible_server",
       "classification": "read_only",
       "support": "experimental"

@@ -174,6 +174,70 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 			t.Fatalf("standalone tool %q is missing contract metadata", tool.Name)
 		}
 	}
+	if !seen["request_task_input"] {
+		t.Fatal("tools/list missing request_task_input")
+	}
+	callRaw := func(id int, method string, params map[string]any) map[string]any {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if err := mcphttp.ApplyStreamableHTTPRequestHeaders(req); err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Mcp-Method", method)
+		if method == "tools/call" {
+			if err := mcphttp.ApplyToolsCallRequestHeaders(req, "request_task_input"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		response, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		var envelope map[string]any
+		if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope["error"] != nil {
+			t.Fatalf("%s error: %#v", method, envelope["error"])
+		}
+		result, ok := envelope["result"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s result = %#v", method, envelope)
+		}
+		return result
+	}
+	created := callRaw(11, "tools/call", map[string]any{
+		"name":      "request_task_input",
+		"arguments": map[string]any{"prompt": "Continue?", "responseType": "boolean"},
+		"task":      map[string]any{"ttl": 60_000},
+		"_meta":     meta,
+	})
+	structured, ok := created["structuredContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("request_task_input creation = %#v", created)
+	}
+	taskID, ok := structured["taskId"].(string)
+	if !ok || taskID == "" {
+		t.Fatalf("request_task_input task identity = %#v", structured)
+	}
+	get := callRaw(12, "tasks/get", map[string]any{"taskId": taskID, "_meta": meta})
+	if get["status"] != "input_required" || get["inputRequests"] == nil {
+		t.Fatalf("input-required task = %#v", get)
+	}
+	callRaw(13, "tasks/update", map[string]any{"taskId": taskID, "inputResponses": map[string]any{"response": true}, "_meta": meta})
+	completed := callRaw(14, "tasks/get", map[string]any{"taskId": taskID, "_meta": meta})
+	if completed["status"] != "completed" {
+		t.Fatalf("completed task = %#v", completed)
+	}
 
 	readOnly := ""
 	for _, name := range contract.Smoke.RequiredTools {

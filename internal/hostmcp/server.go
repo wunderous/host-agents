@@ -664,11 +664,63 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		height := intFromAny(args["height"])
 		return s.console.ResizeConsole(opID, width, height)
 	}
-	if tasks.TaskAwareTools[name] && ((hasTaskAugmentation(req) && taskExtensionDeclared(req)) || s.standalone) {
+	if name == "request_task_input" {
+		if !hasTaskAugmentation(req) || !taskExtensionDeclared(req) {
+			return tools.ErrorResult(fmt.Errorf("request_task_input requires the MCP Tasks extension")), nil
+		}
+		return s.createInputRequestTask(args)
+	}
+	if tasks.TaskAwareTools[name] && hasTaskAugmentation(req) && taskExtensionDeclared(req) {
 		return s.createAsyncTask(name, args)
 	}
 	onData := func(chunk string) {}
 	return s.DispatchTool(ctx, name, args, onData)
+}
+
+func (s *Server) createInputRequestTask(args map[string]any) (*mcp.CallToolResult, error) {
+	prompt, _ := args["prompt"].(string)
+	if strings.TrimSpace(prompt) == "" {
+		return tools.ErrorResult(fmt.Errorf("request_task_input requires prompt")), nil
+	}
+	responseType := "string"
+	if requested, ok := args["responseType"].(string); ok && requested != "" {
+		responseType = requested
+	}
+	if responseType != "string" && responseType != "boolean" {
+		return tools.ErrorResult(fmt.Errorf("request_task_input responseType must be string or boolean")), nil
+	}
+	_, cancel := context.WithCancel(context.Background())
+	inputRequests := map[string]any{
+		"response": map[string]any{
+			"type":   responseType,
+			"prompt": prompt,
+		},
+	}
+	desc := "Waiting for operator input..."
+	// Bind the task ID into the resume closure after creation without retaining
+	// request arguments in the durable projection.
+	var taskID string
+	rec := s.tasks.CreateWithInput("request_task_input", redactTaskArgs(args), time.Hour, desc, nil, cancel, inputRequests, func(responses map[string]any) {
+		result := tasks.ToolResult{StructuredContent: map[string]any{"response": responses["response"]}}
+		s.tasks.Complete(taskID, result)
+		if s.state != nil {
+			_ = s.state.Complete(taskID, result)
+		}
+	})
+	taskID = rec.TaskID
+	if s.state != nil {
+		_ = s.state.Create(rec.TaskID, "request_task_input", desc)
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: desc}},
+		StructuredContent: map[string]any{
+			"resultType":     "task",
+			"taskId":         rec.TaskID,
+			"status":         rec.Status,
+			"ttlMs":          rec.TTL,
+			"pollIntervalMs": rec.PollInterval,
+		},
+	}, nil
 }
 
 func (s *Server) dynamicEffect(name string) string {
@@ -889,6 +941,27 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		rec, ok := s.tasks.Cancel(p.TaskID)
 		if !ok || rec == nil {
 			return nil, fmt.Errorf("cannot cancel task: %s", p.TaskID)
+		}
+		return map[string]any{}, nil
+	case "tasks/update":
+		var p struct {
+			TaskID         string         `json:"taskId"`
+			InputResponses map[string]any `json:"inputResponses"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(p.TaskID) == "" {
+			return nil, fmt.Errorf("tasks/update requires taskId")
+		}
+		if p.InputResponses == nil {
+			return nil, fmt.Errorf("tasks/update requires inputResponses")
+		}
+		if _, ok := s.tasks.Get(p.TaskID); !ok {
+			return nil, fmt.Errorf("task not found: %s", p.TaskID)
+		}
+		if _, ok := s.tasks.Update(p.TaskID, p.InputResponses); !ok {
+			return nil, fmt.Errorf("task cannot accept input: %s", p.TaskID)
 		}
 		return map[string]any{}, nil
 	case "resources/list":
