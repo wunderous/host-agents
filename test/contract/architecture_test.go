@@ -16,18 +16,11 @@ func TestProviderAndClientBoundariesHaveNoConcreteCrossImports(t *testing.T) {
 	core := []string{"cmd", "internal/cli", "internal/cordis", "internal/hostmcp", "internal/recipe", "internal/plan", "internal/catalog", "internal/state", "internal/ops"}
 	for _, relative := range core {
 		assertImportsExclude(t, filepath.Join(root, relative), map[string]bool{
-			"github.com/wunderous/host-agents/clients/tui":                  true,
 			"github.com/wunderous/host-agents/plugins/llm/ollama":           true,
 			"github.com/wunderous/host-agents/plugins/tunneling/cloudflare": true,
 		})
 	}
-	assertImportsExclude(t, filepath.Join(root, "clients", "tui"), map[string]bool{
-		"github.com/wunderous/host-agents/internal/":                    true,
-		"github.com/wunderous/host-agents/plugins/llm/ollama":           true,
-		"github.com/wunderous/host-agents/plugins/tunneling/cloudflare": true,
-	})
 	assertImportsExclude(t, filepath.Join(root, "plugins"), map[string]bool{
-		"github.com/wunderous/host-agents/clients/tui":                 true,
 		"github.com/wunderous/host-agents/internal/hostmcp":            true,
 		"github.com/wunderous/host-agents/internal/state":              true,
 		"github.com/wunderous/host-agents/internal/plan":               true,

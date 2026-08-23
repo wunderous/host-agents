@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func TestPackagedSingleBinaryAllModes(t *testing.T) {
+func TestPackagedSingleBinaryServerOnly(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the isolated Incus fixture uses a POSIX executable")
 	}
@@ -30,30 +30,7 @@ func TestPackagedSingleBinaryAllModes(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build single binary: %v\n%s", err, output)
 	}
-	tuiBinary := filepath.Join(t.TempDir(), "opute-host-agent-tui")
-	buildTUI := exec.Command("go", "build", "-o", tuiBinary, "./cmd/opute-host-agent-tui")
-	buildTUI.Dir = filepath.Join(repoRoot, "clients", "tui")
-	if output, err := buildTUI.CombinedOutput(); err != nil {
-		t.Fatalf("build detached TUI: %v\n%s", err, output)
-	}
-
 	incusPath := writeIncusFixture(t)
-	commands := strings.Join([]string{
-		"/context",
-		"get_vm_info vmName=worker-01 fast=true",
-		"/exit",
-		"",
-	}, "\n")
-
-	combinedEnv := hostEnv(t, incusPath, t.TempDir(), t.TempDir())
-	combinedEnv = append(combinedEnv, "HOST_MCP_PORT="+freePort(t), "OPUTE_HOST_AGENT_TUI_BIN="+tuiBinary)
-	combinedOutput, err := runBinary(t, repoRoot, binary, combinedEnv,
-		[]string{"--no-prompt", "--plan-dir", t.TempDir()}, commands)
-	if err != nil {
-		t.Fatalf("combined standalone mode: %v\n%s", err, combinedOutput)
-	}
-	assertModeOutput(t, "combined standalone", combinedOutput)
-
 	serverPort := freePort(t)
 	serverEnv := hostEnv(t, incusPath, t.TempDir(), t.TempDir())
 	serverEnv = append(serverEnv,
@@ -82,19 +59,16 @@ func TestPackagedSingleBinaryAllModes(t *testing.T) {
 			<-serverDone
 		}
 	})
-	endpoint := "http://127.0.0.1:" + serverPort + "/mcp"
 	waitForTCP(t, serverCtx, "127.0.0.1:"+serverPort)
 
-	attachedEnv := hostEnv(t, incusPath, t.TempDir(), t.TempDir())
-	attachedEnv = append(attachedEnv, "OPUTE_HOST_AGENT_TUI_BIN="+tuiBinary)
-	attachedOutput, err := runBinary(t, repoRoot, binary, attachedEnv,
-		[]string{"tui", "--url", endpoint, "--no-prompt"}, commands)
-	if err != nil {
-		t.Fatalf("attached TUI mode: %v\n%s\nserver:\n%s", err, attachedOutput, serverOutput.String())
-	}
-	assertModeOutput(t, "attached TUI", attachedOutput)
 	if !strings.Contains(serverOutput.String(), "HTTP transport listening") {
 		t.Fatalf("server-only mode did not report its HTTP listener:\n%s", serverOutput.String())
+	}
+
+	checkOutput, err := runBinary(t, repoRoot, binary, serverEnv,
+		[]string{"--mode=standalone", "--check"}, "")
+	if err != nil || !strings.Contains(checkOutput, "configuration ok") {
+		t.Fatalf("bare server check failed: %v\n%s", err, checkOutput)
 	}
 }
 
@@ -148,30 +122,6 @@ func runBinary(t *testing.T, repoRoot, binary string, env []string, args []strin
 	command.Stderr = &output
 	err := command.Run()
 	return output.String(), err
-}
-
-func assertModeOutput(t *testing.T, mode, output string) {
-	t.Helper()
-	for _, expected := range []string{
-		"opute-host-agent connected",
-		"catalog revision:",
-		"worker-01",
-		"bye",
-	} {
-		if !strings.Contains(output, expected) {
-			t.Fatalf("%s output missing %q:\n%s", mode, expected, output)
-		}
-	}
-}
-
-func reservePort(t *testing.T) (net.Listener, string) {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	return listener, fmt.Sprintf("%d", port)
 }
 
 func freePort(t *testing.T) string {

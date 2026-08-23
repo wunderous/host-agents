@@ -21,7 +21,7 @@ only a supervision and user-experience layer.
 > terminal-client direction is the TUI v2 redesign
 > (`.agents/plans/2026-08-host-agent-tui-redesign.md` in the Opute repository,
 > authoritative per ADR 0002), implemented as the external Bun/TypeScript
-> `apps/opute-tui` client. The existing `clients/tui` module is only a
+> `apps/opute-tui` client. The former `clients/tui` module was only a
 > migration source until parity is proven. Nothing in this
 > RFC — including implementation phase 7's eventual TUI removal — gates or
 > redirects TUI work absent a future explicit decision that scopes and accepts
@@ -138,8 +138,9 @@ WebSocket/PTY capability. It is not the default mechanism for setup workflows.
    resume, cancellation, and audit display.
 6. Package the desktop app for macOS, Windows, and Linux; keep the Host Agent
    service package independently installable on Linux/WSL hosts.
-7. Remove Bubble Tea, embedded TUI, and attached-TUI modes only after the
-   desktop client passes the end-to-end replacement gates.
+7. Remove Bubble Tea, embedded TUI, and attached-TUI modes once the desktop
+   client passes the end-to-end replacement gates; the 2026-08 cutover has now
+   completed that removal.
 
 ## Acceptance criteria
 

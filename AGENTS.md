@@ -8,12 +8,10 @@
 - `internal/tools`, `internal/ops`, `internal/provider`, `internal/plan`, and
   `internal/session` implement typed capabilities, execution, plans, and
   durable session contracts.
-- `clients/tui/` is the separately built deterministic TUI client until the
-  split-artifact retirement milestone. The root Host Agent binary serves MCP;
-  the legacy `internal/tui/` package has been removed and must not return.
 - `schemas/` stores versioned capability contracts; `test/` contains contract,
-  integration, standalone, mode, and TUI tests. `npm/local-host-agent/` is the
-  release launcher.
+  integration, standalone, and mode tests. The separate Bun TUI lives in the
+  sibling Opute repository under `apps/opute-tui/`. `npm/local-host-agent/` is
+  the release launcher.
 
 ## Build, Test, and Development Commands
 
@@ -28,11 +26,10 @@ make standalone-http-smoke # run packaged HTTP smoke tests
 make npm-test              # test the npm launcher
 ```
 
-For local TUI work, build the client with `go -C clients/tui build -o
-../../dist/opute-host-agent-tui ./cmd/opute-host-agent-tui`, then run
-`OPUTE_INFRA_PROVIDER_ID=incus OPUTE_HOST_AGENT_TUI_BIN=$PWD/dist/opute-host-agent-tui
-./dist/opute-host-agent`. Use `serve` when an external MCP client needs only
-the Host Agent server process.
+For local TUI work, use the sibling Opute repository's
+`apps/opute-tui/` Bun application against the Host Agent MCP endpoint. This
+repository's binary is server-only; use `serve` (or the bare invocation) when
+an external MCP client needs the Host Agent.
 
 ## Beads coordination
 
@@ -71,9 +68,9 @@ guessing.
 ## Testing Guidelines
 
 Name tests `Test<Behavior>` and keep focused tests beside the package under
-test. Preserve headless tests for pipes and automation while exercising the
-interactive TUI through `test/tui` or a PTY-shaped test. Capability changes
-should include contract and standalone coverage where applicable.
+test. Preserve protocol and standalone tests for pipes and automation;
+interactive TUI coverage belongs in the sibling Opute application. Capability
+changes should include contract and standalone coverage where applicable.
 
 ## Commit & Pull Request Guidelines
 

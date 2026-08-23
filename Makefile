@@ -1,4 +1,4 @@
-.PHONY: build build-agent test tui-test tui-typed-gate test-all-modules standalone-smoke standalone-http-smoke standalone-lifecycle-gate provider-reset-chat-e2e published-npm-canary npm-test artifacts clean agent-work
+.PHONY: build build-agent test test-all-modules standalone-smoke standalone-http-smoke standalone-lifecycle-gate provider-reset-chat-e2e published-npm-canary npm-test artifacts clean agent-work
 
 BINARY=opute-host-agent
 DIST=dist
@@ -6,26 +6,16 @@ MODULE=github.com/wunderous/host-agents
 VERSION ?= 0.1.1
 LDFLAGS=-s -w -X $(MODULE)/internal/version.Version=$(VERSION)
 
-build: build-agent build-tui
+build: build-agent
 
 build-agent:
 	mkdir -p $(DIST)
 	go build -ldflags="$(LDFLAGS)" -o $(DIST)/$(BINARY) ./cmd/opute-host-agent
 
-build-tui:
-	mkdir -p $(DIST)
-	go -C clients/tui build -o ../../$(DIST)/opute-host-agent-tui ./cmd/opute-host-agent-tui
-
 test:
 	go test ./...
 
-tui-test:
-	cd clients/tui && go test ./...
-
-tui-typed-gate:
-	cd clients/tui && go test -v ./internal/tui -run 'TestTyped(EntityFlowUsesCanonicalBindingAndCurrentCatalog|DraftUsesCatalogSchemaAndPreservesProvenance|EntityFlowRejectsStaleBinding)|TestParserDoesNotInferProseAndSupportsQuotedValues'
-
-test-all-modules: test tui-test
+test-all-modules: test
 	cd plugins/llm/ollama && go test ./...
 	cd plugins/tunneling/cloudflare && go test ./...
 

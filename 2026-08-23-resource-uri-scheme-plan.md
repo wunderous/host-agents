@@ -204,11 +204,9 @@ statuses, host info…).
   The plan runner (`internal/plan/runner.go`, `schema.go` reference validation) injects
   `tenantId` as a reserved variable.
 - **TUI** (final client: sibling Opute `apps/opute-tui`): consumes the server-provided
-  canonical `uri` and never fabricates identity. The legacy `clients/tui` module is only a
-  migration source for this prerequisite and receives the minimum mechanical binding and
-  fixture fixup needed to compile and stay green; its parser/UX is not being fully migrated
-  here because `TUI-109` retires it after the Bun client passes parity. No `@vm` or name-based
-  token becomes a normative wire binding.
+  canonical `uri` and never fabricates identity. The former `clients/tui` module was only a
+  migration source for this prerequisite and has now been retired after the Bun client
+  passed parity. No `@vm` or name-based token becomes a normative wire binding.
 - **Tests**: `test/live/vm_lifecycle_test.go` + `reset_stack_test.go`
   (create→list→get→delete via uri), `test/modes/packaged_test.go`,
   `test/tui/packaged_test.go`, `test/standalone/http_test.go`,

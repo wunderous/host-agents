@@ -3,12 +3,10 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -16,18 +14,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/app"
 	"github.com/wunderous/host-agents/internal/config"
-	"github.com/wunderous/host-agents/internal/transport"
 	"github.com/wunderous/host-agents/internal/version"
 	"github.com/wunderous/host-agents/pkg/hostagentclient"
 )
 
-// Run executes the single-binary command surface.
-//
-//   - no subcommand: standalone host runtime plus TUI over in-memory MCP
-//   - serve: MCP server only, normally over Streamable HTTP
-//   - tui: TUI attached to an existing MCP server
-//
-// The no-subcommand default is deliberately local and Platform-independent.
+// Run executes the server-only command surface. The deterministic TUI is a
+// separately released Bun application and is never launched or discovered by
+// this binary.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if stdout == nil {
 		stdout = os.Stdout
@@ -46,8 +39,6 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runStandalone(ctx, commandArgs, stdout, stderr)
 	case "serve":
 		return runServer(ctx, commandArgs, stdout, stderr)
-	case "tui":
-		return runTUI(ctx, commandArgs, stdout, stderr)
 	case "recipe":
 		return runRecipe(ctx, commandArgs, stdout, stderr)
 	case "provider":
@@ -56,32 +47,25 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		printUsage(stdout)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q; use standalone, serve, tui, recipe, or provider", command)
+		return fmt.Errorf("unknown command %q; use standalone, serve, recipe, provider, or help", command)
 	}
 }
 
 func splitCommand(args []string) (string, []string) {
 	if len(args) == 0 {
-		return "standalone", nil
+		return "serve", nil
 	}
 	first := strings.TrimSpace(args[0])
-	if first == "standalone" || first == "serve" || first == "tui" || first == "recipe" || first == "provider" || first == "help" {
+	if first == "standalone" || first == "serve" || first == "recipe" || first == "provider" || first == "help" {
 		return first, args[1:]
 	}
-	// An explicit endpoint means the caller wants the attached TUI mode.
-	// Preserve the old server-only flags as an implicit `serve` command so
-	// existing service units and launchers continue to work after the rename.
-	for _, arg := range args {
-		if arg == "--mode" || strings.HasPrefix(arg, "--mode=") || arg == "--transport" || strings.HasPrefix(arg, "--transport=") || arg == "--check" || arg == "--env-file" || strings.HasPrefix(arg, "--env-file=") || arg == "--env" || strings.HasPrefix(arg, "--env=") {
-			return "serve", args
-		}
+	// Flags retain the server's historical implicit command behavior. In
+	// particular, --url/--token are no longer silently routed to a client;
+	// serve rejects them as unknown flags so the breaking surface is explicit.
+	if strings.HasPrefix(first, "-") {
+		return "serve", args
 	}
-	for _, arg := range args {
-		if arg == "--url" || strings.HasPrefix(arg, "--url=") || arg == "--token" || strings.HasPrefix(arg, "--token=") {
-			return "tui", args
-		}
-	}
-	return "standalone", args
+	return first, args[1:]
 }
 
 func runRecipe(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -429,51 +413,7 @@ func parseRecipeInputs(values []string) (map[string]any, error) {
 }
 
 func runStandalone(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	setenv("OPUTE_AGENT_MODE", "standalone")
-	for _, arg := range args {
-		if arg == "--url" || strings.HasPrefix(arg, "--url=") {
-			return fmt.Errorf("standalone mode owns its local Host Agent endpoint; omit --url")
-		}
-	}
-	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	runtime, err := app.NewRuntime(logger)
-	if err != nil {
-		return err
-	}
-	defer runtime.Close()
-
-	server := transport.NewHTTPServer(transport.HTTPOptions{
-		HostServer: runtime.Host(),
-		BindHost:   runtime.Config().HostMCPBindHost,
-		Port:       runtime.Config().HostMCPPort,
-		AuthTokens: runtime.Config().AllowedAuthTokens(),
-		InstanceID: runtime.Config().StandaloneInstanceID,
-		Logger:     logger,
-	})
-	errCh := make(chan error, 1)
-	go func() { errCh <- server.Start() }()
-	endpoint := fmt.Sprintf("http://%s:%d/mcp", runtime.Config().HostMCPBindHost, runtime.Config().HostMCPPort)
-	if err := waitForLocalEndpoint(ctx, endpoint); err != nil {
-		_ = server.Shutdown(context.Background())
-		return err
-	}
-	clientArgs := append([]string(nil), args...)
-	clientArgs = append(clientArgs, "--url", endpoint)
-	if err := runDetachedTUI(ctx, clientArgs, stdout, stderr); err != nil {
-		_ = server.Shutdown(context.Background())
-		return err
-	}
-	if err := server.Shutdown(context.Background()); err != nil {
-		return fmt.Errorf("shutdown standalone MCP server: %w", err)
-	}
-	select {
-	case serverErr := <-errCh:
-		if serverErr != nil && !errors.Is(serverErr, http.ErrServerClosed) {
-			return fmt.Errorf("standalone MCP server: %w", serverErr)
-		}
-	default:
-	}
-	return nil
+	return runServer(ctx, append([]string{"--mode=standalone"}, args...), stdout, stderr)
 }
 
 func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -535,16 +475,11 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	return app.Run(ctx, slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 }
 
-func runTUI(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	return runDetachedTUI(ctx, args, stdout, stderr)
-}
-
 func printUsage(out io.Writer) {
-	fmt.Fprintln(out, "Usage: opute-host-agent [standalone|serve|tui|recipe|provider] [flags]")
+	fmt.Fprintln(out, "Usage: opute-host-agent [standalone|serve|recipe|provider|help] [flags]")
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "  opute-host-agent                   standalone MCP server + TUI in one process")
+	fmt.Fprintln(out, "  opute-host-agent                   server-only standalone MCP profile (HTTP)")
 	fmt.Fprintln(out, "  opute-host-agent serve             MCP server only (HTTP)")
-	fmt.Fprintln(out, "  opute-host-agent tui --url URL     TUI attached to an existing MCP server")
 	fmt.Fprintln(out, "  opute-host-agent recipe validate --source ./recipe.yaml")
 	fmt.Fprintln(out, "  opute-host-agent recipe apply --source ./recipe.yaml --activate --input model=qwen3.5:2b")
 	fmt.Fprintln(out, "  opute-host-agent recipe status --run-id RUN_ID")

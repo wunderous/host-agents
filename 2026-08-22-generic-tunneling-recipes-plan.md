@@ -1,6 +1,7 @@
 # Remote TUI over Generic Tunneling Recipes
 
-**Status:** Revised implementation plan aligned with ADR 0002
+**Status:** Historical plan; the client portion was superseded by the completed
+2026-08 Host Agent TUI redesign and split-artifact cutover.
 
 **Date:** 2026-08-22
 
@@ -23,7 +24,7 @@ The canonical remote path is:
 
 ```text
 Machine B
-  opute-host-agent-tui
+  opute (sibling Opute `apps/opute-tui`)
       │
       │ authenticated Streamable HTTP MCP over public HTTPS
       ▼
@@ -77,9 +78,8 @@ authorized tunnel bindings.
   port forwarding, or credentials embedded in URLs.
 - Application `/chat` success. Chat remains a separate application canary with
   parsed SSE and correlated runtime evidence.
-- A repository-wide removal of transitional CLI/transport modes. That is a
-  separate migration; this plan defines the boundary the final TUI and Host
-  Agent must use.
+- Provider-neutral remote TUI transport remains in scope; the former Go client
+  and transitional Host Agent launcher modes were retired by TUI-109.
 
 ## Architectural boundaries
 
@@ -95,7 +95,7 @@ The implementation must preserve the following ownership model:
 | `internal/plan/` | Generic `host-plan.v1` validation/execution, readiness, retry, recovery, compensation | Provider identity and vendor policy |
 | `internal/state/` | Durable operations, plans, provider generations, active pointers, observations, evidence | Provider behavior and transport logic |
 | `internal/ops/` | Generic host effects and neutral observations | Ollama, Cloudflare, or vendor-specific lifecycle |
-| `clients/tui/` | Typed catalog-driven editing, lookup, approval, operation/status projection, rendering | Host Agent `internal/`, providers, recipes, setup, prose execution |
+| sibling Opute `apps/opute-tui/` | Typed catalog-driven editing, lookup, approval, operation/status projection, rendering | Host Agent `internal/`, providers, recipes, setup, prose execution |
 | `clients/bootstrap/` or the client CLI bootstrap package | Signed Host Agent artifact delivery, target identity, SSH/management adapter, private MCP port forwarding | Provider installation, recipe execution, Host Agent internal state, vendor commands |
 | `plugins/tunneling/<provider>/` | Provider MCP, manifest, recipe references, vendor APIs/CLI, native evidence | Host Agent `internal/`, TUI, another provider |
 
@@ -240,7 +240,7 @@ An administrator can bootstrap the Host Agent and tunnel locally using a
 temporary local client connection:
 
 ```bash
-opute-host-agent-tui \
+opute \
   --url http://127.0.0.1:3014/mcp \
   --credential-ref host-agent-local
 ```
@@ -295,7 +295,7 @@ fall back to direct vendor installation or claim that the remote TUI is ready.
 After the route is active, the same TUI binary connects remotely:
 
 ```bash
-opute-host-agent-tui \
+opute \
   --url https://agent-a.example.com/mcp \
   --credential-ref host-agent-machine-a
 ```
@@ -607,7 +607,8 @@ disposal. A stale TUI catalog must be rejected rather than silently adapted.
 
 ### 1. Remote TUI transport contract
 
-- Complete `clients/tui` as an independently buildable module/process.
+- Complete sibling Opute `apps/opute-tui` as an independently buildable
+  module/process.
 - Use only `pkg/hostagentclient`, neutral contracts, and a generic
   Streamable HTTP MCP client.
 - Define explicit local attach, remote attach, and remote bootstrap modes.

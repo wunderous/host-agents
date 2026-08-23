@@ -78,7 +78,7 @@ func Connect(ctx context.Context, endpoint, token string) (*Client, error) {
 			MaxRetries:           2,
 			DisableStandaloneSSE: true,
 		}
-		return mcp.NewClient(&mcp.Implementation{Name: "opute-host-agent-tui", Version: "0.1.0"}, nil).Connect(ctx, transport, nil)
+		return mcp.NewClient(&mcp.Implementation{Name: "opute-host-agent-client", Version: "0.1.0"}, nil).Connect(ctx, transport, nil)
 	}
 	session, err := connect(ctx)
 	if err != nil {

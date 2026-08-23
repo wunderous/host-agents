@@ -192,7 +192,7 @@ More precisely:
 
 The supported TUI path is the separate Bun/TypeScript `apps/opute-tui`
 application in the sibling Opute repository. The Host Agent binary serves MCP
-only and does not launch a client. The historical `internal/tui` package is
+only and does not launch a client. The historical `internal/tui` package was
 scheduled for deletion as an unreferenced migration artifact; it is not part
 of the command path and no core package may import it. New terminal behavior
 belongs in the external client and communicates over the public Streamable HTTP

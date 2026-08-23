@@ -4,12 +4,12 @@ Go implementation of the Opute host agent (replaces `@opute/mcp-host-agent`).
 
 ## Standalone Go experience
 
-`opute-host-agent` is the Host Agent server. The deterministic TUI is a separate,
-provider-neutral client in `clients/tui` and communicates with the server over
-Streamable HTTP MCP. This keeps the server usable without a TUI, provider MCP,
-or LLM. Mutations remain denied by default.
+`opute-host-agent` is a server-only MCP Host Agent. The deterministic TUI is a
+separate provider-neutral Bun application in the sibling Opute repository at
+`apps/opute-tui/` and communicates with this server over Streamable HTTP MCP.
+Mutations remain denied by default.
 
-Build and launch the combined local TUI:
+Build and launch the standalone server:
 
 ```bash
 make build
@@ -17,8 +17,7 @@ OPUTE_INFRA_PROVIDER_ID=incus \
 OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone" \
 ./dist/opute-host-agent
 
-# If the TUI is not beside the server, point the launcher at it explicitly.
-OPUTE_HOST_AGENT_TUI_BIN="$PWD/dist/opute-host-agent-tui" \
+# The bare invocation is also server-only; it never launches or discovers a TUI.
 OPUTE_INFRA_PROVIDER_ID=incus ./dist/opute-host-agent
 ```
 
@@ -28,11 +27,8 @@ The same binary also supports explicit modes:
 # MCP server only, for external clients; default HTTP endpoint is :3014/mcp
 ./dist/opute-host-agent serve --mode standalone --transport http
 
-# TUI attached to an existing MCP server
-./dist/opute-host-agent tui --url http://127.0.0.1:3014/mcp
-
-# Or invoke the detached client directly
-./dist/opute-host-agent-tui --url http://127.0.0.1:3014/mcp
+# Run the separate TUI from the sibling Opute checkout when desired:
+# bun --cwd ../opute/apps/opute-tui run start -- --url http://127.0.0.1:3014/mcp
 ```
 
 Or via the npm helper:
@@ -55,11 +51,10 @@ Generic Streamable HTTP client configuration:
 }
 ```
 
-The detached TUI discovers the server's revisioned capability catalog, parses
-typed commands, resolves explicit authorized entity references such as
-`@vm:worker-01`, validates arguments against the catalog schema, and executes
-one MCP call per submitted command. It does not infer operations from prose or
-require an LLM. `/context`, `/tools`, and `/exit` are local client commands.
+The separate TUI discovers the server's revisioned capability catalog, parses
+typed commands, resolves explicit authorized entity references, validates
+arguments against the catalog schema, and executes one MCP call per submitted
+command. It does not infer operations from prose or require an LLM.
 
 The following are verified Streamable HTTP MCP client examples for VS Code,
 Claude Desktop, and Cursor (gate: `opute/scripts/validate-standalone-mcp-client.ts`
@@ -128,7 +123,7 @@ Or from this directory:
 
 ```bash
 make build
-# builds both dist/opute-host-agent and dist/opute-host-agent-tui
+# builds the server-only dist/opute-host-agent
 make test
 make artifacts   # host-agent-linux-x64.gz, host-agent-linux-arm64.gz
 make standalone-http-smoke
@@ -138,8 +133,8 @@ npm --prefix npm/local-host-agent test
 
 Release artifacts use the platform onboarding names
 `host-agent-linux-x64.gz` and `host-agent-linux-arm64.gz`. Each artifact
-contains the canonical `opute-host-agent` binary and supports combined,
-server-only, and attached-TUI modes.
+contains only the canonical server binary. The `opute` TUI is published and
+verified separately by the sibling Opute repository.
 
 ## CI and releases
 
