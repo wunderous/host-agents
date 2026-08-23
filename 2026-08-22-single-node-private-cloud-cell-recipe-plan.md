@@ -4,7 +4,7 @@
 
 **Date:** 2026-08-22
 
-**Revision:** 2026-08-23 — provider-port architecture extension
+**Revision:** 2026-08-23 — provider ports, Incus compute, and tenant-scoped resource identity
 
 **Repository:** `/home/houman/github/wunderous/opute-host-agent`
 
@@ -45,7 +45,7 @@ Opute Host Agent
                               │ generic adapter + active provider generation
                               ▼
 Provider implementations
-  Incus | K3s/MicroK8s | registry | PostgreSQL/CNPG | Cloudflare | Ollama
+  Incus compute | K3s/MicroK8s | registry | PostgreSQL/CNPG | Cloudflare | Ollama
                               │
                               ▼
 Private-cloud cell and its external systems
@@ -86,6 +86,14 @@ The current repository already provides most of the execution foundation:
   K3s registry configuration, Kubernetes resource status, PostgreSQL service
   reconciliation, Kubernetes secrets, manifest application, Cloudflare
   connector deployment, and HTTP probes.
+- Incus is already a substantial concrete implementation, but it is not yet a
+  provider-port implementation. VM lifecycle methods in
+  `internal/ops/service.go`, system-container provisioning in
+  `internal/ops/incus_container.go`, and Incus-specific argument parsing in
+  `internal/tools/dispatch.go` must be moved behind one neutral compute port.
+  The current implementation has enough behavior to become the first Incus
+  provider; the plan does not assume that this behavior can be deleted or
+  replaced without conformance evidence.
 - The Ollama implementation demonstrates the desired provider shape: its
   `plugins/llm/ollama` MCP server publishes a neutral capability manifest and
   typed operation schemas; `internal/cordis/mcp` connects and discovers it;
@@ -139,6 +147,10 @@ using a runtime recipe with a misleading serving contract.
   Kubernetes control plane first, followed by compute, registry, database,
   and edge backends using the same manifest, adapter, generation, and catalog
   rules already exercised by Ollama and Cloudflare.
+- Tenant-scoped resource identity and registry-backed URI resolution, using
+  the adjacent `2026-08-23-resource-uri-scheme-plan.md` as the detailed
+  resource-addressing design. The cloud-cell plan makes that identity
+  mandatory for provider targets and internal tool dispatch.
 
 ### Explicitly deferred
 
@@ -165,17 +177,18 @@ using a runtime recipe with a misleading serving contract.
 | Recipe family | Add `cloud-cell-recipe.v1` instead of reusing `runtime-recipe.v1` | The existing runtime family describes serving runtimes and active runtime activation. Infrastructure should not be represented as an OpenAI-compatible runtime or accidentally participate in runtime replacement. |
 | Execution language | Reuse `host-plan.v1` | There must be one typed executor for dependencies, readiness, retry, resume, evidence, and catalog revision checks. A second recipe-specific executor would create drift and weaken safety. |
 | Mutation boundary | Every target mutation is a Host Agent MCP tool call | This keeps authorization, admission, auditability, and durable state at the intended boundary. The client describes intent through a recipe; it does not receive shell authority. |
-| Compute target | Dedicated Incus VM for the production profile | A VM gives stronger tenant-cell isolation than placing the cloud directly in the host or relying on nested containers. A container profile can be added later for development or constrained installations. |
+| Compute target | Dedicated Incus VM for the production profile, with VM and system-container support in the same compute port | A VM gives stronger tenant-cell isolation for the production cell, while system containers remain a supported, lower-overhead compute target. Both must use the same typed provider boundary so a future compute backend can replace Incus without Host Agent dispatch changes. |
 | Provider boundary | Host Agent-owned, versioned capability ports with generic MCP adapters and provider generations | The Host Agent owns the contract, authorization, admission, lifecycle, catalog, and evidence; a concrete provider owns vendor/API/CLI behavior. This is the open/closed boundary: adding MicroK8s must add a provider package and composition data, not a Host Agent dispatch branch. |
 | Kubernetes implementation | Bind `opute.capability.kubernetes.v1` to K3s for the first production profile | K3s remains the initial concrete implementation, but the recipe expresses cluster intent such as version, topology, secrets encryption, and node role rather than K3s installer flags. The same port can later bind to MicroK8s or another distribution. |
 | Provider selection | Select an explicit provider generation as data, then resolve canonical operation IDs through the active binding | Provider identity is a deployment/composition choice, not a switch in `internal/tools/dispatch.go`. The Host Agent must reject missing, unauthorized, incompatible, or ambiguous bindings and must never silently fall back to another implementation. |
 | Port granularity | Separate backend lifecycle ports from generic Kubernetes API operations | Installing or removing a Kubernetes distribution is provider-specific. Applying a manifest, reading a Secret without its data, and checking a Deployment are Kubernetes API operations that can remain generic and shared across distributions. This avoids both K3s leakage and unnecessary duplicate adapters. |
-| Migration scope | Migrate K3s now; migrate Incus, registry, PostgreSQL/CNPG, and edge through staged provider waves | The pattern applies to every replaceable third-party backend, but the first cell must not become an unbounded rewrite. Each wave removes backend-specific core dispatch only after a neutral port, provider implementation, migration adapter, and conformance evidence exist. |
+| Migration scope | Define and certify Kubernetes and Incus compute ports in the foundational milestone; migrate registry, PostgreSQL/CNPG, and edge in staged waves | The first cell must establish the two substrate provider boundaries it directly depends on. Later waves still remove backend-specific core dispatch only after a neutral port, provider implementation, migration adapter, and conformance evidence exist. |
 | K3s mode | Single server with `clusterInit`, `secretsEncryption`, and a single-node topology request | Embedded etcd makes the single node structurally compatible with a later HA topology, while secrets encryption protects Kubernetes Secret data at rest. The K3s provider maps this intent to its own flags; the recipe must not claim HA from one node. |
 | Artifact trust | HTTPS artifact plus required SHA-256, then Host Agent-owned extraction/rendering | The Host Agent must verify the exact chart archive before using it. Rendering and applying inside the Host Agent preserves the MCP-only constraint and avoids an untyped client-side manifest handoff. |
 | Platform deployment | Rendered Helm manifest applied through a Host Agent capability | The Host Agent remains product-neutral while the recipe supplies the selected platform chart and values. A future typed Helm-release capability can replace the generic operator-only apply step. |
 | Tenant boundary | Install a baseline and validate a marker, not individual tenants | The recipe creates the control-plane prerequisites for tenant isolation. Platform owns the later creation of tenant accounts, namespaces, RBAC, quotas, NetworkPolicies, and service-auth bindings. |
 | Authentication/authz | Platform-owned policy, Host Agent-owned secret/material placement | Host Agent can safely place caller-supplied secrets and verify resources without deciding who may access a tenant or service. Authorization decisions remain durable Platform policy. |
+| Resource identity | Tenant-scoped canonical URI plus a Host Agent resource registry | A display name such as `blog` is not globally unique. The active authenticated tenant and canonical URI must be carried into internal resolution so identical names in different tenants cannot select the wrong resource or leak its existence. |
 | Database readiness | Require SQL-gated CNPG and consumer-secret readiness | Kubernetes object existence is insufficient. Platform and task-ledger consumers must not start against an unready database or missing projected Secret. |
 | Public edge | Separate connector readiness from public endpoint readiness | A running connector is not proof that the public hostname reaches the intended service. The recipe must validate connector deployment, route reachability, and authenticated MCP readiness independently. |
 | End-user deployment | Reserve raw `apply_manifest` for operator bootstrap | Tenants need scoped, typed application capabilities with ownership and namespace checks. Reusing the broad operator primitive for users would make isolation depend on client discipline. |
@@ -300,6 +313,85 @@ provider ID and validated by that provider's declared schema. They are not
 accepted by the generic first-party recipe unless the recipe explicitly binds
 that provider. The normal path must remain portable across implementations.
 
+### Incus compute port
+
+Define the compute substrate as `opute.capability.compute.v1` and bind the
+first production implementation to `com.opute.incus`. This is one port for
+both Incus virtual machines and Incus system containers; they are different
+resource kinds within the same provider contract, not two Host Agent
+dispatchers.
+
+The minimum lifecycle surface is:
+
+```text
+service:  opute.capability.compute
+version:  1
+
+opute.capability.compute.prepare-host
+opute.capability.compute.host-status
+opute.capability.compute.provision
+opute.capability.compute.status
+opute.capability.compute.start
+opute.capability.compute.stop
+opute.capability.compute.restart
+opute.capability.compute.update-resources
+opute.capability.compute.remove
+opute.capability.compute.exec
+```
+
+`prepare-host` and `host-status` describe the Incus host/provider substrate;
+the remaining operations are scoped to a compute resource. The neutral
+provision request must include typed intent such as:
+
+```yaml
+resourceType: vm             # vm or container
+targetKind: virtual-machine  # virtual-machine or system-container
+resourceId: <canonical id>
+image: <provider-compatible image reference>
+cpu: <bounded quantity>
+memory: <bounded quantity>
+disk: <bounded quantity>
+profile: <portable profile name>
+```
+
+The provider receives the active tenant context and/or a canonical resource
+URI from Host Agent context. It must not derive tenant identity from a name,
+free-form description, or provider-native label. A successful provision and
+every list/detail/lifecycle result must return the canonical URI, for example
+`vm:tenant-a:cell-vm` or `container:tenant-a:worker-01`, plus bounded provider
+observations. A system container and a VM may have the same display name only
+when their canonical resource types and tenant-scoped identities are distinct;
+the resource registry remains the authoritative mapping. If the provider's
+native namespace is host-global, the Incus provider must derive a stable,
+tenant-safe provider instance name from the URI and retain the user's display
+name separately; it must not force tenant isolation to depend on globally
+unique user-facing names.
+
+The Incus provider owns Incus API/CLI details, image normalization, QEMU versus
+system-container launch behavior, profiles, storage and network devices,
+autostart, guest-agent readiness, console/exec semantics, ownership labels,
+and provider-native status parsing. It must not expose arbitrary Incus
+commands. It may compose generic Host Agent host-plan, file, service, HTTP,
+and MCP capabilities for provider setup, but all mutations still pass through
+the Host Agent's authorization, admission, durable execution, and evidence
+path.
+
+The current `ProvisionVM`, `StartVM`, `StopVM`, `RestartVM`, `UpdateVMResources`,
+`DeleteVM`, `ProvisionContainer`, and related Incus inventory/ownership
+helpers are migration inputs for `plugins/compute/incus`. `internal/ops` may
+retain typed generic coordinates and execution primitives, but the Host Agent
+core must not select Incus through a product-specific `switch`. After parity,
+the old VM/container tool names either disappear in the breaking catalog
+revision or become short-lived adapters that resolve a URI and delegate to
+the compute port.
+
+The conformance suite must exercise both `targetKind: virtual-machine` and
+`targetKind: system-container`, including provision, status, start/stop,
+resource update, remove, ownership failure, URI output, retry/resume, and
+provider-generation replacement. A fake compute provider must be able to
+replace `com.opute.incus` in a recipe composition without changing Host Agent
+source or canonical operation IDs.
+
 ### What stays generic in Host Agent
 
 The open/closed boundary does not require a separate plugin for every helper.
@@ -325,7 +417,7 @@ duplication of generic Kubernetes or host primitives.
 | Current backend behavior | Neutral port | First concrete implementation | Plan treatment |
 | --- | --- | --- | --- |
 | K3s install/status/uninstall and K3s registry configuration | `opute.capability.kubernetes.v1` | `plugins/kubernetes/k3s` | Required now; remove K3s branches from core dispatch and move K3s-specific implementation there. |
-| Incus VM/container/network substrate | `opute.capability.compute.v1` | `plugins/compute/incus` or an explicitly named host provider | Define now; migrate after Kubernetes so the cloud-cell recipe can eventually target another compute backend without changing Host Agent code. |
+| Incus VM/container/network substrate | `opute.capability.compute.v1` | `plugins/compute/incus` | Required now; implement VM and system-container targets behind one port and remove Incus-specific core dispatch after conformance parity. |
 | Local OCI registry lifecycle | `opute.capability.container-registry.v1` | First-party Kubernetes registry provider | Define the port and migration adapter; keep generic Kubernetes resource operations underneath it. |
 | CNPG/PostgreSQL service reconciliation | `opute.capability.postgresql-service.v1` | First-party CNPG provider | Preserve SQL-gated readiness and consumer-Secret evidence while removing CNPG-specific dispatch from the core. |
 | Cloudflare connector and public edge lifecycle | `opute.capability.tunneling.v1` / `opute.capability.edge.v1` | Existing Cloudflare provider, extended as needed | Reuse the existing provider shape; the cloud-cell recipe must bind the edge operation instead of calling a Cloudflare-specific core tool. |
@@ -336,6 +428,96 @@ implementation, migration adapter, conformance tests, lifecycle evidence, and
 recipe composition are present. A compatibility shim may preserve an old tool
 name temporarily, but it must delegate to the canonical port and have a
 removal version; it must not become a second implementation path.
+
+## Tenant-aware resource addressing and internal disambiguation
+
+The adjacent plan
+`2026-08-23-resource-uri-scheme-plan.md` is the normative detailed design for
+resource URIs, tenant plumbing, registry-backed resolution, and breaking
+catalog migration. This cloud-cell plan adopts those rules as a prerequisite
+of provider dispatch rather than treating them as a later UI concern.
+
+The canonical shape is:
+
+```text
+<resource-type>:<tenant-id>:<resource-id>
+```
+
+For tenant-owned application services, add `service` to the closed resource
+type vocabulary used by that adjacent plan. `service:<tenant-id>:blog` means
+a tenant application/service identity; `host-service:<tenant-id>:...` remains
+reserved for a Host Agent or operating-system service. This distinction avoids
+confusing a user's `blog` service with a systemd unit such as
+`user/opute-ollama.service`.
+
+The internal resolution contract is:
+
+1. Platform authenticates the caller, authorizes the requested operation, and
+   supplies a typed tenant context. `open_assistant_session` may bind the
+   session to that tenant; `tenantId` is a runner-provided reserved variable,
+   not a user-controlled recipe input.
+2. Host Agent validates the session tenant and carries it through plan state,
+   tool dispatch, provider calls, resource admission, audit/evidence records,
+   and catalog provenance. A caller cannot switch tenant by changing an
+   argument or interpolated string.
+3. URI parsing validates resource type, tenant segment, resource ID, and
+   expected type. A URI for another active tenant fails closed before the
+   provider is called. Depending on the Platform policy, the outward error may
+   be normalized to not-found or forbidden so it does not reveal that a
+   foreign resource exists.
+4. `resource_registry` maps the URI to opaque, typed provider coordinates.
+   Provision/reconcile/ensure operations register the URI; list/detail
+   operations return it; lifecycle operations resolve it. Name-only lookup is
+   never an authoritative selection mechanism.
+5. The resolved URI and tenant context are passed to the selected provider
+   generation. The provider may use its native name internally, but it cannot
+   choose a different tenant or replace the Host Agent registry mapping.
+
+This makes the duplicate-name case deterministic. If tenant A and tenant B
+both own a service named `blog`, their identities are distinct:
+
+```text
+service:tenant-a:blog
+service:tenant-b:blog
+```
+
+The internal typed call envelope is conceptually:
+
+```json
+{
+  "tenantId": "<active-session-tenant>",
+  "uri": "service:<active-session-tenant>:blog",
+  "operation": "rename",
+  "newName": "journal"
+}
+```
+
+`tenantId` in this envelope is Host Agent context derived from the authenticated
+session, not an independently trusted argument. The resolver checks that the
+URI tenant matches it before the operation reaches a provider or resource
+adapter.
+
+When a user says “rename my blog service,” Platform resolves “my” to the
+authenticated tenant and emits a typed rename operation bound to that tenant's
+URI. If the request reaches Host Agent without a URI or a typed
+tenant-scoped binding, Host Agent must return an ambiguity/invalid-reference
+error; it must not scan all tenants, choose the first `blog`, or infer a
+tenant from natural-language text. A tenant-scoped list/search can first
+return the candidate URI, after which the mutation is URI-based.
+
+For compute and cluster resources, the same rule applies to provider targets:
+the cell VM is created with a desired name, but later Kubernetes, registry,
+database, edge, exec, and lifecycle operations consume the resulting
+`vm:<tenant>:<id>` or `cluster:<tenant>:<id>` URI. The desired name remains
+display metadata and a provider-native coordinate, never the cross-tenant
+identity.
+
+The implementation must follow the adjacent plan's order: add the typed URI
+package, session tenant plumbing, SQLite resource registry, resolver and
+registration hooks, dispatch/schema migration, recipe interpolation, TUI
+bindings, and then conformance/E2E coverage. Add `service` to the canonical
+resource-kind constants and update the adjacent URI plan in the same change so
+the two plans cannot define different vocabularies.
 
 ## Proposed cloud-cell recipe contract
 
@@ -351,6 +533,7 @@ cell:
   topology: single-node
   targetKind: virtual-machine
   capabilities:
+    - compute
     - kubernetes
     - private-registry
     - sql-service
@@ -358,6 +541,9 @@ cell:
     - platform-control-plane
     - http-ingress
 providerBindings:
+  compute:
+    capability: opute.capability.compute.v1
+    providerId: com.opute.incus
   kubernetes:
     capability: opute.capability.kubernetes.v1
     providerId: com.opute.k3s
@@ -370,6 +556,11 @@ providerBindings:
   edge:
     capability: opute.capability.edge.v1
     providerId: com.opute.cloudflare
+
+tenantContext:
+  source: authenticated-session
+  reservedVariable: tenantId
+  requireSessionBinding: true
 inputs: ...
 compatibility:
   minHostAgentVersion: ...
@@ -391,6 +582,11 @@ pointer.
 Inputs must be typed, bounded, and grouped by responsibility:
 
 - **Cell identity:** cell ID, VM name, VM image, CPU, memory, and disk.
+- **Tenant/resource identity:** the runner-provided tenant context and
+  canonical resource references. `tenantId` is reserved session state and is
+  not accepted as an arbitrary caller input. Creation may accept a desired
+  provider name, but every resulting entity must return a URI and every later
+  entity-scoped operation must use that URI.
 - **Kubernetes provider:** explicit capability binding, provider-compatible
   release, target kind, cluster identity, topology, node role, secrets
   encryption, and any stable TLS/API identity needed by the selected profile.
@@ -417,6 +613,8 @@ The output mapping should expose only bounded, non-secret evidence:
 
 - `cellReady`
 - `cellId`
+- `computeUri`
+- `kubernetesUri`
 - `vmName`
 - `kubernetesVersion`
 - `kubernetesDistribution`
@@ -452,23 +650,28 @@ requires a readiness proof for non-read actions.
   authorized, installed,
   schema-compatible, and backed by a ready provider generation. A provider
   identity mismatch is a failed preflight, not a fallback opportunity.
-- `incus` calls `install_incus_stack` and validates with
-  `check_local_prerequisites`.
-  Intent: make the virtualization layer a durable, resumable prerequisite,
-  not an undocumented operator action.
-- `cell-vm` calls `provision_vm` with the explicit VM identity and resource
-  profile. It validates with `get_vm_info`, requiring a running instance and
-  guest-agent readiness.
+- `incus` calls `opute.capability.compute.prepare-host` through the active
+  `com.opute.incus` provider and validates with
+  `opute.capability.compute.host-status`. Intent: make the virtualization
+  layer a durable, resumable provider prerequisite, not an undocumented
+  operator action or a direct Incus command path.
+- `cell-vm` calls `opute.capability.compute.provision` with
+  `targetKind: virtual-machine`, the explicit desired resource identity, and
+  the resource profile. It validates with
+  `opute.capability.compute.status`, requiring a running instance and
+  guest-agent readiness, and stores the returned `vm:<tenant>:<id>` URI.
   Intent: establish one unambiguous cell target and prevent later operations
-  from guessing between multiple VMs.
+  from guessing between multiple VMs. The same compute port must also support
+  a `system-container` profile in conformance tests, even though the first
+  cloud-cell profile uses a VM.
 
 ### 2. Kubernetes control plane (K3s provider in v1)
 
 **Node:** `kubernetes`
 
-Call the canonical `opute.capability.kubernetes.provision` operation with
-explicit target reference, version, cluster identity, topology, node role, and
-secrets-encryption intent:
+Call the canonical `opute.capability.kubernetes.provision` operation with the
+`vm:<tenant>:<id>` target URI from `cell-vm`, version, cluster identity,
+topology, node role, and secrets-encryption intent:
 
 ```text
 targetKind: virtual-machine
@@ -703,6 +906,24 @@ Add the neutral provider contracts before changing the cloud-cell dispatcher:
   against either fixture without changing Host Agent source or canonical
   operation IDs.
 
+Add `plugins/compute/incus` as an independently buildable Streamable HTTP MCP
+provider. It must implement the compute port for both virtual machines and
+system containers, including host preparation/status, provision, status,
+start/stop/restart, bounded resource updates, remove, and scoped exec. Move
+the current Incus image, profile, QEMU, system-container, device, autostart,
+ownership, guest-agent, and status-parsing behavior from the current `ops`
+seams into this provider or into generic typed primitives that the provider
+composes. The provider manifest must declare `opute.capability.compute.v1`,
+the canonical operation schemas, supported resource kinds, and URI-bearing
+result schemas.
+
+The Incus provider conformance fixture must run the same test matrix for
+`targetKind: virtual-machine` and `targetKind: system-container`. It must
+prove that a fake compute provider can replace Incus through a provider
+binding without modifying Host Agent dispatch, recipe interpolation, or
+canonical operation IDs. The production cell binds compute to Incus, while a
+future provider can implement the same port for another VM/container backend.
+
 Add `plugins/kubernetes/k3s` as an independently buildable Streamable HTTP MCP
 provider. Move K3s-specific installer arguments, artifact pinning, host/VM/
 container target behavior, service repair, status parsing, registry
@@ -721,24 +942,44 @@ The Host Agent changes are generic only:
 - remove K3s-specific cases from `internal/tools/dispatch.go` and K3s-specific
   installer behavior from `internal/ops/service.go` after the provider is
   proven equivalent;
+- remove Incus-specific VM/container selection from
+  `internal/tools/dispatch.go` and the Incus lifecycle authority from
+  `internal/ops/service.go` / `internal/ops/incus_container.go` after the
+  compute provider is proven equivalent. Generic Host Agent code may retain
+  typed URI resolution, provider-neutral admission, and bounded execution
+  primitives;
+- carry tenant context and canonical URI validation into provider dispatch.
+  Every entity-scoped operation resolves `uri` through the tenant-aware
+  resource registry; a raw `vmName`, `containerName`, or service name cannot
+  select a resource in the final catalog.
 - retain generic Kubernetes API tools and generic host primitives in the core,
   with explicit target/cluster references and no vendor assumptions;
 - add atomic swap, drain, rollback, and evidence tests for K3s to fake
   MicroK8s provider generations.
 
-The same provider contract is then applied in waves to Incus, local registry,
-CNPG/PostgreSQL, and edge implementations. Each migration must delete the
-backend-specific core dispatch path after the provider path is certified; it
-must not leave two independently authoritative implementations.
+The same provider contract is then applied in waves to local registry,
+CNPG/PostgreSQL, and edge implementations. Incus is part of the foundational
+provider milestone above, not a deferred exception. Each migration must delete
+the backend-specific core dispatch path after the provider path is certified;
+it must not leave two independently authoritative implementations.
 
 ### Catalog and typed capability contracts
 
 Update the Host Agent catalog and schemas so the plan is statically valid:
 
 - Add cloud-cell recipe MCP tools to the standalone catalog and dispatch.
+- Add the reserved session/plan `tenantId` context, canonical URI schemas,
+  the `service` resource kind, and resource-registry resolver to recipe and
+  provider dispatch contracts. Creation operations may accept a desired name,
+  but output schemas must include `uri`; retrieval and lifecycle schemas must
+  accept the URI and reject foreign-tenant references.
 - Add the canonical Kubernetes port operations to the provider manifest and
   catalog overlay; do not add `install_k3s`, `get_k3s_status`, or
   `configure_k3s_registry` as permanent Host Agent core operations.
+- Add the canonical compute port operations and bind them to the Incus
+  provider in the first-party recipe; do not add permanent `provision_vm`,
+  `get_vm_info`, or container-name-only lifecycle routes to the final core
+  catalog.
 - Keep the cloud-cell recipe’s generic Kubernetes API operations separate from
   the provider-owned control-plane lifecycle operations.
 - Add the `render_helm_template` output schema, including the string
@@ -838,15 +1079,147 @@ Provider identity and generation must remain explicit as well. A disconnected,
 stale, unauthorized, or schema-incompatible provider is unavailable; the Host
 Agent must not silently route the operation to another backend.
 
+## Beads milestone graph and coordination gates
+
+Before implementation begins, materialize this plan as a dependency graph in
+the shared Beads ledger. The graph is the execution coordination artifact; the
+Markdown plan remains the architectural source of intent and acceptance
+criteria. This prevents the provider, URI, recipe, and packaging work from
+being started out of order or being declared complete from focused tests alone.
+
+### Ledger boundary
+
+Use the repository's `scripts/agent-work` launcher for the session record and
+the pinned Beads client against the existing Windows-backed Dolt workspace.
+Never run `bd init`, `bd dolt start`, or create `.beads` in this checkout or in
+WSL. Before creating graph records:
+
+```bash
+./scripts/agent-work status --json --all
+./scripts/agent-work start \
+  --title="Implement single-node private-cloud cell recipe" \
+  --touches="internal/recipe,internal/plan,internal/hostmcp,internal/ops,internal/tools,internal/state,internal/cordis,contracts,plugins,recipes,docs" \
+  --may-affect="provider ports, tenant URI resolution, shared Beads milestone graph" \
+  --next="materialize the cloud-cell milestone graph and validate its gates"
+```
+
+The returned session record is not a substitute for the milestone graph. It
+tracks the coherent agent session; the graph below tracks implementation
+milestones and sequencing. If the launcher or shared ledger cannot be read,
+record the work as untracked and stop before creating a competing ledger.
+
+### Milestone DAG
+
+Create one root epic and the child milestones below. Use stable titles/spec
+references so re-running graph setup can detect an existing graph rather than
+creating duplicates. Create the records with `bd create` (or one reviewed
+`bd create --graph` input), then add dependencies with `bd dep add
+<blocked> <blocker>`. The arrow direction below is **blocker → blocked**.
+
+| Logical milestone | Scope and completion gate | Dependencies |
+| --- | --- | --- |
+| `cloud-cell-foundation` | Root epic for this plan; closes only after every required child milestone and the final cell acceptance gate pass | none |
+| `cloud-cell-contracts-and-tenant-uri` | `cloud-cell-recipe.v1`, `resourceid`, session tenant binding, registry/resolver, `service` URI kind, schemas, and foreign-tenant tests | none |
+| `cloud-cell-provider-kernel` | Generic provider manifest, generation binding, catalog, adapter lifecycle, authorization, drain/swap/rollback, and provider conformance harness | `cloud-cell-contracts-and-tenant-uri` |
+| `cloud-cell-incus-compute` | `plugins/compute/incus` implements VM and system-container operations with URI-bearing results and no Incus branch in core dispatch | `cloud-cell-provider-kernel` |
+| `cloud-cell-k3s-provider` | `plugins/kubernetes/k3s` satisfies the Kubernetes port and removes K3s-specific core routing after parity | `cloud-cell-provider-kernel` |
+| `cloud-cell-service-edge-providers` | Registry, PostgreSQL/CNPG, and edge provider bindings/adapters preserve SQL, Secret, and public-edge evidence | `cloud-cell-provider-kernel` |
+| `cloud-cell-recipe-artifact` | First-party recipe, MCP handlers, URI interpolation, provider bindings, DAG validation, and manifest evidence | `cloud-cell-incus-compute`, `cloud-cell-k3s-provider`, `cloud-cell-service-edge-providers` |
+| `cloud-cell-durable-execution` | Durable run/status/resume, redaction, catalog revision, retry/recovery, and persisted observations | `cloud-cell-recipe-artifact` |
+| `cloud-cell-packaging-and-acceptance` | Packaged recipe, standalone checks, complete acceptance matrix, and operator documentation | `cloud-cell-durable-execution` |
+
+The root epic is a parent-child relationship, not a sequencing dependency on
+every child. Use `blocks` only for the dependencies in the table; use
+`related` for adjacent design work such as the URI plan or future HA work.
+The service/edge provider milestone may proceed in parallel with the Incus and
+K3s provider milestones after the provider kernel gate passes.
+
+### Graph creation and validation procedure
+
+1. Read the shared ledger and confirm the repository/project identity, active
+   native Windows Dolt endpoint, and pinned client versions. Capture the
+   session record ID and root epic ID in the implementation notes.
+2. Create the root epic and child milestones with descriptions containing
+   `Scope`, `Dependencies`, `Acceptance Criteria`, and `Validation Evidence`.
+   Include this plan path and the adjacent URI plan as specification references.
+3. Add every `blocks` edge from the table. Do not hand-edit dependency fields
+   or use `related` where work cannot safely start before another milestone.
+4. Run the graph integrity gates before any implementation milestone starts:
+
+   ```bash
+   bd graph check
+   bd dep cycles
+   bd lint --status all
+   bd graph <root-epic-id> --compact
+   bd ready --json
+   ./scripts/agent-work status --json --all
+   bd dolt test
+   test ! -e .beads
+   ```
+
+   The graph must be acyclic, every child must be reachable from the root,
+   every task must have an acceptance section, and `bd ready --json` must show
+   only the intended root milestones with no unmet dependency incorrectly
+   marked executable. A Beads/Dolt connectivity check alone is not sufficient
+   evidence; the launcher status and graph read must both succeed.
+5. At each milestone boundary, update the Beads issue with implementation
+   status, next milestone, exact validation command, redacted evidence path,
+   and current commit. Close a milestone only after its gate passes and all
+   dependent work can consume its declared outputs. If validation fails, keep
+   the issue open or blocked, record the failure, and do not unlock dependents.
+6. Before closing the root epic, re-run `bd graph check`, `bd lint`, the full
+   acceptance validation, and the shared-ledger status check. End the session
+   record with the final validation command and reason; do not prune graph
+   history as part of this work.
+
+### Milestone validation gates
+
+The following gates are the minimum evidence recorded on the corresponding
+Beads milestone. The same gates are expanded in the implementation phases
+below; the graph is not allowed to weaken them:
+
+| Gate | Required evidence before closing |
+| --- | --- |
+| `G0-ledger` | Shared launcher status, `bd dolt test`, `bd graph check`, `bd dep cycles`, `bd lint`, no checkout-local `.beads`, and a readable root graph |
+| `G1-contracts` | Recipe/contract tests, URI parser and registry tests, session tenant tests, and proof that foreign-tenant URIs fail before dispatch |
+| `G2-provider-kernel` | Provider manifest/schema compatibility, authorized generation binding, catalog revision behavior, conformance harness, and drain/rollback tests |
+| `G3-compute-kubernetes` | Incus VM plus system-container conformance, K3s provider tests, fake-provider swaps, and no concrete-provider imports in Host Agent core |
+| `G4-service-edge` | Registry/CNPG/edge provider tests, SQL-gated readiness, consumer Secret projection, and independent edge reachability evidence |
+| `G5-recipe` | Final YAML/static graph validation, all action readiness validators, typed URI interpolation, provider-binding checks, and no legacy backend tool in the final manifest |
+| `G6-durable` | Resume/retry/recovery tests, persisted observations, secret redaction, catalog-revision rejection, and stop-on-failure evidence |
+| `G7-release` | Build, standalone smoke tests, complete acceptance criteria, packaged recipe validation, and operator documentation review |
+
 ## Implementation phases and proof
 
-### Phase 1: Contract and source machinery
+### Phase 0: Materialize and validate the Beads milestone graph
+
+**Files and systems:** the shared Beads/Dolt ledger, the session record from
+`scripts/agent-work`, this plan, the adjacent URI plan, and the planned graph
+definition artifact `docs/beads/cloud-cell-milestones.json` if the team elects
+to keep a reviewed graph source in the repository.
+
+**Work:** Create the root epic, child milestones, dependency edges, acceptance
+sections, and validation-gate metadata described above. Confirm that the graph
+maps to the implementation phases and their proof gates, and that the only
+parallel work is explicitly safe to parallelize. Do not create
+repository-local Beads state.
+
+**Proof:** `G0-ledger` passes. In particular, `bd graph <root> --compact`
+shows the expected DAG, `bd dep cycles` is empty, `bd lint --status all`
+passes, and the ready set contains no milestone whose blocker is incomplete.
+
+### Phase 1: Contract, tenant context, and source machinery
 
 **Files and symbols:** `internal/recipe/*`, new cloud-cell recipe types,
-`internal/hostmcp/server.go`, recipe dispatch registration.
+`internal/hostmcp/server.go`, `internal/hostmcp/session.go`,
+`internal/session/contract.go`, new `internal/resourceid/*`, resource registry
+state, resolver, and recipe dispatch registration.
 
 **Work:** Add the envelope, source loading reuse, input resolution, validation,
-metadata redaction, and MCP tool contracts.
+metadata redaction, MCP tool contracts, session-carried tenant context,
+canonical resource URI parsing, registry-backed resolution, and URI-bearing
+entity output schemas. Extend the adjacent URI plan's resource-kind vocabulary
+with tenant application `service` and reserve `tenantId` as runner state.
 
 **Proof:**
 
@@ -857,32 +1230,41 @@ go test ./test/contract
 
 Assert that validation resolves a local recipe, rejects wrong contract
 versions and missing inputs, redacts secrets, and performs no host mutation.
+Assert that a foreign-tenant URI is rejected before dispatch and that
+`service:tenant-a:blog` and `service:tenant-b:blog` remain distinct registry
+records.
 
-### Phase 2: Provider ports and K3s concrete implementation
+### Phase 2: Provider ports, Incus compute, and K3s concrete implementations
 
 **Files and symbols:** `contracts/capability/*`, new Kubernetes schemas,
-`plugins/kubernetes/k3s/*`, `internal/cordis/mcp/*`, `internal/catalog/*`,
+`plugins/compute/incus/*`, `plugins/kubernetes/k3s/*`,
+`internal/cordis/mcp/*`, `internal/catalog/*`,
 `internal/hostmcp/*`, `internal/tools/dispatch.go`, `internal/ops/service.go`,
-and provider conformance fixtures.
+`internal/ops/incus_container.go`, and provider conformance fixtures.
 
-**Work:** Define `opute.capability.kubernetes.v1`, implement the K3s provider,
-bind it through the generic provider lifecycle, and remove K3s-specific core
-dispatch once parity is proven. Keep generic Kubernetes API operations in the
-Host Agent. In the same phase, publish the Helm `manifest` output and add any
-required digest-aware manifest contract.
+**Work:** Define `opute.capability.compute.v1` and
+`opute.capability.kubernetes.v1`, implement the Incus compute provider for
+both VMs and system containers plus the K3s provider, bind both through the
+generic provider lifecycle, and remove backend-specific core dispatch once
+parity is proven. Keep generic Kubernetes API operations in the Host Agent. In
+the same phase, publish the Helm `manifest` output and add any required
+digest-aware manifest contract.
 
 **Proof:**
 
 ```bash
 go test ./contracts/... ./internal/cordis/... ./internal/catalog ./internal/hostmcp ./internal/tools ./internal/ops
 go test ./plugins/kubernetes/k3s/...
+go test ./plugins/compute/incus/...
 go vet ./...
 ```
 
 Assert that the cloud-cell canonical provision/status operations are served by
-the K3s provider, that the provider manifest is schema-compatible, that a fake
-MicroK8s provider can satisfy the same port, that no Host Agent source imports
-the K3s package, and that the catalog describes the Helm `manifest` output.
+the selected providers, that the provider manifests are schema-compatible,
+that Incus conformance covers both VM and system-container targets, that fake
+MicroK8s and fake compute providers can satisfy the same ports, that no Host
+Agent source imports a concrete provider package, and that the catalog
+describes the Helm `manifest` output.
 
 ### Phase 3: Recipe plan and first-party artifact
 
@@ -900,8 +1282,9 @@ go test ./internal/recipe ./internal/plan ./test/contract
 
 Assert that the actual Host Agent catalog accepts every canonical provider
 operation and generic Kubernetes action, all mutating nodes have read-only
-validation, all interpolation references are typed, provider bindings are
-authorized and version-compatible, and nested plan execution is rejected.
+validation, all interpolation references are typed URI references,
+provider bindings are authorized and version-compatible, tenant context is
+runner-provided, and nested plan execution is rejected.
 
 ### Phase 4: Durable execution and resume
 
@@ -942,7 +1325,9 @@ first-party recipe, and preserve the existing standalone isolation tests.
 
 ## Acceptance criteria
 
-The implementation is complete only when all of these are true:
+The implementation is complete only when all of these are true. Before any
+implementation milestone starts, the shared Beads graph must also pass `G0`
+and remain aligned with the phase gates below:
 
 1. A clean Host Agent can validate the pinned cloud-cell recipe through MCP.
 2. A recipe run performs all target operations through Host Agent MCP tool
@@ -954,19 +1339,27 @@ The implementation is complete only when all of these are true:
 5. A fake MicroK8s provider can satisfy the same port and replace the K3s
    generation through an explicit, drained, evidenced binding change without a
    Host Agent code change.
-6. K3s version, single-node topology, embedded-etcd initialization, and
+6. The compute port is satisfied by the Incus provider for both VM and system-
+   container resource kinds, and a fake compute provider can replace Incus
+   through composition without a Host Agent code change.
+7. The active tenant context and resource registry resolve canonical URIs before
+   any provider call; foreign-tenant URIs fail closed.
+8. Two tenants may each own `service:<tenant>:blog`, while a typed rename
+   operation can select only the authenticated tenant's URI and never a
+   name-only or first-match resource.
+9. K3s version, single-node topology, embedded-etcd initialization, and
    secrets encryption are explicit and observable through the neutral port.
-7. CNPG SQL readiness and consumer-Secret readiness gate platform deployment.
-8. Platform authentication material is installed without exposing its values.
-9. Platform control-plane deployments are individually ready before success.
-10. Tenant-isolation baseline installation has its own marker and evidence.
-11. Public edge readiness is not confused with connector process readiness.
-12. The final output maps to verifiable cell-ready evidence rather than a
-    client-side boolean assembled from partial results.
-13. No end-user receives arbitrary manifest authority from this bootstrap
-    recipe.
-14. A later HA recipe can reuse the same Host Agent and Platform boundaries
-    without pretending that the single-node recipe is highly available.
+10. CNPG SQL readiness and consumer-Secret readiness gate platform deployment.
+11. Platform authentication material is installed without exposing its values.
+12. Platform control-plane deployments are individually ready before success.
+13. Tenant-isolation baseline installation has its own marker and evidence.
+14. Public edge readiness is not confused with connector process readiness.
+15. The final output maps to verifiable cell-ready evidence rather than a
+   client-side boolean assembled from partial results.
+16. No end-user receives arbitrary manifest authority from this bootstrap
+   recipe.
+17. A later HA recipe can reuse the same Host Agent and Platform boundaries
+   without pretending that the single-node recipe is highly available.
 
 ## Assumptions and open implementation constraints
 
@@ -1014,6 +1407,7 @@ cell:
   topology: single-node
   targetKind: virtual-machine
   capabilities:
+    - compute
     - kubernetes
     - private-registry
     - sql-service
@@ -1022,6 +1416,9 @@ cell:
     - http-ingress
 
 providerBindings:
+  compute:
+    capability: opute.capability.compute.v1
+    providerId: com.opute.incus
   kubernetes:
     capability: opute.capability.kubernetes.v1
     providerId: com.opute.k3s
@@ -1035,15 +1432,21 @@ providerBindings:
     capability: opute.capability.edge.v1
     providerId: com.opute.cloudflare
 
+tenantContext:
+  source: authenticated-session
+  reservedVariable: tenantId
+  requireSessionBinding: true
+
 compatibility:
   minHostAgentVersion: 0.1.0
   requiredTools:
     - opute.provider.status
     - check_local_prerequisites
     - get_local_status
-    - install_incus_stack
-    - provision_vm
-    - get_vm_info
+    - opute.capability.compute.prepare-host
+    - opute.capability.compute.host-status
+    - opute.capability.compute.provision
+    - opute.capability.compute.status
     - opute.capability.kubernetes.provision
     - opute.capability.kubernetes.status
     - opute.capability.container-registry.provision
@@ -1407,7 +1810,7 @@ plan:
   planId: first-party-single-node-private-cloud
   generation: 1
   idempotencyKey: >-
-    cloud-cell-${vars.inputs.cellId}-${vars.inputs.vmName}-
+    cloud-cell-${vars.tenantId}-${vars.inputs.cellId}-${vars.inputs.vmName}-
     ${vars.inputs.kubernetesVersion}-${vars.inputs.platformArtifactSha256}
   defaults:
     timeoutMs: 120000
@@ -1430,12 +1833,14 @@ plan:
     - id: incus
       dependsOn: [preflight]
       action:
-        tool: install_incus_stack
+        tool: opute.capability.compute.prepare-host
         args:
-          incusChannel: stable
-          installQemu: true
+          providerScope: host
+          channel: stable
+          enableVirtualMachines: true
+          enableSystemContainers: true
       validate:
-        tool: check_local_prerequisites
+        tool: opute.capability.compute.host-status
         args: {}
         assert:
           - path: /providerReady
@@ -1445,19 +1850,19 @@ plan:
     - id: cell-vm
       dependsOn: [incus]
       action:
-        tool: provision_vm
+        tool: opute.capability.compute.provision
         args:
-          name: ${vars.inputs.vmName}
+          resourceType: vm
+          targetKind: virtual-machine
+          resourceId: ${vars.inputs.vmName}
           image: ${vars.inputs.vmImage}
           cpus: ${vars.inputs.vmCpus}
           memory: ${vars.inputs.vmMemory}
           disk: ${vars.inputs.vmDisk}
-          instanceType: virtual-machine
       validate:
-        tool: get_vm_info
+        tool: opute.capability.compute.status
         args:
-          vmName: ${vars.inputs.vmName}
-          fast: false
+          uri: ${nodes.cell-vm.output.uri}
         assert:
           - path: /agentReady
             op: eq
@@ -1468,7 +1873,7 @@ plan:
       action:
         tool: opute.capability.kubernetes.provision
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.cell-vm.output.uri}
           targetKind: virtual-machine
           clusterId: ${vars.inputs.cellId}
           version: ${vars.inputs.kubernetesVersion}
@@ -1479,7 +1884,7 @@ plan:
       validate:
         tool: opute.capability.kubernetes.status
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.cell-vm.output.uri}
           clusterId: ${vars.inputs.cellId}
         assert:
           - path: /status
@@ -1497,7 +1902,7 @@ plan:
       action:
         tool: opute.capability.container-registry.provision
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           namespace: ${vars.inputs.registryNamespace}
           name: ${vars.inputs.registryName}
           storageSize: ${vars.inputs.registryStorageSize}
@@ -1505,7 +1910,7 @@ plan:
       validate:
         tool: opute.capability.container-registry.status
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           resourceKind: Deployment
           resourceName: ${vars.inputs.registryName}
           namespace: ${vars.inputs.registryNamespace}
@@ -1521,14 +1926,14 @@ plan:
       action:
         tool: opute.capability.kubernetes.configure-registry
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           endpoint: ${vars.inputs.registryEndpoint}
           registryHost: ${vars.inputs.registryHost}
           insecure: ${vars.inputs.registryInsecure}
       validate:
         tool: opute.capability.kubernetes.status
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           clusterId: ${vars.inputs.cellId}
         assert:
           - path: /status
@@ -1540,7 +1945,7 @@ plan:
       action:
         tool: opute.capability.postgresql-service.reconcile
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           clusterName: ${vars.inputs.databaseClusterName}
           namespace: ${vars.inputs.databaseNamespace}
           instances: 1
@@ -1555,7 +1960,7 @@ plan:
       validate:
         tool: opute.capability.postgresql-service.status
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           clusterName: ${vars.inputs.databaseClusterName}
           namespace: ${vars.inputs.databaseNamespace}
           databases: ${vars.inputs.databaseNames}
@@ -1632,13 +2037,24 @@ plan:
           namespace: ${vars.inputs.platformNamespace}
           valuesFiles: ${vars.inputs.platformValuesFiles}
           set: ${vars.inputs.platformHelmSet}
+      validate:
+        tool: render_helm_template
+        args:
+          chartPath: ${vars.inputs.platformChartPath}
+          releaseName: ${vars.inputs.platformReleaseName}
+          namespace: ${vars.inputs.platformNamespace}
+          valuesFiles: ${vars.inputs.platformValuesFiles}
+          set: ${vars.inputs.platformHelmSet}
+        assert:
+          - path: /manifest
+            op: notEmpty
 
     - id: platform-namespace
       dependsOn: [platform-render]
       action:
         tool: apply_manifest
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           manifest: |
             apiVersion: v1
             kind: Namespace
@@ -1647,7 +2063,7 @@ plan:
       validate:
         tool: get_k8s_resource
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           kind: Namespace
           resourceName: ${vars.inputs.platformNamespace}
         assert:
@@ -1659,14 +2075,14 @@ plan:
       action:
         tool: put_k8s_secret
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           namespace: ${vars.inputs.platformNamespace}
           name: ${vars.inputs.platformAuthSecretName}
           data: ${vars.inputs.platformAuthSecretData}
       validate:
         tool: get_k8s_resource
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           kind: Secret
           resourceName: ${vars.inputs.platformAuthSecretName}
           namespace: ${vars.inputs.platformNamespace}
@@ -1679,12 +2095,12 @@ plan:
       action:
         tool: apply_manifest
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           manifest: ${nodes.platform-render.output.manifest}
       validate:
         tool: get_k8s_resource_status
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           resourceKind: Deployment
           resourceName: ${vars.inputs.platformApiDeployment}
           namespace: ${vars.inputs.platformNamespace}
@@ -1699,7 +2115,7 @@ plan:
       validate:
         tool: get_k8s_resource_status
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           resourceKind: Deployment
           resourceName: ${vars.inputs.platformWebDeployment}
           namespace: ${vars.inputs.platformNamespace}
@@ -1715,7 +2131,7 @@ plan:
       validate:
         tool: get_k8s_resource_status
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           resourceKind: Deployment
           resourceName: ${vars.inputs.platformMcpDeployment}
           namespace: ${vars.inputs.platformNamespace}
@@ -1731,7 +2147,7 @@ plan:
       validate:
         tool: get_k8s_resource_status
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           resourceKind: Deployment
           resourceName: ${vars.inputs.taskLedgerDeployment}
           namespace: ${vars.inputs.platformNamespace}
@@ -1747,13 +2163,13 @@ plan:
       action:
         tool: apply_verified_manifest
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           manifest: ${vars.inputs.tenantBoundaryManifest}
           sha256: ${vars.inputs.tenantBoundaryManifestSha256}
       validate:
         tool: get_k8s_resource
         args:
-          vmName: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           kind: ${vars.inputs.tenantBoundaryMarkerKind}
           resourceName: ${vars.inputs.tenantBoundaryMarkerName}
           namespace: ${vars.inputs.platformNamespace}
@@ -1766,7 +2182,7 @@ plan:
       action:
         tool: opute.capability.edge.provision
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           namespace: ${vars.inputs.edgeNamespace}
           name: ${vars.inputs.edgeName}
           token: ${vars.inputs.cloudflaredToken}
@@ -1775,7 +2191,7 @@ plan:
       validate:
         tool: opute.capability.edge.status
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           name: ${vars.inputs.edgeName}
         assert:
           - path: /status
@@ -1822,12 +2238,12 @@ plan:
       action:
         tool: opute.capability.kubernetes.status
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           clusterId: ${vars.inputs.cellId}
       validate:
         tool: opute.capability.kubernetes.status
         args:
-          targetRef: ${vars.inputs.vmName}
+          targetRef: ${nodes.kubernetes.output.uri}
           clusterId: ${vars.inputs.cellId}
         assert:
           - path: /status
@@ -1840,6 +2256,8 @@ plan:
 outputMapping:
   cellReady: nodes.cell-ready.output.status
   cellId: vars.inputs.cellId
+  computeUri: nodes.cell-vm.output.uri
+  kubernetesUri: nodes.kubernetes.output.uri
   vmName: vars.inputs.vmName
   kubernetesVersion: nodes.kubernetes.observed.version
   kubernetesDistribution: nodes.kubernetes.observed.distribution
@@ -1864,11 +2282,20 @@ The manifest above is intentionally strict in several places:
 - `providerBindings` are composition data, not implementation branches. The
   v1 fixture binds the Kubernetes port to K3s, but a MicroK8s composition may
   replace only that binding and provider-compatible release input. The
-  canonical operation IDs and Host Agent source remain unchanged.
-- The Kubernetes, registry, PostgreSQL-service, and edge operations in this
-  manifest are provider-port operations. Their `targetRef` and bounded
-  observations are the stable interface; `vmName`, CNPG names, Cloudflare
-  connector details, and vendor flags are implementation or composition data.
+  canonical operation IDs and Host Agent source remain unchanged. The same
+  composition rule applies to the `compute` binding: `com.opute.incus` can be
+  replaced by a conformance-tested compute provider without changing this
+  recipe's operation IDs.
+- The compute, Kubernetes, registry, PostgreSQL-service, and edge operations in
+  this manifest are provider-port operations. The compute provision result is
+  the canonical `vm:<tenant>:<id>` URI; every later `targetRef` is a URI
+  resolved under the active tenant. `vmName`, CNPG names, Cloudflare connector
+  details, and vendor flags are implementation or composition data.
+- `tenantContext` is intentionally not an ordinary input. The authenticated
+  session and plan runner supply `tenantId`; a caller cannot use a recipe
+  input to select another tenant. A tenant application named `blog` is
+  addressed as `service:<tenant>:blog`, so an identically named service in a
+  different tenant cannot be selected by a name-only request.
 - `platform-extract` uses Helm rendering as its readiness validator because
   the current generic archive extractor has no directory-inspection
   capability. If that duplicate render is undesirable, add a typed

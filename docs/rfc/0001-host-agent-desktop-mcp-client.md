@@ -1,6 +1,7 @@
 # Tentative RFC 0001: Host Agent Desktop MCP Client
 
-**Status:** Tentative proposal
+**Status:** Unscoped exploration — recorded 2026-08-22; not scoped, sequenced,
+or accepted (reclassified 2026-08-23)
 **Date:** 2026-08-22
 
 ## Summary
@@ -14,6 +15,15 @@ The desktop application should work against a Host Agent on the same machine,
 over a private network, or across the public internet through an authenticated
 Opute relay. The Host Agent remains the execution boundary; the desktop app is
 only a supervision and user-experience layer.
+
+> **Reclassification note (2026-08-23):** This document is an exploration of a
+> possible future desktop client, not an accepted direction. The active
+> terminal-client direction is the TUI v2 redesign
+> (`.agents/plans/2026-08-host-agent-tui-redesign.md` in the Opute repository,
+> authoritative per ADR 0002), implemented in `clients/tui`. Nothing in this
+> RFC — including implementation phase 7's eventual TUI removal — gates or
+> redirects TUI work absent a future explicit decision that scopes and accepts
+> a desktop replacement.
 
 ## Motivation
 
