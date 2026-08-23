@@ -133,11 +133,9 @@ opute-host-agent/
     catalog/
     state/
     ops/
-  clients/
-    tui/                             # separate module and client process
-      go.mod
-      cmd/opute-host-agent-tui/
-      internal/tui/
+  # The user-facing terminal client is an external Bun/TypeScript application
+  # in the sibling Opute repository: apps/opute-tui/.
+  # This Go repository contains no supported TUI module or launcher.
   plugins/
     llm/ollama/                      # separate provider MCP module/process
       plugin.yaml
@@ -172,17 +170,18 @@ runtime calls:
 More precisely:
 
 - `cmd/opute-host-agent` and `internal/` may import neutral contracts and
-  generic Host Agent packages, but may not import `clients/tui`,
+  generic Host Agent packages, but may not import the external TUI client,
   `plugins/llm/ollama`, `plugins/tunneling/cloudflare`, or any concrete
   provider package. Concrete provider IDs may appear only as data in an
   externally supplied, validated descriptor; provider-specific symbols and
   lifecycle code must not appear in the core.
-- `clients/tui` may import `pkg/hostagentclient`, neutral contracts, and a
-  generic Streamable HTTP MCP client. It may not import Host Agent `internal`
-  packages, recipe/plan/state stores, or either provider MCP.
+- The external `apps/opute-tui` client may import only the public MCP contract,
+  neutral schemas, and the shared Streamable HTTP MCP client. It may not import
+  Host Agent `internal` packages, recipe/plan/state stores, or either provider
+  MCP. The Host Agent repository must not grow a replacement in-process TUI.
 - Each provider MCP may import neutral contracts and a public provider SDK,
   and may call the Host Agent's public contract where explicitly required. It
-  may not import `clients/tui`, Host Agent `internal` packages, or another
+  may not import `apps/opute-tui`, Host Agent `internal` packages, or another
   provider. It knows the Host Agent contract, not the TUI.
 - `bundles/first-party` contains declarative composition data only. It may
   name provider descriptors as data, but it must not become a package that
@@ -191,12 +190,13 @@ More precisely:
   convenience imports are prohibited across these boundaries. Communication
   uses versioned contracts and the declared Streamable HTTP interfaces.
 
-The supported TUI path is the separate `clients/tui` module and process. The
-core binary serves Host Agent MCP and launches that client for local use. The
-older `internal/tui` package is retained only as an unreferenced compatibility
-fixture during cleanup; it is not part of the command path and no core package
-may import it. New TUI behavior belongs in `clients/tui` and communicates over
-the public Streamable HTTP MCP client boundary.
+The supported TUI path is the separate Bun/TypeScript `apps/opute-tui`
+application in the sibling Opute repository. The Host Agent binary serves MCP
+only and does not launch a client. The historical `internal/tui` package is
+scheduled for deletion as an unreferenced migration artifact; it is not part
+of the command path and no core package may import it. New terminal behavior
+belongs in the external client and communicates over the public Streamable HTTP
+MCP boundary.
 
 ## Cordis conformance profile
 
@@ -442,7 +442,7 @@ is isolated in the generic adapter layer.
 **I-03 — Provider dependency inversion.** A provider may depend on public Opute
 schemas and the provider SDK. It may not import `internal/hostmcp`,
 `internal/state`, `internal/plan`, `internal/resource/admission`, or another
-provider package, `pkg/hostagentclient`, or `clients/tui`.
+  provider package, `pkg/hostagentclient`, or the external TUI client.
 
 **I-04 — Capability dependencies only.** Provider dependencies name versioned
 capabilities such as `opute.capability.tunneling.v1`, never concrete providers
@@ -695,7 +695,7 @@ it must not own.
 | `internal/ops/` | Generic host primitives and neutral observations | Ollama lifecycle, Cloudflare lifecycle, provider-specific output fields |
 | `plugins/llm/ollama/` | Ollama MCP implementation, Ollama manifest, contract mapping, Ollama recipe references, native metadata, and external Ollama API/CLI integration | Host Agent `internal` packages, admission, Host Agent state writes, generic plan execution, TUI, or other providers |
 | `plugins/tunneling/cloudflare/` | Cloudflare MCP implementation, tunnel manifest, contract mapping, Cloudflare recipe references, native metadata, and external Cloudflare integration | Host Agent `internal` packages, admission, Host Agent state writes, generic plan execution, TUI, or other providers |
-| `clients/tui/` | Catalog-driven typed drafts, lookup, review, rendering, explicit approval, and projection of Host Agent state | Host Agent `internal` packages, provider MCPs, provider endpoints/tool names, LLM-required startup, prose execution, setup paths, or reload decisions |
+| `apps/opute-tui/` (sibling Opute repository) | Catalog-driven typed drafts, lookup, review, rendering, explicit approval, and projection of Host Agent state | Host Agent `internal` packages, provider MCPs, provider endpoints/tool names, LLM-required startup, prose execution, setup paths, or reload decisions |
 | `bundles/first-party/` | Declarative provider descriptors and composition data | Importing provider code into Host Agent core, UI behavior, or hidden lifecycle policy |
 | Opute application `/chat` | Application-level chat orchestration and canary | Declaring Host Agent recipe success to be chat success |
 
@@ -880,7 +880,8 @@ plugins/
 
 Each provider directory is an independently buildable MCP module/process. Its
 `contract/` directory may reference the neutral schemas, but it must not
-reach into the Host Agent `internal/` tree or the `clients/tui` module. The
+reach into the Host Agent `internal/` tree or the external `apps/opute-tui`
+client. The
 Host Agent receives the generic descriptor and endpoint as composition data;
 it does not compile or instantiate these provider packages.
 
@@ -1214,8 +1215,9 @@ Establish the module boundaries at the same time:
   `internal/` packages;
 - expose only neutral contracts and the generic `pkg/hostagentclient/` from
   the Host Agent module;
-- create `clients/tui/` as a separate module/process and move the current
-  `internal/tui` implementation there incrementally;
+- build the external Bun/TypeScript `apps/opute-tui/` client against the
+  Host Agent's public MCP contract; do not move `internal/tui` into a new Go
+  module;
 - make `plugins/llm/ollama/` and `plugins/tunneling/cloudflare/` independently
   buildable provider MCP modules;
 - keep `bundles/first-party/` declarative and ensure it supplies descriptors as
@@ -1440,7 +1442,7 @@ containing:
 
 The provider module may import only neutral Opute contracts, its MCP/provider
 SDK, and Ollama APIs/CLI bindings. It must not import Host Agent `internal/`
-packages, `pkg/hostagentclient`, or `clients/tui`. The Host Agent starts or
+packages, `pkg/hostagentclient`, or the external TUI client. The Host Agent starts or
 connects to the resulting MCP process from generic descriptor data.
 
 Managed mode uses generic Host Agent primitives for verified artifact
@@ -1477,7 +1479,7 @@ module/process containing:
 
 The provider module may import only neutral Opute contracts, its MCP/provider
 SDK, and Cloudflare APIs/CLI bindings. It must not import Host Agent
-`internal/` packages, `pkg/hostagentclient`, `clients/tui`, or the Ollama
+`internal/` packages, `pkg/hostagentclient`, the external TUI client, or the Ollama
 provider.
 
 Use `2026-08-22-generic-tunneling-recipes-plan.md` as the feature-specific
@@ -1549,64 +1551,24 @@ Proof:
 
 ### 11. Implement the typed, LLM-independent TUI client
 
-Move the current `internal/tui/` implementation into the separate
-`clients/tui/` module and reconcile it with
+Build the external Bun/TypeScript `apps/opute-tui/` client described by
 `/home/houman/github/wunderous/opute/.agents/plans/2026-08-host-agent-tui-redesign.md`.
-Keep the TUI presentation-only and do not change the MCP wire format. The TUI
-connects to Host Agent over its public Streamable HTTP MCP surface and imports
-only neutral contracts plus `pkg/hostagentclient`; it never imports the Host
-Agent `internal/` tree or either provider module. Add or complete:
+It is a presentation-only MCP client: it consumes the live catalog, binds only
+server-issued canonical identities, validates drafts for UX, and sends typed
+calls over Streamable HTTP. The Host Agent remains the validation,
+authorization, execution, durability, recovery, and evidence authority.
 
-- presentation types `CommandDraft`, `DraftValue`, `EntityBinding`, and
-  `OutputBinding` with catalog/observation revisions and provenance;
-- catalog-driven parsing and completion in `parser.go` and `catalog.go`;
-- typed, read-only entity/output lookup in `entities.go`;
-- visible stale, unavailable, and schema-incompatible binding states;
-- deterministic submission through the current Host Agent catalog and schema;
-- agentic review only for validated `assistant-session.v1` or `host-plan.v1`
-  proposals from the Platform adapter;
-- operation reconnect, polling, cancellation, resume, and redacted inspector
-  projections without replaying mutations;
-- explicit approval handling that never inserts `confirm=true`.
+The client adopts the Cordis shape of immutable context snapshots, declared
+derivations, typed service ownership, and disposer-backed effects. It does not
+load plugins, initialize Host Agent internals, infer execution arguments from
+rendered prose, or move provider/authorization/orchestration logic into the
+terminal. The historical Go TUI is a migration source only and is removed
+after the external client passes the plan's parity gate.
 
-Core TUI views must render and execute without an LLM. The optional assistant
-view may show an explicit unavailable state when no LLM provider is active.
-The TUI must not initialize the Cordis context graph or infer execution
-arguments from rendered prose.
-
-Primary existing surfaces to preserve and extend in `clients/tui/` include
-(the current paths are migration sources):
-
-- `clients/tui/internal/parser.go`: `Command`, `ParseCommand`, and typed
-  completion;
-- `clients/tui/internal/catalog.go`: current catalog revision and schema
-  validation;
-- `clients/tui/internal/entities.go`: explicit selection and binding
-  provenance;
-- `clients/tui/internal/operation.go`: durable polling and reconnect
-  behavior;
-- `clients/tui/internal/app.go`: deterministic submission, proposal validation,
-  and
-  capability-scoped assistant handling;
-- `clients/tui/internal/assistant.go` and
-  `clients/tui/internal/platform.go`: typed proposal validation and SSE
-  parsing only.
-
-Proof:
-
-- parser tests cover literals, quotes, entity/output bindings, missing fields,
-  stale revisions, and schema incompatibility;
-- deterministic E2E covers `list_vms -> select entity -> get_vm_info` with
-  canonical arguments, provenance, current catalog revision, and one tool call
-  per submission;
-- agentic tests reject prose execution and stale proposals and preserve
-  deterministic edit round-trips;
-- reconnect tests poll durable status without replaying the mutation;
-- redaction tests cover inspector, clipboard, task projections, and hidden
-  output;
-- narrow-terminal, horizontal-scroll, keyboard-only, and non-color tests
-  pass;
-- the evidence sentinel is `TUI_TYPED_EXECUTION_PASS`.
+Proof is owned by the authoritative TUI plan: typed binding, catalog revision,
+schema, approval, task/reconnect, redaction, bounded rendering, MCP
+2026-07-28 conformance, and packaged end-to-end evidence must pass before the
+legacy client is retired.
 
 ### 12. Build the disposable provider-reset and chat E2E harness
 
@@ -1737,7 +1699,8 @@ Run the unit and standalone gates in disposable Linux/WSL:
 
 ```bash
 go test ./...
-go -C clients/tui test ./...
+go test ./...
+cd ../opute && bun test apps/opute-tui
 go -C plugins/llm/ollama test ./...
 go -C plugins/tunneling/cloudflare test ./...
 make standalone-http-smoke
@@ -1776,17 +1739,17 @@ pass.
 Pass only when:
 
 - `cmd/opute-host-agent` and Host Agent `internal/` packages have no import of
-  `clients/tui`, `internal/tui`, `plugins/llm/ollama`,
+  `internal/tui`, `plugins/llm/ollama`,
   `plugins/tunneling/cloudflare`, or any concrete provider package;
 - the core `internal/cordis` package (excluding its explicit `mcp` adapter
   subpackage) has no import of provider implementations, TUI, MCP transport,
   recipe, or host mutation packages;
-- `clients/tui` has no import of Host Agent `internal/` packages, provider
+- `apps/opute-tui` has no import of Host Agent `internal/` packages, provider
   modules, provider endpoints, or provider-specific tool names;
-- provider modules have no import of `clients/tui`, `internal/tui`,
+- provider modules have no import of `apps/opute-tui`, `internal/tui`,
   `internal/hostmcp`, `internal/state`, `internal/plan`,
   `internal/resource/admission`, `pkg/hostagentclient`, or another provider;
-- each provider and the TUI build as separate modules/processes against only
+- each provider and the external TUI build as separate modules/processes against only
   neutral contracts and their public SDK/client boundary;
 - no supported build path imports Go's `plugin` package;
 - no provider-specific lifecycle symbol is reachable from the generic Host

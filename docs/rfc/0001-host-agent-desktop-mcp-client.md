@@ -20,7 +20,9 @@ only a supervision and user-experience layer.
 > possible future desktop client, not an accepted direction. The active
 > terminal-client direction is the TUI v2 redesign
 > (`.agents/plans/2026-08-host-agent-tui-redesign.md` in the Opute repository,
-> authoritative per ADR 0002), implemented in `clients/tui`. Nothing in this
+> authoritative per ADR 0002), implemented as the external Bun/TypeScript
+> `apps/opute-tui` client. The existing `clients/tui` module is only a
+> migration source until parity is proven. Nothing in this
 > RFC — including implementation phase 7's eventual TUI removal — gates or
 > redirects TUI work absent a future explicit decision that scopes and accepts
 > a desktop replacement.

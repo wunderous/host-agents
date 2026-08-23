@@ -203,10 +203,12 @@ statuses, host info…).
 
   The plan runner (`internal/plan/runner.go`, `schema.go` reference validation) injects
   `tenantId` as a reserved variable.
-- **TUI** (`clients/tui/internal/tui/client.go`): `EntityBinding` gains `URI` (canonical);
-  `GetVMInfo` sends `{"uri": ...}`; `decodeEntities` requires a server-provided `uri` per
-  record (never fabricates — ADR 0002 rule); parser/tests move off `vmName=@vm:worker-01` to
-  uri tokens.
+- **TUI** (final client: sibling Opute `apps/opute-tui`): consumes the server-provided
+  canonical `uri` and never fabricates identity. The legacy `clients/tui` module is only a
+  migration source for this prerequisite and receives the minimum mechanical binding and
+  fixture fixup needed to compile and stay green; its parser/UX is not being fully migrated
+  here because `TUI-109` retires it after the Bun client passes parity. No `@vm` or name-based
+  token becomes a normative wire binding.
 - **Tests**: `test/live/vm_lifecycle_test.go` + `reset_stack_test.go`
   (create→list→get→delete via uri), `test/modes/packaged_test.go`,
   `test/tui/packaged_test.go`, `test/standalone/http_test.go`,
