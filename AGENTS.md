@@ -191,3 +191,14 @@ Recipe/runtime E2E findings (2026-08-23):
   older active-capability SQLite table, add missing columns before selecting
   them for migration. Otherwise the bootstrap service fails before it can
   expose recipe/provider tools.
+- **Provider/runtime E2E requires the runtime's configured registry endpoint.**
+  The disposable K3s cell's insecure registry is `10.0.100.240:30500`; pushing
+  an image to the reachable-but-unconfigured `10.0.100.252:30500` makes the
+  rollout fail with `http: server gave HTTP response to HTTPS client`. Keep
+  image publication and the target runtime's registry configuration as
+  separate, explicitly verified facts.
+- **Host-native K3s Helm tools must share one resolver across sync and task
+  paths.** A `vmName`-only `k3s__uninstall_helm_chart` call must resolve the
+  managed-cluster projection, verify `source=k3s-host`, and only then execute
+  through the host agent. The deployed public test now completes without an
+  explicit `hostId`; VM-backed rows remain on their normal downstream path.
