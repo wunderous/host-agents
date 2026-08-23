@@ -8,10 +8,9 @@
 - `internal/tools`, `internal/ops`, `internal/provider`, `internal/plan`, and
   `internal/session` implement typed capabilities, execution, plans, and
   durable session contracts.
-- `clients/tui/` is the separately built deterministic TUI client. The root
-  Host Agent binary serves MCP and launches this client when the `tui` or
-  default standalone command is used; `internal/tui/` is legacy compatibility
-  code and must not be imported by the core command path.
+- `clients/tui/` is the separately built deterministic TUI client until the
+  split-artifact retirement milestone. The root Host Agent binary serves MCP;
+  the legacy `internal/tui/` package has been removed and must not return.
 - `schemas/` stores versioned capability contracts; `test/` contains contract,
   integration, standalone, mode, and TUI tests. `npm/local-host-agent/` is the
   release launcher.
