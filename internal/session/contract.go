@@ -21,6 +21,7 @@ const (
 type Request struct {
 	ContractVersions           []string             `json:"contractVersions"`
 	SessionID                  string               `json:"sessionId"`
+	TenantID                   string               `json:"tenantId,omitempty"`
 	TurnID                     string               `json:"turnId"`
 	CatalogRevision            string               `json:"catalogRevision"`
 	TransportCatalogRevision   string               `json:"transportCatalogRevision,omitempty"`
@@ -46,6 +47,7 @@ type EntityReference struct {
 	Kind            string         `json:"kind"`
 	CanonicalField  string         `json:"canonicalField"`
 	CanonicalValue  string         `json:"canonicalValue"`
+	URI             string         `json:"uri,omitempty"`
 	DisplayName     string         `json:"displayName"`
 	Provider        string         `json:"provider"`
 	Source          string         `json:"source"`
@@ -223,6 +225,11 @@ func (e Event) Validate() error {
 func (reference EntityReference) validate(index int) error {
 	if strings.TrimSpace(reference.OriginalToken) == "" || strings.TrimSpace(reference.Kind) == "" || strings.TrimSpace(reference.CanonicalField) == "" || strings.TrimSpace(reference.CanonicalValue) == "" || strings.TrimSpace(reference.Provider) == "" || strings.TrimSpace(reference.Source) == "" || strings.TrimSpace(reference.Selection) == "" || strings.TrimSpace(reference.CatalogRevision) == "" {
 		return fmt.Errorf("entity reference %d is missing typed provenance", index)
+	}
+	if reference.URI != "" {
+		if reference.CanonicalField != "uri" || reference.CanonicalValue != reference.URI {
+			return fmt.Errorf("entity reference %d canonical URI is not authoritative", index)
+		}
 	}
 	switch reference.Selection {
 	case "exact_canonical", "exact_alias", "prefix", "normalized", "semantic", "explicit":

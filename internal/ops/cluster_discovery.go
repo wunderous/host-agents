@@ -3,6 +3,8 @@ package ops
 import (
 	"fmt"
 	"strings"
+
+	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
 type ClusterListResult struct {
@@ -18,6 +20,7 @@ type ClusterNode struct {
 }
 
 type ClusterDetail struct {
+	URI                    string        `json:"uri"`
 	ID                     string        `json:"id"`
 	Name                   string        `json:"name"`
 	Status                 string        `json:"status"`
@@ -78,6 +81,16 @@ func (s *HostOperationsService) GetClusterRuntimeDetails(vmName string) (Cluster
 
 func (s *HostOperationsService) buildClusterDetailFromVM(vm VMInfo, fast bool, runtime bool) (ClusterDetail, error) {
 	detail := buildBaseClusterDetail(vm)
+	if uri, err := resourceid.ClusterURI(s.tenantID, vm.Name); err == nil {
+		detail.URI = uri.String()
+		if s.resourceRegistry != nil {
+			_ = s.RegisterResource(detail.URI, map[string]any{
+				"providerInstanceName": vm.Name,
+				"vmName":               vm.Name,
+				"displayName":          vm.Name,
+			})
+		}
+	}
 	if runtime || (!fast && vm.K3sInstalled != nil && *vm.K3sInstalled && strings.EqualFold(vm.Status, "running")) {
 		enriched, err := s.enrichClusterDetailRuntime(vm, detail)
 		if err != nil {
@@ -124,6 +137,7 @@ func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
 	nodeCount := 0
 
 	detail := ClusterDetail{
+		URI: vm.URI,
 		// Cluster ids are typed entity identifiers on the Platform boundary.
 		// Keep the provider namespace while using the shared identifier charset;
 		// the old colon form was rejected by the MCP output schema.
@@ -169,6 +183,7 @@ func (s *HostOperationsService) enrichClusterDetailRuntime(vm VMInfo, detail Clu
 	}
 	available := vm.K3sInstalled != nil && *vm.K3sInstalled && len(nodes) > 0
 	return ClusterDetail{
+		URI:                    detail.URI,
 		ID:                     detail.ID,
 		Name:                   detail.Name,
 		Status:                 "Ready",

@@ -21,6 +21,7 @@ import (
 	hostexec "github.com/wunderous/host-agents/internal/exec"
 	"github.com/wunderous/host-agents/internal/heartbeat"
 	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
 const (
@@ -38,6 +39,7 @@ var clusterScopedK8sResources = map[string]bool{
 
 // HostInfoResult mirrors the TypeScript describeHost payload.
 type HostInfoResult struct {
+	URI            string               `json:"uri"`
 	HostName       string               `json:"hostName"`
 	ProviderID     string               `json:"providerId"`
 	LXCBinaryPath  string               `json:"lxcBinaryPath"`
@@ -73,6 +75,8 @@ type BridgeDiagnosticResult struct {
 // HostOperationsService implements host MCP operations against Incus on Linux.
 type HostOperationsService struct {
 	runtime                 *provider.Runtime
+	tenantID                string
+	resourceRegistry        ResourceRegistry
 	toolsFn                 func(providerID string) []string
 	instanceID              string
 	agentID                 string
@@ -115,6 +119,8 @@ type Options struct {
 	OciStoragePolicyPath      string
 	SQLiteDatabaseRoot        string
 	SharedHostOwnerInstance   string
+	TenantID                  string
+	ResourceRegistry          ResourceRegistry
 }
 
 func NewHostOperationsService(opts Options) *HostOperationsService {
@@ -132,8 +138,18 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 	if postgresRelayConfigDir != "" {
 		postgresRelayConfigDir = filepath.Join(postgresRelayConfigDir, "postgresql-service-relays")
 	}
+	tenantID := strings.TrimSpace(opts.TenantID)
+	if tenantID == "" {
+		tenantID = "local"
+	}
+	registry := opts.ResourceRegistry
+	if registry == nil {
+		registry = newInMemoryResourceRegistry()
+	}
 	return &HostOperationsService{
 		runtime:                 rt,
+		tenantID:                tenantID,
+		resourceRegistry:        registry,
 		toolsFn:                 toolsFn,
 		instanceID:              strings.TrimSpace(opts.InstanceID),
 		agentID:                 strings.TrimSpace(opts.AgentID),
@@ -148,6 +164,13 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		postgresqlServiceRelay:  newPersistentPostgreSQLServiceRelayManagerAt(postgresRelayConfigDir),
 		allowInsecureDownloads:  opts.AllowInsecureDownloads,
 	}
+}
+
+func (s *HostOperationsService) TenantID() string {
+	if s == nil {
+		return ""
+	}
+	return s.tenantID
 }
 
 func resolveResetCheckpointPath(explicitPath, relayConfigDir string) string {
@@ -179,6 +202,12 @@ func (s *HostOperationsService) DescribeHost() HostInfoResult {
 		LXCBinaryPath:  s.runtime.ProviderBinary(),
 		SystemctlPath:  provider.DefaultSystemctlPath,
 		SupportedTools: s.toolsFn(pid),
+	}
+	if uri, err := resourceid.HostURI(s.tenantID, firstNonEmpty(s.agentID, host)); err == nil {
+		result.URI = uri.String()
+		if s.resourceRegistry != nil {
+			_ = s.RegisterResource(result.URI, map[string]any{"agentId": s.agentID, "hostName": host})
+		}
 	}
 	if capacity, err := s.VMInventoryCapacity(); err == nil {
 		result.Capacity = &capacity
@@ -269,6 +298,7 @@ type VMListResult struct {
 }
 
 type VMInfo struct {
+	URI          string         `json:"uri"`
 	Name         string         `json:"name"`
 	Type         string         `json:"type,omitempty"`
 	Status       string         `json:"status"`
@@ -297,6 +327,7 @@ type ProvisionVMArgs struct {
 }
 
 type VMStatusResult struct {
+	URI          string `json:"uri"`
 	VMName       string `json:"vmName"`
 	Image        string `json:"image,omitempty"`
 	Status       string `json:"status"`
@@ -348,7 +379,7 @@ func (s *HostOperationsService) provisionVM(args ProvisionVMArgs, onData func(st
 		} else {
 			image = normalizeIncusLaunchImage(image)
 		}
-		return VMStatusResult{VMName: vmName, Image: image, Status: "running", InstanceType: "virtual-machine"}, nil
+		return s.vmStatusResult(vmName, image, "running", "virtual-machine"), nil
 	}
 
 	nesting := true
@@ -363,12 +394,22 @@ func (s *HostOperationsService) provisionVM(args ProvisionVMArgs, onData func(st
 	if err != nil {
 		return VMStatusResult{}, err
 	}
-	return VMStatusResult{
-		VMName:       container.ContainerName,
-		Image:        container.Image,
-		Status:       container.Status,
-		InstanceType: container.InstanceType,
-	}, nil
+	return s.vmStatusResult(container.ContainerName, container.Image, container.Status, container.InstanceType), nil
+}
+
+func (s *HostOperationsService) vmStatusResult(name, image, status, instanceType string) VMStatusResult {
+	resourceType := resourceid.TypeContainer
+	if instanceType == "virtual-machine" {
+		resourceType = resourceid.TypeVM
+	}
+	result := VMStatusResult{VMName: name, Image: image, Status: status, InstanceType: instanceType}
+	if uri, err := resourceid.New(resourceType, s.tenantID, name); err == nil {
+		result.URI = uri.String()
+		if s.resourceRegistry != nil {
+			_ = s.RegisterResource(result.URI, map[string]any{"providerInstanceName": name, "instanceType": instanceType})
+		}
+	}
+	return result
 }
 
 type VMScopedArgs struct {
@@ -390,7 +431,11 @@ func (s *HostOperationsService) StartVM(args VMScopedArgs, onData func(string)) 
 	if res.ExitCode != 0 {
 		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "failed to start VM"))
 	}
-	return map[string]string{"vmName": vmName, "status": "running"}, nil
+	out := map[string]string{"vmName": vmName, "status": "running"}
+	if uri := s.ResourceURIForProviderName(vmName); uri != "" {
+		out["uri"] = uri
+	}
+	return out, nil
 }
 
 func (s *HostOperationsService) StopVM(args VMScopedArgs, onData func(string)) (map[string]string, error) {
@@ -409,7 +454,11 @@ func (s *HostOperationsService) StopVM(args VMScopedArgs, onData func(string)) (
 	if res.ExitCode != 0 {
 		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "failed to stop VM"))
 	}
-	return map[string]string{"vmName": vmName, "status": "stopped"}, nil
+	out := map[string]string{"vmName": vmName, "status": "stopped"}
+	if uri := s.ResourceURIForProviderName(vmName); uri != "" {
+		out["uri"] = uri
+	}
+	return out, nil
 }
 
 func (s *HostOperationsService) RestartVM(args VMScopedArgs, onData func(string)) (map[string]string, error) {
@@ -434,7 +483,11 @@ func (s *HostOperationsService) RestartVM(args VMScopedArgs, onData func(string)
 	if start.ExitCode != 0 {
 		return nil, fmt.Errorf("%s", firstNonEmpty(start.Stderr, start.Stdout, "failed to start VM during restart"))
 	}
-	return map[string]string{"vmName": vmName, "status": "running"}, nil
+	out := map[string]string{"vmName": vmName, "status": "running"}
+	if uri := s.ResourceURIForProviderName(vmName); uri != "" {
+		out["uri"] = uri
+	}
+	return out, nil
 }
 
 // UpdateVMResourcesArgs selects the instance and the limits to apply. At least
@@ -462,6 +515,9 @@ func (s *HostOperationsService) UpdateVMResources(args UpdateVMResourcesArgs, on
 		return nil, err
 	}
 	applied := map[string]string{"vmName": vmName, "status": "updated"}
+	if uri := s.ResourceURIForProviderName(vmName); uri != "" {
+		applied["uri"] = uri
+	}
 	if args.CPUs > 0 {
 		if err := s.setIncusInstanceConfig(vmName, "limits.cpu", strconv.Itoa(args.CPUs)); err != nil {
 			return nil, fmt.Errorf("set CPU limit: %w", err)
@@ -492,7 +548,15 @@ func (s *HostOperationsService) DeleteVM(args VMScopedArgs, onData func(string))
 	if res.ExitCode != 0 {
 		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "failed to delete VM"))
 	}
-	return map[string]any{"vmName": vmName, "deleted": true}, nil
+	uri := s.ResourceURIForProviderName(vmName)
+	if uri != "" {
+		_ = s.DeregisterResource(uri)
+	}
+	out := map[string]any{"vmName": vmName, "deleted": true}
+	if uri != "" {
+		out["uri"] = uri
+	}
+	return out, nil
 }
 
 func (s *HostOperationsService) launchVM(vmName, image string, cpus int, memory, disk string, onData func(string), timeout time.Duration) error {

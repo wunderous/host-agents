@@ -47,6 +47,7 @@ type LocalLLMPrerequisitesResult struct {
 }
 
 type LocalLLMModelResult struct {
+	URI       string `json:"uri"`
 	Name      string `json:"name"`
 	Digest    string `json:"digest,omitempty"`
 	SizeBytes int64  `json:"sizeBytes,omitempty"`

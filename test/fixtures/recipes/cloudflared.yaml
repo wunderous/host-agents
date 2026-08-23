@@ -12,8 +12,8 @@ bindings:
     hostname: mcp.opute.io
     localTarget: http://platform-opute-mcp.opute-platform.svc.cluster.local:9091
 inputs:
-  vmName:
-    default: opute-dev-cnpg
+  uri:
+    default: vm:local:opute-dev-cnpg
     schema: {type: string, minLength: 1}
   token:
     required: true
@@ -47,7 +47,7 @@ plan:
   contractVersion: host-plan.v1
   planId: first-party-cloudflared-platform-edge
   generation: 1
-  idempotencyKey: first-party-cloudflared-${vars.inputs.vmName}-${vars.inputs.namespace}-${vars.inputs.name}
+  idempotencyKey: first-party-cloudflared-${vars.inputs.uri}-${vars.inputs.namespace}-${vars.inputs.name}
   defaults:
     timeoutMs: 120000
     retry: {maxAttempts: 1, backoffMs: 1000}
@@ -57,7 +57,7 @@ plan:
       action:
         tool: install_cloudflared_connector
         args:
-          vmName: ${vars.inputs.vmName}
+          uri: ${vars.inputs.uri}
           namespace: ${vars.inputs.namespace}
           name: ${vars.inputs.name}
           token: ${vars.inputs.token}
@@ -68,7 +68,7 @@ plan:
       validate:
         tool: get_k8s_resource_status
         args:
-          vmName: ${vars.inputs.vmName}
+          uri: ${vars.inputs.uri}
           resourceKind: Deployment
           resourceName: ${vars.inputs.name}
           namespace: ${vars.inputs.namespace}

@@ -17,6 +17,7 @@ import (
 	provideradapter "github.com/wunderous/host-agents/internal/cordis/mcp"
 	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/resource"
+	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/internal/state"
 	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
@@ -101,12 +102,16 @@ func NewServer(opts Options) (*Server, error) {
 			}
 		}
 	}
+	capabilityDefs = tools.CanonicalizeToolDefinitions(capabilityDefs)
 	capabilityCatalog := tools.BuildCapabilityCatalog(providerID, capabilityDefs)
 	knownResourceKinds := map[string]bool{
 		"host": true, "vm": true, "container": true, "incus": true, "network": true,
 		"storage": true, "image": true, "profile": true, "k3s": true, "cloudflared": true,
 		"tunnel": true, "model": true, "language": true, "embedding": true, "database": true,
 		"service": true, "operation": true, "plan": true,
+	}
+	for _, kind := range resourceid.KnownTypes() {
+		knownResourceKinds[kind] = true
 	}
 	for _, descriptor := range capabilityCatalog.Tools {
 		for _, kind := range descriptor.ResourceKinds {
@@ -166,10 +171,14 @@ func NewServer(opts Options) (*Server, error) {
 			return nil, err
 		}
 		hs.state = store
+		opts.Ops.SetResourceRegistry(store)
 		if err := hs.restoreProviderGenerations(); err != nil {
 			_ = store.Close()
 			return nil, fmt.Errorf("restore provider generations: %w", err)
 		}
+	}
+	if _, err := hs.providerContext.Plugin(resourceServicesPlugin{registry: opts.Ops.ResourceRegistry(), resolver: opts.Ops, tenantID: opts.Ops.TenantID()}); err != nil {
+		return nil, fmt.Errorf("mount resource services: %w", err)
 	}
 	hs.registerTools()
 	return hs, nil
@@ -327,6 +336,12 @@ func (s *Server) registerProviderServices(manifest providercontract.InstallManif
 // callers. Keeping admission here prevents one transport from bypassing the
 // host-wide policy when two agent instances share WSL/Incus resources.
 func (s *Server) DispatchTool(ctx context.Context, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
+	if s.requiresCanonicalURI(name) && strings.TrimSpace(stringValue(args["uri"])) == "" {
+		return tools.ErrorResult(fmt.Errorf("%s requires canonical resource uri; legacy entity names are not accepted", name)), nil
+	}
+	if err := bindCanonicalResourceArguments(s.ops, args); err != nil {
+		return tools.ErrorResult(err), nil
+	}
 	if s.admission == nil {
 		return s.dispatchRegisteredOrBuiltIn(ctx, name, args, onData)
 	}
@@ -336,6 +351,72 @@ func (s *Server) DispatchTool(ctx context.Context, name string, args map[string]
 	}
 	defer release()
 	return s.dispatchRegisteredOrBuiltIn(ctx, name, args, onData)
+}
+
+func (s *Server) requiresCanonicalURI(name string) bool {
+	s.catalogMu.RLock()
+	defer s.catalogMu.RUnlock()
+	for _, definition := range s.toolDefs {
+		if definition.Name != name {
+			continue
+		}
+		for _, field := range requiredSchemaFields(definition.InputSchema) {
+			if field == "uri" {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+func requiredSchemaFields(schema map[string]any) []string {
+	raw, ok := schema["required"].([]string)
+	if ok {
+		return raw
+	}
+	values, _ := schema["required"].([]any)
+	fields := make([]string, 0, len(values))
+	for _, value := range values {
+		if field, ok := value.(string); ok {
+			fields = append(fields, field)
+		}
+	}
+	return fields
+}
+
+func stringValue(value any) string {
+	valueString, _ := value.(string)
+	return valueString
+}
+
+// bindCanonicalResourceArguments is the typed boundary between the public
+// URI contract and legacy provider method signatures. The provider receives
+// only coordinates obtained from the tenant-checked registry; callers cannot
+// smuggle a guessed vmName through the MCP arguments.
+func bindCanonicalResourceArguments(service *ops.HostOperationsService, args map[string]any) error {
+	uri, ok := args["uri"].(string)
+	if !ok || strings.TrimSpace(uri) == "" {
+		return nil
+	}
+	coordinates, err := service.ResolveResource(uri, "")
+	if err != nil {
+		return err
+	}
+	for key, value := range coordinates.Values {
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) != "" {
+				args["__resolved_"+key] = typed
+			}
+		case bool, float64, int, int64:
+			args["__resolved_"+key] = value
+		}
+	}
+	if value, ok := coordinates.Values["providerInstanceName"].(string); ok && strings.TrimSpace(value) != "" {
+		args["__resolvedVmName"] = value
+	}
+	return nil
 }
 
 func (s *Server) dispatchRegisteredOrBuiltIn(ctx context.Context, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
@@ -400,6 +481,7 @@ func (s *Server) registerTools() {
 	if err != nil {
 		allDefs = s.toolDefs
 	}
+	allDefs = tools.CanonicalizeToolDefinitions(allDefs)
 	internalDefs, ierr := tools.LoadCatalogExcludedDispatchToolDefinitions()
 	if ierr == nil {
 		allDefs = append(allDefs, internalDefs...)
@@ -419,6 +501,7 @@ func (s *Server) registerTools() {
 
 func (s *Server) registerStandaloneTools(snapshot tools.CapabilityCatalogSnapshot) {
 	defs := tools.StandaloneToolDefinitions()
+	defs = tools.CanonicalizeToolDefinitions(defs)
 	all, err := tools.LoadAllToolDefinitions("all")
 	if err == nil {
 		for _, def := range all {
@@ -426,6 +509,7 @@ func (s *Server) registerStandaloneTools(snapshot tools.CapabilityCatalogSnapsho
 				defs = append(defs, def)
 			}
 		}
+		defs = tools.CanonicalizeToolDefinitions(defs)
 	}
 	seen := map[string]bool{}
 	for _, def := range defs {
@@ -580,7 +664,7 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		height := intFromAny(args["height"])
 		return s.console.ResizeConsole(opID, width, height)
 	}
-	if tasks.TaskAwareTools[name] && (hasTaskAugmentation(req) || s.standalone) {
+	if tasks.TaskAwareTools[name] && ((hasTaskAugmentation(req) && taskExtensionDeclared(req)) || s.standalone) {
 		return s.createAsyncTask(name, args)
 	}
 	onData := func(chunk string) {}
@@ -619,6 +703,22 @@ func hasTaskAugmentation(req *mcp.CallToolRequest) bool {
 		}
 	}
 	return false
+}
+
+func taskExtensionDeclared(req *mcp.CallToolRequest) bool {
+	if req == nil || req.Params == nil || req.Params.Meta == nil {
+		return false
+	}
+	capabilities, ok := req.Params.Meta["io.modelcontextprotocol/clientCapabilities"].(map[string]any)
+	if !ok {
+		capabilities, _ = req.Params.Meta["clientCapabilities"].(map[string]any)
+	}
+	extensions, ok := capabilities["extensions"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = extensions["io.modelcontextprotocol/tasks"]
+	return ok
 }
 
 func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToolResult, error) {
@@ -667,8 +767,14 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 		}
 	}(rec.TaskID)
 	return &mcp.CallToolResult{
-		Content:           []mcp.Content{&mcp.TextContent{Text: desc}},
-		StructuredContent: map[string]any{"taskId": rec.TaskID, "status": rec.Status},
+		Content: []mcp.Content{&mcp.TextContent{Text: desc}},
+		StructuredContent: map[string]any{
+			"resultType":     "task",
+			"taskId":         rec.TaskID,
+			"status":         rec.Status,
+			"ttlMs":          rec.TTL,
+			"pollIntervalMs": rec.PollInterval,
+		},
 	}, nil
 }
 
@@ -725,6 +831,17 @@ func redactSensitiveTaskValue(value any) any {
 // HandleExtensionMethod serves tasks/* and custom resources/* when go-sdk lacks native task support.
 func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (any, error) {
 	switch method {
+	case "server/discover":
+		return map[string]any{
+			"resultType":        "complete",
+			"supportedVersions": []string{"2026-07-28"},
+			"capabilities": map[string]any{
+				"tools":      map[string]any{},
+				"resources":  map[string]any{"listChanged": true},
+				"extensions": map[string]any{"io.modelcontextprotocol/tasks": map[string]any{}},
+			},
+			"_meta": map[string]any{"io.modelcontextprotocol/serverInfo": map[string]any{"name": "host-agent", "version": version.Version}},
+		}, nil
 	case "tasks/list":
 		items := make([]map[string]any, 0)
 		for _, rec := range s.tasks.List() {
@@ -773,7 +890,7 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		if !ok || rec == nil {
 			return nil, fmt.Errorf("cannot cancel task: %s", p.TaskID)
 		}
-		return s.tasks.ToGetTaskResult(rec), nil
+		return map[string]any{}, nil
 	case "resources/list":
 		return s.listTaskResources()
 	case "resources/read":
@@ -806,7 +923,7 @@ func (s *Server) listTaskResources() (map[string]any, error) {
 			})
 		}
 	}
-	return map[string]any{"resources": resources}, nil
+	return map[string]any{"resultType": "complete", "resources": resources}, nil
 }
 
 func (s *Server) readTaskResource(uri string) (map[string]any, error) {
@@ -818,6 +935,7 @@ func (s *Server) readTaskResource(uri string) (map[string]any, error) {
 			return nil, fmt.Errorf("task not found")
 		}
 		return map[string]any{
+			"resultType": "complete",
 			"contents": []map[string]any{{
 				"uri": uri, "mimeType": "text/plain", "text": strings.Join(rec.Logs, ""),
 			}},
@@ -831,6 +949,7 @@ func (s *Server) readTaskResource(uri string) (map[string]any, error) {
 		}
 		b, _ := json.MarshalIndent(s.tasks.ToGetTaskResult(rec), "", "  ")
 		return map[string]any{
+			"resultType": "complete",
 			"contents": []map[string]any{{
 				"uri": uri, "mimeType": "application/json", "text": string(b),
 			}},

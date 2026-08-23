@@ -16,6 +16,7 @@ import (
 type Entity struct {
 	Kind   string
 	Name   string
+	URI    string
 	Fields map[string]any
 }
 
@@ -24,6 +25,7 @@ type EntityBinding struct {
 	Argument        string
 	EntityKind      string
 	EntityName      string
+	URI             string
 	CatalogRevision string
 }
 
@@ -90,13 +92,13 @@ func (e *Executor) ListVMs(ctx context.Context) ([]Entity, error) {
 }
 
 func (e *Executor) GetVMInfo(ctx context.Context, binding EntityBinding) (map[string]any, error) {
-	if strings.TrimSpace(binding.EntityName) == "" || binding.EntityKind != "vm" {
+	if strings.TrimSpace(binding.URI) == "" || binding.EntityKind != "vm" {
 		return nil, fmt.Errorf("a canonical vm entity binding is required")
 	}
 	if binding.CatalogRevision != "" && binding.CatalogRevision != e.Catalog.Revision {
 		return nil, fmt.Errorf("entity binding uses stale catalog revision %q; current is %q", binding.CatalogRevision, e.Catalog.Revision)
 	}
-	result, err := e.call(ctx, "get_vm_info", map[string]any{"vmName": binding.EntityName})
+	result, err := e.call(ctx, "get_vm_info", map[string]any{"uri": binding.URI})
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +130,7 @@ func (e *Executor) ValidateDraft(draft CommandDraft) (hostagentclient.Capability
 		if binding.CatalogRevision != "" && binding.CatalogRevision != e.Catalog.Revision {
 			return hostagentclient.CapabilityDescriptor{}, fmt.Errorf("binding for %q uses stale catalog revision %q", binding.Argument, binding.CatalogRevision)
 		}
-		if strings.TrimSpace(binding.EntityName) == "" || strings.TrimSpace(binding.Argument) == "" {
+		if strings.TrimSpace(binding.URI) == "" || strings.TrimSpace(binding.Argument) == "" {
 			return hostagentclient.CapabilityDescriptor{}, fmt.Errorf("binding %q must contain a canonical entity and argument", binding.Argument)
 		}
 	}
@@ -235,6 +237,10 @@ func decodeEntities(value any, kind string) ([]Entity, error) {
 	}
 	result := make([]Entity, 0, len(raw))
 	for _, fields := range raw {
+		uri, _ := fields["uri"].(string)
+		if strings.TrimSpace(uri) == "" {
+			return nil, fmt.Errorf("%s result contained an entity without a canonical uri", kind)
+		}
 		name, _ := fields["name"].(string)
 		if strings.TrimSpace(name) == "" {
 			name, _ = fields["vmName"].(string)
@@ -242,7 +248,7 @@ func decodeEntities(value any, kind string) ([]Entity, error) {
 		if strings.TrimSpace(name) == "" {
 			return nil, fmt.Errorf("%s result contained an entity without a canonical name", kind)
 		}
-		result = append(result, Entity{Kind: kind, Name: name, Fields: fields})
+		result = append(result, Entity{Kind: kind, Name: name, URI: uri, Fields: fields})
 	}
 	return result, nil
 }

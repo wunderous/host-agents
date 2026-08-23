@@ -19,12 +19,12 @@ func TestDetachedTUIExecutesTypedCommandAgainstCatalogWithoutLLM(t *testing.T) {
 			"providerId": "incus", "catalogRevision": "sha256:tui-e2e",
 			"tools": []any{
 				map[string]any{"name": "list_vms", "operationId": "list_vms", "effect": "read", "inputSchema": map[string]any{"type": "object"}},
-				map[string]any{"name": "get_vm_info", "operationId": "get_vm_info", "effect": "read", "inputSchema": map[string]any{"type": "object", "required": []any{"vmName"}}},
+				map[string]any{"name": "get_vm_info", "operationId": "get_vm_info", "effect": "read", "inputSchema": map[string]any{"type": "object", "required": []any{"uri"}}},
 			},
 		}}, nil
 	})
 	server.AddTool(&mcp.Tool{Name: "list_vms", InputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return &mcp.CallToolResult{StructuredContent: map[string]any{"entities": []any{map[string]any{"name": "demo", "status": "running"}}}}, nil
+		return &mcp.CallToolResult{StructuredContent: map[string]any{"entities": []any{map[string]any{"uri": "container:local:demo", "name": "demo", "status": "running"}}}}, nil
 	})
 	var calls int
 	server.AddTool(&mcp.Tool{Name: "get_vm_info", InputSchema: map[string]any{"type": "object"}}, func(_ context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -33,7 +33,7 @@ func TestDetachedTUIExecutesTypedCommandAgainstCatalogWithoutLLM(t *testing.T) {
 		if err := json.Unmarshal(request.Params.Arguments, &arguments); err != nil {
 			return nil, err
 		}
-		return &mcp.CallToolResult{StructuredContent: map[string]any{"name": arguments["vmName"], "status": "running"}}, nil
+		return &mcp.CallToolResult{StructuredContent: map[string]any{"name": "demo", "uri": arguments["uri"], "status": "running"}}, nil
 	})
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	serverHTTP := httptest.NewServer(handler)
@@ -42,7 +42,7 @@ func TestDetachedTUIExecutesTypedCommandAgainstCatalogWithoutLLM(t *testing.T) {
 	var output bytes.Buffer
 	err := Run(context.Background(), Config{
 		Endpoint: serverHTTP.URL,
-		In:       strings.NewReader("/context\nget_vm_info vmName=@vm:demo fast=true\n/exit\n"),
+		In:       strings.NewReader("/context\nget_vm_info uri=vm:local:demo fast=true\n/exit\n"),
 		Out:      &output,
 		NoPrompt: true,
 	})

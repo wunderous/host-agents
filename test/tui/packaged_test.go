@@ -91,7 +91,7 @@ exit 1
 
 	commands := strings.Join([]string{
 		"/context",
-		"get_vm_info vmName=@vm:worker-01 fast=true",
+		"get_vm_info uri=container:local:worker-01 fast=true",
 		"/exit",
 		"",
 	}, "\n")

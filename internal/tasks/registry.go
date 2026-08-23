@@ -203,13 +203,15 @@ func (r *Registry) Cancel(taskID string) (*Record, bool) {
 
 func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 	out := map[string]any{
-		"taskId":        rec.TaskID,
-		"status":        rec.Status,
-		"createdAt":     rec.CreatedAt,
-		"lastUpdatedAt": rec.LastUpdatedAt,
-		"ttl":           rec.TTL,
-		"pollInterval":  rec.PollInterval,
-		"logs":          rec.Logs,
+		"taskId":         rec.TaskID,
+		"status":         rec.Status,
+		"createdAt":      rec.CreatedAt,
+		"lastUpdatedAt":  rec.LastUpdatedAt,
+		"ttl":            rec.TTL,
+		"pollInterval":   rec.PollInterval,
+		"ttlMs":          rec.TTL,
+		"pollIntervalMs": rec.PollInterval,
+		"logs":           rec.Logs,
 	}
 	if rec.Description != "" {
 		out["description"] = rec.Description

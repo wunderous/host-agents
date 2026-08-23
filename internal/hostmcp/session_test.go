@@ -22,6 +22,23 @@ func TestOpenAssistantSessionNegotiatesCompatibilityAndCatalogRevision(t *testin
 	if good.StructuredContent == nil {
 		t.Fatal("compatible session omitted structured response")
 	}
+	goodEnvelope, _ := json.Marshal(good.StructuredContent)
+	var goodPayload map[string]any
+	if err := json.Unmarshal(goodEnvelope, &goodPayload); err != nil {
+		t.Fatal(err)
+	}
+	if goodPayload["tenantId"] != "local" {
+		t.Fatalf("tenant id = %#v, want local", goodPayload["tenantId"])
+	}
+
+	foreign, err := server.handleOpenAssistantSession(map[string]any{
+		"sessionId":                 "session-foreign",
+		"tenantId":                  "other-tenant",
+		"supportedContractVersions": []string{session.ContractVersion},
+	})
+	if err != nil || foreign == nil || !foreign.IsError {
+		t.Fatalf("foreign tenant session = %#v err=%v", foreign, err)
+	}
 
 	stale, err := server.handleOpenAssistantSession(map[string]any{
 		"sessionId":                 "session-stale",

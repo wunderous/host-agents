@@ -166,10 +166,7 @@ func (l *Loaded) ResolveInputs(values map[string]any) error {
 		}
 		resolved[name] = value
 	}
-	variables := make(map[string]any, len(l.Document.Plan.Variables)+1)
-	for key, value := range l.Document.Plan.Variables {
-		variables[key] = value
-	}
+	variables := reservedPlanVariables(l.Document.Plan.Variables)
 	variables["inputs"] = resolved
 	l.ExpandedPlan = l.Document.Plan
 	l.ExpandedPlan.Variables = variables

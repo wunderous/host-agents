@@ -29,11 +29,16 @@ func (s *Server) handleOpenAssistantSession(args map[string]any) (*mcp.CallToolR
 	if requested, _ := args["catalogRevision"].(string); strings.TrimSpace(requested) != "" && requested != snapshot.Revision {
 		return tools.ErrorResult(fmt.Errorf("catalog revision mismatch: requested=%s current=%s", requested, snapshot.Revision)), nil
 	}
+	activeTenant := s.ops.TenantID()
+	if requested, _ := args["tenantId"].(string); strings.TrimSpace(requested) != "" && requested != activeTenant {
+		return tools.ErrorResult(fmt.Errorf("tenant mismatch: requested=%s active=%s", requested, activeTenant)), nil
+	}
 	return structuredResult(map[string]any{
 		"contractVersion": session.ContractVersion,
 		"sessionId":       sessionID,
 		"catalogRevision": snapshot.Revision,
 		"providerId":      snapshot.ProviderID,
+		"tenantId":        activeTenant,
 	}, ""), nil
 }
 

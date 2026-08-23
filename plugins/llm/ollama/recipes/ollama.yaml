@@ -128,19 +128,19 @@ plan:
       dependsOn: [supervisor]
       action:
         tool: set_host_service_state
-        args: {serviceName: "${vars.inputs.serviceName}", state: enable, scope: user}
+        args: {uri: "host-service:${vars.tenantId}:user/${vars.inputs.serviceName}", state: enable, scope: user}
       validate:
         tool: inspect_host_service
-        args: {serviceName: "${vars.inputs.serviceName}", scope: user}
+        args: {uri: "host-service:${vars.tenantId}:user/${vars.inputs.serviceName}", scope: user}
         assert: [{path: /enabled, op: eq, value: true}]
     - id: start
       dependsOn: [enable]
       action:
         tool: set_host_service_state
-        args: {serviceName: "${vars.inputs.serviceName}", state: start, scope: user}
+        args: {uri: "host-service:${vars.tenantId}:user/${vars.inputs.serviceName}", state: start, scope: user}
       validate:
         tool: inspect_host_service
-        args: {serviceName: "${vars.inputs.serviceName}", scope: user}
+        args: {uri: "host-service:${vars.tenantId}:user/${vars.inputs.serviceName}", scope: user}
         assert: [{path: /active, op: eq, value: true}]
     - id: model
       dependsOn: [endpoint-ready]

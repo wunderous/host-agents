@@ -59,6 +59,69 @@ func TestStandaloneServerDoesNotExposePlatformTools(t *testing.T) {
 	}
 }
 
+func TestTaskAugmentedResultUsesMCPCreateTaskShape(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	result, err := server.createAsyncTask("run_host_command", map[string]any{"command": "true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, ok := result.StructuredContent.(map[string]any)
+	if !ok || content["resultType"] != "task" {
+		t.Fatalf("task result = %#v", result.StructuredContent)
+	}
+	for _, key := range []string{"taskId", "status", "ttlMs", "pollIntervalMs"} {
+		if _, exists := content[key]; !exists {
+			t.Fatalf("task result missing %q: %#v", key, content)
+		}
+	}
+}
+
+func TestServerDiscoverAdvertisesModernRevisionAndTasks(t *testing.T) {
+	server := newStandaloneTestServer(t, false)
+	result, err := server.HandleExtensionMethod("server/discover", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(result)
+	var payload map[string]any
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	versions, _ := payload["supportedVersions"].([]any)
+	if len(versions) != 1 || versions[0] != "2026-07-28" {
+		t.Fatalf("supported versions = %#v", payload["supportedVersions"])
+	}
+	if payload["resultType"] != "complete" {
+		t.Fatalf("discovery resultType = %#v", payload["resultType"])
+	}
+	serverMeta, _ := payload["_meta"].(map[string]any)
+	if _, ok := serverMeta["io.modelcontextprotocol/serverInfo"]; !ok {
+		t.Fatalf("server info missing from discovery metadata: %#v", serverMeta)
+	}
+	capabilities := payload["capabilities"].(map[string]any)
+	extensions := capabilities["extensions"].(map[string]any)
+	if _, ok := extensions["io.modelcontextprotocol/tasks"]; !ok {
+		t.Fatalf("tasks extension missing: %#v", capabilities)
+	}
+}
+
+func TestLegacyEntityIdentityFailsClosedAtMCPBoundary(t *testing.T) {
+	server := newStandaloneTestServer(t, false)
+	result, err := server.DispatchTool(context.Background(), "get_vm_info", map[string]any{
+		"vmName": "worker-01",
+		"fast":   true,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("legacy identity was not rejected: %#v", result)
+	}
+	if !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "canonical resource uri") {
+		t.Fatalf("unexpected legacy identity error: %#v", result.Content)
+	}
+}
+
 func TestRedactTaskValuePreservesSecretCollectionShape(t *testing.T) {
 	value := map[string]any{
 		"secretInputs": []any{"token", "password"},

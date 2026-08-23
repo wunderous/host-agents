@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
 const oputeK3sInstalledLabel = "user.opute.k3s_installed"
@@ -226,6 +228,20 @@ func (s *HostOperationsService) mapIncusListItem(item incusListItem, fast bool) 
 	}
 	info := buildVMInfoFromIncusListItem(item, agentReady, k3sInstalled)
 	info.HostId = strings.TrimSpace(s.agentID)
+	resourceType := resourceid.TypeContainer
+	if strings.EqualFold(mapIncusInstanceType(item.Type), "vm") {
+		resourceType = resourceid.TypeVM
+	}
+	if uri, uriErr := resourceid.New(resourceType, s.tenantID, item.Name); uriErr == nil {
+		info.URI = uri.String()
+		if s.resourceRegistry != nil {
+			_ = s.RegisterResource(info.URI, map[string]any{
+				"providerInstanceName": item.Name,
+				"displayName":          info.Name,
+				"instanceType":         info.Type,
+			})
+		}
+	}
 	if fast && len(info.IPv4) == 0 && status == "running" {
 		if ips, err := s.readIncusInstanceIPv4(item.Name); err == nil {
 			info.IPv4 = normalizeClusterIpv4(ips)

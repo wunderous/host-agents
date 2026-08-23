@@ -103,6 +103,29 @@ func TestRecipeRejectsUnknownInputAndMissingRequiredInput(t *testing.T) {
 	}
 }
 
+func TestRecipeTenantVariableIsHostOwned(t *testing.T) {
+	t.Setenv("OPUTE_TENANT_ID", "tenant-live")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tenant.yaml")
+	if err := os.WriteFile(path, []byte(testRecipeYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(SourceRequest{Source: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded.Document.Plan.Variables = map[string]any{"tenantId": "attacker", "custom": "preserved"}
+	if err := loaded.ResolveInputs(map[string]any{"endpoint": "http://127.0.0.1:11434/v1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.ExpandedPlan.Variables["tenantId"]; got != "tenant-live" {
+		t.Fatalf("tenantId = %#v, want host-owned tenant", got)
+	}
+	if got := loaded.ExpandedPlan.Variables["custom"]; got != "preserved" {
+		t.Fatalf("custom variable = %#v, want preserved", got)
+	}
+}
+
 func TestTunnelRecipeResolvesBindingInputs(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tunnel.yaml")

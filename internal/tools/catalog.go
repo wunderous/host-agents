@@ -92,7 +92,107 @@ func LoadAllToolDefinitions(providerID string) ([]ToolDefinition, error) {
 	}
 	defs = appendLocalLLMDefinitions(defs)
 	defs = appendGenericHostDefinitions(defs)
-	return augmentIncusInventoryTools(defs)
+	defs, err = augmentIncusInventoryTools(defs)
+	if err != nil {
+		return nil, err
+	}
+	return CanonicalizeToolDefinitions(defs), nil
+}
+
+// CanonicalizeToolDefinitions applies the breaking entity-identity contract
+// to the catalog itself. It is schema ownership, not runtime name routing:
+// any operation whose required input is an entity identity receives `uri`,
+// while creation inputs retain their explicit desired-name fields.
+func CanonicalizeToolDefinitions(defs []ToolDefinition) []ToolDefinition {
+	identityFields := map[string]bool{
+		"vmName": true, "clusterId": true, "databaseId": true, "bindingId": true,
+		"storageId": true, "resourceId": true, "serviceId": true, "modelRef": true, "serviceName": true,
+	}
+	// These capabilities create or adopt a new resource. Their name is a
+	// desired creation coordinate, not an existing-resource identity.
+	preserveDesiredName := map[string]bool{
+		"create_vm":               true,
+		"provision_vm":            true,
+		"install_local_llm_model": true,
+	}
+	out := make([]ToolDefinition, 0, len(defs))
+	for _, original := range defs {
+		def := original
+		properties, ok := def.InputSchema["properties"].(map[string]any)
+		if !ok {
+			out = append(out, def)
+			continue
+		}
+		required := requiredFields(def.InputSchema)
+		if preserveDesiredName[def.Name] {
+			out = append(out, def)
+			continue
+		}
+		needsURI := false
+		for _, field := range required {
+			if identityFields[field] {
+				needsURI = true
+				break
+			}
+		}
+		if !needsURI {
+			out = append(out, def)
+			continue
+		}
+		clonedProperties := make(map[string]any, len(properties)+1)
+		for name, value := range properties {
+			if !identityFields[name] {
+				clonedProperties[name] = value
+			}
+		}
+		clonedProperties["uri"] = map[string]any{
+			"type": "string", "minLength": 1,
+			"description": "Canonical Host Agent resource URI returned by discovery.",
+		}
+		clonedRequired := make([]string, 0, len(required))
+		for _, field := range required {
+			if identityFields[field] {
+				continue
+			}
+			clonedRequired = append(clonedRequired, field)
+		}
+		clonedRequired = append(clonedRequired, "uri")
+		clonedSchema := make(map[string]any, len(def.InputSchema)+1)
+		for key, value := range def.InputSchema {
+			if key != "properties" && key != "required" {
+				clonedSchema[key] = value
+			}
+		}
+		clonedSchema["properties"] = clonedProperties
+		clonedSchema["required"] = clonedRequired
+		def.InputSchema = clonedSchema
+		def.OutputSchema = addURIToOutputSchema(def.OutputSchema)
+		out = append(out, def)
+	}
+	return out
+}
+
+func addURIToOutputSchema(schema map[string]any) map[string]any {
+	if len(schema) == 0 {
+		return schema
+	}
+	clone := make(map[string]any, len(schema)+1)
+	for key, value := range schema {
+		clone[key] = value
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if ok {
+		clonedProperties := make(map[string]any, len(properties)+1)
+		for key, value := range properties {
+			clonedProperties[key] = value
+		}
+		clonedProperties["uri"] = map[string]any{"type": "string"}
+		clone["properties"] = clonedProperties
+	}
+	if items, ok := schema["items"].(map[string]any); ok {
+		clone["items"] = addURIToOutputSchema(items)
+	}
+	return clone
 }
 
 // postgresqlServiceRelaySchema is shared by every generic PostgreSQL service
@@ -578,8 +678,8 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Name:         "open_assistant_session",
 		Title:        "Open assistant session",
 		Description:  "Negotiate the bounded assistant-session.v1 contract and bind the client to the current capability revision.",
-		InputSchema:  map[string]any{"type": "object", "required": []string{"sessionId", "supportedContractVersions"}, "properties": map[string]any{"sessionId": map[string]any{"type": "string", "minLength": 1}, "supportedContractVersions": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}}, "catalogRevision": map[string]any{"type": "string"}}},
-		OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "sessionId", "catalogRevision"}},
+		InputSchema:  map[string]any{"type": "object", "required": []string{"sessionId", "supportedContractVersions"}, "properties": map[string]any{"sessionId": map[string]any{"type": "string", "minLength": 1}, "tenantId": map[string]any{"type": "string", "minLength": 1}, "supportedContractVersions": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}}, "catalogRevision": map[string]any{"type": "string"}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "sessionId", "catalogRevision", "tenantId"}},
 	})
 	// Keep the embedded JSON catalogs authoritative where a definition already
 	// exists, while allowing the Go catalog to fill newly implemented generic
@@ -714,7 +814,26 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			case "remove_local_llm_model":
 				desc = "Remove an alternate llama-cpp adoption record; shared Ollama artifacts are retained."
 			}
-			defs = append(defs, ToolDefinition{Name: name, Title: name, Description: desc, InputSchema: schema, OutputSchema: map[string]any{"type": "object"}})
+			output := map[string]any{"type": "object"}
+			if name == "list_local_llm_models" || name == "probe_local_llm" {
+				output = map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"models": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"uri":  map[string]any{"type": "string"},
+									"name": map[string]any{"type": "string"},
+								},
+								"required": []string{"uri", "name"},
+							},
+						},
+					},
+				}
+			}
+			defs = append(defs, ToolDefinition{Name: name, Title: name, Description: desc, InputSchema: schema, OutputSchema: output})
 		}
 	}
 	// The checked-in schema snapshots may still contain retired local-LLM
@@ -859,5 +978,5 @@ func LoadCatalogExcludedDispatchToolDefinitions() ([]ToolDefinition, error) {
 		}
 		out = append(out, tool)
 	}
-	return out, nil
+	return CanonicalizeToolDefinitions(out), nil
 }

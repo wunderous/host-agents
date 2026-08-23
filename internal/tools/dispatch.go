@@ -244,6 +244,9 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		if err != nil {
 			return nil, err
 		}
+		if probe, ok := out.(*ops.LocalLLMProbeResult); ok {
+			svc.AttachLocalLLMModelURIs(probe)
+		}
 		return structuredResult(out, ""), nil
 
 	case "install_local_llm_model":
@@ -678,21 +681,21 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, fmt.Sprintf("Provisioned %s '%s' from image '%s'.", kind, out.VMName, out.Image)), nil
 
 	case "start_vm":
-		out, err := svc.StartVM(ops.VMScopedArgs{VMName: stringField(args, "vmName")}, onData)
+		out, err := svc.StartVM(ops.VMScopedArgs{VMName: vmNameFromArgs(args)}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Started VM '%s'.", out["vmName"])), nil
 
 	case "stop_vm":
-		out, err := svc.StopVM(ops.VMScopedArgs{VMName: stringField(args, "vmName")}, onData)
+		out, err := svc.StopVM(ops.VMScopedArgs{VMName: vmNameFromArgs(args)}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Stopped VM '%s'.", out["vmName"])), nil
 
 	case "restart_vm":
-		out, err := svc.RestartVM(ops.VMScopedArgs{VMName: stringField(args, "vmName")}, onData)
+		out, err := svc.RestartVM(ops.VMScopedArgs{VMName: vmNameFromArgs(args)}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -700,7 +703,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "update_vm_resources":
 		out, err := svc.UpdateVMResources(ops.UpdateVMResourcesArgs{
-			VMName: stringField(args, "vmName"),
+			VMName: vmNameFromArgs(args),
 			CPUs:   intField(args, "cpus"),
 			Memory: stringField(args, "memory"),
 		}, onData)
@@ -710,7 +713,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, fmt.Sprintf("Updated resources for '%s' (cpus=%s, memory=%s).", out["vmName"], out["cpus"], out["memory"])), nil
 
 	case "delete_vm":
-		out, err := svc.DeleteVM(ops.VMScopedArgs{VMName: stringField(args, "vmName")}, onData)
+		out, err := svc.DeleteVM(ops.VMScopedArgs{VMName: vmNameFromArgs(args)}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -1266,13 +1269,13 @@ func ErrorResult(err error) *mcp.CallToolResult {
 }
 
 func vmNameFromArgs(args map[string]any) string {
-	if v := stringField(args, "vmName"); v != "" {
-		return v
-	}
-	return stringField(args, "name")
+	return stringField(args, "__resolvedVmName")
 }
 
 func stringField(args map[string]any, key string) string {
+	if resolved, ok := args["__resolved_"+key].(string); ok {
+		return strings.TrimSpace(resolved)
+	}
 	v, _ := args[key].(string)
 	return strings.TrimSpace(v)
 }

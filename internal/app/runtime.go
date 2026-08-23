@@ -61,6 +61,7 @@ func buildHostRuntime(cfg config.Config, logger *slog.Logger) ([]string, *ops.Ho
 
 	svc := ops.NewHostOperationsService(ops.Options{
 		ProviderID:                provider.NormalizeProviderID(cfg.ProviderID),
+		TenantID:                  cfg.TenantID,
 		InstanceID:                cfg.InstanceID,
 		AgentID:                   cfg.RemoteAgentID,
 		OwnershipMode:             cfg.OwnershipMode,

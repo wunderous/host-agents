@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/wunderous/host-agents/internal/plan"
 )
@@ -57,10 +59,7 @@ func ResolveBaseInputs(document Envelope, values map[string]any) (BaseLoaded, er
 	if err != nil {
 		return BaseLoaded{}, err
 	}
-	variables := make(map[string]any, len(document.Plan.Variables)+1)
-	for key, value := range document.Plan.Variables {
-		variables[key] = value
-	}
+	variables := reservedPlanVariables(document.Plan.Variables)
 	variables["inputs"] = resolved
 	expanded := document.Plan
 	expanded.Variables = variables
@@ -72,6 +71,22 @@ func ResolveBaseInputs(document Envelope, values map[string]any) (BaseLoaded, er
 		expanded.IdempotencyKey = value
 	}
 	return BaseLoaded{Document: document, ExpandedPlan: expanded, Inputs: resolved}, nil
+}
+
+// reservedPlanVariables are host-owned context values. Recipes may use the
+// active tenant to form typed resource URIs, but cannot override it through
+// recipe input or arbitrary plan variables.
+func reservedPlanVariables(existing map[string]any) map[string]any {
+	variables := make(map[string]any, len(existing)+2)
+	for key, value := range existing {
+		variables[key] = value
+	}
+	tenantID := strings.TrimSpace(os.Getenv("OPUTE_TENANT_ID"))
+	if tenantID == "" {
+		tenantID = "local"
+	}
+	variables["tenantId"] = tenantID
+	return variables
 }
 
 func ValidateBaseEnvelope(document Envelope, expectedContract string) error {

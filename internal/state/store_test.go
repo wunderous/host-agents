@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/wunderous/host-agents/internal/resourceid"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -39,5 +41,36 @@ func TestOpenMigratesLegacyActiveRuntimeColumns(t *testing.T) {
 	}
 	if !found || active.Provider != "ollama" {
 		t.Fatalf("expected migrated active capability, found=%v record=%+v", found, active)
+	}
+}
+
+func TestResourceRegistryRoundTrip(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	record := resourceid.Record{
+		URI: "model:local:qwen3.5:2b", Coordinates: map[string]any{"runtime": "ollama"},
+	}
+	if err := store.UpsertResource(record); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := store.GetResource(record.URI)
+	if err != nil || !found {
+		t.Fatalf("get found=%v err=%v", found, err)
+	}
+	if got.ResourceType != "model" || got.TenantID != "local" || got.Coordinates["runtime"] != "ollama" {
+		t.Fatalf("record = %+v", got)
+	}
+	listed, err := store.ListResources("model", "local")
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("listed=%+v err=%v", listed, err)
+	}
+	if err := store.DeleteResource(record.URI); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := store.GetResource(record.URI); err != nil || found {
+		t.Fatalf("deleted found=%v err=%v", found, err)
 	}
 }

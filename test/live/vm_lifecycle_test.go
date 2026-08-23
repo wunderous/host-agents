@@ -127,12 +127,20 @@ func TestLiveVMCreateListDelete(t *testing.T) {
 	if create.IsError {
 		t.Fatalf("create_vm failed: %+v", create)
 	}
+	createdBody, ok := create.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("create_vm structuredContent type %T", create.StructuredContent)
+	}
+	uri, ok := createdBody["uri"].(string)
+	if !ok || uri == "" {
+		t.Fatalf("create_vm did not return canonical uri: %+v", createdBody)
+	}
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cleanupCancel()
 		_, _ = session.CallTool(cleanupCtx, &mcp.CallToolParams{
 			Name:      "delete_vm",
-			Arguments: map[string]any{"vmName": vmName},
+			Arguments: map[string]any{"uri": uri},
 		})
 	})
 
@@ -161,6 +169,9 @@ func TestLiveVMCreateListDelete(t *testing.T) {
 			continue
 		}
 		if row["name"] == vmName {
+			if row["uri"] != uri {
+				t.Fatalf("list_vms uri=%v want %q", row["uri"], uri)
+			}
 			found = true
 			break
 		}
@@ -171,7 +182,7 @@ func TestLiveVMCreateListDelete(t *testing.T) {
 
 	info, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "get_vm_info",
-		Arguments: map[string]any{"vmName": vmName, "fast": true},
+		Arguments: map[string]any{"uri": uri, "fast": true},
 	})
 	if err != nil {
 		t.Fatalf("get_vm_info: %v", err)
@@ -183,10 +194,13 @@ func TestLiveVMCreateListDelete(t *testing.T) {
 	if !ok || infoBody["name"] != vmName {
 		t.Fatalf("get_vm_info unexpected payload: %+v", info.StructuredContent)
 	}
+	if infoBody["uri"] != uri {
+		t.Fatalf("get_vm_info uri=%v want %q", infoBody["uri"], uri)
+	}
 
 	del, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "delete_vm",
-		Arguments: map[string]any{"vmName": vmName},
+		Arguments: map[string]any{"uri": uri},
 	})
 	if err != nil {
 		t.Fatalf("delete_vm: %v", err)

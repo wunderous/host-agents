@@ -14,22 +14,26 @@ import (
 // separate field so callers can persist a stable identity without treating
 // presentation text as executable input.
 type CapabilityDescriptor struct {
-	OperationID         string         `json:"operationId"`
-	Name                string         `json:"name"`
-	Title               string         `json:"title,omitempty"`
-	Description         string         `json:"description,omitempty"`
-	InputSchema         map[string]any `json:"inputSchema"`
-	OutputSchema        map[string]any `json:"outputSchema,omitempty"`
-	Effect              string         `json:"effect"`
-	Privilege           string         `json:"privilege,omitempty"`
-	RequiresApproval    bool           `json:"requiresApproval"`
-	Provider            string         `json:"provider"`
-	Implementation      string         `json:"implementation"`
-	ResourceKinds       []string       `json:"resourceKinds,omitempty"`
-	RequiredFields      []string       `json:"requiredFields,omitempty"`
-	ProducedObservables []string       `json:"producedObservables,omitempty"`
-	Idempotent          bool           `json:"idempotent"`
-	SupportsReadiness   bool           `json:"supportsReadiness"`
+	OperationID         string              `json:"operationId"`
+	Name                string              `json:"name"`
+	Title               string              `json:"title,omitempty"`
+	Description         string              `json:"description,omitempty"`
+	InputSchema         map[string]any      `json:"inputSchema"`
+	OutputSchema        map[string]any      `json:"outputSchema,omitempty"`
+	Effect              string              `json:"effect"`
+	Privilege           string              `json:"privilege,omitempty"`
+	RequiresApproval    bool                `json:"requiresApproval"`
+	Provider            string              `json:"provider"`
+	Implementation      string              `json:"implementation"`
+	ResourceKinds       []string            `json:"resourceKinds,omitempty"`
+	RequiredFields      []string            `json:"requiredFields,omitempty"`
+	ProducedObservables []string            `json:"producedObservables,omitempty"`
+	ArgumentProducers   map[string][]string `json:"argumentProducers,omitempty"`
+	DefaultLabels       map[string]string   `json:"defaultLabels,omitempty"`
+	GateMessage         string              `json:"gateMessage,omitempty"`
+	Consequence         string              `json:"consequence,omitempty"`
+	Idempotent          bool                `json:"idempotent"`
+	SupportsReadiness   bool                `json:"supportsReadiness"`
 }
 
 // CapabilityCatalogSnapshot is immutable once returned to a caller. The
@@ -62,6 +66,7 @@ func BuildCapabilityCatalog(providerID string, defs []ToolDefinition) Capability
 	sort.Slice(descriptors, func(i, j int) bool {
 		return descriptors[i].OperationID < descriptors[j].OperationID
 	})
+	applyCatalogBindingMetadata(descriptors)
 
 	canonical := struct {
 		ProviderID string                 `json:"providerId"`
@@ -93,6 +98,16 @@ func capabilityDescriptor(providerID string, def ToolDefinition) CapabilityDescr
 	if effect == "read" && IsStandaloneMutation(def.Name) {
 		effect = "mutation"
 	}
+	gateMessage := metaString(def.Meta, "gateMessage", "")
+	consequence := metaString(def.Meta, "consequence", "")
+	if effect != "read" {
+		if gateMessage == "" {
+			gateMessage = "Host approval is required before this capability can execute."
+		}
+		if consequence == "" {
+			consequence = "This capability may change host state (effect: " + effect + ")."
+		}
+	}
 	return CapabilityDescriptor{
 		OperationID:         def.Name,
 		Name:                def.Name,
@@ -108,9 +123,117 @@ func capabilityDescriptor(providerID string, def ToolDefinition) CapabilityDescr
 		ResourceKinds:       resourceKinds(def),
 		RequiredFields:      requiredFields(def.InputSchema),
 		ProducedObservables: producedObservables(def),
+		ArgumentProducers:   metaStringListMap(def.Meta, "argumentProducers"),
+		DefaultLabels:       metaStringMap(def.Meta, "defaultLabels"),
+		GateMessage:         metaString(def.Meta, "gateMessage", ""),
+		Consequence:         consequence,
 		Idempotent:          effect == "read" || metaBool(def.Meta, "idempotent"),
 		SupportsReadiness:   metaBool(def.Meta, "supportsReadiness") || effect != "read",
 	}
+}
+
+func applyCatalogBindingMetadata(descriptors []CapabilityDescriptor) {
+	producers := make([]string, 0)
+	for _, descriptor := range descriptors {
+		if schemaContainsURI(descriptor.OutputSchema) {
+			producers = append(producers, descriptor.Name)
+		}
+	}
+	sort.Strings(producers)
+	for index := range descriptors {
+		if schemaHasProperty(descriptors[index].InputSchema, "uri") && len(producers) > 0 {
+			if descriptors[index].ArgumentProducers == nil {
+				descriptors[index].ArgumentProducers = map[string][]string{}
+			}
+			descriptors[index].ArgumentProducers["uri"] = append([]string(nil), producers...)
+		}
+		if descriptors[index].DefaultLabels == nil {
+			descriptors[index].DefaultLabels = defaultLabels(descriptors[index].InputSchema)
+		}
+	}
+}
+
+func schemaHasProperty(schema map[string]any, name string) bool {
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = properties[name]
+	return ok
+}
+
+func schemaContainsURI(schema map[string]any) bool {
+	if schemaHasProperty(schema, "uri") {
+		return true
+	}
+	items, ok := schema["items"].(map[string]any)
+	return ok && schemaContainsURI(items)
+}
+
+func defaultLabels(schema map[string]any) map[string]string {
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	labels := make(map[string]string)
+	for name, raw := range properties {
+		property, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := property["default"]; exists {
+			labels[name] = "default"
+		}
+	}
+	if len(labels) == 0 {
+		return nil
+	}
+	return labels
+}
+
+func metaStringMap(meta map[string]any, key string) map[string]string {
+	raw, ok := meta[key].(map[string]any)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for field, value := range raw {
+		if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+			out[field] = text
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func metaStringListMap(meta map[string]any, key string) map[string][]string {
+	raw, ok := meta[key].(map[string]any)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(raw))
+	for field, value := range raw {
+		var values []string
+		switch typed := value.(type) {
+		case []any:
+			for _, item := range typed {
+				if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+					values = append(values, text)
+				}
+			}
+		case []string:
+			values = append(values, typed...)
+		}
+		if len(values) > 0 {
+			out[field] = values
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func metaString(meta map[string]any, key, fallback string) string {

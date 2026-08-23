@@ -17,14 +17,14 @@ func TestTypedEntityFlowUsesCanonicalBindingAndCurrentCatalog(t *testing.T) {
 		return &mcp.CallToolResult{StructuredContent: map[string]any{"providerId": "incus", "catalogRevision": "sha256:typed-flow", "tools": []any{}}}, nil
 	})
 	server.AddTool(&mcp.Tool{Name: "list_vms", InputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return &mcp.CallToolResult{StructuredContent: map[string]any{"entities": []any{map[string]any{"name": "demo", "status": "running"}}}}, nil
+		return &mcp.CallToolResult{StructuredContent: map[string]any{"entities": []any{map[string]any{"uri": "container:local:demo", "name": "demo", "status": "running"}}}}, nil
 	})
 	server.AddTool(&mcp.Tool{Name: "get_vm_info", InputSchema: map[string]any{"type": "object"}}, func(_ context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var args map[string]any
 		if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 			return nil, err
 		}
-		return &mcp.CallToolResult{StructuredContent: map[string]any{"name": args["vmName"], "status": "running"}}, nil
+		return &mcp.CallToolResult{StructuredContent: map[string]any{"name": "demo", "uri": args["uri"], "status": "running"}}, nil
 	})
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	httpServer := httptest.NewServer(handler)
@@ -45,7 +45,7 @@ func TestTypedEntityFlowUsesCanonicalBindingAndCurrentCatalog(t *testing.T) {
 	if len(entities) != 1 || entities[0].Name != "demo" {
 		t.Fatalf("entities = %+v", entities)
 	}
-	info, err := executor.GetVMInfo(context.Background(), EntityBinding{EntityKind: "vm", EntityName: entities[0].Name, CatalogRevision: executor.Catalog.Revision})
+	info, err := executor.GetVMInfo(context.Background(), EntityBinding{EntityKind: "vm", EntityName: entities[0].Name, URI: entities[0].URI, CatalogRevision: executor.Catalog.Revision})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestTypedEntityFlowUsesCanonicalBindingAndCurrentCatalog(t *testing.T) {
 
 func TestTypedEntityFlowRejectsStaleBinding(t *testing.T) {
 	executor := &Executor{Catalog: hostagentclient.CatalogSnapshot{Revision: "sha256:current"}}
-	if _, err := executor.GetVMInfo(context.Background(), EntityBinding{EntityKind: "vm", EntityName: "demo", CatalogRevision: "sha256:stale"}); err == nil {
+	if _, err := executor.GetVMInfo(context.Background(), EntityBinding{EntityKind: "vm", EntityName: "demo", URI: "container:local:demo", CatalogRevision: "sha256:stale"}); err == nil {
 		t.Fatal("stale binding was accepted")
 	}
 }
@@ -68,7 +68,7 @@ func TestTypedDraftUsesCatalogSchemaAndPreservesProvenance(t *testing.T) {
 			"providerId": "incus", "catalogRevision": "sha256:typed-draft",
 			"tools": []any{map[string]any{
 				"operationId": "get_vm_info", "name": "get_vm_info", "effect": "read",
-				"inputSchema": map[string]any{"type": "object", "required": []any{"vmName"}},
+				"inputSchema": map[string]any{"type": "object", "required": []any{"uri"}},
 			}},
 		}}, nil
 	})
@@ -79,7 +79,7 @@ func TestTypedDraftUsesCatalogSchemaAndPreservesProvenance(t *testing.T) {
 		if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 			return nil, err
 		}
-		return &mcp.CallToolResult{StructuredContent: map[string]any{"name": args["vmName"]}}, nil
+		return &mcp.CallToolResult{StructuredContent: map[string]any{"name": "demo", "uri": args["uri"]}}, nil
 	})
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	httpServer := httptest.NewServer(handler)
@@ -95,8 +95,8 @@ func TestTypedDraftUsesCatalogSchemaAndPreservesProvenance(t *testing.T) {
 	}
 	receipt, err := executor.ExecuteDraft(context.Background(), CommandDraft{
 		Operation: "get_vm_info", CatalogRevision: "sha256:typed-draft",
-		Arguments: map[string]any{"vmName": "demo"},
-		Bindings:  []EntityBinding{{Operation: "get_vm_info", Argument: "vmName", EntityKind: "vm", EntityName: "demo", CatalogRevision: "sha256:typed-draft"}},
+		Arguments: map[string]any{"uri": "container:local:demo"},
+		Bindings:  []EntityBinding{{Operation: "get_vm_info", Argument: "uri", EntityKind: "vm", EntityName: "demo", URI: "container:local:demo", CatalogRevision: "sha256:typed-draft"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -104,11 +104,11 @@ func TestTypedDraftUsesCatalogSchemaAndPreservesProvenance(t *testing.T) {
 	if calls != 1 || receipt.CatalogRevision != "sha256:typed-draft" || len(receipt.Bindings) != 1 {
 		t.Fatalf("calls=%d receipt=%+v", calls, receipt)
 	}
-	if receipt.Arguments["vmName"] != "demo" {
+	if receipt.Arguments["uri"] != "container:local:demo" {
 		t.Fatalf("arguments=%+v", receipt.Arguments)
 	}
 	if _, err := executor.ExecuteDraft(context.Background(), CommandDraft{Operation: "get_vm_info", CatalogRevision: "sha256:typed-draft", Arguments: map[string]any{}}); err == nil {
-		t.Fatal("draft without required vmName was accepted")
+		t.Fatal("draft without required uri was accepted")
 	}
 	t.Log("TUI_TYPED_EXECUTION_PASS")
 }

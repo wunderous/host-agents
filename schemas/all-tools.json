@@ -42,15 +42,17 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName",
-        "manifest"
+        "manifest",
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "manifest": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -65,18 +67,20 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "storageId": {
-          "type": "string"
-        },
         "backupId": {
           "type": "string"
         },
         "note": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "storageId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -84,10 +88,14 @@
       "properties": {
         "storage": {
           "type": "object"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "storage"
+        "storage",
+        "uri"
       ]
     },
     "_meta": {
@@ -193,10 +201,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "clusterId": {
-          "type": "string",
-          "description": "Managed HA cluster identifier"
-        },
         "apiEndpoint": {
           "type": "string",
           "description": "Cluster API endpoint exposed by the load balancer"
@@ -268,15 +272,20 @@
         "disk": {
           "type": "string",
           "description": "Optional root disk size such as 20GiB"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "clusterId",
         "apiEndpoint",
         "loadBalancerVmName",
         "tokenSecretRef",
         "tlsSans",
-        "serverNodes"
+        "serverNodes",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -328,13 +337,17 @@
               "status"
             ]
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "clusterId",
         "serviceName",
         "status",
-        "servers"
+        "servers",
+        "uri"
       ]
     },
     "execution": {
@@ -351,14 +364,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "clusterId": {
-          "type": "string",
-          "description": "Managed HA cluster identifier"
-        },
-        "vmName": {
-          "type": "string",
-          "description": "Load balancer VM name"
-        },
         "image": {
           "type": "string",
           "description": "Optional Incus image alias or remote image reference"
@@ -401,12 +406,16 @@
               "host"
             ]
           }
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "clusterId",
-        "vmName",
-        "serverBackends"
+        "serverBackends",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -445,6 +454,9 @@
             "type": "object",
             "additionalProperties": true
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
@@ -454,7 +466,8 @@
         "status",
         "apiEndpoint",
         "apiPort",
-        "backends"
+        "backends",
+        "uri"
       ]
     },
     "execution": {
@@ -471,13 +484,10 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName",
-        "endpoint"
+        "endpoint",
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "endpoint": {
           "type": "string"
         },
@@ -486,6 +496,11 @@
         },
         "insecure": {
           "type": "boolean"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -500,10 +515,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "parent": {
           "type": "string",
           "description": "Host bridge/NIC to attach (default: wlan0)"
@@ -511,15 +522,23 @@
         "deviceName": {
           "type": "string",
           "description": "Name of the NIC device inside the VM (default: eth1)"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
       "type": "object",
       "properties": {
+        "uri": {
+          "type": "string"
+        },
         "vmName": {
           "type": "string"
         },
@@ -537,10 +556,12 @@
         }
       },
       "required": [
+        "uri",
         "vmName",
         "deviceName",
         "parent",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {
@@ -585,17 +606,14 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName",
         "namespace",
         "ingressName",
         "hostname",
-        "serviceName",
-        "servicePort"
+        "servicePort",
+        "uri",
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "namespace": {
           "type": "string"
         },
@@ -605,14 +623,16 @@
         "hostname": {
           "type": "string"
         },
-        "serviceName": {
-          "type": "string"
-        },
         "servicePort": {
           "type": "integer"
         },
         "ingressClass": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -681,10 +701,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "clusterId": {
-          "type": "string",
-          "description": "Managed cluster identifier"
-        },
         "name": {
           "type": "string",
           "description": "Database name"
@@ -714,12 +730,17 @@
         "metadata": {
           "type": "object",
           "description": "Optional metadata payload"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "clusterId",
         "name",
-        "size"
+        "size",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -727,10 +748,14 @@
       "properties": {
         "database": {
           "type": "object"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "database"
+        "database",
+        "uri"
       ]
     },
     "_meta": {
@@ -865,6 +890,9 @@
     "outputSchema": {
       "type": "object",
       "properties": {
+        "uri": {
+          "type": "string"
+        },
         "vmName": {
           "type": "string"
         },
@@ -879,6 +907,7 @@
         }
       },
       "required": [
+        "uri",
         "vmName",
         "image",
         "status"
@@ -898,14 +927,16 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName"
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "namespace": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -920,13 +951,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "databaseId": {
+        "uri": {
           "type": "string",
-          "description": "Database identifier"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "databaseId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -950,11 +982,15 @@
         },
         "operationId": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "databaseId",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {
@@ -968,13 +1004,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": {
+        "uri": {
           "type": "string",
-          "description": "Binding identifier"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "bindingId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -985,11 +1022,15 @@
         },
         "deleted": {
           "type": "boolean"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "bindingId",
-        "deleted"
+        "deleted",
+        "uri"
       ]
     },
     "_meta": {
@@ -1003,12 +1044,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "storageId": {
-          "type": "string"
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "storageId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -1019,11 +1062,15 @@
         },
         "deleted": {
           "type": "boolean"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "storageId",
-        "deleted"
+        "deleted",
+        "uri"
       ]
     },
     "_meta": {
@@ -1037,18 +1084,22 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
       "type": "object",
       "properties": {
+        "uri": {
+          "type": "string"
+        },
         "vmName": {
           "type": "string"
         },
@@ -1057,8 +1108,10 @@
         }
       },
       "required": [
+        "uri",
         "vmName",
-        "deleted"
+        "deleted",
+        "uri"
       ]
     },
     "_meta": {
@@ -1177,13 +1230,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -1197,11 +1251,15 @@
           "items": {
             "type": "string"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
-        "drainedNodes"
+        "drainedNodes",
+        "uri"
       ]
     },
     "_meta": {
@@ -1215,9 +1273,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": {
-          "type": "string"
-        },
         "hostname": {
           "type": "string"
         },
@@ -1240,12 +1295,17 @@
         "native": {
           "type": "boolean",
           "default": false
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "bindingId",
         "localTarget",
-        "connector"
+        "connector",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -1287,16 +1347,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": {
-          "type": "string"
-        },
         "port": {
           "type": "number"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "bindingId",
-        "port"
+        "port",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -1432,9 +1494,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "databaseId": {
-          "type": "string"
-        },
         "targetHost": {
           "type": "string"
         },
@@ -1453,12 +1512,17 @@
             "loopback",
             "public_allowlist"
           ]
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "databaseId",
         "targetHost",
-        "targetPort"
+        "targetPort",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -1485,6 +1549,9 @@
         },
         "refCount": {
           "type": "number"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
@@ -1493,7 +1560,8 @@
         "listenHost",
         "listenPort",
         "pathMode",
-        "refCount"
+        "refCount",
+        "uri"
       ]
     }
   },
@@ -1574,10 +1642,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "clusterId": {
-          "type": "string",
-          "description": "Managed cluster identifier"
-        },
         "command": {
           "type": "string",
           "description": "kubectl sub-command (e.g. get, apply, delete)"
@@ -1588,11 +1652,16 @@
             "type": "string"
           },
           "description": "Arguments to pass to kubectl (each argument as a separate array element)"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "clusterId",
-        "command"
+        "command",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -1606,12 +1675,16 @@
         },
         "stdout": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "clusterId",
         "command",
-        "stdout"
+        "stdout",
+        "uri"
       ]
     },
     "_meta": {
@@ -1656,9 +1729,13 @@
           "type": "object",
           "description": "Effective host/cgroup resource limits, usage, load, and memory pressure.",
           "additionalProperties": true
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
+        "uri",
         "hostName",
         "providerId",
         "lxcBinaryPath",
@@ -1711,10 +1788,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "kind": {
           "type": "string",
           "description": "Kubernetes resource kind, such as Deployment, Service, Pod, ConfigMap, or PersistentVolumeClaim"
@@ -1726,12 +1799,17 @@
         "namespace": {
           "type": "string",
           "description": "Namespace containing the resource"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName",
         "kind",
-        "resourceName"
+        "resourceName",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -1751,10 +1829,14 @@
         },
         "yaml": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "yaml"
+        "yaml",
+        "uri"
       ],
       "additionalProperties": true
     }
@@ -1766,10 +1848,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "resourceKind": {
           "type": "string",
           "description": "Kubernetes resource kind, such as Deployment, Service, Pod, ConfigMap, or PersistentVolumeClaim"
@@ -1781,13 +1859,18 @@
         "namespace": {
           "type": "string",
           "description": "Namespace containing the resource"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName",
         "resourceKind",
         "resourceName",
-        "namespace"
+        "namespace",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -1816,11 +1899,15 @@
         },
         "message": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "status",
-        "message"
+        "message",
+        "uri"
       ],
       "additionalProperties": true
     }
@@ -1863,13 +1950,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "databaseId": {
+        "uri": {
           "type": "string",
-          "description": "Database identifier"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "databaseId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -1947,10 +2035,14 @@
               "type": "null"
             }
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "database"
+        "database",
+        "uri"
       ]
     }
   },
@@ -1961,12 +2053,9 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName"
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "clusterName": {
           "type": "string"
         },
@@ -2015,6 +2104,11 @@
               "type": "boolean"
             }
           }
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -2029,13 +2123,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": {
+        "uri": {
           "type": "string",
-          "description": "Binding identifier"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "bindingId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2092,10 +2187,14 @@
             "hostname",
             "status"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "binding"
+        "binding",
+        "uri"
       ]
     }
   },
@@ -2106,13 +2205,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "storageId": {
+        "uri": {
           "type": "string",
-          "description": "Storage identifier"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "storageId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2186,10 +2286,14 @@
               "type": "null"
             }
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "storage"
+        "storage",
+        "uri"
       ]
     }
   },
@@ -2200,12 +2304,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "databaseId": {
-          "type": "string"
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "databaseId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2234,12 +2340,16 @@
         },
         "targetPort": {
           "type": "number"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "databaseId",
         "active",
-        "refCount"
+        "refCount",
+        "uri"
       ]
     }
   },
@@ -2273,12 +2383,9 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName"
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "clusterName": {
           "type": "string"
         },
@@ -2287,6 +2394,11 @@
         },
         "instances": {
           "type": "integer"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -2301,9 +2413,9 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "The name of the VM to inspect"
+          "description": "Canonical Host Agent resource URI returned by list_vms"
         },
         "fast": {
           "type": "boolean",
@@ -2311,12 +2423,15 @@
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
       "type": "object",
       "properties": {
+        "uri": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
@@ -2353,6 +2468,7 @@
         }
       },
       "required": [
+        "uri",
         "name",
         "status",
         "state",
@@ -2388,10 +2504,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "Workload namespace"
@@ -2399,11 +2511,16 @@
         "workloadName": {
           "type": "string",
           "description": "Deployment name"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName",
-        "workloadName"
+        "workloadName",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2411,10 +2528,14 @@
       "properties": {
         "workload": {
           "type": "object"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "workload"
+        "workload",
+        "uri"
       ]
     }
   },
@@ -2425,13 +2546,10 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName",
-        "token"
+        "token",
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "namespace": {
           "type": "string"
         },
@@ -2455,6 +2573,11 @@
           "enum": [
             "kubernetes"
           ]
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -2469,14 +2592,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
-        "clusterId": {
-          "type": "string",
-          "description": "Managed cluster identifier"
-        },
         "clusterName": {
           "type": "string",
           "description": "Managed cluster display name"
@@ -2501,21 +2616,21 @@
           "type": "string",
           "description": "Infrastructure provider identifier (incus)"
         },
-        "resourceId": {
-          "type": "string",
-          "description": "Infrastructure resource identifier"
-        },
         "apiEndpoint": {
           "type": "string",
           "description": "Optional cluster API endpoint"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName",
-        "clusterId",
         "clusterName",
         "agentId",
-        "bridgeToken"
+        "bridgeToken",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2535,13 +2650,17 @@
           "enum": [
             "active"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
         "bridgeUrl",
         "serviceName",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {
@@ -2613,13 +2732,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2639,12 +2759,16 @@
           "enum": [
             "active"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
         "serviceName",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "execution": {
@@ -2661,12 +2785,9 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName"
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "namespace": {
           "type": "string"
         },
@@ -2684,6 +2805,11 @@
         },
         "nodePort": {
           "type": "integer"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -2740,16 +2866,7 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
-        "databaseId": {
-          "type": "string"
-        },
         "namespace": {
-          "type": "string"
-        },
-        "serviceName": {
           "type": "string"
         },
         "servicePort": {
@@ -2757,13 +2874,17 @@
         },
         "listenPort": {
           "type": "number"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName",
-        "databaseId",
         "namespace",
-        "serviceName"
+        "uri",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2783,13 +2904,17 @@
           "enum": [
             "active"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
         "databaseId",
         "listenPort",
-        "status"
+        "status",
+        "uri"
       ]
     }
   },
@@ -2812,15 +2937,15 @@
               "id": {
                 "type": "string"
               },
-              "name": {
-                "type": "string"
-              },
               "type": {
                 "type": "string",
                 "enum": [
                   "host",
                   "cluster"
                 ]
+              },
+              "name": {
+                "type": "string"
               },
               "status": {
                 "type": "string",
@@ -2842,9 +2967,13 @@
               },
               "metadata": {
                 "type": "object"
+              },
+              "uri": {
+                "type": "string"
               }
             },
             "required": [
+              "uri",
               "id",
               "name",
               "type",
@@ -2866,17 +2995,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "Optional namespace filter for Issuers"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2887,10 +3017,14 @@
           "items": {
             "type": "object"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "issuers"
+        "issuers",
+        "uri"
       ]
     }
   },
@@ -2901,10 +3035,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "ConfigMap namespace"
@@ -2912,11 +3042,16 @@
         "configMapName": {
           "type": "string",
           "description": "ConfigMap name"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName",
-        "configMapName"
+        "configMapName",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2927,10 +3062,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "keys"
+        "keys",
+        "uri"
       ]
     }
   },
@@ -2941,17 +3080,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "Optional namespace filter"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2962,10 +3102,14 @@
           "items": {
             "type": "object"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "configmaps"
+        "configmaps",
+        "uri"
       ]
     }
   },
@@ -2976,17 +3120,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "Optional namespace filter"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -2997,10 +3142,14 @@
           "items": {
             "type": "object"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "deployments"
+        "deployments",
+        "uri"
       ]
     }
   },
@@ -3011,13 +3160,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3028,10 +3178,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "classes"
+        "classes",
+        "uri"
       ]
     }
   },
@@ -3101,17 +3255,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "Optional namespace filter"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3122,10 +3277,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "secrets"
+        "secrets",
+        "uri"
       ]
     }
   },
@@ -3136,13 +3295,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3153,10 +3313,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "namespaces"
+        "namespaces",
+        "uri"
       ]
     }
   },
@@ -3199,17 +3363,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "Optional namespace filter"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3220,10 +3385,14 @@
           "items": {
             "type": "object"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "claims"
+        "claims",
+        "uri"
       ]
     }
   },
@@ -3234,17 +3403,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "Optional namespace filter"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3255,10 +3425,14 @@
           "items": {
             "type": "object"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "pods"
+        "pods",
+        "uri"
       ]
     }
   },
@@ -3364,10 +3538,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "Secret namespace"
@@ -3375,11 +3545,16 @@
         "secretName": {
           "type": "string",
           "description": "Secret name"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName",
-        "secretName"
+        "secretName",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3390,10 +3565,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "keys"
+        "keys",
+        "uri"
       ]
     }
   },
@@ -3481,22 +3660,19 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "Service namespace"
         },
-        "serviceName": {
+        "uri": {
           "type": "string",
-          "description": "Service name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName",
-        "serviceName"
+        "uri",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3507,10 +3683,14 @@
           "items": {
             "type": "object"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "ports"
+        "ports",
+        "uri"
       ]
     }
   },
@@ -3612,17 +3792,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "namespace": {
           "type": "string",
           "description": "Optional namespace filter"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3633,10 +3814,14 @@
           "items": {
             "type": "object"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "services"
+        "services",
+        "uri"
       ]
     }
   },
@@ -3647,13 +3832,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3664,10 +3850,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "storageClasses"
+        "storageClasses",
+        "uri"
       ]
     }
   },
@@ -3678,13 +3868,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3719,11 +3910,15 @@
               "type"
             ]
           }
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
-        "devices"
+        "devices",
+        "uri"
       ]
     },
     "_meta": {
@@ -3752,6 +3947,9 @@
           "items": {
             "type": "object",
             "properties": {
+              "uri": {
+                "type": "string"
+              },
               "name": {
                 "type": "string"
               },
@@ -3788,6 +3986,7 @@
               }
             },
             "required": [
+              "uri",
               "name",
               "status"
             ]
@@ -3806,16 +4005,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": {
-          "type": "string"
-        },
         "localTarget": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "bindingId",
-        "localTarget"
+        "localTarget",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -3879,9 +4080,13 @@
           "enum": [
             "running"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
+        "uri",
         "vmName",
         "image",
         "status"
@@ -3901,14 +4106,11 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName",
         "name",
-        "data"
+        "data",
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "namespace": {
           "type": "string"
         },
@@ -3920,6 +4122,11 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -3934,12 +4141,9 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName"
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "clusterName": {
           "type": "string"
         },
@@ -4004,6 +4208,11 @@
               "type": "boolean"
             }
           }
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -4018,12 +4227,9 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName"
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "clusterName": {
           "type": "string"
         },
@@ -4048,6 +4254,11 @@
         },
         "localRelay": {
           "type": "object"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -4250,15 +4461,17 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "databaseId": {
-          "type": "string"
-        },
         "force": {
           "type": "boolean"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "databaseId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4269,11 +4482,15 @@
         },
         "databaseId": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "released",
-        "databaseId"
+        "databaseId",
+        "uri"
       ]
     }
   },
@@ -4284,12 +4501,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": {
-          "type": "string"
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "bindingId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4304,13 +4523,10 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName",
-        "confirm"
+        "confirm",
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "clusterName": {
           "type": "string"
         },
@@ -4329,6 +4545,11 @@
         },
         "confirm": {
           "type": "boolean"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -4343,19 +4564,21 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName",
         "namespace",
-        "ingressName"
+        "ingressName",
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "namespace": {
           "type": "string"
         },
         "ingressName": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -4397,13 +4620,10 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "vmName",
-        "confirm"
+        "confirm",
+        "uri"
       ],
       "properties": {
-        "vmName": {
-          "type": "string"
-        },
         "clusterName": {
           "type": "string"
         },
@@ -4422,6 +4642,11 @@
         },
         "confirm": {
           "type": "boolean"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -4436,18 +4661,19 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "deviceName": {
           "type": "string",
           "description": "Name of the NIC device to remove (e.g. eth1)"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName",
-        "deviceName"
+        "deviceName",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4461,12 +4687,16 @@
         },
         "removed": {
           "type": "boolean"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
         "deviceName",
-        "removed"
+        "removed",
+        "uri"
       ]
     },
     "_meta": {
@@ -4572,10 +4802,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "databaseId": {
-          "type": "string",
-          "description": "Database identifier"
-        },
         "size": {
           "type": "string",
           "enum": [
@@ -4585,11 +4811,16 @@
             "large"
           ],
           "description": "Desired size profile"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "databaseId",
-        "size"
+        "size",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4597,10 +4828,14 @@
       "properties": {
         "database": {
           "type": "object"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "database"
+        "database",
+        "uri"
       ]
     },
     "_meta": {
@@ -4614,13 +4849,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4640,12 +4876,16 @@
           "enum": [
             "active"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
         "serviceName",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {
@@ -4659,13 +4899,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4685,12 +4926,16 @@
           "enum": [
             "active"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
         "serviceName",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {
@@ -4704,13 +4949,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "serviceName": {
+        "uri": {
           "type": "string",
-          "description": "Systemd service name to restart"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "serviceName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4724,11 +4970,15 @@
           "enum": [
             "active"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "serviceName",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {
@@ -4742,13 +4992,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4762,11 +5013,15 @@
           "enum": [
             "running"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {
@@ -4780,18 +5035,20 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "storageId": {
-          "type": "string"
-        },
         "backupId": {
           "type": "string"
         },
         "note": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "storageId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4799,10 +5056,14 @@
       "properties": {
         "storage": {
           "type": "object"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "storage"
+        "storage",
+        "uri"
       ]
     },
     "_meta": {
@@ -4856,14 +5117,10 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "serviceName",
-        "state"
+        "state",
+        "uri"
       ],
       "properties": {
-        "serviceName": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9_.@:-]+$"
-        },
         "state": {
           "type": "string",
           "enum": [
@@ -4880,6 +5137,11 @@
             "user",
             "system"
           ]
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
@@ -4933,13 +5195,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4953,11 +5216,15 @@
           "enum": [
             "running"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {
@@ -4971,13 +5238,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -4991,11 +5259,15 @@
           "enum": [
             "stopped"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {
@@ -5009,10 +5281,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Name of the VM"
-        },
         "width": {
           "type": "number",
           "description": "Terminal width in columns"
@@ -5020,10 +5288,15 @@
         "height": {
           "type": "number",
           "description": "Terminal height in rows"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -5037,12 +5310,16 @@
         },
         "operationId": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
         "status",
-        "operationId"
+        "operationId",
+        "uri"
       ]
     }
   },
@@ -5053,17 +5330,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "bindingId": {
-          "type": "string",
-          "description": "Binding identifier"
-        },
         "targetIp": {
           "type": "string",
           "description": "Optional explicit IP to sync to."
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "bindingId"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -5077,11 +5355,15 @@
         },
         "message": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "binding",
-        "synced"
+        "synced",
+        "uri"
       ]
     },
     "_meta": {
@@ -5134,13 +5416,14 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
+        "uri": {
           "type": "string",
-          "description": "Target VM instance name"
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -5160,12 +5443,16 @@
           "enum": [
             "removed"
           ]
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
         "serviceName",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {
@@ -5209,9 +5496,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "storageId": {
-          "type": "string"
-        },
         "storage": {
           "type": "object",
           "properties": {
@@ -5250,11 +5534,16 @@
               "type": "object"
             }
           }
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "storageId",
-        "storage"
+        "storage",
+        "uri"
       ]
     },
     "outputSchema": {
@@ -5262,10 +5551,14 @@
       "properties": {
         "storage": {
           "type": "object"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
-        "storage"
+        "storage",
+        "uri"
       ]
     },
     "_meta": {
@@ -5279,10 +5572,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "vmName": {
-          "type": "string",
-          "description": "Target VM instance name"
-        },
         "cpus": {
           "type": "number",
           "description": "New vCPU limit (e.g. 2)"
@@ -5290,10 +5579,15 @@
         "memory": {
           "type": "string",
           "description": "New memory limit (e.g. 2GiB)"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
-        "vmName"
+        "uri"
       ]
     },
     "outputSchema": {
@@ -5313,11 +5607,15 @@
         },
         "memory": {
           "type": "string"
+        },
+        "uri": {
+          "type": "string"
         }
       },
       "required": [
         "vmName",
-        "status"
+        "status",
+        "uri"
       ]
     },
     "_meta": {

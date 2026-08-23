@@ -94,24 +94,27 @@ func TestMCPAuthProtectsMCPButNotHealth(t *testing.T) {
 	}
 	_ = health.Body.Close()
 
-	initialize, err := json.Marshal(map[string]any{
+	discover, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
-		"method":  "initialize",
+		"method":  "server/discover",
 		"params": map[string]any{
-			"protocolVersion": "2024-11-05",
-			"capabilities":    map[string]any{},
-			"clientInfo":      map[string]any{"name": "auth-test", "version": "1"},
+			"_meta": map[string]any{
+				"io.modelcontextprotocol/protocolVersion":    "2026-07-28",
+				"io.modelcontextprotocol/clientCapabilities": map[string]any{},
+				"io.modelcontextprotocol/clientInfo":         map[string]any{"name": "auth-test", "version": "1"},
+			},
 		},
 	})
 	request := func(token string) int {
 		t.Helper()
-		req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(string(initialize)))
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(string(discover)))
 		if err != nil {
 			t.Fatal(err)
 		}
 		req.Header.Set("Accept", "application/json, text/event-stream")
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}

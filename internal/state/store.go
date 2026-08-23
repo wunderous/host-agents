@@ -3,6 +3,7 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wunderous/host-agents/internal/resourceid"
 	_ "modernc.org/sqlite"
 )
 
@@ -155,7 +157,117 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate active capability state: %w", err)
 	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS resource_registry (
+        uri TEXT PRIMARY KEY,
+        resource_type TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        coordinates_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate resource registry: %w", err)
+	}
 	return store, nil
+}
+
+func (s *Store) UpsertResource(record resourceid.Record) error {
+	parsed, err := resourceid.Parse(record.URI)
+	if err != nil {
+		return err
+	}
+	if record.TenantID == "" {
+		record.TenantID = parsed.TenantID
+	}
+	if record.ResourceType == "" {
+		record.ResourceType = parsed.ResourceType
+	}
+	if record.ResourceID == "" {
+		record.ResourceID = parsed.ResourceID
+	}
+	if record.Status == "" {
+		record.Status = "active"
+	}
+	coordinates, err := json.Marshal(record.Coordinates)
+	if err != nil {
+		return fmt.Errorf("encode resource coordinates: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if record.CreatedAt == "" {
+		record.CreatedAt = now
+	}
+	record.UpdatedAt = now
+	_, err = s.db.Exec(`INSERT INTO resource_registry(
+        uri, resource_type, tenant_id, resource_id, coordinates_json, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(uri) DO UPDATE SET
+        resource_type=excluded.resource_type, tenant_id=excluded.tenant_id,
+        resource_id=excluded.resource_id, coordinates_json=excluded.coordinates_json,
+        status=excluded.status, updated_at=excluded.updated_at`,
+		record.URI, record.ResourceType, record.TenantID, record.ResourceID, string(coordinates), record.Status, record.CreatedAt, record.UpdatedAt)
+	return err
+}
+
+func (s *Store) GetResource(uri string) (resourceid.Record, bool, error) {
+	parsed, err := resourceid.Parse(uri)
+	if err != nil {
+		return resourceid.Record{}, false, err
+	}
+	var record resourceid.Record
+	var coordinates string
+	err = s.db.QueryRow(`SELECT uri, resource_type, tenant_id, resource_id, coordinates_json, status, created_at, updated_at
+        FROM resource_registry WHERE uri = ?`, parsed.String()).Scan(
+		&record.URI, &record.ResourceType, &record.TenantID, &record.ResourceID, &coordinates, &record.Status, &record.CreatedAt, &record.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return resourceid.Record{}, false, nil
+	}
+	if err != nil {
+		return resourceid.Record{}, false, err
+	}
+	if err := json.Unmarshal([]byte(coordinates), &record.Coordinates); err != nil {
+		return resourceid.Record{}, false, fmt.Errorf("decode resource coordinates: %w", err)
+	}
+	return record, true, nil
+}
+
+func (s *Store) DeleteResource(uri string) error {
+	parsed, err := resourceid.Parse(uri)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`DELETE FROM resource_registry WHERE uri = ?`, parsed.String())
+	return err
+}
+
+func (s *Store) ListResources(resourceType, tenantID string) ([]resourceid.Record, error) {
+	if resourceType != "" {
+		if _, err := resourceid.New(resourceType, "local", "placeholder"); err != nil {
+			// New validates the type and does not persist the placeholder.
+			return nil, err
+		}
+	}
+	rows, err := s.db.Query(`SELECT uri, resource_type, tenant_id, resource_id, coordinates_json, status, created_at, updated_at
+        FROM resource_registry WHERE (? = '' OR resource_type = ?) AND (? = '' OR tenant_id = ?)
+        ORDER BY uri`, resourceType, resourceType, tenantID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var records []resourceid.Record
+	for rows.Next() {
+		var record resourceid.Record
+		var coordinates string
+		if err := rows.Scan(&record.URI, &record.ResourceType, &record.TenantID, &record.ResourceID, &coordinates, &record.Status, &record.CreatedAt, &record.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(coordinates), &record.Coordinates); err != nil {
+			return nil, fmt.Errorf("decode resource coordinates: %w", err)
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
 }
 
 func ensureActiveCapabilityTable(db *sql.DB) error {

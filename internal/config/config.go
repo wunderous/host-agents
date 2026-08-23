@@ -13,6 +13,7 @@ import (
 // Config holds host agent runtime configuration from environment variables.
 type Config struct {
 	AgentMode                        string
+	TenantID                         string
 	InstanceID                       string
 	InstanceRoot                     string
 	RelayConfigDir                   string
@@ -80,6 +81,10 @@ func Load() Config {
 	}
 	port, _ := strconv.Atoi(envOr("HOST_MCP_PORT", defaultPort))
 	providerID := string(provider.NormalizeProviderID(envValue("OPUTE_INFRA_PROVIDER_ID")))
+	tenantID := strings.TrimSpace(envValue("OPUTE_TENANT_ID"))
+	if tenantID == "" {
+		tenantID = "local"
+	}
 	agentID := strings.TrimSpace(envValue("OPUTE_REMOTE_AGENT_ID"))
 	if agentID == "" {
 		agentID = "local-bridge-host"
@@ -102,6 +107,7 @@ func Load() Config {
 	}
 	return Config{
 		AgentMode:                        mode,
+		TenantID:                         tenantID,
 		InstanceID:                       instanceID,
 		InstanceRoot:                     instanceRoot,
 		RelayConfigDir:                   relayDir,
@@ -140,6 +146,11 @@ func Load() Config {
 // Validate rejects ambiguous profile combinations before the agent starts a
 // listener, emits MCP protocol output, or contacts the Opute control plane.
 func (c Config) Validate() error {
+	if c.TenantID != "" {
+		if err := validateTenantID(c.TenantID); err != nil {
+			return err
+		}
+	}
 	instanceID := strings.TrimSpace(c.InstanceID)
 	if instanceID == "" {
 		if strings.EqualFold(strings.TrimSpace(c.AgentMode), "standalone") {
@@ -196,6 +207,23 @@ func (c Config) Validate() error {
 			if strings.TrimSpace(os.Getenv(key)) != "" {
 				return fmt.Errorf("standalone mode cannot use platform setting %s", key)
 			}
+		}
+	}
+	return nil
+}
+
+func validateTenantID(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("OPUTE_TENANT_ID is required")
+	}
+	if len(value) > 32 {
+		return fmt.Errorf("OPUTE_TENANT_ID must be at most 32 characters")
+	}
+	for i, ch := range value {
+		valid := ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-'
+		if !valid || (i == 0 && ch == '-') {
+			return fmt.Errorf("OPUTE_TENANT_ID %q is invalid: use [a-z][a-z0-9-]{0,31}", value)
 		}
 	}
 	return nil
