@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opute.capability.llm-serving.context-size.v1",
+  "type": "object",
+  "required": ["contractVersion", "capability", "setting", "contextSize", "persisted"],
+  "properties": {
+    "contractVersion": {"const": "opute.capability.llm-serving.context-size.v1"},
+    "capability": {"const": "llm-serving"},
+    "setting": {"const": "context-size"},
+    "contextSize": {"type": "integer", "minimum": 512, "maximum": 1048576},
+    "persisted": {"type": "boolean"},
+    "applied": {"type": "boolean"},
+    "ready": {"type": "boolean"},
+    "changed": {"type": "boolean"},
+    "serviceNames": {"type": "array", "items": {"type": "string"}}
+  }
+}

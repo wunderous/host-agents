@@ -35,3 +35,24 @@ func TestRegistryRejectsUnsafeOrConflictingRegistrationsAndBumpsRevision(t *test
 		t.Fatal("unknown resource kind was accepted")
 	}
 }
+
+func TestAuthorizedExternalProviderCanUpsertDynamicOperation(t *testing.T) {
+	base := tools.CapabilityCatalogSnapshot{ProviderID: "incus", Revision: "base", Tools: []tools.CapabilityDescriptor{descriptor("existing")}}
+	registry := NewRegistry(base, Options{ProviderID: "incus", AuthorizedProviders: map[string]bool{"com.opute.example": true}})
+	operation := descriptor("opute.capability.example.validate")
+	operation.Provider = "com.opute.example"
+	operation.Implementation = "provider:com.opute.example"
+	registration := Registration{Descriptor: operation, ProviderID: operation.Provider, Implementation: operation.Implementation}
+	if err := registry.Upsert(registration); err != nil {
+		t.Fatal(err)
+	}
+	first := registry.Snapshot().Revision
+	operation.Description = "reloaded"
+	if err := registry.Upsert(Registration{Descriptor: operation, ProviderID: operation.Provider, Implementation: operation.Implementation}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := registry.Snapshot()
+	if snapshot.Revision == first || len(snapshot.Tools) != 2 || snapshot.Tools[1].Description != "reloaded" {
+		t.Fatalf("dynamic upsert snapshot = %+v", snapshot)
+	}
+}

@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -26,10 +27,38 @@ const (
 var ollamaModelRefPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$`)
 
 type OllamaRuntimeConfig struct {
-	Port            int    `json:"port"`
-	ModelRef        string `json:"modelRef"`
-	BinaryPath      string `json:"binaryPath"`
-	ModelsDirectory string `json:"modelsDirectory,omitempty"`
+	Port            int                                 `json:"port"`
+	ModelRef        string                              `json:"modelRef"`
+	BinaryPath      string                              `json:"binaryPath"`
+	ModelsDirectory string                              `json:"modelsDirectory,omitempty"`
+	ContextSize     int                                 `json:"contextSize,omitempty"`
+	ModelContexts   map[string]OllamaModelContextConfig `json:"modelContexts,omitempty"`
+}
+
+// OllamaModelContextConfig is the host-owned mapping from a caller's model
+// reference to the Ollama model that carries its persistent context setting.
+// The key is an arbitrary caller-supplied model reference; no model family is
+// encoded in this contract.
+type OllamaModelContextConfig struct {
+	EffectiveModelRef string `json:"effectiveModelRef"`
+	ContextSize       int    `json:"contextSize"`
+	UpdatedAt         string `json:"updatedAt,omitempty"`
+}
+
+// OllamaModelContextResult is returned by the generic model configuration
+// capability and by probes for a selected model.
+type OllamaModelContextResult struct {
+	ModelRef          string `json:"modelRef"`
+	EffectiveModelRef string `json:"effectiveModelRef"`
+	ContextSize       int    `json:"contextSize,omitempty"`
+	ContextSource     string `json:"contextSource,omitempty"`
+	Persisted         bool   `json:"persisted"`
+	Changed           bool   `json:"changed,omitempty"`
+}
+
+type ConfigureOllamaModelContextArgs struct {
+	ModelRef    string
+	ContextSize int
 }
 
 type ProbeOllamaArgs struct {
@@ -71,7 +100,19 @@ func defaultOllamaRuntimeConfig() OllamaRuntimeConfig {
 		ModelRef:        firstNonEmpty(strings.TrimSpace(os.Getenv("OPUTE_OLLAMA_MODEL")), defaultOllamaModel),
 		BinaryPath:      binaryPath,
 		ModelsDirectory: strings.TrimSpace(os.Getenv("OLLAMA_MODELS")),
+		ContextSize:     ollamaContextSizeFromEnvironment(),
 	}
+}
+
+func ollamaContextSizeFromEnvironment() int {
+	for _, name := range []string{"OPUTE_OLLAMA_CONTEXT_SIZE", "OLLAMA_CONTEXT_LENGTH"} {
+		if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+				return parsed
+			}
+		}
+	}
+	return 0
 }
 
 func loadOllamaRuntimeConfig() OllamaRuntimeConfig {
@@ -100,7 +141,45 @@ func loadOllamaRuntimeConfig() OllamaRuntimeConfig {
 	if strings.TrimSpace(persisted.ModelsDirectory) != "" {
 		cfg.ModelsDirectory = strings.TrimSpace(persisted.ModelsDirectory)
 	}
+	if persisted.ContextSize > 0 {
+		cfg.ContextSize = persisted.ContextSize
+	}
+	if len(persisted.ModelContexts) > 0 {
+		cfg.ModelContexts = persisted.ModelContexts
+	}
+	if cfg.ContextSize <= 0 {
+		cfg.ContextSize = readOllamaServiceContextSize()
+	}
 	return cfg
+}
+
+// readOllamaServiceContextSize is the fallback for a host that predates the
+// per-model mapping. The running Ollama process remains the authority when a
+// model is loaded; this only recovers the durable service default for an
+// unloaded model.
+func readOllamaServiceContextSize() int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0
+	}
+	base := filepath.Join(home, ".config", "systemd", "user")
+	for _, name := range []string{"ollama.service", ollamaServiceName} {
+		data, readErr := os.ReadFile(filepath.Join(base, name))
+		if readErr != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if !strings.Contains(line, "OLLAMA_CONTEXT_LENGTH=") {
+				continue
+			}
+			value := strings.TrimSpace(strings.SplitN(line, "OLLAMA_CONTEXT_LENGTH=", 2)[1])
+			value = strings.Trim(value, "\"'")
+			if parsed, parseErr := strconv.Atoi(value); parseErr == nil && parsed > 0 {
+				return parsed
+			}
+		}
+	}
+	return 0
 }
 
 func saveOllamaRuntimeConfig(cfg OllamaRuntimeConfig) error {
@@ -115,7 +194,24 @@ func saveOllamaRuntimeConfig(cfg OllamaRuntimeConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0600)
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".ollama-runtime-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0600); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(append(data, '\n')); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }
 
 func renderOllamaSystemdUnit(cfg OllamaRuntimeConfig) (string, error) {
@@ -151,6 +247,10 @@ func renderOllamaSystemdUnit(cfg OllamaRuntimeConfig) (string, error) {
 		prefix := append(lines[:len(lines)-3], "Environment=OLLAMA_MODELS="+cfg.ModelsDirectory)
 		lines = append(prefix, lines[len(lines)-3:]...)
 	}
+	if cfg.ContextSize > 0 {
+		insertAt := len(lines) - 3
+		lines = append(lines[:insertAt], append([]string{"Environment=OLLAMA_CONTEXT_LENGTH=" + strconv.Itoa(cfg.ContextSize)}, lines[insertAt:]...)...)
+	}
 	return strings.Join(lines, "\n") + "\n", nil
 }
 
@@ -160,6 +260,13 @@ func (s *HostOperationsService) ensureOllamaRuntime(ctx context.Context, cfg Oll
 	}
 	if cfg.BinaryPath == "" {
 		return fmt.Errorf("ollama binary is not installed")
+	}
+	// A host may already have Ollama running under another user-service
+	// manager (for example the provider bundle). Reusing a healthy API is
+	// required: starting the generated unit in parallel would compete for the
+	// same port and can put systemd into a restart loop.
+	if err := probeOllamaAPI(ctx, cfg.Port); err == nil {
+		return nil
 	}
 	unit, err := renderOllamaSystemdUnit(cfg)
 	if err != nil {
@@ -186,6 +293,26 @@ func (s *HostOperationsService) ensureOllamaRuntime(ctx context.Context, cfg Oll
 		return fmt.Errorf("start shared Ollama systemd unit: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return waitForOllamaAPI(ctx, cfg.Port)
+}
+
+func probeOllamaAPI(ctx context.Context, port int) error {
+	if port <= 0 {
+		port = defaultOllamaPort
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/api/tags", port), nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("Ollama API returned HTTP %d", response.StatusCode)
+	}
+	return nil
 }
 
 func waitForOllamaAPI(ctx context.Context, port int) error {
@@ -247,6 +374,11 @@ func (s *HostOperationsService) CheckOllamaPrerequisites() (*LocalLLMPrerequisit
 	if res, err := s.hostCommandRunner([]string{"systemctl", "--user", "is-active", ollamaServiceName}, nil, 5*time.Second); err == nil {
 		result.OllamaServiceActive = strings.TrimSpace(res.Stdout) == "active"
 	}
+	// The runtime may be healthy under a provider-owned unit rather than the
+	// Host Agent-generated unit. The API is the authoritative readiness signal.
+	if !result.OllamaServiceActive && probeOllamaAPI(context.Background(), cfg.Port) == nil {
+		result.OllamaServiceActive = true
+	}
 	if result.OllamaServiceActive {
 		if probe, err := s.ProbeOllama(context.Background(), ProbeOllamaArgs{ModelRef: cfg.ModelRef}); err == nil && probe != nil {
 			result.RuntimeGpuAccelerated = probe.GpuAccelerated
@@ -292,6 +424,13 @@ func (s *HostOperationsService) InstallOllamaModel(ctx context.Context, args Ins
 	if _, err := s.hostCommandRunnerContext(ctx, []string{cfg.BinaryPath, "pull", modelRef}, nil, 45*time.Minute); err != nil {
 		return nil, fmt.Errorf("pull Ollama model %q: %w", modelRef, err)
 	}
+	effectiveModelRef := modelRef
+	if configured, ok := cfg.ModelContexts[modelRef]; ok && strings.TrimSpace(configured.EffectiveModelRef) != "" {
+		effectiveModelRef = strings.TrimSpace(configured.EffectiveModelRef)
+	}
+	if err := warmOllamaModel(ctx, cfg, effectiveModelRef); err != nil {
+		return nil, fmt.Errorf("warm Ollama model %q: %w", effectiveModelRef, err)
+	}
 	probe, err := s.ProbeOllama(ctx, ProbeOllamaArgs{IncludeChat: true, ModelRef: modelRef})
 	if err != nil {
 		return nil, err
@@ -299,7 +438,31 @@ func (s *HostOperationsService) InstallOllamaModel(ctx context.Context, args Ins
 	if !probe.Ready || !probe.OpenAIModelsReady {
 		return nil, fmt.Errorf("Ollama model %q did not become ready: %s", modelRef, probe.LoadError)
 	}
+	if strings.TrimSpace(probe.LoadedModel) == "" {
+		return nil, fmt.Errorf("Ollama model %q did not become resident after warm", effectiveModelRef)
+	}
 	return probe, nil
+}
+
+// warmOllamaModel asks Ollama to load the selected model without requiring a
+// user turn. The host-wide keep-alive policy keeps it resident after this
+// request, and the selected reference may be a host-managed context alias.
+func warmOllamaModel(ctx context.Context, cfg OllamaRuntimeConfig, modelRef string) error {
+	modelRef = strings.TrimSpace(modelRef)
+	if modelRef == "" {
+		return fmt.Errorf("model reference is empty")
+	}
+	client := &http.Client{Timeout: 5 * time.Minute}
+	root := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
+	return ollamaAPIRequest(ctx, client, root, http.MethodPost, "/api/generate", map[string]any{
+		"model": modelRef,
+		// An empty prompt can return without loading the model. A minimal
+		// bounded generation makes residency observable through /api/ps.
+		"prompt":     ".",
+		"stream":     false,
+		"keep_alive": -1,
+		"options":    map[string]int{"num_predict": 1},
+	}, nil)
 }
 
 func (s *HostOperationsService) StartOllamaRuntime(ctx context.Context) (*LocalLLMProbeResult, error) {
@@ -315,6 +478,206 @@ func (s *HostOperationsService) StartOllamaRuntime(ctx context.Context) (*LocalL
 // another instance that is using it.
 func (s *HostOperationsService) StopOllamaRuntime(context.Context) error { return nil }
 
+func ollamaModelContextAlias(modelRef string, contextSize int) string {
+	digest := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(modelRef))))
+	// Keep one stable managed definition per base model. Updating the
+	// parameters in place makes the host-owned mapping observable to every
+	// Opute instance through the same Ollama model reference; a context-sized
+	// alias would leave older definitions indistinguishable to readers.
+	_ = contextSize
+	return fmt.Sprintf("opute/context-%x", digest[:8])
+}
+
+func parseOllamaContextSize(parameters string) int {
+	fields := strings.Fields(parameters)
+	for index := 0; index+1 < len(fields); index++ {
+		if strings.TrimSpace(fields[index]) != "num_ctx" {
+			continue
+		}
+		value, err := strconv.Atoi(strings.TrimSpace(fields[index+1]))
+		if err == nil && value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+type ollamaModelDetails struct {
+	Parameters string `json:"parameters"`
+}
+
+func ollamaAPIRequest(ctx context.Context, client *http.Client, root string, method string, path string, body any, destination any) error {
+	var reader *strings.Reader
+	if body == nil {
+		reader = strings.NewReader("")
+	} else {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = strings.NewReader(string(encoded))
+	}
+	request, err := http.NewRequestWithContext(ctx, method, root+path, reader)
+	if err != nil {
+		return err
+	}
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		var message struct {
+			Error string `json:"error"`
+		}
+		if json.NewDecoder(response.Body).Decode(&message) == nil && strings.TrimSpace(message.Error) != "" {
+			return fmt.Errorf("Ollama %s returned HTTP %d: %s", path, response.StatusCode, message.Error)
+		}
+		return fmt.Errorf("Ollama %s returned HTTP %d", path, response.StatusCode)
+	}
+	if destination == nil {
+		return nil
+	}
+	return json.NewDecoder(response.Body).Decode(destination)
+}
+
+func (s *HostOperationsService) readOllamaModelContext(ctx context.Context, cfg OllamaRuntimeConfig, modelRef string) (OllamaModelContextResult, error) {
+	modelRef = strings.TrimSpace(modelRef)
+	if !ollamaModelRefPattern.MatchString(modelRef) {
+		return OllamaModelContextResult{}, fmt.Errorf("invalid Ollama model reference")
+	}
+	effectiveModelRef := modelRef
+	persisted := false
+	if configured, ok := cfg.ModelContexts[modelRef]; ok && strings.TrimSpace(configured.EffectiveModelRef) != "" {
+		effectiveModelRef = configured.EffectiveModelRef
+		persisted = true
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	root := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
+	var details ollamaModelDetails
+	if err := ollamaAPIRequest(ctx, client, root, http.MethodPost, "/api/show", map[string]string{"model": effectiveModelRef}, &details); err != nil {
+		return OllamaModelContextResult{}, err
+	}
+	contextSize := parseOllamaContextSize(details.Parameters)
+	contextSource := ""
+	if contextSize == 0 {
+		var running struct {
+			Models []struct {
+				Name          string `json:"name"`
+				ContextLength int    `json:"context_length"`
+			} `json:"models"`
+		}
+		if err := ollamaAPIRequest(ctx, client, root, http.MethodGet, "/api/ps", nil, &running); err == nil {
+			for _, model := range running.Models {
+				if (ollamaModelNamesMatch(model.Name, effectiveModelRef) || ollamaModelNamesMatch(model.Name, modelRef)) && model.ContextLength > 0 {
+					contextSize = model.ContextLength
+					contextSource = "ollama-runtime"
+					break
+				}
+			}
+		}
+	}
+	if contextSize == 0 && cfg.ContextSize > 0 {
+		contextSize = cfg.ContextSize
+		contextSource = "ollama-service"
+	}
+	result := OllamaModelContextResult{
+		ModelRef:          modelRef,
+		EffectiveModelRef: effectiveModelRef,
+		ContextSize:       contextSize,
+		Persisted:         persisted,
+	}
+	if persisted {
+		result.ContextSource = "managed-model"
+	} else if contextSource != "" {
+		result.ContextSource = contextSource
+	} else if contextSize > 0 {
+		result.ContextSource = "ollama-model"
+	}
+	return result, nil
+}
+
+// GetOllamaModelContext reads one model's persisted/effective context without
+// probing readiness, residency, or the OpenAI-compatible surface.
+func (s *HostOperationsService) GetOllamaModelContext(ctx context.Context, modelRef string) (*OllamaModelContextResult, error) {
+	cfg := loadOllamaRuntimeConfig()
+	if strings.TrimSpace(modelRef) == "" {
+		modelRef = cfg.ModelRef
+	}
+	result, err := s.readOllamaModelContext(ctx, cfg, modelRef)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ConfigureOllamaModelContext persists a model-specific context setting in
+// the host-owned runtime configuration. Ollama stores persistent parameters on
+// a model definition, so the implementation creates a deterministic managed
+// model reference and all callers can continue using the original reference.
+func (s *HostOperationsService) ConfigureOllamaModelContext(ctx context.Context, args ConfigureOllamaModelContextArgs) (*OllamaModelContextResult, error) {
+	cfg := loadOllamaRuntimeConfig()
+	modelRef := strings.TrimSpace(args.ModelRef)
+	if !ollamaModelRefPattern.MatchString(modelRef) {
+		return nil, fmt.Errorf("invalid Ollama model reference")
+	}
+	if args.ContextSize <= 0 {
+		return nil, fmt.Errorf("contextSize must be greater than zero")
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	root := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
+	// Confirm the requested base model exists before writing host state.
+	var baseDetails ollamaModelDetails
+	if err := ollamaAPIRequest(ctx, client, root, http.MethodPost, "/api/show", map[string]string{"model": modelRef}, &baseDetails); err != nil {
+		return nil, fmt.Errorf("inspect Ollama model %q: %w", modelRef, err)
+	}
+
+	effectiveModelRef := ollamaModelContextAlias(modelRef, args.ContextSize)
+	if configured, ok := cfg.ModelContexts[modelRef]; ok && configured.ContextSize == args.ContextSize && configured.EffectiveModelRef == effectiveModelRef {
+		if current, err := s.readOllamaModelContext(ctx, cfg, modelRef); err == nil && current.ContextSize == args.ContextSize {
+			current.Changed = false
+			return &current, nil
+		}
+	}
+
+	var created struct {
+		Status string `json:"status"`
+	}
+	if err := ollamaAPIRequest(ctx, client, root, http.MethodPost, "/api/create", map[string]any{
+		"model": effectiveModelRef,
+		"from":  modelRef,
+		"parameters": map[string]int{
+			"num_ctx": args.ContextSize,
+		},
+		"stream": false,
+	}, &created); err != nil {
+		return nil, fmt.Errorf("persist Ollama context for model %q: %w", modelRef, err)
+	}
+	if cfg.ModelContexts == nil {
+		cfg.ModelContexts = make(map[string]OllamaModelContextConfig)
+	}
+	cfg.ModelContexts[modelRef] = OllamaModelContextConfig{
+		EffectiveModelRef: effectiveModelRef,
+		ContextSize:       args.ContextSize,
+		UpdatedAt:         time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := saveOllamaRuntimeConfig(cfg); err != nil {
+		return nil, fmt.Errorf("persist Ollama model context mapping: %w", err)
+	}
+	result := &OllamaModelContextResult{
+		ModelRef:          modelRef,
+		EffectiveModelRef: effectiveModelRef,
+		ContextSize:       args.ContextSize,
+		ContextSource:     "managed-model",
+		Persisted:         true,
+		Changed:           true,
+	}
+	return result, nil
+}
+
 func (s *HostOperationsService) ProbeOllama(ctx context.Context, args ProbeOllamaArgs) (*LocalLLMProbeResult, error) {
 	cfg := loadOllamaRuntimeConfig()
 	if strings.TrimSpace(args.ModelRef) != "" {
@@ -322,13 +685,22 @@ func (s *HostOperationsService) ProbeOllama(ctx context.Context, args ProbeOllam
 	}
 	root := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
 	result := &LocalLLMProbeResult{
-		Runtime:         "ollama",
-		APIBaseURL:      root + "/v1",
-		ModelRef:        cfg.ModelRef,
-		Models:          []LocalLLMModelResult{},
-		MaxParallel:     ollamaNumParallel,
-		MaxLoadedModels: ollamaMaxLoadedModels,
+		Runtime:           "ollama",
+		APIBaseURL:        root + "/v1",
+		ModelRef:          cfg.ModelRef,
+		EffectiveModelRef: cfg.ModelRef,
+		Models:            []LocalLLMModelResult{},
+		MaxParallel:       ollamaNumParallel,
+		MaxLoadedModels:   ollamaMaxLoadedModels,
 	}
+	contextResult, contextErr := s.readOllamaModelContext(ctx, cfg, cfg.ModelRef)
+	if contextErr == nil {
+		result.EffectiveModelRef = contextResult.EffectiveModelRef
+		result.ContextLength = contextResult.ContextSize
+		result.ContextSource = contextResult.ContextSource
+		result.ContextPersisted = contextResult.Persisted
+	}
+	effectiveModelRef := result.EffectiveModelRef
 	client := &http.Client{Timeout: 15 * time.Second}
 	requestJSON := func(path string, destination any) error {
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, root+path, nil)
@@ -361,7 +733,7 @@ func (s *HostOperationsService) ProbeOllama(ctx context.Context, args ProbeOllam
 	}
 	installed := false
 	for _, model := range result.Models {
-		if ollamaModelNamesMatch(model.Name, cfg.ModelRef) {
+		if ollamaModelNamesMatch(model.Name, cfg.ModelRef) || ollamaModelNamesMatch(model.Name, effectiveModelRef) {
 			installed = true
 			break
 		}
@@ -374,7 +746,7 @@ func (s *HostOperationsService) ProbeOllama(ctx context.Context, args ProbeOllam
 	}
 	if err := requestJSON("/api/ps", &running); err == nil {
 		for _, model := range running.Models {
-			if ollamaModelNamesMatch(model.Name, cfg.ModelRef) {
+			if ollamaModelNamesMatch(model.Name, cfg.ModelRef) || ollamaModelNamesMatch(model.Name, effectiveModelRef) {
 				result.LoadedModel = model.Name
 				result.SizeVramBytes = model.SizeVRAM
 				result.GpuAccelerated = model.SizeVRAM > 0
@@ -392,6 +764,9 @@ func (s *HostOperationsService) ProbeOllama(ctx context.Context, args ProbeOllam
 	}
 	result.Ready = installed
 	result.ChatReady = installed && result.OpenAIModelsReady
+	if contextErr != nil && result.LoadError == "" {
+		result.LoadError = contextErr.Error()
+	}
 	if args.IncludeChat && !result.ChatReady {
 		result.RemediationHints = append(result.RemediationHints, "pull the configured Ollama model and retry the readiness probe")
 	}

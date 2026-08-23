@@ -129,7 +129,14 @@ func isHeavyTool(name string) bool {
 		"reconcile_postgresql_service", "remove_postgresql_service",
 		"build_and_push_oci_image", "prepare_host_agent_artifacts", "stage_build_context",
 		"ensure_host_tool", "install_host_agent", "install_local_llm_model",
+		"ensure_host_artifact",
+		"remove_host_file",
 		"configure_local_llm_model", "start_local_llm_runtime", "configure_local_llm_runtime",
+		"run_runtime_recipe",
+		"run_tunnel_recipe",
+		"opute.provider.install",
+		"opute.provider.reload",
+		"opute.provider.teardown",
 	} {
 		if name == candidate {
 			return true

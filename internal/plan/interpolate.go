@@ -107,7 +107,7 @@ func resolveReference(reference string, context EvalContext) (any, error) {
 	default:
 		return nil, fmt.Errorf("unknown interpolation root %q", parts[0])
 	}
-	return resolveDottedPath(root, parts[1], reference)
+	return resolveDottedPath(root, strings.Join(parts[1:], "."), reference)
 }
 
 func resolveDottedPath(root any, path, reference string) (any, error) {

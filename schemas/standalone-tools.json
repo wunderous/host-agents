@@ -47,6 +47,31 @@
       }
     },
     {
+      "name": "probe_openai_compatible_server",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "probe_http_endpoint",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "ensure_host_file",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "remove_host_file",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "inspect_host_file",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
       "name": "reconcile_serving_assignment",
       "classification": "mutation",
       "support": "experimental"
@@ -175,6 +200,76 @@
     },
     {
       "name": "get_host_plan_run",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "validate_runtime_recipe",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "run_runtime_recipe",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "get_runtime_recipe_run",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "validate_tunnel_recipe",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "run_tunnel_recipe",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "get_tunnel_run",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "opute.provider.install",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "opute.provider.validate",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "opute.provider.status",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "opute.provider.reload",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "opute.provider.teardown",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "ensure_host_artifact",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "extract_host_archive",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "inspect_host_service",
       "classification": "read_only",
       "support": "experimental"
     },

@@ -142,8 +142,17 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"build_and_push_oci_image":         true,
 		"stage_build_context":              true,
 		"ensure_host_tool":                 true,
+		"run_host_command":                 true,
 		"set_host_service_state":           true,
+		"inspect_host_service":             true,
 		"ensure_host_service_supervisor":   true,
+		"ensure_host_file":                 true,
+		"remove_host_file":                 true,
+		"ensure_host_artifact":             true,
+		"extract_host_archive":             true,
+		"inspect_host_file":                true,
+		"probe_openai_compatible_server":   true,
+		"probe_http_endpoint":              true,
 		"apply_manifest":                   true,
 		"delete_k8s_resource":              true,
 		"put_k8s_secret":                   true,
@@ -157,6 +166,17 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"validate_host_plan":               true,
 		"run_host_plan":                    true,
 		"get_host_plan_run":                true,
+		"validate_runtime_recipe":          true,
+		"run_runtime_recipe":               true,
+		"get_runtime_recipe_run":           true,
+		"validate_tunnel_recipe":           true,
+		"run_tunnel_recipe":                true,
+		"get_tunnel_run":                   true,
+		"opute.provider.install":           true,
+		"opute.provider.validate":          true,
+		"opute.provider.status":            true,
+		"opute.provider.reload":            true,
+		"opute.provider.teardown":          true,
 		"get_capability_catalog":           true,
 		"open_assistant_session":           true,
 	}
@@ -281,6 +301,18 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		InputSchema:  map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{"tool": map[string]any{"type": "string", "enum": []string{"bun", "gcc", "g++", "go", "podman", "buildah", "buildkitd", "cloudflared", "helm", "cmake", "ninja", "nvcc"}}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
 	}, ToolDefinition{
+		Name:         "ensure_host_artifact",
+		Title:        "Ensure verified host artifact",
+		Description:  "Download a caller-declared HTTPS artifact into the user's home directory and verify its SHA-256 before installation.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"uri", "destination", "sha256"}, "properties": map[string]any{"uri": map[string]any{"type": "string", "format": "uri"}, "destination": map[string]any{"type": "string", "minLength": 1}, "sha256": map[string]any{"type": "string", "pattern": `^(sha256:)?[0-9a-fA-F]{64}$`}, "executable": map[string]any{"type": "boolean"}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"destination", "sha256", "changed"}},
+	}, ToolDefinition{
+		Name:         "run_host_command",
+		Title:        "Run bounded host command",
+		Description:  "Run a caller-declared bounded host command for a generic serving or infrastructure assignment.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"command"}, "properties": map[string]any{"command": map[string]any{"type": "string", "minLength": 1}, "timeoutMs": map[string]any{"type": "integer", "minimum": 0, "maximum": 7200000}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"exitCode", "stdout", "stderr"}},
+	}, ToolDefinition{
 		Name:         "render_helm_template",
 		Title:        "Render Helm template",
 		Description:  "Render a Helm chart to Kubernetes manifests on the host using helm template.",
@@ -303,6 +335,12 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "state", "scope", "status"}},
 	}, ToolDefinition{
+		Name:         "inspect_host_service",
+		Title:        "Inspect host service",
+		Description:  "Read systemd service state for a caller-declared host service without changing it.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"serviceName"}, "properties": map[string]any{"serviceName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_.@:-]+$`}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "scope", "status", "active", "enabled", "exitCode"}},
+	}, ToolDefinition{
 		Name:        "ensure_host_service_supervisor",
 		Title:       "Ensure host service supervisor",
 		Description: "Ensure the caller-declared host service supervisor is available and persistent; user-scoped services receive an idempotent persistent user-manager contract.",
@@ -310,6 +348,55 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"scope": map[string]any{"type": "string", "enum": []string{"user", "system"}},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"scope", "status", "persistent"}},
+	}, ToolDefinition{
+		Name:        "probe_openai_compatible_server",
+		Title:       "Probe OpenAI-compatible server",
+		Description: "Probe a caller-declared OpenAI-compatible runtime for model discovery and optional streaming chat readiness.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"endpoint"}, "properties": map[string]any{
+			"endpoint":    map[string]any{"type": "string", "format": "uri"},
+			"modelRef":    map[string]any{"type": "string"},
+			"includeChat": map[string]any{"type": "boolean"},
+			"bearerToken": map[string]any{"type": "string", "writeOnly": true},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"servingContract", "apiBaseUrl", "models", "ready"}},
+	}, ToolDefinition{
+		Name:        "probe_http_endpoint",
+		Title:       "Probe HTTP endpoint",
+		Description: "Probe a caller-declared HTTP(S) endpoint for provider-neutral reachability evidence.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"endpoint"}, "properties": map[string]any{
+			"endpoint": map[string]any{"type": "string", "format": "uri"},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"endpoint", "ready"}},
+	}, ToolDefinition{
+		Name:        "ensure_host_file",
+		Title:       "Ensure managed host file",
+		Description: "Atomically reconcile a caller-declared file beneath the current user's home directory, returning only path, mode, change, and content hash evidence.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"path", "content"}, "properties": map[string]any{
+			"path": map[string]any{"type": "string", "minLength": 1}, "content": map[string]any{"type": "string"}, "mode": map[string]any{"type": "integer", "minimum": 384, "maximum": 493},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"path", "changed", "contentSha256", "mode"}},
+	}, ToolDefinition{
+		Name:        "remove_host_file",
+		Title:       "Remove managed host file",
+		Description: "Remove one caller-owned regular file beneath the current user's home directory after explicit confirmation and an optional content hash check.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"path", "confirm"}, "properties": map[string]any{
+			"path": map[string]any{"type": "string", "minLength": 1}, "expectedSha256": map[string]any{"type": "string"}, "confirm": map[string]any{"type": "boolean"},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"path", "exists", "removed"}},
+	}, ToolDefinition{
+		Name:         "extract_host_archive",
+		Title:        "Extract verified host archive",
+		Description:  "Extract a verified caller-declared host archive beneath the user's home directory after rejecting traversal entries.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"archivePath", "destination"}, "properties": map[string]any{"archivePath": map[string]any{"type": "string", "minLength": 1}, "destination": map[string]any{"type": "string", "minLength": 1}, "format": map[string]any{"type": "string", "enum": []string{"tar.zst"}}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"archivePath", "destination", "entries", "changed"}},
+	}, ToolDefinition{
+		Name:        "inspect_host_file",
+		Title:       "Inspect managed host file",
+		Description: "Inspect a caller-declared file beneath the current user's home directory without returning its content.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"path"}, "properties": map[string]any{
+			"path": map[string]any{"type": "string", "minLength": 1}, "expectedSha256": map[string]any{"type": "string"}, "expectedContent": map[string]any{"type": "string", "writeOnly": true},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"path", "exists", "regular", "executable", "matches"}},
 	}, ToolDefinition{
 		Name:        "ensure_host_tool",
 		Title:       "Ensure generic host tool",
@@ -391,6 +478,38 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		}},
 		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
+		Name:        "opute.provider.install",
+		Title:       "Install provider",
+		Description: "Connect to a trusted provider MCP module, validate its neutral install manifest, execute its selected declarative recipe, and optionally activate the resulting provider generation.",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"source": map[string]any{"type": "string", "minLength": 1}, "descriptor": map[string]any{"type": "object"}, "endpoint": map[string]any{"type": "string", "format": "uri"}, "token": map[string]any{"type": "string", "writeOnly": true}, "mode": map[string]any{"type": "string"}, "recipeSource": map[string]any{"type": "string"}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}, "activate": map[string]any{"type": "boolean"}, "resume": map[string]any{"type": "boolean"},
+		}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:         "opute.provider.validate",
+		Title:        "Validate provider",
+		Description:  "Run a provider-declared capability validation operation through the generic provider MCP contract.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"provider"}, "properties": map[string]any{"provider": map[string]any{"type": "string", "minLength": 1}, "operation": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:         "opute.provider.status",
+		Title:        "Get provider status",
+		Description:  "Read the connected provider and active provider-generation state without changing host state.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"provider"}, "properties": map[string]any{"provider": map[string]any{"type": "string", "minLength": 1}}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:         "opute.provider.reload",
+		Title:        "Reload provider",
+		Description:  "Load a new trusted provider module generation and reconcile its selected recipe before activation.",
+		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"source": map[string]any{"type": "string", "minLength": 1}, "descriptor": map[string]any{"type": "object"}, "endpoint": map[string]any{"type": "string", "format": "uri"}, "token": map[string]any{"type": "string", "writeOnly": true}, "mode": map[string]any{"type": "string"}, "recipeSource": map[string]any{"type": "string"}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}, "activate": map[string]any{"type": "boolean"}}},
+		OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name:         "opute.provider.teardown",
+		Title:        "Teardown provider",
+		Description:  "Ask the connected provider for a generic teardown host plan, validate it, execute it durably, and retire the provider only after the plan succeeds.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"provider", "confirm"}, "properties": map[string]any{"provider": map[string]any{"type": "string", "minLength": 1}, "generation": map[string]any{"type": "string", "minLength": 1}, "inputs": map[string]any{"type": "object"}, "confirm": map[string]any{"type": "boolean"}, "resume": map[string]any{"type": "boolean"}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
+	}, ToolDefinition{
 		Name:         "validate_host_plan",
 		Title:        "Validate host plan",
 		Description:  "Validate a generic host-plan.v1 document against the current authorized capability catalog without changing host state.",
@@ -408,6 +527,47 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Description:  "Read the durable status, node results, and revision metadata for a host-plan.v1 run.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"runId"}, "properties": map[string]any{"runId": map[string]any{"type": "string", "minLength": 1}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "nodes"}},
+	}, ToolDefinition{
+		Name:        "validate_runtime_recipe",
+		Title:       "Validate runtime recipe",
+		Description: "Resolve and validate an external runtime-recipe.v1 source and its embedded host-plan.v1 without changing host state.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"source"}, "properties": map[string]any{
+			"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"valid", "recipeId", "recipeVersion", "recipeHash", "rawSha256", "plan"}},
+	}, ToolDefinition{
+		Name:        "run_runtime_recipe",
+		Title:       "Run runtime recipe",
+		Description: "Execute an externally sourced runtime-recipe.v1 through the existing durable host-plan runner; with activate=true, validate its neutral serving contract and commit it as the active runtime only after the run succeeds.",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"},
+			"inputs": map[string]any{"type": "object"}, "resume": map[string]any{"type": "boolean"}, "runId": map[string]any{"type": "string", "minLength": 1}, "activate": map[string]any{"type": "boolean"},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
+	}, ToolDefinition{
+		Name:         "get_runtime_recipe_run",
+		Title:        "Get runtime recipe run",
+		Description:  "Read the durable status, expanded plan evidence, and recipe provenance for a runtime-recipe.v1 run.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"runId"}, "properties": map[string]any{"runId": map[string]any{"type": "string", "minLength": 1}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "nodes", "recipe"}},
+	}, ToolDefinition{
+		Name:         "validate_tunnel_recipe",
+		Title:        "Validate tunnel recipe",
+		Description:  "Resolve and validate an external tunnel-recipe.v1 source and its embedded host-plan.v1 without changing host state.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"source"}, "properties": map[string]any{"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"valid", "recipeId", "recipeVersion", "recipeHash", "rawSha256", "plan"}},
+	}, ToolDefinition{
+		Name:         "run_tunnel_recipe",
+		Title:        "Run tunnel recipe",
+		Description:  "Execute an external tunnel-recipe.v1 through the existing durable host-plan runner; activation validates generic HTTP exposure before replacing the active tunnel capability.",
+		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}, "resume": map[string]any{"type": "boolean"}, "runId": map[string]any{"type": "string", "minLength": 1}, "activate": map[string]any{"type": "boolean"}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
+	}, ToolDefinition{
+		Name:         "get_tunnel_run",
+		Title:        "Get tunnel run",
+		Description:  "Read durable tunnel-recipe.v1 provenance and host-plan state.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"runId"}, "properties": map[string]any{"runId": map[string]any{"type": "string", "minLength": 1}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "nodes", "recipe"}},
 	}, ToolDefinition{
 		Name:         "get_capability_catalog",
 		Title:        "Get capability catalog",
@@ -505,12 +665,10 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"port":                    map[string]any{"type": "integer"},
 		}},
 		"configure_local_llm_model": {"type": "object", "properties": map[string]any{
-			"modelRef":    map[string]any{"type": "string"},
-			"modelPreset": map[string]any{"type": "string", "enum": []string{"qwen3.5", "qwen3.5-0.8b"}},
-			"fromRef":     map[string]any{"type": "string"},
-			"numGpu":      map[string]any{"type": "integer"},
-			"numCtx":      map[string]any{"type": "integer"},
-			"template":    map[string]any{"type": "string"},
+			"runtime":     map[string]any{"type": "string", "enum": runtimeEnum},
+			"modelRef":    map[string]any{"type": "string", "description": "Arbitrary Ollama model reference."},
+			"contextSize": map[string]any{"type": "integer", "description": "Persistent context size in tokens. Omit to read the current value."},
+			"numCtx":      map[string]any{"type": "integer", "description": "Compatibility alias for contextSize."},
 		}},
 		"start_local_llm_runtime": {"type": "object", "properties": map[string]any{"runtime": map[string]any{"type": "string", "enum": runtimeEnum}, "runtimeId": map[string]any{"type": "string"}}},
 		"configure_local_llm_runtime": {"type": "object", "properties": map[string]any{
@@ -535,7 +693,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}
 	for name, schema := range inputs {
 		if !seen[name] {
-			desc := "Opute-managed local LLM operation"
+			desc := "LEGACY compatibility wrapper for a local runtime operation"
 			switch name {
 			case "check_local_llm_prerequisites":
 				desc = "Inspect shared Ollama readiness and alternate llama-cpp GPU/CUDA diagnostics."
@@ -544,7 +702,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			case "install_local_llm_model":
 				desc = "Install or adopt a model in the shared Ollama runtime, or explicitly select the alternate llama-cpp runtime."
 			case "configure_local_llm_model":
-				desc = "Configure a local llama-server GGUF artifact."
+				desc = "Read or persist an arbitrary Ollama model's context size in the shared host runtime; the effective managed model reference is returned."
 			case "start_local_llm_runtime":
 				desc = "Start the one host-wide Ollama service or the explicitly selected llama-cpp service."
 			case "configure_local_llm_runtime":
@@ -575,7 +733,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 		filtered = append(filtered, definition)
 	}
 	for name, schema := range inputs {
-		filtered = append(filtered, ToolDefinition{Name: name, Title: name, Description: "Opute-managed llama-server operation", InputSchema: schema, OutputSchema: map[string]any{"type": "object"}})
+		filtered = append(filtered, ToolDefinition{Name: name, Title: name, Description: "LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1", InputSchema: schema, OutputSchema: map[string]any{"type": "object"}})
 	}
 	return filtered
 }

@@ -1186,6 +1186,19 @@ func (s *HostOperationsService) SetHostServiceState(args SetHostServiceStateArgs
 	if state != "start" && state != "stop" && state != "restart" && state != "enable" && state != "disable" {
 		return nil, errors.New("state must be start, stop, restart, enable, or disable")
 	}
+	// Recipes commonly reconcile a unit file immediately before changing its
+	// state. Reload the matching manager so systemd cannot act on a stale unit
+	// definition (notably after an ExecStart or environment change).
+	reloadCommand := []string{provider.DefaultSystemctlPath}
+	if scope == "user" {
+		reloadCommand = append(reloadCommand, "--user", "daemon-reload")
+	} else {
+		reloadCommand = append([]string{"sudo", "-n"}, reloadCommand...)
+		reloadCommand = append(reloadCommand, "daemon-reload")
+	}
+	if reload, reloadErr := s.hostCommandRunner(reloadCommand, onData, 0); reloadErr != nil || reload.ExitCode != 0 {
+		return nil, fmt.Errorf("service manager reload failed: %s", firstNonEmpty(reload.Stderr, reload.Stdout, "command failed"))
+	}
 	command := serviceStateCommand(serviceName, state, scope)
 	result, err := s.hostCommandRunner(command, onData, 0)
 	if err != nil || result.ExitCode != 0 {

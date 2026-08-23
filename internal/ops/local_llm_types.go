@@ -56,6 +56,7 @@ type LocalLLMProbeResult struct {
 	Runtime            string                `json:"runtime,omitempty"`
 	APIBaseURL         string                `json:"apiBaseUrl"`
 	ModelRef           string                `json:"modelRef,omitempty"`
+	EffectiveModelRef  string                `json:"effectiveModelRef,omitempty"`
 	ArtifactURI        string                `json:"artifactUri,omitempty"`
 	ArtifactSHA256     string                `json:"artifactSha256,omitempty"`
 	BaseModel          string                `json:"baseModel,omitempty"`
@@ -82,6 +83,8 @@ type LocalLLMProbeResult struct {
 	LoadError          string                `json:"loadError,omitempty"`
 	RemediationHints   []string              `json:"remediationHints,omitempty"`
 	ContextLength      int                   `json:"contextLength,omitempty"`
+	ContextSource      string                `json:"contextSource,omitempty"`
+	ContextPersisted   bool                  `json:"contextPersisted,omitempty"`
 	MaxParallel        int                   `json:"maxParallel,omitempty"`
 	MaxLoadedModels    int                   `json:"maxLoadedModels,omitempty"`
 }

@@ -1,0 +1,146 @@
+contractVersion: tunnel-recipe.v1
+recipeId: com.opute.cloudflare.tunneling.managed
+recipeVersion: 1.0.9
+provider:
+  id: com.opute.cloudflare
+  capabilities: [tunneling]
+bindings:
+  - id: local-service
+    hostname: "${vars.inputs.hostname}"
+    localTarget: "${vars.inputs.localTarget}"
+inputs:
+  endpoint:
+    required: true
+    schema: {type: string, format: uri}
+  hostname:
+    required: true
+    schema: {type: string, minLength: 1, maxLength: 253}
+  localTarget:
+    required: true
+    schema: {type: string, format: uri}
+  tunnelToken:
+    required: true
+    secret: true
+    schema: {type: string, minLength: 32}
+  artifactUri:
+    default: https://github.com/cloudflare/cloudflared/releases/download/2026.8.2/cloudflared-linux-amd64
+    schema: {type: string, format: uri}
+  artifactSha256:
+    default: fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2
+    schema: {type: string, pattern: '^[0-9a-fA-F]{64}$'}
+  artifactPath:
+    default: ~/.local/share/opute/providers/com.opute.cloudflare/bin/cloudflared
+    schema: {type: string, minLength: 1}
+  serviceFile:
+    default: ~/.config/systemd/user/opute-cloudflare-tunnel.service
+    schema: {type: string, minLength: 1}
+  serviceName:
+    default: opute-cloudflare-tunnel.service
+    schema: {type: string, pattern: '^[A-Za-z0-9_.@:-]+$'}
+  recipeRevision:
+    default: 1.0.9
+    schema: {type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'}
+  serviceArtifactPath:
+    default: '%h/.local/share/opute/providers/com.opute.cloudflare/bin/cloudflared'
+    schema: {type: string, minLength: 1}
+compatibility:
+  requiredTools: [ensure_host_artifact, ensure_host_file, ensure_host_service_supervisor, set_host_service_state, inspect_host_service, probe_http_endpoint]
+activation:
+  capability: tunneling
+  servingContract: http-exposure.v1
+  inputBindings:
+    endpoint: endpoint
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.cloudflare.tunneling.managed
+  generation: 1
+  idempotencyKey: com.opute.cloudflare.managed-${vars.inputs.recipeRevision}-${vars.inputs.artifactSha256}-${vars.inputs.endpoint}-${vars.inputs.hostname}
+  nodes:
+    - id: artifact
+      action:
+        tool: ensure_host_artifact
+        args:
+          uri: "${vars.inputs.artifactUri}"
+          destination: "${vars.inputs.artifactPath}"
+          sha256: "${vars.inputs.artifactSha256}"
+          executable: true
+      validate:
+        tool: inspect_host_file
+        args:
+          path: "${vars.inputs.artifactPath}"
+          expectedSha256: "${vars.inputs.artifactSha256}"
+        assert: [{path: /exists, op: eq, value: true}, {path: /matches, op: eq, value: true}, {path: /executable, op: eq, value: true}]
+    - id: service-file
+      dependsOn: [artifact]
+      action:
+        tool: ensure_host_file
+        args:
+          path: "${vars.inputs.serviceFile}"
+          mode: 384
+          content: |
+            [Unit]
+            Description=Opute managed Cloudflare tunnel connector
+            After=network-online.target
+            Wants=network-online.target
+
+            [Service]
+            ExecStart=${vars.inputs.serviceArtifactPath} tunnel --no-autoupdate run --token ${vars.inputs.tunnelToken}
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=default.target
+      validate:
+        tool: inspect_host_file
+        args:
+          path: "${vars.inputs.serviceFile}"
+          expectedContent: |
+            [Unit]
+            Description=Opute managed Cloudflare tunnel connector
+            After=network-online.target
+            Wants=network-online.target
+
+            [Service]
+            ExecStart=${vars.inputs.serviceArtifactPath} tunnel --no-autoupdate run --token ${vars.inputs.tunnelToken}
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=default.target
+        assert: [{path: /exists, op: eq, value: true}, {path: /matches, op: eq, value: true}]
+    - id: supervisor
+      dependsOn: [service-file]
+      action:
+        tool: ensure_host_service_supervisor
+        args: {scope: user}
+      validate:
+        tool: inspect_host_service
+        args: {serviceName: "${vars.inputs.serviceName}", scope: user}
+        assert: [{path: /status, op: exists}]
+    - id: enable
+      dependsOn: [supervisor]
+      action:
+        tool: set_host_service_state
+        args: {serviceName: "${vars.inputs.serviceName}", state: enable, scope: user}
+      validate:
+        tool: inspect_host_service
+        args: {serviceName: "${vars.inputs.serviceName}", scope: user}
+        assert: [{path: /enabled, op: eq, value: true}]
+    - id: start
+      dependsOn: [enable]
+      action:
+        tool: set_host_service_state
+        args: {serviceName: "${vars.inputs.serviceName}", state: start, scope: user}
+      validate:
+        tool: inspect_host_service
+        args: {serviceName: "${vars.inputs.serviceName}", scope: user}
+        assert: [{path: /active, op: eq, value: true}]
+    - id: endpoint
+      dependsOn: [start]
+      action:
+        tool: probe_http_endpoint
+        args: {endpoint: "${vars.inputs.endpoint}"}
+      validate:
+        tool: probe_http_endpoint
+        args: {endpoint: "${vars.inputs.endpoint}"}
+        assert: [{path: /ready, op: eq, value: true}]

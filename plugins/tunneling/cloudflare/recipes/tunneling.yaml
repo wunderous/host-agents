@@ -1,0 +1,43 @@
+contractVersion: tunnel-recipe.v1
+recipeId: com.opute.cloudflare.tunneling
+recipeVersion: 1.0.0
+provider:
+  id: com.opute.cloudflare
+  capabilities: [tunneling]
+bindings:
+  - id: local-service
+    hostname: ${vars.inputs.hostname}
+    localTarget: ${vars.inputs.localTarget}
+inputs:
+  endpoint:
+    required: true
+    schema: {type: string, format: uri}
+  hostname:
+    required: true
+    default: example.invalid
+    schema: {type: string, minLength: 1, maxLength: 253}
+  localTarget:
+    required: true
+    default: http://127.0.0.1:11434
+    schema: {type: string, format: uri}
+activation:
+  capability: tunneling
+  servingContract: http-exposure.v1
+  inputBindings:
+    endpoint: endpoint
+compatibility:
+  requiredTools: [probe_http_endpoint]
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.cloudflare.tunneling
+  generation: 1
+  idempotencyKey: com.opute.cloudflare-${vars.inputs.endpoint}
+  nodes:
+    - id: endpoint
+      action:
+        tool: probe_http_endpoint
+        args: {endpoint: "${vars.inputs.endpoint}"}
+      validate:
+        tool: probe_http_endpoint
+        args: {endpoint: "${vars.inputs.endpoint}"}
+        assert: [{path: /ready, op: eq, value: true}]

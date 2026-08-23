@@ -3,11 +3,18 @@ package hostmcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	providercontract "github.com/wunderous/host-agents/contracts/provider"
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
 	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/provider"
@@ -49,6 +56,25 @@ func TestStandaloneServerDoesNotExposePlatformTools(t *testing.T) {
 		if def.Name == "register_host_agent" || def.Name == "host_agent_heartbeat" || def.Name == "dispatch_host_operation" {
 			t.Fatalf("platform tool leaked into standalone catalog: %s", def.Name)
 		}
+	}
+}
+
+func TestRedactTaskValuePreservesSecretCollectionShape(t *testing.T) {
+	value := map[string]any{
+		"secretInputs": []any{"token", "password"},
+		"token":        "super-secret",
+		"nested":       map[string]any{"value": "safe"},
+	}
+	redacted := redactTaskValue(value).(map[string]any)
+	secretInputs, ok := redacted["secretInputs"].([]any)
+	if !ok || len(secretInputs) != 2 || secretInputs[0] != "[redacted]" || secretInputs[1] != "[redacted]" {
+		t.Fatalf("secret collection shape/content was not redacted safely: %#v", redacted["secretInputs"])
+	}
+	if redacted["token"] != "[redacted]" {
+		t.Fatalf("scalar token was not redacted: %#v", redacted["token"])
+	}
+	if redacted["nested"].(map[string]any)["value"] != "safe" {
+		t.Fatalf("non-sensitive nested value was unexpectedly changed: %#v", redacted["nested"])
 	}
 }
 
@@ -135,6 +161,164 @@ func TestHostPlanMCPValidationAndDurableRun(t *testing.T) {
 	}
 }
 
+func TestRuntimeRecipeUsesDurableHostPlanRunner(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	recipePath := filepath.Join(t.TempDir(), "runtime.yaml")
+	recipeDocument := `
+contractVersion: runtime-recipe.v1
+recipeId: generic-test-runtime
+recipeVersion: 1.0.0
+runtime:
+  id: generic-test
+  servingContract: openai-chat.v1
+  capabilities: [chat]
+plan:
+  contractVersion: host-plan.v1
+  planId: generic-test-runtime
+  generation: 1
+  idempotencyKey: generic-test-runtime-1
+  nodes:
+    - id: host
+      action:
+        tool: get_host_info
+        args: {}
+`
+	if err := os.WriteFile(recipePath, []byte(recipeDocument), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	validated, err := server.handleValidateRuntimeRecipe(map[string]any{"source": recipePath})
+	if err != nil || validated == nil || validated.IsError {
+		t.Fatalf("validate runtime recipe = %#v err=%v", validated, err)
+	}
+	started, err := server.handleRunRuntimeRecipe(map[string]any{"source": recipePath})
+	if err != nil || started == nil || started.IsError {
+		t.Fatalf("run runtime recipe = %#v err=%v", started, err)
+	}
+	var startedValue map[string]any
+	encoded, _ := json.Marshal(started.StructuredContent)
+	if err := json.Unmarshal(encoded, &startedValue); err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := startedValue["runId"].(string)
+	if runID == "" {
+		t.Fatalf("recipe run result has no runId: %#v", startedValue)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		record, found, getErr := server.state.GetPlan(runID)
+		if getErr != nil || !found {
+			t.Fatalf("get durable recipe run: found=%v err=%v", found, getErr)
+		}
+		if record.Status == "completed" {
+			if record.RecipeJSON == "" || !strings.Contains(record.RecipeJSON, "generic-test-runtime") {
+				t.Fatalf("recipe provenance was not persisted: %s", record.RecipeJSON)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("recipe did not complete: %#v", record)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	resumed, err := server.handleRunRuntimeRecipe(map[string]any{"runId": runID})
+	if err != nil || resumed == nil || resumed.IsError {
+		t.Fatalf("resume runtime recipe = %#v err=%v", resumed, err)
+	}
+}
+
+func TestRuntimeRecipeActivationValidatesBeforeCommittingActiveRuntime(t *testing.T) {
+	serverHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"model"}]}`))
+			return
+		}
+		if r.URL.Path == "/v1/chat/completions" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"READY\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer serverHTTP.Close()
+
+	server := newStandaloneTestServer(t, true)
+	recipePath := filepath.Join(t.TempDir(), "activate.yaml")
+	recipeDocument := fmt.Sprintf(`
+contractVersion: runtime-recipe.v1
+recipeId: activation-test
+recipeVersion: 1.0.0
+runtime:
+  id: fake-runtime
+  servingContract: openai-chat.v1
+activation:
+  capability: llm
+  servingContract: openai-chat.v1
+  inputBindings:
+    endpoint: endpoint
+    modelRef: model
+inputs:
+  endpoint:
+    default: %s
+  model:
+    default: model
+plan:
+  contractVersion: host-plan.v1
+  planId: activation-test
+  generation: 1
+  idempotencyKey: activation-test-${vars.inputs.endpoint}-${vars.inputs.model}
+  defaults:
+    timeoutMs: 30000
+    retry:
+      maxAttempts: 1
+  nodes:
+    - id: probe
+      action:
+        tool: probe_openai_compatible_server
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          modelRef: ${vars.inputs.model}
+          includeChat: true
+`, serverHTTP.URL)
+	if err := os.WriteFile(recipePath, []byte(recipeDocument), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	started, err := server.handleRunRuntimeRecipe(map[string]any{"source": recipePath, "activate": true})
+	if err != nil || started == nil || started.IsError {
+		t.Fatalf("run activating recipe = %#v err=%v", started, err)
+	}
+	var startedValue map[string]any
+	encoded, _ := json.Marshal(started.StructuredContent)
+	if err := json.Unmarshal(encoded, &startedValue); err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := startedValue["runId"].(string)
+	if runID == "" {
+		t.Fatalf("recipe run result has no runId: %#v", startedValue)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		record, found, getErr := server.state.GetPlan(runID)
+		if getErr != nil || !found {
+			t.Fatalf("get durable activating recipe: found=%v err=%v", found, getErr)
+		}
+		if record.Status == "completed" {
+			active, activeFound, activeErr := server.state.GetActiveRuntime("llm")
+			if activeErr != nil || !activeFound {
+				t.Fatalf("active runtime was not committed: found=%v err=%v", activeFound, activeErr)
+			}
+			if active.RunID != runID || active.Runtime != "fake-runtime" {
+				t.Fatalf("unexpected active runtime: %+v", active)
+			}
+			break
+		}
+		if record.Status == "failed" || time.Now().After(deadline) {
+			t.Fatalf("activating recipe did not complete: %#v", record)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestServerDynamicCapabilityRegistrationPublishesRevisionAndDispatchesTrustedImplementation(t *testing.T) {
 	server := newStandaloneTestServer(t, true)
 	before := server.CatalogSnapshot().Revision
@@ -167,4 +351,34 @@ func TestServerDynamicCapabilityRegistrationPublishesRevisionAndDispatchesTruste
 	if err != nil || result == nil || result.IsError {
 		t.Fatalf("dynamic capability call = %#v err=%v", result, err)
 	}
+}
+
+func TestProviderManifestServicesPublishOnlyThroughAuthorizedOverlay(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	before := server.CatalogSnapshot().Revision
+	manifest := providercontract.InstallManifest{
+		Provider: providercontract.ProviderRef{ID: "com.opute.fake", Version: "1.0.0"},
+		Services: []providercontract.ServiceDefinition{{
+			ID: "com.opute.fake.service", Version: 1,
+			Operations: []providercontract.Operation{{
+				ID: "opute.capability.fake.validate", InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"}, Effect: "read", Idempotent: true,
+			}},
+		}},
+	}
+	if err := server.registerProviderServices(manifest); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := server.CatalogSnapshot()
+	if snapshot.Revision == before {
+		t.Fatal("provider service registration did not change catalog revision")
+	}
+	for _, descriptor := range snapshot.Tools {
+		if descriptor.OperationID == "opute.capability.fake.validate" {
+			if descriptor.Provider != "com.opute.fake" || descriptor.Implementation != "provider:com.opute.fake" {
+				t.Fatalf("provider descriptor identity = %+v", descriptor)
+			}
+			return
+		}
+	}
+	t.Fatal("provider service operation was not published")
 }

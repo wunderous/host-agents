@@ -36,6 +36,24 @@ func TestRenderClusterAgentInstallScriptDownloadsArtifact(t *testing.T) {
 	}
 }
 
+func TestRenderHostNativeClusterAgentInstallScriptUsesPrivilegeBoundary(t *testing.T) {
+	script := renderHostNativeClusterAgentInstallScript(
+		"http://172.23.118.1:9093",
+		clusterAgentArchX64,
+		[]byte("{\"clusterId\":\"cluster-1\"}"),
+	)
+	for _, want := range []string{
+		"sudo -n bash -lc",
+		"passwordless sudo is required",
+		"/artifacts/cluster-agent/x64.gz",
+		"systemctl enable --now " + clusterAgentServiceName,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("host-native script missing %q:\n%s", want, script)
+		}
+	}
+}
+
 func TestIsLoopbackBridgeURL(t *testing.T) {
 	if !isLoopbackBridgeURL("http://127.0.0.1:9093") {
 		t.Fatal("expected loopback")

@@ -10,8 +10,11 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	providercontract "github.com/wunderous/host-agents/contracts/provider"
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
 	"github.com/wunderous/host-agents/internal/console"
+	"github.com/wunderous/host-agents/internal/cordis"
+	provideradapter "github.com/wunderous/host-agents/internal/cordis/mcp"
 	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/state"
@@ -22,25 +25,34 @@ import (
 
 // Server is the host agent MCP server.
 type Server struct {
-	mcpServer      *mcp.Server
-	ops            *ops.HostOperationsService
-	tasks          *tasks.Registry
-	console        *console.Runtime
-	providerID     string
-	standalone     bool
-	allowMutations bool
-	state          *state.Store
-	admission      *resource.Coordinator
-	mu             sync.Mutex
-	catalogMu      sync.RWMutex
-	planMu         sync.Mutex
-	planWG         sync.WaitGroup
-	closed         bool
-	planCancels    map[string]context.CancelFunc
-	toolDefs       []tools.ToolDefinition
-	catalog        tools.CapabilityCatalogSnapshot
-	registry       *capabilitycatalog.Registry
-	dynamic        map[string]CapabilityImplementation
+	mcpServer                  *mcp.Server
+	ops                        *ops.HostOperationsService
+	tasks                      *tasks.Registry
+	console                    *console.Runtime
+	providerID                 string
+	standalone                 bool
+	allowMutations             bool
+	state                      *state.Store
+	admission                  *resource.Coordinator
+	mu                         sync.Mutex
+	catalogMu                  sync.RWMutex
+	planMu                     sync.Mutex
+	planWG                     sync.WaitGroup
+	closed                     bool
+	planCancels                map[string]context.CancelFunc
+	toolDefs                   []tools.ToolDefinition
+	catalog                    tools.CapabilityCatalogSnapshot
+	registry                   *capabilitycatalog.Registry
+	dynamic                    map[string]CapabilityImplementation
+	providerContext            *cordis.Context
+	providerLifecycle          *cordis.ProviderLifecycleManager
+	providerAdapters           map[string]*provideradapter.Adapter
+	providerMu                 sync.RWMutex
+	providerValidation         map[string]string
+	providerCandidates         map[string]*provideradapter.Adapter
+	providerCandidateManifests map[string]providercontract.InstallManifest
+	providerPreviousAdapters   map[string]*provideradapter.Adapter
+	providerPreviousValidation map[string]string
 }
 
 // CapabilityImplementation is a trusted, already-installed host adapter. It
@@ -58,6 +70,7 @@ type Options struct {
 	Version                string
 	Admission              *resource.Coordinator
 	AllowedImplementations map[string]bool
+	AuthorizedProviders    map[string]bool
 }
 
 func NewServer(opts Options) (*Server, error) {
@@ -101,7 +114,7 @@ func NewServer(opts Options) (*Server, error) {
 		}
 	}
 	registry := capabilitycatalog.NewRegistry(capabilityCatalog, capabilitycatalog.Options{
-		ProviderID: providerID, KnownResourceKinds: knownResourceKinds, AllowedImplementations: opts.AllowedImplementations,
+		ProviderID: providerID, AuthorizedProviders: opts.AuthorizedProviders, KnownResourceKinds: knownResourceKinds, AllowedImplementations: opts.AllowedImplementations,
 	})
 	capabilities := &mcp.ServerCapabilities{
 		Tools:     &mcp.ToolCapabilities{ListChanged: true},
@@ -125,19 +138,27 @@ func NewServer(opts Options) (*Server, error) {
 		Logger:       opts.Logger,
 	})
 	hs := &Server{
-		mcpServer:      srv,
-		ops:            opts.Ops,
-		tasks:          tasks.NewRegistry(),
-		console:        console.NewRuntime(opts.Ops.NewVMInteractiveCommand),
-		providerID:     providerID,
-		standalone:     opts.Standalone,
-		allowMutations: opts.AllowMutations,
-		toolDefs:       catalog,
-		admission:      opts.Admission,
-		catalog:        capabilityCatalog,
-		registry:       registry,
-		dynamic:        make(map[string]CapabilityImplementation),
-		planCancels:    make(map[string]context.CancelFunc),
+		mcpServer:                  srv,
+		ops:                        opts.Ops,
+		tasks:                      tasks.NewRegistry(),
+		console:                    console.NewRuntime(opts.Ops.NewVMInteractiveCommand),
+		providerID:                 providerID,
+		standalone:                 opts.Standalone,
+		allowMutations:             opts.AllowMutations,
+		toolDefs:                   catalog,
+		admission:                  opts.Admission,
+		catalog:                    capabilityCatalog,
+		registry:                   registry,
+		dynamic:                    make(map[string]CapabilityImplementation),
+		providerContext:            cordis.NewContext(),
+		providerLifecycle:          cordis.NewProviderLifecycleManager(cordis.DrainPolicy{}),
+		providerAdapters:           make(map[string]*provideradapter.Adapter),
+		providerValidation:         make(map[string]string),
+		providerCandidates:         make(map[string]*provideradapter.Adapter),
+		providerCandidateManifests: make(map[string]providercontract.InstallManifest),
+		providerPreviousAdapters:   make(map[string]*provideradapter.Adapter),
+		providerPreviousValidation: make(map[string]string),
+		planCancels:                make(map[string]context.CancelFunc),
 	}
 	if opts.Standalone || strings.TrimSpace(opts.StateDir) != "" {
 		store, err := state.Open(opts.StateDir)
@@ -145,6 +166,10 @@ func NewServer(opts Options) (*Server, error) {
 			return nil, err
 		}
 		hs.state = store
+		if err := hs.restoreProviderGenerations(); err != nil {
+			_ = store.Close()
+			return nil, fmt.Errorf("restore provider generations: %w", err)
+		}
 	}
 	hs.registerTools()
 	return hs, nil
@@ -173,6 +198,27 @@ func (s *Server) Close() error {
 	store := s.state
 	s.state = nil
 	s.planMu.Unlock()
+	if s.providerContext != nil {
+		_ = s.providerContext.Dispose(context.Background())
+	}
+	s.providerMu.Lock()
+	adapters := s.providerAdapters
+	s.providerAdapters = make(map[string]*provideradapter.Adapter)
+	s.providerValidation = make(map[string]string)
+	uniqueAdapters := make(map[*provideradapter.Adapter]struct{}, len(adapters)+len(s.providerCandidates))
+	for _, adapter := range adapters {
+		uniqueAdapters[adapter] = struct{}{}
+	}
+	for _, adapter := range s.providerCandidates {
+		uniqueAdapters[adapter] = struct{}{}
+	}
+	s.providerCandidates = make(map[string]*provideradapter.Adapter)
+	s.providerPreviousAdapters = make(map[string]*provideradapter.Adapter)
+	s.providerPreviousValidation = make(map[string]string)
+	s.providerMu.Unlock()
+	for adapter := range uniqueAdapters {
+		_ = adapter.Close()
+	}
 	if store == nil {
 		return nil
 	}
@@ -220,6 +266,60 @@ func (s *Server) RegisterCapability(registration capabilitycatalog.Registration,
 	s.dynamic[registration.Descriptor.OperationID] = implementation
 	s.catalogMu.Unlock()
 	s.addRegisteredCapability(registration.Descriptor)
+	return nil
+}
+
+// registerProviderServices publishes the operations declared by a validated
+// provider manifest only after its candidate generation has passed setup and
+// activation validation. The operation implementation remains a generic MCP
+// call through the currently active provider adapter; no provider-specific
+// symbols enter the Host Agent catalog.
+func (s *Server) registerProviderServices(manifest providercontract.InstallManifest) error {
+	if len(manifest.Services) == 0 {
+		return nil
+	}
+	if err := s.registry.AuthorizeProvider(manifest.Provider.ID); err != nil {
+		return err
+	}
+	implementation := "provider:" + manifest.Provider.ID
+	for _, service := range manifest.Services {
+		for _, operation := range service.Operations {
+			descriptor := tools.CapabilityDescriptor{
+				OperationID:       operation.ID,
+				Name:              operation.ID,
+				Description:       "Provider service " + service.ID + " operation " + operation.ID,
+				InputSchema:       operation.InputSchema,
+				OutputSchema:      operation.OutputSchema,
+				Effect:            operation.Effect,
+				Privilege:         operation.Effect,
+				RequiresApproval:  operation.Effect != "read",
+				Provider:          manifest.Provider.ID,
+				Implementation:    implementation,
+				ResourceKinds:     append([]string(nil), operation.ResourceKinds...),
+				Idempotent:        operation.Idempotent,
+				SupportsReadiness: operation.SupportsReadiness,
+			}
+			if err := s.registry.Upsert(capabilitycatalog.Registration{Descriptor: descriptor, ProviderID: manifest.Provider.ID, Implementation: implementation}); err != nil {
+				return err
+			}
+			s.catalogMu.Lock()
+			_, alreadyPublished := s.dynamic[operation.ID]
+			s.catalog = s.registry.Snapshot()
+			s.dynamic[operation.ID] = func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+				s.providerMu.RLock()
+				adapter := s.providerAdapters[manifest.Provider.ID]
+				s.providerMu.RUnlock()
+				if adapter == nil {
+					return tools.ErrorResult(fmt.Errorf("provider %q is not active", manifest.Provider.ID)), nil
+				}
+				return adapter.Call(ctx, operation.ID, args)
+			}
+			s.catalogMu.Unlock()
+			if !alreadyPublished {
+				s.addRegisteredCapability(descriptor)
+			}
+		}
+	}
 	return nil
 }
 
@@ -390,6 +490,28 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		return s.handleRunHostPlan(args)
 	case "get_host_plan_run":
 		return s.handleGetHostPlanRun(args)
+	case "validate_runtime_recipe":
+		return s.handleValidateRuntimeRecipe(args)
+	case "run_runtime_recipe":
+		return s.handleRunRuntimeRecipe(args)
+	case "get_runtime_recipe_run":
+		return s.handleGetRuntimeRecipeRun(args)
+	case "validate_tunnel_recipe":
+		return s.handleValidateTunnelRecipe(args)
+	case "run_tunnel_recipe":
+		return s.handleRunTunnelRecipe(args)
+	case "get_tunnel_run":
+		return s.handleGetTunnelRun(args)
+	case "opute.provider.install":
+		return s.handleProviderInstall(args)
+	case "opute.provider.validate":
+		return s.handleProviderValidate(args)
+	case "opute.provider.status":
+		return s.handleProviderStatus(args)
+	case "opute.provider.reload":
+		return s.handleProviderReload(args)
+	case "opute.provider.teardown":
+		return s.handleProviderTeardown(args)
 	case "get_capability_catalog":
 		return s.handleGetCapabilityCatalog()
 	case "open_assistant_session":
@@ -564,7 +686,7 @@ func redactTaskValue(value any) any {
 		for key, child := range typed {
 			lower := strings.ToLower(key)
 			if strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "secret") || lower == "manifest" || lower == "sql" {
-				out[key] = "[redacted]"
+				out[key] = redactSensitiveTaskValue(child)
 				continue
 			}
 			out[key] = redactTaskValue(child)
@@ -578,6 +700,25 @@ func redactTaskValue(value any) any {
 		return out
 	default:
 		return value
+	}
+}
+
+func redactSensitiveTaskValue(value any) any {
+	switch typed := value.(type) {
+	case []any:
+		out := make([]any, len(typed))
+		for i := range typed {
+			out[i] = "[redacted]"
+		}
+		return out
+	case []string:
+		out := make([]string, len(typed))
+		for i := range typed {
+			out[i] = "[redacted]"
+		}
+		return out
+	default:
+		return "[redacted]"
 	}
 }
 

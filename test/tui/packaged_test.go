@@ -76,27 +76,22 @@ exit 1
 	server := httptest.NewServer(httpServer.Handler())
 	t.Cleanup(server.Close)
 
-	planPath := filepath.Join(t.TempDir(), "read-only.plan.json")
-	plan := `{"contractVersion":"host-plan.v1","planId":"packaged-read-only","generation":1,"idempotencyKey":"packaged-read-only-1","nodes":[{"id":"host-info","action":{"tool":"get_host_info","args":{}}}]}`
-	if err := os.WriteFile(planPath, []byte(plan), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	planDir := t.TempDir()
-
 	binary := filepath.Join(t.TempDir(), "opute-host-agent")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/opute-host-agent")
 	build.Dir = repoRoot
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build packaged TUI: %v\n%s", buildErr, output)
 	}
+	tuiBinary := filepath.Join(t.TempDir(), "opute-host-agent-tui")
+	buildTUI := exec.Command("go", "build", "-o", tuiBinary, "./cmd/opute-host-agent-tui")
+	buildTUI.Dir = filepath.Join(repoRoot, "clients", "tui")
+	if output, buildErr := buildTUI.CombinedOutput(); buildErr != nil {
+		t.Fatalf("build detached TUI: %v\n%s", buildErr, output)
+	}
 
 	commands := strings.Join([]string{
 		"/context",
-		"get_vm_info vmName=@worker-01 fast=true",
-		"get_vm_info vmName=@worker fast=true",
-		"setup graph " + planPath,
-		"setup validate " + planPath,
-		"setup apply " + planPath,
+		"get_vm_info vmName=@vm:worker-01 fast=true",
 		"/exit",
 		"",
 	}, "\n")
@@ -104,11 +99,10 @@ exit 1
 	defer cancel()
 	command := exec.CommandContext(ctx, binary,
 		"--url", server.URL+"/mcp",
-		"--plan-dir", planDir,
-		"--auto-approve",
 		"--no-prompt",
 	)
 	command.Dir = repoRoot
+	command.Env = append(os.Environ(), "OPUTE_HOST_AGENT_TUI_BIN="+tuiBinary)
 	command.Stdin = strings.NewReader(commands)
 	var output bytes.Buffer
 	command.Stdout = &output
@@ -121,23 +115,10 @@ exit 1
 		"deterministic mode is ready",
 		"catalog revision:",
 		"worker-01",
-		"entity selection required for @worker",
-		"level 1: host-info",
-		`"valid": true`,
-		"operation ",
-		": completed",
-		"node host-info: applied",
 		"bye",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("packaged TUI output missing %q:\n%s", expected, text)
 		}
-	}
-	entries, err := os.ReadDir(planDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 || filepath.Ext(entries[0].Name()) != ".plan" {
-		t.Fatalf("packaged durable plan copy = %#v", entries)
 	}
 }

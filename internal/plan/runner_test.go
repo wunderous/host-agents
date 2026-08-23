@@ -74,6 +74,10 @@ func TestRunnerValidateFirstMakesSecondRunSatisfyWithoutMutation(t *testing.T) {
 	if mutations.Load() != 1 {
 		t.Fatalf("mutation calls after first run = %d, want 1", mutations.Load())
 	}
+	observed, ok := state.Nodes["service"].Observed.(map[string]any)
+	if !ok || observed["ready"] != true {
+		t.Fatalf("successful validation observation = %#v, want ready=true", state.Nodes["service"].Observed)
+	}
 	state, err = runner.Run(context.Background(), doc, state)
 	if err != nil {
 		t.Fatalf("second run: %v", err)

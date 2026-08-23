@@ -116,6 +116,7 @@ func (r Runner) checkConverged(ctx context.Context, doc Document, levels [][]Nod
 				}
 				current.Status = StatusSatisfied
 				current.Output = result
+				current.Observed = result
 				state.Nodes[node.ID] = current
 				state.Outputs[node.ID] = result
 			}
@@ -221,6 +222,7 @@ func (r Runner) runNodeWithPreconditions(ctx context.Context, doc Document, node
 			if failure == nil {
 				previous.Status = StatusSatisfied
 				previous.Output = result
+				previous.Observed = result
 				state.Nodes[node.ID] = previous
 				state.Outputs[node.ID] = result
 				return nil
@@ -285,7 +287,14 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 		return err
 	}
 	if node.Validate != nil {
-		result, failure, err := r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs)
+		// A failed preflight must yield to the node action immediately. Polling
+		// here would wait for a resource that this node is responsible for
+		// creating. A validation-only node has no action and may use bounded
+		// polling to observe external readiness.
+		result, failure, err := r.validateNode(nodeCtx, doc, node, nil, state.Outputs)
+		if node.Action == nil {
+			result, failure, err = r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs)
+		}
 		if err != nil {
 			state.Nodes[node.ID] = failedNode(nodeState, err)
 			_ = r.emit(*state)
@@ -294,6 +303,7 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 		if failure == nil {
 			nodeState.Status = StatusSatisfied
 			nodeState.Output = result
+			nodeState.Observed = result
 			nodeState.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
 			state.Nodes[node.ID] = nodeState
 			state.Outputs[node.ID] = result
@@ -367,8 +377,9 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 			state.Nodes[node.ID] = nodeState
 			return r.emit(*state)
 		}
-		_, failure, validateErr := r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs)
+		validationOutput, failure, validateErr := r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs)
 		if validateErr == nil && failure == nil {
+			nodeState.Observed = validationOutput
 			nodeState.Status = StatusApplied
 			nodeState.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
 			state.Nodes[node.ID] = nodeState
@@ -404,8 +415,9 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 					}
 					continue
 				}
-				_, recoveryFailure, recoveryValidationErr := r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs)
+				recoveryOutput, recoveryFailure, recoveryValidationErr := r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs)
 				if recoveryValidationErr == nil && recoveryFailure == nil {
+					nodeState.Observed = recoveryOutput
 					nodeState.Status = StatusApplied
 					nodeState.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
 					state.Nodes[node.ID] = nodeState

@@ -1,0 +1,11 @@
+schema: opute-provider-plugin.v1
+pluginId: com.opute.cloudflare
+version: 1.0.0
+capabilities:
+  - id: opute.capability.tunneling.v1
+    version: 1
+server:
+  transport: streamable_http
+  endpoint: http://127.0.0.1:4319/mcp
+  executable: opute-provider-cloudflare
+  args: [serve]

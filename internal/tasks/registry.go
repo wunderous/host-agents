@@ -265,6 +265,8 @@ var TaskAwareTools = map[string]bool{
 	"prepare_host_agent_artifacts":  true,
 	"stage_build_context":           true,
 	"ensure_host_tool":              true,
+	"ensure_host_artifact":          true,
+	"remove_host_file":              true,
 	"delete_postgresql":             true,
 	"create_cloudflare_tunnel":      true,
 	"delete_cloudflare_tunnel":      true,
@@ -289,4 +291,9 @@ var TaskAwareTools = map[string]bool{
 	"stop_local_llm_runtime":      true,
 	"remove_local_llm_model":      true,
 	"run_host_plan":               true,
+	"run_runtime_recipe":          true,
+	"run_tunnel_recipe":           true,
+	"opute.provider.install":      true,
+	"opute.provider.reload":       true,
+	"opute.provider.teardown":     true,
 }

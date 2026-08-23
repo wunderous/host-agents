@@ -122,15 +122,16 @@ const (
 )
 
 type NodeRunState struct {
-	ID          string     `json:"id"`
-	Status      NodeStatus `json:"status"`
-	Attempts    int        `json:"attempts,omitempty"`
-	Output      any        `json:"output,omitempty"`
-	Observed    any        `json:"observed,omitempty"`
-	Expected    any        `json:"expected,omitempty"`
-	Error       string     `json:"error,omitempty"`
-	StartedAt   string     `json:"startedAt,omitempty"`
-	CompletedAt string     `json:"completedAt,omitempty"`
+	ID       string     `json:"id"`
+	Status   NodeStatus `json:"status"`
+	Attempts int        `json:"attempts,omitempty"`
+	Output   any        `json:"output,omitempty"`
+	// Observed is the latest validation result, including successful readiness.
+	Observed    any    `json:"observed,omitempty"`
+	Expected    any    `json:"expected,omitempty"`
+	Error       string `json:"error,omitempty"`
+	StartedAt   string `json:"startedAt,omitempty"`
+	CompletedAt string `json:"completedAt,omitempty"`
 }
 
 type RunState struct {

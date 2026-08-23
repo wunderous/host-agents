@@ -30,6 +30,12 @@ func TestPackagedSingleBinaryAllModes(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build single binary: %v\n%s", err, output)
 	}
+	tuiBinary := filepath.Join(t.TempDir(), "opute-host-agent-tui")
+	buildTUI := exec.Command("go", "build", "-o", tuiBinary, "./cmd/opute-host-agent-tui")
+	buildTUI.Dir = filepath.Join(repoRoot, "clients", "tui")
+	if output, err := buildTUI.CombinedOutput(); err != nil {
+		t.Fatalf("build detached TUI: %v\n%s", err, output)
+	}
 
 	incusPath := writeIncusFixture(t)
 	commands := strings.Join([]string{
@@ -39,13 +45,8 @@ func TestPackagedSingleBinaryAllModes(t *testing.T) {
 		"",
 	}, "\n")
 
-	// The combined mode must not bind HTTP. Holding its configured port open
-	// makes an accidental listener startup fail while the in-process MCP path
-	// continues to exercise the real initialize/tools/list/tools/call protocol.
-	occupiedListener, occupied := reservePort(t)
-	defer occupiedListener.Close()
 	combinedEnv := hostEnv(t, incusPath, t.TempDir(), t.TempDir())
-	combinedEnv = append(combinedEnv, "HOST_MCP_PORT="+occupied)
+	combinedEnv = append(combinedEnv, "HOST_MCP_PORT="+freePort(t), "OPUTE_HOST_AGENT_TUI_BIN="+tuiBinary)
 	combinedOutput, err := runBinary(t, repoRoot, binary, combinedEnv,
 		[]string{"--no-prompt", "--plan-dir", t.TempDir()}, commands)
 	if err != nil {
@@ -85,6 +86,7 @@ func TestPackagedSingleBinaryAllModes(t *testing.T) {
 	waitForTCP(t, serverCtx, "127.0.0.1:"+serverPort)
 
 	attachedEnv := hostEnv(t, incusPath, t.TempDir(), t.TempDir())
+	attachedEnv = append(attachedEnv, "OPUTE_HOST_AGENT_TUI_BIN="+tuiBinary)
 	attachedOutput, err := runBinary(t, repoRoot, binary, attachedEnv,
 		[]string{"tui", "--url", endpoint, "--no-prompt"}, commands)
 	if err != nil {

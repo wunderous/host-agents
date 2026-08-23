@@ -1,0 +1,53 @@
+contractVersion: runtime-recipe.v1
+recipeId: com.opute.ollama.external
+recipeVersion: 1.0.0
+runtime:
+  id: external-llm
+  servingContract: openai-chat.v1
+  capabilities: [chat, streaming, model-discovery]
+activation:
+  capability: llm-serving
+  servingContract: openai-chat.v1
+  inputBindings:
+    endpoint: endpoint
+    modelRef: model
+compatibility:
+  requiredTools: [probe_openai_compatible_server]
+inputs:
+  endpoint:
+    required: true
+    schema: {type: string, format: uri}
+  model:
+    required: true
+    schema: {type: string, pattern: '^[A-Za-z0-9._:/-]+$'}
+  bearerToken:
+    default: ''
+    secret: true
+    schema: {type: string}
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.ollama.external
+  generation: 1
+  idempotencyKey: com.opute.ollama.external-${vars.inputs.endpoint}-${vars.inputs.model}
+  nodes:
+    - id: readiness
+      action:
+        tool: probe_openai_compatible_server
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          modelRef: ${vars.inputs.model}
+          bearerToken: ${vars.inputs.bearerToken}
+          includeChat: true
+      validate:
+        tool: probe_openai_compatible_server
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          modelRef: ${vars.inputs.model}
+          bearerToken: ${vars.inputs.bearerToken}
+          includeChat: true
+        assert:
+          - {path: /ready, op: eq, value: true}
+          - {path: /streamingChatReady, op: eq, value: true}
+outputMapping:
+  ready: nodes.readiness.output.ready
+  streamingChatReady: nodes.readiness.output.streamingChatReady

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opute.capability.llm-serving.v1",
+  "type": "object",
+  "required": ["contractVersion", "endpointReady", "modelDiscoveryReady", "streamingChatReady", "ready"],
+  "properties": {
+    "contractVersion": {"const": "opute.capability.llm-serving.v1"},
+    "endpoint": {"type": "string"},
+    "endpointReady": {"type": "boolean"},
+    "modelDiscoveryReady": {"type": "boolean"},
+    "requestedModel": {"type": "string"},
+    "requestedModelReady": {"type": "boolean"},
+    "streamingChatReady": {"type": "boolean"},
+    "ready": {"type": "boolean"},
+    "error": {"type": "string"},
+    "remediation": {"type": "string"},
+    "provider": {"type": "object"}
+  }
+}

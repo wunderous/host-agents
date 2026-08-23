@@ -101,6 +101,25 @@ func renderClusterAgentInstallScript(bridgeURL string, arch clusterAgentArch, co
 	}, "\n")
 }
 
+func renderHostNativeClusterAgentInstallScript(bridgeURL string, arch clusterAgentArch, configJSON []byte) string {
+	return wrapHostPrivilegedShellBody(renderClusterAgentInstallScript(bridgeURL, arch, configJSON))
+}
+
+func wrapHostPrivilegedShellBody(body string) string {
+	escapedBody := strings.ReplaceAll(body, "'", "'\"'\"'")
+	return strings.Join([]string{
+		"set -euo pipefail",
+		"if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then",
+		fmt.Sprintf("  sudo -n bash -lc '%s'", escapedBody),
+		"elif [ \"$(id -u)\" -eq 0 ]; then",
+		fmt.Sprintf("  bash -lc '%s'", escapedBody),
+		"else",
+		"  echo 'passwordless sudo is required to install the cluster agent on the host OS' >&2",
+		"  exit 127",
+		"fi",
+	}, "\n")
+}
+
 func defaultBridgePort() int {
 	if v := strings.TrimSpace(envOr("PLATFORM_MCP_PORT", "")); v != "" {
 		if port, err := strconv.Atoi(v); err == nil && port > 0 {
@@ -256,8 +275,64 @@ func (s *HostOperationsService) InstallClusterAgent(args InstallClusterAgentArgs
 		return nil, fmt.Errorf("vmName is required for VM-based cluster agent install")
 	}
 
-	if args.Source == "k3s-host" || vmName == "" {
-		return nil, fmt.Errorf("host-native cluster agent install is not implemented in the Go host agent")
+	// A k3s-host cluster normally runs directly on the host OS. Some host
+	// providers, however, manage K3s inside a system container while still
+	// exposing it through the host-native execution plane. When the durable
+	// target supplies vmName, install the generic agent in that target; do not
+	// mistake the host-agent OS for the Kubernetes runtime.
+	if args.Source == "k3s-host" && vmName == "" {
+		bridgeURL := strings.TrimSpace(args.BridgeURL)
+		if bridgeURL == "" {
+			bridgeURL = resolveBridgeURLFromEnv()
+		}
+		if strings.TrimSpace(bridgeURL) == "" {
+			return nil, fmt.Errorf("bridgeUrl is required for host-native cluster agent install")
+		}
+
+		archResult, archErr := s.RunAgentShellWithTimeout("uname -m", 30*time.Second, onData)
+		if archErr != nil || archResult.ExitCode != 0 {
+			return nil, fmt.Errorf("failed to read host architecture: %s", firstNonEmpty(errString(archErr, ""), archResult.Stderr, archResult.Stdout))
+		}
+		arch := normalizeClusterAgentArch(archResult.Stdout)
+		trimmedBridgeURL := strings.TrimRight(bridgeURL, "/")
+		configJSON, marshalErr := json.Marshal(clusterAgentConfig{
+			BridgeURL:           trimmedBridgeURL,
+			BridgeMcpURL:        trimmedBridgeURL + "/mcp",
+			BridgeToken:         strings.TrimSpace(args.BridgeToken),
+			ClusterID:           strings.TrimSpace(args.ClusterID),
+			ClusterName:         strings.TrimSpace(args.ClusterName),
+			AgentID:             strings.TrimSpace(args.AgentID),
+			APIEndpoint:         strings.TrimSpace(args.APIEndpoint),
+			ProviderID:          strings.TrimSpace(args.ProviderID),
+			ResourceID:          strings.TrimSpace(args.ResourceID),
+			PollIntervalSeconds: 5,
+		})
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+
+		installScript := renderHostNativeClusterAgentInstallScript(trimmedBridgeURL, arch, configJSON)
+		installResult, installErr := s.RunAgentShellWithTimeout(installScript, clusterAgentInstallTimeout, onData)
+		if installErr != nil {
+			return nil, installErr
+		}
+		if installResult.ExitCode != 0 {
+			return nil, fmt.Errorf("%s", firstNonEmpty(installResult.Stderr, installResult.Stdout, "host cluster agent install failed"))
+		}
+		if err := s.waitForSystemdActive(clusterAgentServiceName, onData, clusterAgentServiceWait); err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"host":        true,
+			"bridgeUrl":   trimmedBridgeURL,
+			"serviceName": clusterAgentServiceName,
+			"status":      "active",
+			"arch":        string(arch),
+		}, nil
+	}
+
+	if vmName == "" {
+		return nil, fmt.Errorf("vmName is required for VM-based cluster agent install")
 	}
 
 	if err := s.waitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {

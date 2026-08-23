@@ -1,0 +1,11 @@
+schema: opute-provider-plugin.v1
+pluginId: com.opute.ollama
+version: 1.0.0
+capabilities:
+  - id: opute.capability.llm-serving.v1
+    version: 1
+server:
+  transport: streamable_http
+  endpoint: http://127.0.0.1:4318/mcp
+  executable: opute-provider-ollama
+  args: [serve]

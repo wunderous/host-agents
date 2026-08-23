@@ -193,6 +193,25 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
+	case "probe_openai_compatible_server":
+		out, err := svc.ProbeOpenAICompatibleServer(ctx, ops.ProbeOpenAICompatibleArgs{
+			Endpoint:    stringField(args, "endpoint"),
+			ModelRef:    stringField(args, "modelRef"),
+			IncludeChat: boolField(args, "includeChat"),
+			BearerToken: stringField(args, "bearerToken"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
+	case "probe_http_endpoint":
+		out, err := svc.ProbeHTTPEndpoint(ctx, ops.ProbeHTTPEndpointArgs{Endpoint: stringField(args, "endpoint")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
 	case "ensure_local_llm_server_binary":
 		if localLLMRuntime(args) != "llama-cpp" {
 			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
@@ -289,7 +308,26 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "configure_local_llm_model":
 		if localLLMRuntime(args) == "ollama" {
-			return nil, fmt.Errorf("Ollama model configuration is owned by the shared host runtime; use install_local_llm_model")
+			modelRef := localLLMModelRef(args)
+			contextSize := intField(args, "contextSize")
+			if contextSize == 0 {
+				contextSize = intField(args, "numCtx")
+			}
+			if contextSize > 0 {
+				if modelRef == "" {
+					return nil, fmt.Errorf("modelRef is required when setting contextSize")
+				}
+				out, err := svc.ConfigureOllamaModelContext(ctx, ops.ConfigureOllamaModelContextArgs{ModelRef: modelRef, ContextSize: contextSize})
+				if err != nil {
+					return nil, err
+				}
+				return structuredResult(out, "Ollama model context is persisted in the shared host runtime"), nil
+			}
+			out, err := svc.GetOllamaModelContext(ctx, modelRef)
+			if err != nil {
+				return nil, err
+			}
+			return structuredResult(out, "Ollama model context returned from the shared host runtime"), nil
 		}
 		if localLLMRuntime(args) != "llama-cpp" {
 			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
@@ -936,12 +974,54 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, fmt.Sprintf("Applied service state '%s' to '%s'.", out["state"], out["serviceName"])), nil
 
+	case "inspect_host_service":
+		out, err := svc.InspectHostService(ops.InspectHostServiceArgs{ServiceName: stringField(args, "serviceName"), Scope: stringField(args, "scope")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Host service status inspected."), nil
+
 	case "ensure_host_service_supervisor":
 		out, err := svc.EnsureHostServiceSupervisor(ops.EnsureHostServiceSupervisorArgs{Scope: stringField(args, "scope")}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "Host service supervisor is ready."), nil
+
+	case "ensure_host_file":
+		out, err := svc.EnsureHostFile(ops.EnsureHostFileArgs{Path: stringField(args, "path"), Content: stringField(args, "content"), Mode: intField(args, "mode")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Managed host file reconciled."), nil
+
+	case "remove_host_file":
+		out, err := svc.RemoveHostFile(ops.RemoveHostFileArgs{Path: stringField(args, "path"), ExpectedSHA256: stringField(args, "expectedSha256"), Confirm: boolField(args, "confirm")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Managed host file removed."), nil
+
+	case "ensure_host_artifact":
+		out, err := svc.EnsureHostArtifact(ops.EnsureHostArtifactArgs{URI: stringField(args, "uri"), Destination: stringField(args, "destination"), SHA256: stringField(args, "sha256"), Executable: boolField(args, "executable")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Verified host artifact reconciled."), nil
+
+	case "extract_host_archive":
+		out, err := svc.ExtractHostArchive(ops.ExtractHostArchiveArgs{ArchivePath: stringField(args, "archivePath"), Destination: stringField(args, "destination"), Format: stringField(args, "format")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Verified host archive extracted."), nil
+
+	case "inspect_host_file":
+		out, err := svc.InspectHostFile(ops.InspectHostFileArgs{Path: stringField(args, "path"), ExpectedSHA256: stringField(args, "expectedSha256"), ExpectedContent: stringField(args, "expectedContent")})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Managed host file inspected."), nil
 
 	case "configure_agent_connection":
 		env := map[string]string{}

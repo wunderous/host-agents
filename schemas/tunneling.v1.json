@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opute.capability.tunneling.v1",
+  "type": "object",
+  "required": ["contractVersion", "ready", "bindings"],
+  "properties": {
+    "contractVersion": {"const": "opute.capability.tunneling.v1"},
+    "ready": {"type": "boolean"},
+    "bindings": {"type": "array"},
+    "error": {"type": "string"},
+    "provider": {"type": "object"}
+  }
+}

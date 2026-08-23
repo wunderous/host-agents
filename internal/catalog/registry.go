@@ -17,6 +17,7 @@ var operationNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,127}$`)
 
 type Options struct {
 	ProviderID             string
+	AuthorizedProviders    map[string]bool
 	KnownResourceKinds     map[string]bool
 	AllowedImplementations map[string]bool
 }
@@ -34,6 +35,7 @@ type Registration struct {
 type Registry struct {
 	mu                     sync.RWMutex
 	provider               string
+	authorizedProviders    map[string]bool
 	known                  map[string]bool
 	allowedImplementations map[string]bool
 	base                   tools.CapabilityCatalogSnapshot
@@ -53,7 +55,14 @@ func NewRegistry(snapshot tools.CapabilityCatalogSnapshot, options Options) *Reg
 	for implementation, enabled := range options.AllowedImplementations {
 		allowed[implementation] = enabled
 	}
-	return &Registry{provider: provider, known: known, allowedImplementations: allowed, base: snapshot, overlays: make(map[string]Registration)}
+	authorized := make(map[string]bool, len(options.AuthorizedProviders)+1)
+	authorized[provider] = true
+	for candidate, enabled := range options.AuthorizedProviders {
+		if enabled {
+			authorized[normalizeRegistrationProvider(candidate)] = true
+		}
+	}
+	return &Registry{provider: provider, authorizedProviders: authorized, known: known, allowedImplementations: allowed, base: snapshot, overlays: make(map[string]Registration)}
 }
 
 func (r *Registry) Snapshot() tools.CapabilityCatalogSnapshot {
@@ -85,6 +94,40 @@ func (r *Registry) Register(registration Registration) error {
 	return nil
 }
 
+// Upsert replaces an existing provider overlay only when its provider and
+// implementation identity are unchanged. This lets a reloaded generation
+// refresh schemas without creating a second MCP command registration.
+func (r *Registry) Upsert(registration Registration) error {
+	if err := r.validate(registration); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, descriptor := range r.base.Tools {
+		if descriptor.OperationID == registration.Descriptor.OperationID {
+			return fmt.Errorf("capability %q conflicts with the base catalog", registration.Descriptor.OperationID)
+		}
+	}
+	if existing, exists := r.overlays[registration.Descriptor.OperationID]; exists {
+		if existing.ProviderID != registration.ProviderID || existing.Implementation != registration.Implementation {
+			return fmt.Errorf("capability %q is already registered by another provider", registration.Descriptor.OperationID)
+		}
+	}
+	r.overlays[registration.Descriptor.OperationID] = registration
+	return nil
+}
+
+func (r *Registry) AuthorizeProvider(providerID string) error {
+	providerID = normalizeRegistrationProvider(providerID)
+	if providerID == "" {
+		return fmt.Errorf("provider id is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.authorizedProviders[providerID] = true
+	return nil
+}
+
 func (r *Registry) Unregister(operationID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -100,7 +143,8 @@ func (r *Registry) validate(registration Registration) error {
 	if !operationNamePattern.MatchString(descriptor.OperationID) || descriptor.OperationID != descriptor.Name {
 		return fmt.Errorf("operationId and name must be the same valid operation identifier")
 	}
-	if strings.TrimSpace(registration.ProviderID) == "" || tools.NormalizeProviderID(registration.ProviderID) != r.provider {
+	registrationProvider := normalizeRegistrationProvider(registration.ProviderID)
+	if registrationProvider == "" || !r.authorizedProviders[registrationProvider] {
 		return fmt.Errorf("registration provider does not match the authorized provider")
 	}
 	if strings.TrimSpace(registration.Implementation) == "" {
@@ -112,7 +156,7 @@ func (r *Registry) validate(registration Registration) error {
 	if len(r.allowedImplementations) > 0 && !r.allowedImplementations[registration.Implementation] {
 		return fmt.Errorf("registration implementation %q is not authorized", registration.Implementation)
 	}
-	if descriptor.Provider != "" && tools.NormalizeProviderID(descriptor.Provider) != r.provider {
+	if descriptor.Provider != "" && normalizeRegistrationProvider(descriptor.Provider) != registrationProvider {
 		return fmt.Errorf("descriptor provider does not match the authorized provider")
 	}
 	if descriptor.InputSchema == nil || descriptor.OutputSchema == nil {
@@ -129,6 +173,10 @@ func (r *Registry) validate(registration Registration) error {
 		}
 	}
 	return nil
+}
+
+func normalizeRegistrationProvider(providerID string) string {
+	return strings.ToLower(strings.TrimSpace(providerID))
 }
 
 func revision(provider string, descriptors []tools.CapabilityDescriptor) string {

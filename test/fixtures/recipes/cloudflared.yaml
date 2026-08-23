@@ -1,0 +1,99 @@
+contractVersion: tunnel-recipe.v1
+recipeId: first-party-cloudflared-platform-edge
+recipeVersion: 0.1.0
+provider:
+  id: cloudflared
+  capabilities: [http-exposure]
+bindings:
+  - id: platform
+    hostname: platform.opute.io
+    localTarget: http://platform-opute-web.opute-platform.svc.cluster.local:9090
+  - id: mcp
+    hostname: mcp.opute.io
+    localTarget: http://platform-opute-mcp.opute-platform.svc.cluster.local:9091
+inputs:
+  vmName:
+    default: opute-dev-cnpg
+    schema: {type: string, minLength: 1}
+  token:
+    required: true
+    secret: true
+    schema: {type: string, minLength: 1}
+  namespace:
+    default: edge-system
+    schema: {type: string, pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'}
+  name:
+    default: cloudflared
+    schema: {type: string, pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'}
+  platformEndpoint:
+    default: https://platform.opute.io/health
+    schema: {type: string, format: uri}
+  mcpEndpoint:
+    default: https://mcp.opute.io/health
+    schema: {type: string, format: uri}
+  activationEndpoints:
+    default: [https://platform.opute.io/health, https://mcp.opute.io/health]
+    schema: {type: array, minItems: 2, items: {type: string, format: uri}}
+compatibility:
+  requiredTools: [install_cloudflared_connector, get_k8s_resource_status, probe_http_endpoint]
+activation:
+  capability: tunneling
+  servingContract: http-exposure.v1
+  inputBindings:
+    endpoints: activationEndpoints
+outputMapping:
+  ready: nodes.mcp.output.ready
+plan:
+  contractVersion: host-plan.v1
+  planId: first-party-cloudflared-platform-edge
+  generation: 1
+  idempotencyKey: first-party-cloudflared-${vars.inputs.vmName}-${vars.inputs.namespace}-${vars.inputs.name}
+  defaults:
+    timeoutMs: 120000
+    retry: {maxAttempts: 1, backoffMs: 1000}
+  converge: {maxPasses: 3, abortOnExhaustion: true}
+  nodes:
+    - id: connector
+      action:
+        tool: install_cloudflared_connector
+        args:
+          vmName: ${vars.inputs.vmName}
+          namespace: ${vars.inputs.namespace}
+          name: ${vars.inputs.name}
+          token: ${vars.inputs.token}
+          replicas: 2
+          localTargets:
+            - {localPort: 9190, target: platform-opute-web.opute-platform.svc.cluster.local:9090}
+            - {localPort: 9191, target: platform-opute-mcp.opute-platform.svc.cluster.local:9091}
+      validate:
+        tool: get_k8s_resource_status
+        args:
+          vmName: ${vars.inputs.vmName}
+          resourceKind: Deployment
+          resourceName: ${vars.inputs.name}
+          namespace: ${vars.inputs.namespace}
+        assert: [{op: eq, path: /status, value: ready}]
+        timeoutMs: 120000
+        pollIntervalMs: 2000
+    - id: platform
+      dependsOn: [connector]
+      action:
+        tool: probe_http_endpoint
+        args:
+          endpoint: ${vars.inputs.platformEndpoint}
+      validate:
+        tool: probe_http_endpoint
+        args:
+          endpoint: ${vars.inputs.platformEndpoint}
+        assert: [{op: eq, path: /ready, value: true}]
+    - id: mcp
+      dependsOn: [platform]
+      action:
+        tool: probe_http_endpoint
+        args:
+          endpoint: ${vars.inputs.mcpEndpoint}
+      validate:
+        tool: probe_http_endpoint
+        args:
+          endpoint: ${vars.inputs.mcpEndpoint}
+        assert: [{op: eq, path: /ready, value: true}]

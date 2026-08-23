@@ -1,0 +1,191 @@
+contractVersion: runtime-recipe.v1
+recipeId: com.opute.ollama.managed-linux
+recipeVersion: 1.2.2
+runtime:
+  id: provider-llm
+  servingContract: openai-chat.v1
+  capabilities: [chat, streaming, model-discovery]
+activation:
+  capability: llm-serving
+  servingContract: openai-chat.v1
+  inputBindings:
+    endpoint: endpoint
+    modelRef: model
+compatibility:
+  requiredTools: [ensure_host_artifact, extract_host_archive, ensure_host_file, ensure_host_service_supervisor, set_host_service_state, inspect_host_service, run_host_command, probe_openai_compatible_server]
+inputs:
+  artifactUri:
+    default: https://github.com/ollama/ollama/releases/download/v0.32.15/ollama-linux-amd64.tar.zst
+    schema: {type: string, format: uri}
+  artifactSha256:
+    default: 50539c5fe9bf85887733355098dcdb266b433cb8c73fa180713417e9ed6e42bb
+    schema: {type: string, pattern: '^[0-9a-fA-F]{64}$'}
+  artifactPath:
+    default: ~/.local/share/opute/providers/com.opute.ollama/ollama-linux-amd64.tar.zst
+    schema: {type: string, pattern: '^[A-Za-z0-9_./%~-]+$'}
+  runtimeDir:
+    default: ~/.local/share/opute/providers/com.opute.ollama
+    schema: {type: string, pattern: '^[A-Za-z0-9_./%~-]+$'}
+  binaryPath:
+    default: '%h/.local/share/opute/providers/com.opute.ollama/bin/ollama'
+    schema: {type: string, pattern: '^[A-Za-z0-9_./%~-]+$'}
+  binaryInspectPath:
+    default: ~/.local/share/opute/providers/com.opute.ollama/lib/ollama/llama-server
+    schema: {type: string, pattern: '^[A-Za-z0-9_./%~-]+$'}
+  serviceFile:
+    default: ~/.config/systemd/user/ollama.service
+    schema: {type: string, pattern: '^[A-Za-z0-9_./%~-]+$'}
+  serviceName:
+    default: ollama.service
+    schema: {type: string, pattern: '^[A-Za-z0-9_.@:-]+$'}
+  listenAddress:
+    default: 127.0.0.1:11434
+    schema: {type: string, pattern: '^[A-Za-z0-9.:_-]+$'}
+  endpoint:
+    default: http://127.0.0.1:11434
+    schema: {type: string, format: uri}
+  model:
+    default: qwen3.5:2b
+    schema: {type: string, pattern: '^[A-Za-z0-9._:/-]+$'}
+  contextSize:
+    default: 32768
+    schema: {type: integer, minimum: 512, maximum: 1048576}
+  recipeRevision:
+    default: 1.2.2
+    schema: {type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'}
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.ollama.managed-linux
+  generation: 1
+  idempotencyKey: com.opute.ollama-${vars.inputs.recipeRevision}-${vars.inputs.artifactSha256}-${vars.inputs.endpoint}-${vars.inputs.model}-${vars.inputs.contextSize}-${vars.inputs.serviceName}-${vars.inputs.serviceFile}
+  nodes:
+    - id: artifact
+      action:
+        tool: ensure_host_artifact
+        args:
+          uri: ${vars.inputs.artifactUri}
+          destination: ${vars.inputs.artifactPath}
+          sha256: ${vars.inputs.artifactSha256}
+      validate:
+        tool: inspect_host_file
+        args:
+          path: "${vars.inputs.artifactPath}"
+        assert: [{path: /exists, op: eq, value: true}]
+    - id: extract
+      dependsOn: [artifact]
+      action:
+        tool: extract_host_archive
+        args:
+          archivePath: ${vars.inputs.artifactPath}
+          destination: ${vars.inputs.runtimeDir}
+          format: tar.zst
+      validate:
+        tool: inspect_host_file
+        args:
+          path: "${vars.inputs.binaryInspectPath}"
+        assert: [{path: /exists, op: eq, value: true}, {path: /executable, op: eq, value: true}]
+    - id: service-file
+      dependsOn: [extract]
+      action:
+        tool: ensure_host_file
+        args:
+          path: ${vars.inputs.serviceFile}
+          mode: 384
+          content: |
+            [Unit]
+            Description=Opute provider Ollama runtime
+            After=network-online.target
+            Wants=network-online.target
+
+            [Service]
+            ExecStart=${vars.inputs.binaryPath} serve
+            Environment="OLLAMA_HOST=${vars.inputs.listenAddress}"
+            Environment="OLLAMA_CONTEXT_LENGTH=${vars.inputs.contextSize}"
+            Environment="OLLAMA_NUM_PARALLEL=1"
+            Environment="OLLAMA_MAX_LOADED_MODELS=2"
+            Environment="OLLAMA_KEEP_ALIVE=-1"
+            Restart=on-failure
+            RestartSec=2
+
+            [Install]
+            WantedBy=default.target
+      validate:
+        tool: inspect_host_file
+        args:
+          path: "${vars.inputs.serviceFile}"
+        assert: [{path: /exists, op: eq, value: true}]
+    - id: supervisor
+      dependsOn: [service-file]
+      action:
+        tool: ensure_host_service_supervisor
+        args: {scope: user}
+      validate:
+        tool: inspect_host_file
+        args:
+          path: "${vars.inputs.serviceFile}"
+        assert: [{path: /exists, op: eq, value: true}]
+    - id: enable
+      dependsOn: [supervisor]
+      action:
+        tool: set_host_service_state
+        args: {serviceName: "${vars.inputs.serviceName}", state: enable, scope: user}
+      validate:
+        tool: inspect_host_service
+        args: {serviceName: "${vars.inputs.serviceName}", scope: user}
+        assert: [{path: /enabled, op: eq, value: true}]
+    - id: start
+      dependsOn: [enable]
+      action:
+        tool: set_host_service_state
+        args: {serviceName: "${vars.inputs.serviceName}", state: start, scope: user}
+      validate:
+        tool: inspect_host_service
+        args: {serviceName: "${vars.inputs.serviceName}", scope: user}
+        assert: [{path: /active, op: eq, value: true}]
+    - id: model
+      dependsOn: [endpoint-ready]
+      action:
+        tool: run_host_command
+        args:
+          command: PATH="$HOME/.local/share/opute/providers/com.opute.ollama/bin:$PATH" ollama pull '${vars.inputs.model}'
+          timeoutMs: 7200000
+      validate:
+        tool: probe_openai_compatible_server
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          modelRef: ${vars.inputs.model}
+          includeChat: false
+        assert: [{path: /ready, op: eq, value: true}]
+    - id: endpoint-ready
+      dependsOn: [start]
+      action:
+        tool: probe_openai_compatible_server
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          includeChat: false
+      validate:
+        tool: probe_openai_compatible_server
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          includeChat: false
+        assert: [{path: /endpointReady, op: eq, value: true}]
+    - id: readiness
+      dependsOn: [model]
+      action:
+        tool: probe_openai_compatible_server
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          modelRef: ${vars.inputs.model}
+          includeChat: true
+      validate:
+        tool: probe_openai_compatible_server
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          modelRef: ${vars.inputs.model}
+          includeChat: true
+        assert:
+          - {path: /ready, op: eq, value: true}
+          - {path: /streamingChatReady, op: eq, value: true}
+outputMapping:
+  ready: nodes.readiness.output.ready
+  streamingChatReady: nodes.readiness.output.streamingChatReady

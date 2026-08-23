@@ -1,6 +1,13 @@
 package ops
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -11,6 +18,7 @@ func TestRenderOllamaSystemdUnitUsesSharedConcurrencyPolicy(t *testing.T) {
 		BinaryPath:      "/usr/local/bin/ollama",
 		ModelRef:        "qwen3.5:2b",
 		ModelsDirectory: "/var/lib/opute/ollama/models",
+		ContextSize:     32768,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -21,6 +29,7 @@ func TestRenderOllamaSystemdUnitUsesSharedConcurrencyPolicy(t *testing.T) {
 		"Environment=OLLAMA_HOST=127.0.0.1:11434",
 		"Environment=OLLAMA_NUM_PARALLEL=1",
 		"Environment=OLLAMA_MAX_LOADED_MODELS=2",
+		"Environment=OLLAMA_CONTEXT_LENGTH=32768",
 		"Environment=OLLAMA_MODELS=/var/lib/opute/ollama/models",
 		"Restart=on-failure",
 	} {
@@ -44,5 +53,180 @@ func TestOllamaModelNamesMatchTags(t *testing.T) {
 		if got := ollamaModelNamesMatch(test.left, test.right); got != test.want {
 			t.Fatalf("ollamaModelNamesMatch(%q, %q) = %v, want %v", test.left, test.right, got, test.want)
 		}
+	}
+}
+
+func TestConfigureOllamaModelContextPersistsGenericModelMapping(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	created := 0
+	managedContext := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload struct {
+			Model      string         `json:"model"`
+			Parameters map[string]int `json:"parameters"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		switch request.URL.Path {
+		case "/api/show":
+			contextSize := 4096
+			if configured, ok := managedContext[payload.Model]; ok {
+				contextSize = configured
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(writer, `{"parameters":"num_ctx %d\n"}`, contextSize)
+		case "/api/create":
+			created++
+			managedContext[payload.Model] = payload.Parameters["num_ctx"]
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(writer, `{"status":"success"}`)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	portText := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPUTE_OLLAMA_PORT", strconv.Itoa(port))
+
+	service := &HostOperationsService{}
+	first, err := service.ConfigureOllamaModelContext(t.Context(), ConfigureOllamaModelContextArgs{
+		ModelRef:    "arbitrary/provider-model:latest",
+		ContextSize: 32768,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.Persisted || !first.Changed || first.ContextSize != 32768 {
+		t.Fatalf("unexpected first result: %+v", first)
+	}
+	if first.EffectiveModelRef == first.ModelRef || !strings.HasPrefix(first.EffectiveModelRef, "opute/context-") {
+		t.Fatalf("expected generic managed model reference, got %+v", first)
+	}
+	if created != 1 {
+		t.Fatalf("create calls = %d, want 1", created)
+	}
+
+	second, err := service.ConfigureOllamaModelContext(t.Context(), ConfigureOllamaModelContextArgs{
+		ModelRef:    first.ModelRef,
+		ContextSize: 32768,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Changed || second.EffectiveModelRef != first.EffectiveModelRef {
+		t.Fatalf("expected idempotent second result, first=%+v second=%+v", first, second)
+	}
+	third, err := service.ConfigureOllamaModelContext(t.Context(), ConfigureOllamaModelContextArgs{
+		ModelRef:    first.ModelRef,
+		ContextSize: 16384,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !third.Changed || third.ContextSize != 16384 || third.EffectiveModelRef != first.EffectiveModelRef {
+		t.Fatalf("expected stable managed reference across context update, first=%+v third=%+v", first, third)
+	}
+	if created != 2 {
+		t.Fatalf("create calls after context update = %d, want 2", created)
+	}
+
+	configPath := filepath.Join(home, ".config", "opute", "ollama-runtime.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config OllamaRuntimeConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	persisted := config.ModelContexts[first.ModelRef]
+	if persisted.EffectiveModelRef != third.EffectiveModelRef || persisted.ContextSize != 16384 {
+		t.Fatalf("unexpected persisted mapping: %+v", persisted)
+	}
+}
+
+func TestGetOllamaModelContextFallsBackToRunningContextLength(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	serviceDir := filepath.Join(home, ".config", "systemd", "user")
+	if err := os.MkdirAll(serviceDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(serviceDir, "ollama.service"), []byte("Environment=OLLAMA_CONTEXT_LENGTH=32768\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/show":
+			_, _ = fmt.Fprint(writer, `{"parameters":"","details":{"parent_model":""}}`)
+		case "/api/ps":
+			_, _ = fmt.Fprint(writer, `{"models":[{"name":"qwen3.5:2b","context_length":32768}]}`)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	port, err := strconv.Atoi(strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPUTE_OLLAMA_PORT", strconv.Itoa(port))
+
+	result, err := (&HostOperationsService{}).GetOllamaModelContext(t.Context(), "qwen3.5:2b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ContextSize != 32768 || result.ContextSource != "ollama-runtime" {
+		t.Fatalf("unexpected running context fallback: %+v", result)
+	}
+}
+
+func TestParseOllamaContextSize(t *testing.T) {
+	if got := parseOllamaContextSize("temperature 0.2\nnum_ctx 32768\nstop <eos>"); got != 32768 {
+		t.Fatalf("parseOllamaContextSize() = %d, want 32768", got)
+	}
+	if got := parseOllamaContextSize("temperature 0.2"); got != 0 {
+		t.Fatalf("parseOllamaContextSize() = %d, want 0", got)
+	}
+}
+
+func TestWarmOllamaModelUsesSelectedReferenceAndKeepAlive(t *testing.T) {
+	var received struct {
+		Model     string `json:"model"`
+		Prompt    string `json:"prompt"`
+		Stream    bool   `json:"stream"`
+		KeepAlive any    `json:"keep_alive"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/generate" {
+			http.NotFound(writer, request)
+			return
+		}
+		if err := json.NewDecoder(request.Body).Decode(&received); err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		_, _ = fmt.Fprint(writer, `{"done":true}`)
+	}))
+	defer server.Close()
+	port, err := strconv.Atoi(strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := warmOllamaModel(t.Context(), OllamaRuntimeConfig{Port: port}, "opute/context-managed-32768"); err != nil {
+		t.Fatal(err)
+	}
+	if received.Model != "opute/context-managed-32768" || received.Stream || received.Prompt != "." {
+		t.Fatalf("unexpected warm request: %+v", received)
+	}
+	if keepAlive, ok := received.KeepAlive.(float64); !ok || keepAlive != -1 {
+		t.Fatalf("keep_alive = %#v, want -1", received.KeepAlive)
 	}
 }

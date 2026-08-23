@@ -4,19 +4,22 @@ Go implementation of the Opute host agent (replaces `@opute/mcp-host-agent`).
 
 ## Standalone Go experience
 
-`opute-host-agent` is the single-binary standalone experience. It runs the typed
-Host Agent MCP server and a full-screen Bubble Tea TUI in one process, connected
-by the MCP SDK's in-memory transport. The TUI provides a styled output viewport,
-command history, catalog-backed suggestions, scroll controls, cancellation, and
-interactive approval/entity prompts. It does not require Opute Platform, Bridge,
-an onboarding token, or a reverse tunnel. Mutations are denied by default.
+`opute-host-agent` is the Host Agent server. The deterministic TUI is a separate,
+provider-neutral client in `clients/tui` and communicates with the server over
+Streamable HTTP MCP. This keeps the server usable without a TUI, provider MCP,
+or LLM. Mutations remain denied by default.
 
 Build and launch the combined local TUI:
 
 ```bash
+make build
 OPUTE_INFRA_PROVIDER_ID=incus \
 OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone" \
 ./dist/opute-host-agent
+
+# If the TUI is not beside the server, point the launcher at it explicitly.
+OPUTE_HOST_AGENT_TUI_BIN="$PWD/dist/opute-host-agent-tui" \
+OPUTE_INFRA_PROVIDER_ID=incus ./dist/opute-host-agent
 ```
 
 The same binary also supports explicit modes:
@@ -27,6 +30,9 @@ The same binary also supports explicit modes:
 
 # TUI attached to an existing MCP server
 ./dist/opute-host-agent tui --url http://127.0.0.1:3014/mcp
+
+# Or invoke the detached client directly
+./dist/opute-host-agent-tui --url http://127.0.0.1:3014/mcp
 ```
 
 Or via the npm helper:
@@ -49,17 +55,11 @@ Generic Streamable HTTP client configuration:
 }
 ```
 
-The TUI discovers the server's revisioned capability catalog, generates completion
-from `tools/list`, validates typed arguments, requires approval for mutations,
-and supports `setup validate|graph|apply|status|resume|cancel`. `/assistant on`
-is optional and only accepts a structured proposal from the configured
-`OPUTE_TUI_MODEL_URL`; deterministic mode remains the fallback when no model is
-configured. Entity references use explicit authorized observations and never
-turn an unknown name into an opaque ID.
-
-When stdin or stdout is not a terminal, the binary uses the same command engine
-through its line-oriented fallback so scripts and automated tests remain
-deterministic. Interactive terminal sessions use the full-screen TUI.
+The detached TUI discovers the server's revisioned capability catalog, parses
+typed commands, resolves explicit authorized entity references such as
+`@vm:worker-01`, validates arguments against the catalog schema, and executes
+one MCP call per submitted command. It does not infer operations from prose or
+require an LLM. `/context`, `/tools`, and `/exit` are local client commands.
 
 The following are verified Streamable HTTP MCP client examples for VS Code,
 Claude Desktop, and Cursor (gate: `opute/scripts/validate-standalone-mcp-client.ts`
@@ -128,7 +128,7 @@ Or from this directory:
 
 ```bash
 make build
-# builds the single canonical opute-host-agent binary
+# builds both dist/opute-host-agent and dist/opute-host-agent-tui
 make test
 make artifacts   # host-agent-linux-x64.gz, host-agent-linux-arm64.gz
 make standalone-http-smoke

@@ -1,0 +1,151 @@
+contractVersion: runtime-recipe.v1
+recipeId: first-party-ollama
+recipeVersion: 0.1.1
+runtime:
+  id: ollama
+  servingContract: openai-chat.v1
+  capabilities: [chat, streaming, embeddings, model-discovery]
+activation:
+  capability: llm
+  servingContract: openai-chat.v1
+  inputBindings:
+    endpoint: endpoint
+    modelRef: modelRef
+compatibility:
+  requiredTools:
+    - ensure_host_file
+    - inspect_host_file
+    - set_host_service_state
+    - run_host_command
+    - probe_openai_compatible_server
+inputs:
+  endpoint:
+    default: http://127.0.0.1:11434
+    schema:
+      type: string
+      format: uri
+  modelRef:
+    default: qwen3.5:2b
+    schema:
+      type: string
+      minLength: 1
+      maxLength: 200
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$'
+  binaryPath:
+    default: /usr/local/bin/ollama
+    schema:
+      type: string
+      minLength: 1
+      pattern: '^/[A-Za-z0-9._/~:-]+$'
+  servicePath:
+    default: ~/.config/systemd/user/opute-ollama.service
+    schema:
+      type: string
+      minLength: 1
+plan:
+  contractVersion: host-plan.v1
+  planId: first-party-ollama
+  generation: 2
+  idempotencyKey: first-party-ollama-${vars.inputs.endpoint}-${vars.inputs.modelRef}-${vars.inputs.binaryPath}
+  defaults:
+    timeoutMs: 120000
+    retry:
+      maxAttempts: 1
+      backoffMs: 1000
+  converge:
+    maxPasses: 3
+    abortOnExhaustion: true
+  nodes:
+    - id: unit
+      action:
+        tool: ensure_host_file
+        args:
+          path: ${vars.inputs.servicePath}
+          mode: 420
+          content: |
+            [Unit]
+            Description=Opute managed Ollama runtime
+            After=network-online.target
+
+            [Service]
+            Type=simple
+            ExecStart=${vars.inputs.binaryPath} serve
+            Environment=OLLAMA_HOST=127.0.0.1:11434
+            Environment=OLLAMA_NUM_PARALLEL=1
+            Environment=OLLAMA_MAX_LOADED_MODELS=2
+            Environment=OLLAMA_KEEP_ALIVE=-1
+            Restart=on-failure
+            RestartSec=2
+
+            [Install]
+            WantedBy=default.target
+      validate:
+        tool: inspect_host_file
+        args:
+          path: ${vars.inputs.servicePath}
+        assert:
+          - path: /exists
+            op: eq
+            value: true
+          - path: /regular
+            op: eq
+            value: true
+          - path: /matches
+            op: eq
+            value: true
+
+    - id: service
+      dependsOn: [unit]
+      action:
+        tool: set_host_service_state
+        args:
+          serviceName: opute-ollama.service
+          state: restart
+          scope: user
+      validate:
+        tool: probe_openai_compatible_server
+        timeoutMs: 30000
+        pollIntervalMs: 500
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          includeChat: false
+        assert:
+          - path: /endpointReady
+            op: eq
+            value: true
+
+    - id: model
+      dependsOn: [service]
+      action:
+        tool: run_host_command
+        args:
+          command: ${vars.inputs.binaryPath} pull '${vars.inputs.modelRef}'
+          timeoutMs: 7200000
+      validate:
+        tool: probe_openai_compatible_server
+        timeoutMs: 120000
+        pollIntervalMs: 1000
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          modelRef: ${vars.inputs.modelRef}
+          includeChat: true
+        assert:
+          - path: /ready
+            op: eq
+            value: true
+          - path: /streamingChatReady
+            op: eq
+            value: true
+
+    - id: probe
+      dependsOn: [model]
+      action:
+        tool: probe_openai_compatible_server
+        args:
+          endpoint: ${vars.inputs.endpoint}
+          modelRef: ${vars.inputs.modelRef}
+          includeChat: true
+outputMapping:
+  ready: nodes.probe.output.ready
+  modelRef: nodes.probe.output.modelRef
+  streamingChatReady: nodes.probe.output.streamingChatReady
