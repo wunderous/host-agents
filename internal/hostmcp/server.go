@@ -9,8 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
+	hostcapability "github.com/wunderous/host-agents/internal/capability"
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
 	"github.com/wunderous/host-agents/internal/console"
 	"github.com/wunderous/host-agents/internal/cordis"
@@ -44,7 +46,7 @@ type Server struct {
 	toolDefs                   []tools.ToolDefinition
 	catalog                    tools.CapabilityCatalogSnapshot
 	registry                   *capabilitycatalog.Registry
-	dynamic                    map[string]CapabilityImplementation
+	capabilities               map[string]hostcapability.Capability
 	providerContext            *cordis.Context
 	providerLifecycle          *cordis.ProviderLifecycleManager
 	providerAdapters           map[string]*provideradapter.Adapter
@@ -154,7 +156,7 @@ func NewServer(opts Options) (*Server, error) {
 		admission:                  opts.Admission,
 		catalog:                    capabilityCatalog,
 		registry:                   registry,
-		dynamic:                    make(map[string]CapabilityImplementation),
+		capabilities:               make(map[string]hostcapability.Capability),
 		providerContext:            cordis.NewContext(),
 		providerLifecycle:          cordis.NewProviderLifecycleManager(cordis.DrainPolicy{}),
 		providerAdapters:           make(map[string]*provideradapter.Adapter),
@@ -252,8 +254,7 @@ func (s *Server) CatalogSnapshot() tools.CapabilityCatalogSnapshot {
 }
 
 func cloneCatalogSnapshot(snapshot tools.CapabilityCatalogSnapshot) tools.CapabilityCatalogSnapshot {
-	snapshot.Tools = append([]tools.CapabilityDescriptor(nil), snapshot.Tools...)
-	return snapshot
+	return tools.CloneCapabilityCatalogSnapshot(snapshot)
 }
 
 // RegisterCapability adds a typed capability bound to a trusted host
@@ -266,16 +267,59 @@ func (s *Server) RegisterCapability(registration capabilitycatalog.Registration,
 	if s.registry == nil {
 		return fmt.Errorf("capability registry is unavailable")
 	}
-	if err := s.registry.Register(registration); err != nil {
+	if registration.Descriptor.Version == 0 {
+		registration.Descriptor.Version = 1
+	}
+	capabilityValue := hostcapability.NewLegacyAdapter(registration.Descriptor, func(ctx context.Context, args hostcapability.RawArguments, sink hostcapability.ExecutionSink) (*mcp.CallToolResult, error) {
+		return implementation(ctx, args)
+	})
+	registration.Capability = capabilityValue
+	if err := s.registry.RegisterRegistration(registration); err != nil {
 		return err
 	}
 	snapshot := s.registry.Snapshot()
 	s.catalogMu.Lock()
 	s.catalog = snapshot
-	s.dynamic[registration.Descriptor.OperationID] = implementation
+	s.capabilities[registration.Descriptor.OperationID] = capabilityValue
 	s.catalogMu.Unlock()
 	s.addRegisteredCapability(registration.Descriptor)
 	return nil
+}
+
+// RegisterCapabilityModule is the native registration path. The capability
+// owns invocation and result validation; the server only binds it to the
+// authorized catalog and lifecycle.
+func (s *Server) RegisterCapabilityModule(value hostcapability.Capability, providerID, implementation string) error {
+	if s == nil || value == nil {
+		return fmt.Errorf("server and capability are required")
+	}
+	if err := s.registry.RegisterCapability(value, providerID, implementation); err != nil {
+		return err
+	}
+	descriptor := value.Definition()
+	s.catalogMu.Lock()
+	s.catalog = s.registry.Snapshot()
+	s.capabilities[descriptor.OperationID] = value
+	s.catalogMu.Unlock()
+	s.addRegisteredCapability(descriptor)
+	return nil
+}
+
+func (s *Server) retireProviderCapabilities(providerID, generationID string) {
+	if s == nil || s.registry == nil {
+		return
+	}
+	s.catalogMu.Lock()
+	defer s.catalogMu.Unlock()
+	for _, descriptor := range append([]tools.CapabilityDescriptor(nil), s.catalog.Tools...) {
+		if descriptor.Provider != providerID || (generationID != "" && descriptor.GenerationID != generationID) {
+			continue
+		}
+		if err := s.registry.Unregister(descriptor.OperationID); err == nil {
+			delete(s.capabilities, descriptor.OperationID)
+		}
+	}
+	s.catalog = s.registry.Snapshot()
 }
 
 // registerProviderServices publishes the operations declared by a validated
@@ -291,10 +335,23 @@ func (s *Server) registerProviderServices(manifest providercontract.InstallManif
 		return err
 	}
 	implementation := "provider:" + manifest.Provider.ID
+	generationID := ""
+	if generation, ok := s.providerLifecycle.Active(manifest.Provider.ID); ok {
+		generationID = generation.ID
+	}
+	providerCapabilities := make([]hostcapability.Capability, 0)
+	providerDescriptors := make([]tools.CapabilityDescriptor, 0)
 	for _, service := range manifest.Services {
 		for _, operation := range service.Operations {
+			version := operation.Version
+			if version == 0 {
+				// Keep the in-process registration path compatible with older
+				// manifests while new manifests are required to declare it.
+				version = 1
+			}
 			descriptor := tools.CapabilityDescriptor{
 				OperationID:       operation.ID,
+				Version:           version,
 				Name:              operation.ID,
 				Description:       "Provider service " + service.ID + " operation " + operation.ID,
 				InputSchema:       operation.InputSchema,
@@ -304,17 +361,21 @@ func (s *Server) registerProviderServices(manifest providercontract.InstallManif
 				RequiresApproval:  operation.Effect != "read",
 				Provider:          manifest.Provider.ID,
 				Implementation:    implementation,
+				GenerationID:      generationID,
 				ResourceKinds:     append([]string(nil), operation.ResourceKinds...),
+				ValidationSchema:  operation.ValidationSchema,
+				Requires:          providerBindings(operation.Requires),
+				Produces:          providerBindings(operation.Produces),
 				Idempotent:        operation.Idempotent,
 				SupportsReadiness: operation.SupportsReadiness,
 			}
-			if err := s.registry.Upsert(capabilitycatalog.Registration{Descriptor: descriptor, ProviderID: manifest.Provider.ID, Implementation: implementation}); err != nil {
-				return err
-			}
-			s.catalogMu.Lock()
-			_, alreadyPublished := s.dynamic[operation.ID]
-			s.catalog = s.registry.Snapshot()
-			s.dynamic[operation.ID] = func(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+			providerCapability := hostcapability.NewAdapter(descriptor, func(ctx context.Context, args hostcapability.RawArguments, _ hostcapability.ExecutionSink) (*mcp.CallToolResult, error) {
+				if descriptor.GenerationID != "" {
+					active, ok := s.providerLifecycle.Active(manifest.Provider.ID)
+					if !ok || active.ID != descriptor.GenerationID {
+						return tools.ErrorResult(fmt.Errorf("provider generation %q is no longer active", descriptor.GenerationID)), nil
+					}
+				}
 				s.providerMu.RLock()
 				adapter := s.providerAdapters[manifest.Provider.ID]
 				s.providerMu.RUnlock()
@@ -322,45 +383,81 @@ func (s *Server) registerProviderServices(manifest providercontract.InstallManif
 					return tools.ErrorResult(fmt.Errorf("provider %q is not active", manifest.Provider.ID)), nil
 				}
 				return adapter.Call(ctx, operation.ID, args)
-			}
-			s.catalogMu.Unlock()
-			if !alreadyPublished {
-				s.addRegisteredCapability(descriptor)
+			}, nil)
+			providerCapabilities = append(providerCapabilities, providerCapability)
+			providerDescriptors = append(providerDescriptors, descriptor)
+		}
+	}
+	if generationID != "" {
+		if err := s.registry.ReplaceGeneration(generationID, providerCapabilities); err != nil {
+			return err
+		}
+	} else {
+		for _, value := range providerCapabilities {
+			if err := s.registry.UpsertCapability(value, manifest.Provider.ID, implementation); err != nil {
+				return err
 			}
 		}
 	}
+	for index, value := range providerCapabilities {
+		descriptor := providerDescriptors[index]
+		s.catalogMu.Lock()
+		_, alreadyPublished := s.capabilities[descriptor.OperationID]
+		s.catalog = s.registry.Snapshot()
+		s.capabilities[descriptor.OperationID] = value
+		s.catalogMu.Unlock()
+		if !alreadyPublished {
+			s.addRegisteredCapability(descriptor)
+		}
+	}
 	return nil
+}
+
+func providerBindings(bindings []providercontract.ResourceBinding) []tools.ResourceBinding {
+	if len(bindings) == 0 {
+		return nil
+	}
+	converted := make([]tools.ResourceBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		converted = append(converted, tools.ResourceBinding{
+			Argument: binding.Argument, ResourceType: binding.ResourceType,
+			SourcePath: binding.SourcePath, Required: binding.Required,
+		})
+	}
+	return converted
 }
 
 // DispatchTool is the single execution boundary for MCP, task, and HWP
 // callers. Keeping admission here prevents one transport from bypassing the
 // host-wide policy when two agent instances share WSL/Incus resources.
 func (s *Server) DispatchTool(ctx context.Context, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
-	if s.requiresCanonicalURI(name) && strings.TrimSpace(stringValue(args["uri"])) == "" {
+	rawArgs := cloneArguments(args)
+	executionArgs := cloneArguments(args)
+	if s.requiresCanonicalURI(name) && strings.TrimSpace(stringValue(executionArgs["uri"])) == "" {
 		return tools.ErrorResult(fmt.Errorf("%s requires canonical resource uri; legacy entity names are not accepted", name)), nil
 	}
-	if err := bindCanonicalResourceArguments(s.ops, args); err != nil {
+	if err := bindCanonicalResourceArguments(s.ops, executionArgs); err != nil {
 		return tools.ErrorResult(err), nil
 	}
 	if s.admission == nil {
-		return s.dispatchRegisteredOrBuiltIn(ctx, name, args, onData)
+		return s.dispatchRegisteredOrBuiltIn(ctx, name, rawArgs, executionArgs, onData)
 	}
 	release, err := s.admission.Acquire(ctx, name)
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
 	defer release()
-	return s.dispatchRegisteredOrBuiltIn(ctx, name, args, onData)
+	return s.dispatchRegisteredOrBuiltIn(ctx, name, rawArgs, executionArgs, onData)
 }
 
 func (s *Server) requiresCanonicalURI(name string) bool {
 	s.catalogMu.RLock()
 	defer s.catalogMu.RUnlock()
-	for _, definition := range s.toolDefs {
-		if definition.Name != name {
+	for _, descriptor := range s.catalog.Tools {
+		if descriptor.Name != name {
 			continue
 		}
-		for _, field := range requiredSchemaFields(definition.InputSchema) {
+		for _, field := range descriptor.RequiredFields {
 			if field == "uri" {
 				return true
 			}
@@ -368,6 +465,17 @@ func (s *Server) requiresCanonicalURI(name string) bool {
 		return false
 	}
 	return false
+}
+
+func cloneArguments(args map[string]any) map[string]any {
+	if args == nil {
+		return map[string]any{}
+	}
+	clone := make(map[string]any, len(args))
+	for key, value := range args {
+		clone[key] = value
+	}
+	return clone
 }
 
 func requiredSchemaFields(schema map[string]any) []string {
@@ -419,14 +527,90 @@ func bindCanonicalResourceArguments(service *ops.HostOperationsService, args map
 	return nil
 }
 
-func (s *Server) dispatchRegisteredOrBuiltIn(ctx context.Context, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
+func (s *Server) dispatchRegisteredOrBuiltIn(ctx context.Context, name string, rawArgs, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
 	s.catalogMu.RLock()
-	implementation := s.dynamic[name]
+	capabilityValue := s.capabilities[name]
 	s.catalogMu.RUnlock()
-	if implementation != nil {
-		return implementation(ctx, args)
+	if capabilityValue == nil {
+		return nil, fmt.Errorf("capability %q is not registered", name)
 	}
-	return tools.DispatchTool(ctx, s.ops, name, args, onData)
+	result, err := capabilityValue.Invoke(ctx, hostcapability.RawArguments(args), onData)
+	if err != nil {
+		observation := s.normalizeCapabilityObservation(capabilityValue, hostcapability.CapabilityObservation{Status: "invoke_error"})
+		s.recordCapabilityInvocation(capabilityValue, rawArgs, nil, observation, err)
+		return tools.ErrorResult(err), nil
+	}
+	observation, validationErr := capabilityValue.ValidateResult(ctx, result)
+	if validationErr != nil {
+		observation := s.normalizeCapabilityObservation(capabilityValue, hostcapability.CapabilityObservation{Status: "invalid_result"})
+		s.recordCapabilityInvocation(capabilityValue, rawArgs, result, observation, validationErr)
+		return tools.ErrorResult(fmt.Errorf("capability %q returned invalid result: %w", name, validationErr)), nil
+	}
+	observation = s.normalizeCapabilityObservation(capabilityValue, observation)
+	s.recordCapabilityInvocation(capabilityValue, rawArgs, result, observation, nil)
+	return result, nil
+}
+
+func (s *Server) normalizeCapabilityObservation(value hostcapability.Capability, observation hostcapability.CapabilityObservation) hostcapability.CapabilityObservation {
+	descriptor := value.Definition()
+	if observation.SchemaVersion == "" {
+		observation.SchemaVersion = hostcapability.ObservationSchemaVersion
+	}
+	if observation.OperationID == "" {
+		observation.OperationID = descriptor.OperationID
+	}
+	if observation.CapabilityVersion == 0 {
+		observation.CapabilityVersion = descriptor.Version
+	}
+	if observation.Status == "" {
+		observation.Status = "unknown"
+	}
+	observation.CatalogRevision = s.CatalogSnapshot().Revision
+	if observation.GenerationID == "" {
+		observation.GenerationID = descriptor.GenerationID
+	}
+	return observation
+}
+
+func (s *Server) recordCapabilityInvocation(value hostcapability.Capability, rawArgs map[string]any, result *mcp.CallToolResult, observation hostcapability.CapabilityObservation, invocationErr error) {
+	if s == nil || s.state == nil || value == nil {
+		return
+	}
+	descriptor := value.Definition()
+	argumentsJSON, err := json.Marshal(rawArgs)
+	if err != nil {
+		return
+	}
+	resultEnvelope := map[string]any{"isError": false}
+	if result != nil {
+		resultEnvelope["isError"] = result.IsError
+		resultEnvelope["structured"] = result.StructuredContent
+		resultEnvelope["content"] = result.Content
+	}
+	resultJSON, err := json.Marshal(resultEnvelope)
+	if err != nil {
+		return
+	}
+	observationJSON, err := json.Marshal(observation)
+	if err != nil {
+		return
+	}
+	terminalStatus := observation.Status
+	if invocationErr != nil {
+		terminalStatus = "error"
+	}
+	_ = s.state.RecordCapabilityInvocation(state.CapabilityInvocationRecord{
+		InvocationID:      uuid.NewString(),
+		OperationID:       descriptor.OperationID,
+		CapabilityVersion: descriptor.Version,
+		CatalogRevision:   s.CatalogSnapshot().Revision,
+		GenerationID:      descriptor.GenerationID,
+		Authorization:     "admitted",
+		ArgumentsJSON:     string(argumentsJSON),
+		ResultJSON:        string(resultJSON),
+		ObservationJSON:   string(observationJSON),
+		TerminalStatus:    terminalStatus,
+	})
 }
 
 func (s *Server) Tasks() *tasks.Registry {
@@ -522,6 +706,7 @@ func (s *Server) registerStandaloneTools(snapshot tools.CapabilityCatalogSnapsho
 }
 
 func (s *Server) addRegisteredTool(def tools.ToolDefinition, snapshot tools.CapabilityCatalogSnapshot) {
+	s.ensureLegacyCapability(def)
 	tool := &mcp.Tool{
 		Name:        def.Name,
 		Description: def.Description,
@@ -536,6 +721,22 @@ func (s *Server) addRegisteredTool(def tools.ToolDefinition, snapshot tools.Capa
 	name := def.Name
 	s.mcpServer.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return s.handleToolCall(ctx, req, name)
+	})
+}
+
+func (s *Server) ensureLegacyCapability(def tools.ToolDefinition) {
+	if s == nil {
+		return
+	}
+	descriptor := tools.CapabilityDescriptorFromDefinition(s.providerID, def)
+	descriptor.Implementation = "host-agent:" + s.providerID
+	s.catalogMu.Lock()
+	defer s.catalogMu.Unlock()
+	if _, exists := s.capabilities[descriptor.OperationID]; exists {
+		return
+	}
+	s.capabilities[descriptor.OperationID] = hostcapability.NewLegacyAdapter(descriptor, func(ctx context.Context, args hostcapability.RawArguments, sink hostcapability.ExecutionSink) (*mcp.CallToolResult, error) {
+		return tools.DispatchTool(ctx, s.ops, descriptor.OperationID, args, sink)
 	})
 }
 
@@ -720,7 +921,7 @@ func (s *Server) createInputRequestTask(args map[string]any) (*mcp.CallToolResul
 func (s *Server) dynamicEffect(name string) string {
 	s.catalogMu.RLock()
 	defer s.catalogMu.RUnlock()
-	if _, ok := s.dynamic[name]; !ok {
+	if _, ok := s.capabilities[name]; !ok {
 		return ""
 	}
 	for _, descriptor := range s.catalog.Tools {

@@ -76,3 +76,38 @@ func TestCanonicalizeToolDefinitionsSeparatesCreationNamesFromEntityURIs(t *test
 		t.Fatalf("output uri missing: %#v", outputRequired)
 	}
 }
+
+func TestCapabilityCatalogDoesNotInferResourceBindings(t *testing.T) {
+	defs := []ToolDefinition{
+		{
+			Name:         "list_vms",
+			InputSchema:  map[string]any{"type": "object"},
+			OutputSchema: map[string]any{"type": "object", "properties": map[string]any{"uri": map[string]any{"type": "string"}}},
+		},
+		{
+			Name:         "get_vm_info",
+			InputSchema:  map[string]any{"type": "object", "required": []any{"uri"}, "properties": map[string]any{"uri": map[string]any{"type": "string"}}},
+			OutputSchema: map[string]any{"type": "object"},
+		},
+	}
+	snapshot := BuildCapabilityCatalog("incus", defs)
+	for _, descriptor := range snapshot.Tools {
+		if len(descriptor.ArgumentProducers) != 0 || len(descriptor.Requires) != 0 || len(descriptor.Produces) != 0 {
+			t.Fatalf("catalog inferred a binding: %+v", descriptor)
+		}
+	}
+}
+
+func TestCapabilityCatalogCarriesOnlyExplicitResourceBindings(t *testing.T) {
+	snapshot := BuildCapabilityCatalog("incus", []ToolDefinition{{
+		Name:        "list_vms",
+		InputSchema: map[string]any{"type": "object"},
+		OutputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"items": map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{"uri": map[string]any{"type": "string"}}}},
+		}},
+		Meta: map[string]any{"produces": []any{map[string]any{"resourceType": "vm", "sourcePath": "items[].uri"}}},
+	}})
+	if len(snapshot.Tools) != 1 || len(snapshot.Tools[0].Produces) != 1 || snapshot.Tools[0].Produces[0].SourcePath != "items[].uri" {
+		t.Fatalf("explicit binding missing: %+v", snapshot.Tools)
+	}
+}

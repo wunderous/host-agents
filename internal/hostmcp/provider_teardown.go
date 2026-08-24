@@ -103,6 +103,7 @@ func (s *Server) completeProviderTeardown(metadata map[string]any) error {
 	delete(s.providerAdapters, providerID)
 	delete(s.providerValidation, providerID)
 	s.providerMu.Unlock()
+	s.retireProviderCapabilities(providerID, generationID)
 	if adapter != nil {
 		if err := adapter.Close(); err != nil {
 			return fmt.Errorf("close provider adapter: %w", err)

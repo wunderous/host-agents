@@ -74,3 +74,26 @@ func TestResourceRegistryRoundTrip(t *testing.T) {
 		t.Fatalf("deleted found=%v err=%v", found, err)
 	}
 }
+
+func TestCapabilityInvocationIsDurableAndOpaque(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.RecordCapabilityInvocation(CapabilityInvocationRecord{
+		InvocationID: "invocation-1", OperationID: "list_vms", CapabilityVersion: 1,
+		CatalogRevision: "sha256:catalog", GenerationID: "host-1", Authorization: "admitted",
+		ArgumentsJSON: `{"tenant":"local"}`, ResultJSON: `{"isError":false}`,
+		ObservationJSON: `{"status":"success"}`, TerminalStatus: "success",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM capability_invocations WHERE invocation_id = 'invocation-1'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("durable invocation count = %d", count)
+	}
+}

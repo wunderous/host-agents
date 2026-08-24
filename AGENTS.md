@@ -88,6 +88,24 @@ fail-closed validation. Shared WSL services, listeners, Incus capacity, and
 production-like rollouts may be used by other worktrees—inspect coordination
 state before restarting or mutating shared runtime resources.
 
+For the normative Cordis architecture, LLM/tool authority rules, MCP
+2026-07-28 boundary, invariant catalog, five-whys debugging discipline, and
+E2E release gate, read
+[`docs/cordis-development-guide.md`](docs/cordis-development-guide.md) before
+changing `internal/cordis`, `internal/cordis/mcp`, `internal/hostmcp`, or
+provider lifecycle code.
+
+For every plan, refactor, new capability, schema change, lifecycle change, or
+agentic boundary change, capture the invariant delta before implementation.
+Keep the owning typed contract or implementation authoritative; record
+cross-cutting rules in the Opute decision store and use agent guidance and
+memories only as routing/reinforcement. Preserve existing invariants by
+default, and require an explicit superseding decision, updated verifier/tests,
+and boundary evidence to change one. Read the
+[permanent invariant capture guide](../opute/.agents/guides/permanent-agentic-invariants.md)
+and the Host Agent-specific section in
+[`docs/cordis-development-guide.md`](docs/cordis-development-guide.md).
+
 For public Opute E2E validation from WSL, use the sibling Opute repository's
 Bun auth resolver or Playwright. Cloudflare rejected Python `urllib`'s default
 `Python-urllib/*` signature with HTTP 403 Error 1010 (`browser_signature_banned`)

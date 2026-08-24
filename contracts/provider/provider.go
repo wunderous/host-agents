@@ -79,14 +79,28 @@ type InstallManifest struct {
 }
 
 type Operation struct {
-	ID                string         `json:"id" yaml:"id"`
-	InputSchema       map[string]any `json:"inputSchema" yaml:"inputSchema"`
-	OutputSchema      map[string]any `json:"outputSchema" yaml:"outputSchema"`
-	Effect            string         `json:"effect" yaml:"effect"`
-	ResourceKinds     []string       `json:"resourceKinds,omitempty" yaml:"resourceKinds,omitempty"`
-	Idempotent        bool           `json:"idempotent" yaml:"idempotent"`
-	SupportsReadiness bool           `json:"supportsReadiness" yaml:"supportsReadiness"`
-	SupportsStreaming bool           `json:"supportsStreaming,omitempty" yaml:"supportsStreaming,omitempty"`
+	ID                string            `json:"id" yaml:"id"`
+	Version           int               `json:"version" yaml:"version"`
+	InputSchema       map[string]any    `json:"inputSchema" yaml:"inputSchema"`
+	OutputSchema      map[string]any    `json:"outputSchema" yaml:"outputSchema"`
+	ValidationSchema  string            `json:"validationSchema,omitempty" yaml:"validationSchema,omitempty"`
+	Effect            string            `json:"effect" yaml:"effect"`
+	ResourceKinds     []string          `json:"resourceKinds,omitempty" yaml:"resourceKinds,omitempty"`
+	Requires          []ResourceBinding `json:"requires,omitempty" yaml:"requires,omitempty"`
+	Produces          []ResourceBinding `json:"produces,omitempty" yaml:"produces,omitempty"`
+	Idempotent        bool              `json:"idempotent" yaml:"idempotent"`
+	SupportsReadiness bool              `json:"supportsReadiness" yaml:"supportsReadiness"`
+	SupportsStreaming bool              `json:"supportsStreaming,omitempty" yaml:"supportsStreaming,omitempty"`
+}
+
+// ResourceBinding is provider-declared metadata. The host validates its
+// shape and resource kind, but never derives relationships from URI-shaped
+// fields or provider-specific schemas.
+type ResourceBinding struct {
+	Argument     string `json:"argument,omitempty" yaml:"argument,omitempty"`
+	ResourceType string `json:"resourceType" yaml:"resourceType"`
+	SourcePath   string `json:"sourcePath,omitempty" yaml:"sourcePath,omitempty"`
+	Required     bool   `json:"required,omitempty" yaml:"required,omitempty"`
 }
 
 type ServiceDefinition struct {

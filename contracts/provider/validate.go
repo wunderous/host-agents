@@ -102,13 +102,21 @@ func validateServices(services []ServiceDefinition) error {
 }
 
 func validateOperation(operation Operation, owner string) error {
-	if !identifierPattern.MatchString(strings.TrimSpace(operation.ID)) || operation.InputSchema == nil || operation.OutputSchema == nil {
+	if !identifierPattern.MatchString(strings.TrimSpace(operation.ID)) || operation.Version < 1 || operation.InputSchema == nil || operation.OutputSchema == nil {
 		return fmt.Errorf("%s contains an invalid operation", owner)
 	}
 	switch operation.Effect {
 	case "read", "mutation", "destructive", "credential_bearing":
 	default:
 		return fmt.Errorf("provider operation %q has unsupported effect %q", operation.ID, operation.Effect)
+	}
+	for _, binding := range append(append([]ResourceBinding(nil), operation.Requires...), operation.Produces...) {
+		if strings.TrimSpace(binding.ResourceType) == "" {
+			return fmt.Errorf("provider operation %q has a resource binding without resourceType", operation.ID)
+		}
+		if strings.TrimSpace(binding.Argument) == "" && strings.TrimSpace(binding.SourcePath) == "" {
+			return fmt.Errorf("provider operation %q has a resource binding without argument or sourcePath", operation.ID)
+		}
 	}
 	return nil
 }

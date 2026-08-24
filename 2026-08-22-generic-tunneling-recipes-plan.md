@@ -456,6 +456,87 @@ service identity such as `host-agent-mcp`, not as a Cloudflare-specific name.
 
 ## Cordis and MCP lifecycle
 
+### Cordis architecture audit findings (2026-08-23)
+
+This section records the alignment review against the DeepSeek Harness Cordis
+documentation and the MCP specification dated 2026-07-28. It is an
+architecture constraint for the implementation work below, not a second
+orchestrator or a claim that every gate is already implemented.
+
+### Cordis and model authority
+
+- Cordis remains the composition boundary: services, providers, consumers,
+  typed events, scoped effects, reversible disposal, and generation-aware
+  lifecycle. There must be no privileged route that owns the final semantic
+  decision.
+- MCP is a wire adapter. `internal/cordis/mcp` owns negotiation, discovery,
+  schema/tool mapping, authentication, streaming, cancellation, and task
+  transport. `internal/cordis` exposes typed services and lifecycle events;
+  Cordis services must not depend on MCP URLs, sessions, tool names, or JSON-RPC
+  payloads.
+- Model-visible context and decisions are typed content/session events and
+  must be reconstructable from the append-only event log. The orchestrator
+  records and routes observations; the LLM owns semantic intent satisfaction.
+  A successful tool call or assistant sentence must not cause the orchestrator
+  to set an intent to `satisfied`.
+- Event mode is part of the public contract. Observers delegate, policy
+  listeners may deny only through the owning pre-execution waterfall, and every
+  service/effect registration has a disposer that reaches quiescence.
+
+### Tool-input and policy authority
+
+- Host orchestration must pass model-generated tool arguments through without
+  enrichment, normalization, field-level validation, identifier synthesis, or
+  product-specific rejection. The owning tool/provider contract is the
+  authority for its inputs and semantic validation; a generic transport
+  adapter may only perform the protocol work required to invoke that contract.
+- Tool-call arguments remain raw JSON in the durable call event. Materialize
+  them once at the owning tool boundary and keep the call, audit record, UI,
+  and execution input consistent. Do not repair an invalid argument with a
+  name table, regex guard, producer guess, or fallback route.
+- Authorization and safety policy belong in typed Cordis tool events and
+  deny-only guards. Guards may deny or ask for approval, but must not force
+  allow, rewrite arguments, or encode vendor-specific knowledge. Post-execute
+  stages observe immutable results.
+- The database trace exposed a contract failure: after the database inventory
+  returned an empty list, the model used managed-cluster ID
+  `cluster:yj5z083j` as a database ID for `list_tables`, and the owning tool
+  rejected it. The root fix is typed producer evidence and LLM/Cordis state
+  projection, not an orchestrator guard that recognizes or blocks a particular
+  ID shape. The invalid call must remain an honest typed tool error.
+
+### Invariants and end-to-end evidence
+
+- Package-owned invariants must assert authoritative event streams, mutable
+  state, and external effects. They must not inspect source text, method names,
+  fixed tool-name tables, or hardcoded product heuristics.
+- Integration tests must boot the real composition and published entry path,
+  mock only nondeterministic external boundaries, and verify the external
+  world rather than trusting an agent self-report. E2E evidence must include
+  the actual MCP initialize/`tools/list`/call exchange, raw arguments, typed
+  tool result, durable session events, and complete transport/trace
+  termination.
+- MCP validation is a protocol gate: negotiate the required revision,
+  preserve Streamable HTTP request/response semantics, keep structured content
+  intact, correlate errors and cancellations, and fail closed on incomplete
+  streams. A health response or HTTP 200 is not an MCP or chat pass.
+- Resource capacity is declarative: the disposable validation environment has
+  exactly one system container. No second system container may be created as
+  an implicit fallback. The WSL-owned coordination ledger and WSL Dolt
+  listener remain the only Beads/Dolt runtime; a Windows Dolt instance must not
+  be recreated.
+- Stochastic/model behavior is evaluated through typed outcomes, durable
+  evidence, and invariant checks. Do not replace uncertainty with deterministic
+  intent heuristics, ad-hoc guards, or hardcoded recovery branches.
+
+Primary references: [DeepSeek Harness architecture](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md),
+[Cordis primer](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-primer.md),
+[tool execution pipeline](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/tool-execution-pipeline.md),
+[invariants](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/invariants.md),
+[testing](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/testing.md),
+[MCP client](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.md),
+and the [MCP 2026-07-28 specification](https://modelcontextprotocol.io/specification/2026-07-28).
+
 The complete installation and activation flow is:
 
 ```text

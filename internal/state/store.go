@@ -75,6 +75,23 @@ type ProviderGenerationRecord struct {
 	ActiveAt        string
 }
 
+// CapabilityInvocationRecord is the durable audit envelope for one capability
+// call. Arguments and result are retained as JSON at the host boundary; the
+// capability-owned observation remains opaque to the state store.
+type CapabilityInvocationRecord struct {
+	InvocationID      string
+	OperationID       string
+	CapabilityVersion int
+	CatalogRevision   string
+	GenerationID      string
+	Authorization     string
+	ArgumentsJSON     string
+	ResultJSON        string
+	ObservationJSON   string
+	TerminalStatus    string
+	CreatedAt         string
+}
+
 // ActiveRuntimeRecord is a compatibility alias for callers of the initial v1
 // runtime recipe API.
 type ActiveRuntimeRecord = ActiveCapabilityRecord
@@ -143,6 +160,19 @@ func Open(dir string) (*Store, error) {
         status TEXT NOT NULL,
         created_at TEXT NOT NULL,
         active_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS capability_invocations (
+        invocation_id TEXT PRIMARY KEY,
+        operation_id TEXT NOT NULL,
+        capability_version INTEGER NOT NULL,
+        catalog_revision TEXT NOT NULL,
+        generation_id TEXT,
+        authorization TEXT NOT NULL,
+        arguments_json TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        observation_json TEXT NOT NULL,
+        terminal_status TEXT NOT NULL,
+        created_at TEXT NOT NULL
     );
     UPDATE operations SET status = 'unknown', updated_at = datetime('now') WHERE status = 'working';
     UPDATE plan_runs SET status = 'unknown', updated_at = datetime('now') WHERE status IN ('working', 'running');`); err != nil {
@@ -459,6 +489,41 @@ func (s *Store) SaveProviderGeneration(record ProviderGenerationRecord) error {
         active_at=excluded.active_at`,
 		record.GenerationID, record.ProviderID, record.ProviderVersion, record.ManifestHash,
 		record.Endpoint, record.CatalogRevision, record.Status, record.CreatedAt, record.ActiveAt)
+	return err
+}
+
+func (s *Store) RecordCapabilityInvocation(record CapabilityInvocationRecord) error {
+	if record.InvocationID == "" || record.OperationID == "" || record.CapabilityVersion < 1 {
+		return fmt.Errorf("capability invocation identity and version are required")
+	}
+	if record.ArgumentsJSON == "" {
+		record.ArgumentsJSON = "{}"
+	}
+	if record.ResultJSON == "" {
+		record.ResultJSON = "{}"
+	}
+	if record.ObservationJSON == "" {
+		record.ObservationJSON = "{}"
+	}
+	if record.Authorization == "" {
+		record.Authorization = "unknown"
+	}
+	if record.TerminalStatus == "" {
+		record.TerminalStatus = "unknown"
+	}
+	if record.CreatedAt == "" {
+		record.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	_, err := s.db.Exec(`INSERT INTO capability_invocations(
+        invocation_id, operation_id, capability_version, catalog_revision,
+        generation_id, authorization, arguments_json, result_json,
+        observation_json, terminal_status, created_at
+    ) VALUES (?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(invocation_id) DO NOTHING`,
+		record.InvocationID, record.OperationID, record.CapabilityVersion,
+		record.CatalogRevision, record.GenerationID, record.Authorization,
+		record.ArgumentsJSON, record.ResultJSON, record.ObservationJSON,
+		record.TerminalStatus, record.CreatedAt)
 	return err
 }
 
