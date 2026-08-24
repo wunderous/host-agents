@@ -35,24 +35,24 @@ an external MCP client needs the Host Agent.
 
 Use `scripts/agent-work` for Beads status/start/update/end from WSL; it is
 anchored to this checkout and works from either parent directory. The launcher
-uses the translated Windows-backed workspace and the native Windows Dolt
-listener through the WSL gateway. It never starts a second WSL Dolt server or
+uses the single WSL-owned workspace at
+`$HOME/.config/opute/agent-work-coordination` and the local WSL Dolt listener
+at `127.0.0.1:3308`. It starts only that one server when needed and never
 creates `.beads` in this checkout. `make agent-work` delegates to the same
 launcher and is safe to invoke with `make -f` from a parent directory.
 
-Patterns: keep the host agent and Opute on the same external ledger; use the
-launcher or Makefile rather than cwd-relative paths; let WSL remain a client;
-and verify the real adapter path with `status --json --all` plus `bd dolt test`.
-If metadata is missing or identity mismatches, back up first and fail closed
-until the active database has been inspected. Treat endpoint configuration,
-the native Windows listener, and a successful adapter read as separate levels
-of evidence.
+Patterns: keep the host agent and Opute on the same WSL ledger; use the
+launcher or Makefile rather than cwd-relative paths; let the launcher own the
+local server; and verify the real adapter path with `status --json --all` plus
+`bd dolt test`. If metadata is missing or identity mismatches, back up first
+and fail closed until the active database has been inspected. Treat endpoint
+configuration, the WSL listener, and a successful adapter read as separate
+levels of evidence.
 
-Anti-patterns: do not run `bd init` or `bd dolt start` from WSL, create a
-checkout-local `.beads`, use Windows `127.0.0.1` from WSL, hard-code the
-gateway/password, rely on `bun.exe` or the caller's cwd, or kill an unverified
-port owner. Do not claim native Windows-client parity when interop reports
-`UtilAcceptVsock ... accept4 failed 110`; record that probe as pending. See
+Anti-patterns: do not run `bd init` against an unexpected or remote endpoint,
+run `bd dolt killall`, create a checkout-local `.beads`, recreate the retired
+Windows ledger, hard-code credentials, rely on `bun.exe` or the caller's cwd,
+or kill an unverified port owner. See
 `../opute/.agents/workflows/agent-work-coordination.md` for the full repair and
 verification matrix.
 

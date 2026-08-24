@@ -1090,9 +1090,10 @@ being started out of order or being declared complete from focused tests alone.
 ### Ledger boundary
 
 Use the repository's `scripts/agent-work` launcher for the session record and
-the pinned Beads client against the existing Windows-backed Dolt workspace.
-Never run `bd init`, `bd dolt start`, or create `.beads` in this checkout or in
-WSL. Before creating graph records:
+the pinned Beads client against the existing WSL-owned Dolt workspace. Use the
+launcher to start the single local Dolt server when needed; never create
+`.beads` in this checkout or a second WSL server. Before creating graph
+records:
 
 ```bash
 ./scripts/agent-work status --json --all
@@ -1137,7 +1138,7 @@ K3s provider milestones after the provider kernel gate passes.
 ### Graph creation and validation procedure
 
 1. Read the shared ledger and confirm the repository/project identity, active
-   native Windows Dolt endpoint, and pinned client versions. Capture the
+   WSL-local Dolt endpoint, and pinned client versions. Capture the
    session record ID and root epic ID in the implementation notes.
 2. Create the root epic and child milestones with descriptions containing
    `Scope`, `Dependencies`, `Acceptance Criteria`, and `Validation Evidence`.

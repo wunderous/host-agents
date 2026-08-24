@@ -225,8 +225,8 @@ statuses, host info…).
 ## Implementation order
 
 0. Materialize and validate the shared Beads milestone graph from the
-   cloud-cell plan; preserve the Windows-backed Dolt/WSL client boundary and
-   do not create checkout-local `.beads` state.
+   cloud-cell plan; preserve the single WSL-owned Dolt boundary and do not
+   create checkout-local `.beads` state.
 1. `internal/resourceid` + tests
 2. config tenant + session contract fields
 3. state-store registry table + tests
