@@ -281,6 +281,7 @@ func buildVMInfoFromIncusListItem(item incusListItem, agentReady *bool, k3sInsta
 	memory := extractIncusMemory(item)
 	disk := extractIncusDisk(item)
 	info := VMInfo{
+		Kind:         resourceid.TypeVM,
 		Name:         item.Name,
 		Type:         mapIncusInstanceType(item.Type),
 		Status:       mapIncusStatus(item.Status),
@@ -292,6 +293,9 @@ func buildVMInfoFromIncusListItem(item incusListItem, agentReady *bool, k3sInsta
 		Disk:         disk,
 		AgentReady:   agentReady,
 		K3sInstalled: k3sInstalled,
+	}
+	if !strings.EqualFold(info.Type, "vm") {
+		info.Kind = resourceid.TypeContainer
 	}
 	if cpus > 0 {
 		info.CPUs = &cpus

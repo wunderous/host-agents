@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
@@ -23,6 +24,7 @@ type Options struct {
 }
 
 type Adapter struct {
+	mu         sync.RWMutex
 	descriptor providercontract.PluginDescriptor
 	session    *mcp.ClientSession
 	tools      map[string]*mcp.Tool
@@ -98,7 +100,12 @@ func (a *Adapter) ToolNames() []string {
 }
 
 func (a *Adapter) Call(ctx context.Context, operation string, arguments map[string]any) (*mcp.CallToolResult, error) {
-	if a == nil || a.session == nil {
+	if a == nil {
+		return nil, fmt.Errorf("provider adapter is closed")
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.session == nil {
 		return nil, fmt.Errorf("provider adapter is closed")
 	}
 	if _, ok := a.tools[operation]; !ok {
@@ -135,7 +142,12 @@ func (a *Adapter) InstallManifest(ctx context.Context) (providercontract.Install
 }
 
 func (a *Adapter) Close() error {
-	if a == nil || a.session == nil {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.session == nil {
 		return nil
 	}
 	err := a.session.Close()

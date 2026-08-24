@@ -44,6 +44,9 @@ func TestBuildVMInfoFromIncusListItemMapsResources(t *testing.T) {
 	if info.Name != "opute-k3s-dogfood" {
 		t.Fatalf("name = %q", info.Name)
 	}
+	if info.Kind != "vm" {
+		t.Fatalf("kind = %q want vm", info.Kind)
+	}
 	if info.Status != "running" {
 		t.Fatalf("status = %q", info.Status)
 	}

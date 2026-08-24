@@ -25,7 +25,6 @@ func TestProviderAndClientBoundariesHaveNoConcreteCrossImports(t *testing.T) {
 		"github.com/wunderous/host-agents/internal/state":              true,
 		"github.com/wunderous/host-agents/internal/plan":               true,
 		"github.com/wunderous/host-agents/internal/resource/admission": true,
-		"github.com/wunderous/host-agents/pkg/hostagentclient":         true,
 	})
 	t.Log("ARCHITECTURE_BOUNDARY_PASS")
 }

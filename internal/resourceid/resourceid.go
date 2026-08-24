@@ -20,6 +20,7 @@ var (
 const (
 	TypeVM              = "vm"
 	TypeContainer       = "container"
+	TypePod             = "pod"
 	TypeHost            = "host"
 	TypeCluster         = "cluster"
 	TypePostgresService = "postgres-service"
@@ -34,13 +35,25 @@ const (
 	TypeOCIRegistry     = "oci-registry"
 	TypeServiceDomain   = "service-domain"
 	TypeService         = "service"
+	TypeNetwork         = "network"
+	TypeStorage         = "storage"
+	TypeImage           = "image"
+	TypeProfile         = "profile"
+	TypeK3s             = "k3s"
+	TypeCloudflared     = "cloudflared"
+	TypeLanguage        = "language"
+	TypeEmbedding       = "embedding"
+	TypeOperation       = "operation"
+	TypePlan            = "plan"
 )
 
 var knownTypes = map[string]struct{}{
-	TypeVM: {}, TypeContainer: {}, TypeHost: {}, TypeCluster: {},
+	TypeVM: {}, TypeContainer: {}, TypePod: {}, TypeHost: {}, TypeCluster: {},
 	TypePostgresService: {}, TypeTiDBService: {}, TypeSQLiteDatabase: {}, TypeDatabase: {},
 	TypeTunnel: {}, TypeLLMRuntime: {}, TypeModel: {}, TypeHostService: {},
 	TypeSQLConnector: {}, TypeOCIRegistry: {}, TypeServiceDomain: {}, TypeService: {},
+	TypeNetwork: {}, TypeStorage: {}, TypeImage: {}, TypeProfile: {}, TypeK3s: {},
+	TypeCloudflared: {}, TypeLanguage: {}, TypeEmbedding: {}, TypeOperation: {}, TypePlan: {},
 }
 
 var segmentPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
@@ -83,6 +96,14 @@ func (u URI) Validate() error {
 	return nil
 }
 
+// IsKnownType is the single canonical resource-kind check used by catalog
+// registration and URI parsing. Provider plugins may use only kinds declared
+// here; a URI-shaped value is not a resource identity by itself.
+func IsKnownType(resourceType string) bool {
+	_, ok := knownTypes[strings.TrimSpace(resourceType)]
+	return ok
+}
+
 func Parse(value string) (URI, error) {
 	parts := strings.SplitN(strings.TrimSpace(value), ":", 3)
 	if len(parts) != 3 {
@@ -105,6 +126,7 @@ func New(resourceType, tenantID, resourceID string) (URI, error) {
 
 func VMURI(tenant, id string) (URI, error)            { return New(TypeVM, tenant, id) }
 func ContainerURI(tenant, id string) (URI, error)     { return New(TypeContainer, tenant, id) }
+func PodURI(tenant, id string) (URI, error)           { return New(TypePod, tenant, id) }
 func HostURI(tenant, id string) (URI, error)          { return New(TypeHost, tenant, id) }
 func ClusterURI(tenant, id string) (URI, error)       { return New(TypeCluster, tenant, id) }
 func DatabaseURI(tenant, id string) (URI, error)      { return New(TypeDatabase, tenant, id) }

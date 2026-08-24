@@ -81,9 +81,11 @@ type InstallManifest struct {
 type Operation struct {
 	ID                string            `json:"id" yaml:"id"`
 	Version           int               `json:"version" yaml:"version"`
+	Description       string            `json:"description,omitempty" yaml:"description,omitempty"`
 	InputSchema       map[string]any    `json:"inputSchema" yaml:"inputSchema"`
 	OutputSchema      map[string]any    `json:"outputSchema" yaml:"outputSchema"`
 	ValidationSchema  string            `json:"validationSchema,omitempty" yaml:"validationSchema,omitempty"`
+	ObservationSchema string            `json:"observationSchema,omitempty" yaml:"observationSchema,omitempty"`
 	Effect            string            `json:"effect" yaml:"effect"`
 	ResourceKinds     []string          `json:"resourceKinds,omitempty" yaml:"resourceKinds,omitempty"`
 	Requires          []ResourceBinding `json:"requires,omitempty" yaml:"requires,omitempty"`

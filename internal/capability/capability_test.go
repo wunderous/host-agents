@@ -25,14 +25,14 @@ func testDescriptor() tools.CapabilityDescriptor {
 	}
 }
 
-func TestAdapterOwnsInputAndOutputSchemaValidation(t *testing.T) {
-	value := NewAdapter(testDescriptor(), func(context.Context, RawArguments, ExecutionSink) (*mcp.CallToolResult, error) {
+func TestLegacyAdapterOwnsCompatibilitySchemaValidation(t *testing.T) {
+	value := NewLegacyAdapter(testDescriptor(), func(context.Context, RawArguments, tools.ExecutionBinding, ExecutionSink) (*mcp.CallToolResult, error) {
 		return &mcp.CallToolResult{StructuredContent: map[string]any{"uri": "vm:tenant:one"}}, nil
-	}, nil)
-	if _, err := value.Invoke(context.Background(), RawArguments{"name": "one"}, nil); err != nil {
+	})
+	if _, err := value.Invoke(context.Background(), RawArguments{"name": "one"}, tools.ExecutionBinding{SchemaVersion: tools.ExecutionBindingSchemaVersion}, nil); err != nil {
 		t.Fatalf("valid input rejected: %v", err)
 	}
-	if _, err := value.Invoke(context.Background(), RawArguments{}, nil); err == nil {
+	if _, err := value.Invoke(context.Background(), RawArguments{}, tools.ExecutionBinding{SchemaVersion: tools.ExecutionBindingSchemaVersion}, nil); err == nil {
 		t.Fatal("missing required input accepted")
 	}
 	observation, err := value.ValidateResult(context.Background(), &mcp.CallToolResult{StructuredContent: map[string]any{"uri": "vm:tenant:one"}})
@@ -41,6 +41,46 @@ func TestAdapterOwnsInputAndOutputSchemaValidation(t *testing.T) {
 	}
 	if _, err := value.ValidateResult(context.Background(), &mcp.CallToolResult{StructuredContent: map[string]any{"wrong": true}}); err == nil {
 		t.Fatal("malformed structured output accepted")
+	}
+}
+
+func TestNativeAdapterPreservesOpaqueArgumentsForCapabilityValidation(t *testing.T) {
+	called := false
+	value := NewAdapter(testDescriptor(), func(_ context.Context, args RawArguments, _ tools.ExecutionBinding, _ ExecutionSink) (*mcp.CallToolResult, error) {
+		called = true
+		if _, ok := args["providerSpecific"]; !ok {
+			t.Fatal("native adapter changed opaque arguments")
+		}
+		return &mcp.CallToolResult{StructuredContent: map[string]any{"anything": true}}, nil
+	}, func(_ context.Context, result *mcp.CallToolResult) (CapabilityObservation, error) {
+		return PassThroughObservation(testDescriptor(), result)
+	})
+	if _, err := value.Invoke(context.Background(), RawArguments{"providerSpecific": map[string]any{"mode": "future"}}, tools.ExecutionBinding{}, nil); err != nil {
+		t.Fatalf("opaque input rejected by generic adapter: %v", err)
+	}
+	if !called {
+		t.Fatal("native capability was not invoked")
+	}
+}
+
+func TestProviderAdapterLeavesInputToProviderAndGuardsStructuredOutput(t *testing.T) {
+	definition := testDescriptor()
+	called := false
+	value := NewProviderAdapter(definition, func(_ context.Context, args RawArguments, _ tools.ExecutionBinding, _ ExecutionSink) (*mcp.CallToolResult, error) {
+		called = true
+		if _, ok := args["providerSpecific"]; !ok {
+			t.Fatal("provider input was rewritten before the provider call")
+		}
+		return &mcp.CallToolResult{StructuredContent: map[string]any{"wrong": true}}, nil
+	})
+	if _, err := value.Invoke(context.Background(), RawArguments{"providerSpecific": true}, tools.ExecutionBinding{}, nil); err != nil {
+		t.Fatalf("provider input was rejected by the host adapter: %v", err)
+	}
+	if !called {
+		t.Fatal("provider operation was not invoked")
+	}
+	if _, err := value.ValidateResult(context.Background(), &mcp.CallToolResult{StructuredContent: map[string]any{"wrong": true}}); err == nil {
+		t.Fatal("provider output outside its declared schema was recorded")
 	}
 }
 

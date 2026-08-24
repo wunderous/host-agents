@@ -23,6 +23,28 @@ type catalogMeta struct {
 	ExcludedFromCatalog []string `json:"excludedFromCatalog"`
 }
 
+// ProviderOwnedToolNames are retained in checked-in compatibility exports for
+// one migration period, but are not executable Host Agent built-ins. A
+// trusted provider must dynamically declare these operations over provider
+// MCP before they become available.
+var ProviderOwnedToolNames = map[string]bool{
+	"ensure_cloudflared_tunnel": true, "remove_local_llm_cloudflared_tunnel": true,
+	"probe_host_exposure": true, "remove_host_exposure": true,
+	"install_cloudflared_connector": true, "delete_cloudflared_connector": true,
+	"create_cloudflare_tunnel": true, "get_cloudflare_tunnel_status": true,
+	"delete_cloudflare_tunnel": true,
+}
+
+func filterProviderOwnedDefinitions(defs []ToolDefinition) []ToolDefinition {
+	filtered := make([]ToolDefinition, 0, len(defs))
+	for _, def := range defs {
+		if !ProviderOwnedToolNames[def.Name] {
+			filtered = append(filtered, def)
+		}
+	}
+	return filtered
+}
+
 // CatalogExcludedToolNames are omitted from agent-facing tools/list.
 var CatalogExcludedToolNames = map[string]bool{
 	"list_operations": true,
@@ -32,13 +54,11 @@ var CatalogExcludedToolNames = map[string]bool{
 	"agent_shell":     true,
 	// Guest exec lives in the vm-exec static MCP for CPC-local cells, but tunnel hosts
 	"exec_command":                true,
+	"run_instance_command":        true,
 	"ensure_sql_connector":        true,
 	"get_sql_connector_status":    true,
 	"release_sql_connector":       true,
 	"install_sql_forward_sidecar": true,
-	"ensure_cloudflared_tunnel":   true,
-	"probe_host_exposure":         true,
-	"remove_host_exposure":        true,
 	"ensure_host_firewall_rule":   true,
 	"configure_host_network":      true,
 }
@@ -90,109 +110,148 @@ func LoadAllToolDefinitions(providerID string) ([]ToolDefinition, error) {
 	if err != nil {
 		return nil, err
 	}
+	defs = filterProviderOwnedDefinitions(defs)
 	defs = appendLocalLLMDefinitions(defs)
 	defs = appendGenericHostDefinitions(defs)
 	defs, err = augmentIncusInventoryTools(defs)
 	if err != nil {
 		return nil, err
 	}
-	return CanonicalizeToolDefinitions(defs), nil
+	return CanonicalizeToolDefinitions(filterProviderOwnedDefinitions(defs)), nil
 }
 
-// CanonicalizeToolDefinitions applies the breaking entity-identity contract
-// to the catalog itself. It is schema ownership, not runtime name routing:
-// any operation whose required input is an entity identity receives `uri`,
-// while creation inputs retain their explicit desired-name fields.
+// CanonicalizeToolDefinitions materializes only bindings explicitly declared
+// by a schema or its metadata. It deliberately does not rewrite legacy names,
+// inject URI fields, or consult operation names: a resource contract must be
+// owned by the definition that declares it.
 func CanonicalizeToolDefinitions(defs []ToolDefinition) []ToolDefinition {
-	identityFields := map[string]bool{
-		"vmName": true, "clusterId": true, "databaseId": true, "bindingId": true,
-		"storageId": true, "resourceId": true, "serviceId": true, "modelRef": true, "serviceName": true,
-	}
-	// These capabilities create or adopt a new resource. Their name is a
-	// desired creation coordinate, not an existing-resource identity.
-	preserveDesiredName := map[string]bool{
-		"create_vm":               true,
-		"provision_vm":            true,
-		"install_local_llm_model": true,
-	}
 	out := make([]ToolDefinition, 0, len(defs))
 	for _, original := range defs {
 		def := original
-		properties, ok := def.InputSchema["properties"].(map[string]any)
-		if !ok {
-			out = append(out, def)
-			continue
-		}
-		required := requiredFields(def.InputSchema)
-		if preserveDesiredName[def.Name] {
-			out = append(out, def)
-			continue
-		}
-		needsURI := false
-		for _, field := range required {
-			if identityFields[field] {
-				needsURI = true
-				break
-			}
-		}
-		if !needsURI {
-			out = append(out, def)
-			continue
-		}
-		clonedProperties := make(map[string]any, len(properties)+1)
-		for name, value := range properties {
-			if !identityFields[name] {
-				clonedProperties[name] = value
-			}
-		}
-		clonedProperties["uri"] = map[string]any{
-			"type": "string", "minLength": 1,
-			"description": "Canonical Host Agent resource URI returned by discovery.",
-		}
-		clonedRequired := make([]string, 0, len(required))
-		for _, field := range required {
-			if identityFields[field] {
-				continue
-			}
-			clonedRequired = append(clonedRequired, field)
-		}
-		clonedRequired = append(clonedRequired, "uri")
-		clonedSchema := make(map[string]any, len(def.InputSchema)+1)
-		for key, value := range def.InputSchema {
-			if key != "properties" && key != "required" {
-				clonedSchema[key] = value
-			}
-		}
-		clonedSchema["properties"] = clonedProperties
-		clonedSchema["required"] = clonedRequired
-		def.InputSchema = clonedSchema
-		def.OutputSchema = addURIToOutputSchema(def.OutputSchema)
+		materializeSchemaBindings(&def)
 		out = append(out, def)
 	}
 	return out
 }
 
-func addURIToOutputSchema(schema map[string]any) map[string]any {
-	if len(schema) == 0 {
-		return schema
+// resourceTypeKeyword is an explicit schema annotation for fields carrying a
+// canonical resource identity. It is deliberately field-owned: no operation
+// name, description, or generic `uri` spelling is used to infer a resource.
+const resourceTypeKeyword = "x-opute-resource-type"
+
+func schemaResourceType(schema any) (string, bool) {
+	property, ok := schema.(map[string]any)
+	if !ok {
+		return "", false
 	}
-	clone := make(map[string]any, len(schema)+1)
-	for key, value := range schema {
-		clone[key] = value
+	resourceType, ok := property[resourceTypeKeyword].(string)
+	return strings.TrimSpace(resourceType), ok && strings.TrimSpace(resourceType) != ""
+}
+
+func resourceBindings(def ToolDefinition, direction string) []ResourceBinding {
+	bindings := explicitResourceBindings(def.Meta, direction)
+	var schema map[string]any
+	if direction == "requires" {
+		schema = def.InputSchema
+	} else {
+		schema = def.OutputSchema
 	}
-	properties, ok := schema["properties"].(map[string]any)
-	if ok {
-		clonedProperties := make(map[string]any, len(properties)+1)
-		for key, value := range properties {
-			clonedProperties[key] = value
+	for _, candidate := range annotatedResourceBindings(schema, direction) {
+		duplicate := false
+		for _, existing := range bindings {
+			if existing.Argument == candidate.Argument && existing.SourcePath == candidate.SourcePath && existing.ResourceType == candidate.ResourceType {
+				duplicate = true
+				break
+			}
 		}
-		clonedProperties["uri"] = map[string]any{"type": "string"}
-		clone["properties"] = clonedProperties
+		if !duplicate {
+			bindings = append(bindings, candidate)
+		}
 	}
-	if items, ok := schema["items"].(map[string]any); ok {
-		clone["items"] = addURIToOutputSchema(items)
+	return bindings
+}
+
+func annotatedResourceBindings(schema map[string]any, direction string) []ResourceBinding {
+	if len(schema) == 0 {
+		return nil
 	}
-	return clone
+	bindings := make([]ResourceBinding, 0)
+	var walk func(map[string]any, string)
+	walk = func(node map[string]any, path string) {
+		if resourceType, ok := schemaResourceType(node); ok {
+			binding := ResourceBinding{ResourceType: resourceType}
+			if direction == "requires" {
+				binding.Argument = path
+				binding.Required = boolValue(node["x-opute-required"], path == "uri")
+			} else {
+				binding.SourcePath = path
+			}
+			bindings = append(bindings, binding)
+		}
+		if properties, ok := node["properties"].(map[string]any); ok {
+			for name, raw := range properties {
+				property, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				childPath := name
+				if path != "" {
+					childPath = path + "." + name
+				}
+				walk(property, childPath)
+			}
+		}
+		if items, ok := node["items"].(map[string]any); ok {
+			walk(items, path+"[]")
+		}
+	}
+	walk(schema, "")
+	return bindings
+}
+
+func boolValue(value any, fallback bool) bool {
+	if typed, ok := value.(bool); ok {
+		return typed
+	}
+	return fallback
+}
+
+func materializeSchemaBindings(def *ToolDefinition) {
+	if def == nil {
+		return
+	}
+	meta := make(map[string]any, len(def.Meta)+2)
+	for key, value := range def.Meta {
+		if key != "argumentProducers" {
+			meta[key] = value
+		}
+	}
+	for _, direction := range []string{"requires", "produces"} {
+		bindings := resourceBindings(*def, direction)
+		if len(bindings) == 0 {
+			continue
+		}
+		items := make([]map[string]any, 0, len(bindings))
+		for _, binding := range bindings {
+			item := map[string]any{"resourceType": binding.ResourceType}
+			if binding.Argument != "" {
+				item["argument"] = binding.Argument
+			}
+			if binding.SourcePath != "" {
+				item["sourcePath"] = binding.SourcePath
+			}
+			if binding.Required {
+				item["required"] = true
+			}
+			items = append(items, item)
+		}
+		meta[direction] = items
+	}
+	if len(meta) == 0 {
+		def.Meta = nil
+	} else {
+		def.Meta = meta
+	}
 }
 
 // postgresqlServiceRelaySchema is shared by every generic PostgreSQL service
@@ -234,6 +293,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"install_incus_stack":              true,
 		"probe_incus_gpu":                  true,
 		"provision_container":              true,
+		"run_instance_command":             true,
 		"probe_gpu_container":              true,
 		"ensure_oci_builder":               true,
 		"configure_oci_storage":            true,
@@ -258,8 +318,6 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"put_k8s_secret":                   true,
 		"install_oci_registry":             true,
 		"configure_k3s_registry":           true,
-		"install_cloudflared_connector":    true,
-		"delete_cloudflared_connector":     true,
 		"configure_service_domain":         true,
 		"remove_service_domain":            true,
 		"reset_incus_stack":                true,
@@ -315,6 +373,8 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Name: "probe_incus_gpu", Title: "Probe Incus GPU capability", Description: "Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.", InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name: "provision_container", Title: "Provision Incus system container", Description: "Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.", InputSchema: map[string]any{"type": "object", "required": []string{"containerName"}, "properties": map[string]any{"containerName": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "disk": map[string]any{"type": "string"}, "gpu": map[string]any{"type": "boolean"}, "wslGpuLibs": map[string]any{"type": "boolean"}, "nesting": map[string]any{"type": "boolean"}, "port": map[string]any{"type": "integer"}, "modelVolume": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"},
+	}, ToolDefinition{
+		Name: "run_instance_command", Title: "Run typed instance command", Description: "Execute a provider-declared argv on a resolved Incus VM or system container. The target must be a canonical tenant-scoped URI.", InputSchema: map[string]any{"type": "object", "required": []string{"uri", "command"}, "properties": map[string]any{"uri": map[string]any{"type": "string", "pattern": `^(vm|container):[a-z][a-z0-9-]{0,31}:.+$`}, "command": map[string]any{"type": "string", "minLength": 1}, "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "timeoutMs": map[string]any{"type": "integer", "minimum": 0, "maximum": 7200000}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"uri", "exitCode", "stdout", "stderr"}},
 	}, ToolDefinition{
 		Name: "probe_gpu_container", Title: "Probe system container GPU", Description: "Launch a disposable Incus system container, probe GPU visibility and NVML, then delete it.", InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
@@ -543,22 +603,6 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Description: "Configure a K3s cluster to pull images from an OCI registry endpoint.",
 		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "endpoint"}, "properties": map[string]any{
 			"vmName": map[string]any{"type": "string"}, "endpoint": map[string]any{"type": "string"}, "registry": map[string]any{"type": "string"}, "insecure": map[string]any{"type": "boolean"},
-		}},
-		OutputSchema: map[string]any{"type": "object"},
-	}, ToolDefinition{
-		Name:        "install_cloudflared_connector",
-		Title:       "Install Cloudflare connector",
-		Description: "Deploy a token-backed Cloudflare connector inside Kubernetes.",
-		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "token"}, "properties": map[string]any{
-			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "token": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "replicas": map[string]any{"type": "integer"}, "localTargets": map[string]any{"type": "array"},
-		}},
-		OutputSchema: map[string]any{"type": "object"},
-	}, ToolDefinition{
-		Name:        "delete_cloudflared_connector",
-		Title:       "Delete Cloudflare connector",
-		Description: "Delete the in-cluster Cloudflare connector resources.",
-		InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
-			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"},
 		}},
 		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{

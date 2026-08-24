@@ -12,8 +12,11 @@ import (
 	"github.com/wunderous/host-agents/internal/resource"
 )
 
-// DispatchTool executes a host MCP tool via HostOperationsService and returns an MCP CallToolResult.
-func DispatchTool(ctx context.Context, svc *ops.HostOperationsService, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
+// DispatchTool executes a host MCP tool via HostOperationsService and returns
+// an MCP CallToolResult. The argument map is the unchanged client/model input;
+// resolved provider coordinates arrive only through the typed execution
+// binding, never as synthetic argument fields.
+func DispatchTool(ctx context.Context, svc *ops.HostOperationsService, name string, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("tool name is required")
@@ -22,7 +25,7 @@ func DispatchTool(ctx context.Context, svc *ops.HostOperationsService, name stri
 		return ErrorResult(err), nil
 	}
 
-	result, err := runTool(ctx, svc, name, args, onData)
+	result, err := runTool(ctx, svc, name, args, binding, onData)
 	if err != nil {
 		return ErrorResult(err), nil
 	}
@@ -39,7 +42,7 @@ func listClustersFastArg(args map[string]any) bool {
 	return true
 }
 
-func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
+func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 	switch name {
 	case "get_host_info":
 		out := svc.DescribeHost()
@@ -97,8 +100,15 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
+	case "list_kubernetes_clusters":
+		out, err := svc.ListKubernetesClusters(stringField(args, "source"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
 	case "get_cluster_details":
-		vmName := vmNameFromArgs(args)
+		vmName := vmNameFromBinding(binding)
 		if vmName == "" {
 			return nil, fmt.Errorf("vmName is required")
 		}
@@ -110,7 +120,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "get_cluster_runtime_details":
-		vmName := vmNameFromArgs(args)
+		vmName := vmNameFromBinding(binding)
 		if vmName == "" {
 			return nil, fmt.Errorf("vmName is required")
 		}
@@ -171,6 +181,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		payload := map[string]any{
+			"uri":           out.URI,
 			"containerName": out.ContainerName,
 			"vmName":        out.ContainerName,
 			"image":         out.Image,
@@ -178,6 +189,18 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			"instanceType":  out.InstanceType,
 		}
 		return structuredResult(payload, fmt.Sprintf("Provisioned Incus container '%s'.", out.ContainerName)), nil
+
+	case "run_instance_command":
+		out, err := svc.RunInstanceCommand(ops.RunInstanceCommandArgs{
+			URI:       stringField(args, "uri"),
+			Command:   stringField(args, "command"),
+			Args:      stringSliceField(args, "args"),
+			TimeoutMs: intField(args, "timeoutMs"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Executed command on %s.", out["uri"])), nil
 
 	case "probe_gpu_container":
 		out, err := svc.ProbeGPUContainer(onData)
@@ -379,19 +402,19 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(map[string]any{"stopped": true}, "llama-server runtime stopped"), nil
 
 	case "reconcile_postgresql_service":
-		out, err := svc.ReconcilePostgreSQLService(ctx, postgresqlServiceArgs(args), onData)
+		out, err := svc.ReconcilePostgreSQLService(ctx, postgresqlServiceArgs(args, binding), onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "PostgreSQL service is ready"), nil
 	case "get_postgresql_service_status":
-		out, err := svc.GetPostgreSQLServiceStatus(ctx, postgresqlServiceArgs(args))
+		out, err := svc.GetPostgreSQLServiceStatus(ctx, postgresqlServiceArgs(args, binding))
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "PostgreSQL service status returned"), nil
 	case "remove_postgresql_service":
-		out, err := svc.RemovePostgreSQLService(ctx, postgresqlServiceArgs(args), boolField(args, "confirm"))
+		out, err := svc.RemovePostgreSQLService(ctx, postgresqlServiceArgs(args, binding), boolField(args, "confirm"))
 		if err != nil {
 			return nil, err
 		}
@@ -404,21 +427,21 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "PostgreSQL service relay was released"), nil
 
 	case "reconcile_tidb_service":
-		out, err := svc.ReconcileTiDBService(ctx, ops.TiDBServiceArgs{VMName: vmNameFromArgs(args), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), PDReplicas: intField(args, "pdReplicas"), TiKVReplicas: intField(args, "tikvReplicas"), TiDBReplicas: intField(args, "tidbReplicas"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"), TiDBVersion: stringField(args, "tidbVersion"), RetentionPolicy: stringField(args, "retentionPolicy")}, onData)
+		out, err := svc.ReconcileTiDBService(ctx, ops.TiDBServiceArgs{VMName: vmNameFromBinding(binding), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), PDReplicas: intField(args, "pdReplicas"), TiKVReplicas: intField(args, "tikvReplicas"), TiDBReplicas: intField(args, "tidbReplicas"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"), TiDBVersion: stringField(args, "tidbVersion"), RetentionPolicy: stringField(args, "retentionPolicy")}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "TiDB service is ready"), nil
 
 	case "get_tidb_service_status":
-		out, err := svc.GetTiDBServiceStatus(ctx, ops.TiDBServiceArgs{VMName: vmNameFromArgs(args), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace")})
+		out, err := svc.GetTiDBServiceStatus(ctx, ops.TiDBServiceArgs{VMName: vmNameFromBinding(binding), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace")})
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "TiDB service status returned"), nil
 
 	case "remove_tidb_service":
-		out, err := svc.RemoveTiDBService(ctx, ops.TiDBServiceArgs{VMName: vmNameFromArgs(args), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), RetentionPolicy: stringField(args, "retentionPolicy")}, boolField(args, "confirm"))
+		out, err := svc.RemoveTiDBService(ctx, ops.TiDBServiceArgs{VMName: vmNameFromBinding(binding), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), RetentionPolicy: stringField(args, "retentionPolicy")}, boolField(args, "confirm"))
 		if err != nil {
 			return nil, err
 		}
@@ -465,7 +488,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "ensure_local_llm_k3s_proxy":
 		out, err := svc.EnsureLocalLLMK3sProxy(ops.LocalLLMK3sProxyArgs{
-			VMName:         vmNameFromArgs(args),
+			VMName:         vmNameFromBinding(binding),
 			Namespace:      stringField(args, "namespace"),
 			SecretName:     stringField(args, "secretName"),
 			ConfigMapName:  stringField(args, "configMapName"),
@@ -484,14 +507,14 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "Local LLM K3s proxy is ready"), nil
 
 	case "remove_local_llm_k3s_proxy":
-		out, err := svc.RemoveLocalLLMK3sProxy(vmNameFromArgs(args), stringField(args, "namespace"))
+		out, err := svc.RemoveLocalLLMK3sProxy(vmNameFromBinding(binding), stringField(args, "namespace"))
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "Local LLM K3s proxy removed"), nil
 
 	case "get_vm_info":
-		vmName := vmNameFromArgs(args)
+		vmName := vmNameFromBinding(binding)
 		if vmName == "" {
 			return nil, fmt.Errorf("vmName is required")
 		}
@@ -510,7 +533,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 				endpoints = append(endpoints, ops.ServiceIngressEndpoint{Name: stringField(row, "name"), Hostname: stringField(row, "hostname")})
 			}
 		}
-		out, err := svc.DiscoverServiceIngress(ops.DiscoverServiceIngressArgs{VMName: vmNameFromArgs(args), Endpoints: endpoints, IngressNamespace: stringField(args, "ingressNamespace"), IngressService: stringField(args, "ingressService")})
+		out, err := svc.DiscoverServiceIngress(ops.DiscoverServiceIngressArgs{VMName: vmNameFromBinding(binding), Endpoints: endpoints, IngressNamespace: stringField(args, "ingressNamespace"), IngressService: stringField(args, "ingressService")})
 		if err != nil {
 			return nil, err
 		}
@@ -552,7 +575,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}, nil
 
 	case "exec_command":
-		parsed := execCommandArgs(args)
+		parsed := execCommandArgs(args, binding)
 		out, err := svc.ExecCommand(parsed, onData)
 		if err != nil {
 			return nil, err
@@ -601,51 +624,6 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(map[string]any{"released": released, "databaseId": databaseID}, text), nil
 
-	case "ensure_cloudflared_tunnel":
-		parsed := ops.EnsureCloudflaredTunnelArgs{
-			BindingID:         stringField(args, "bindingId"),
-			Hostname:          stringField(args, "hostname"),
-			LocalTarget:       stringField(args, "localTarget"),
-			RunToken:          stringField(args, "runToken"),
-			Connector:         stringField(args, "connector"),
-			AllowedLocalPorts: intSliceField(args, "allowedLocalPorts"),
-			Quick:             boolField(args, "quick"),
-			Native:            boolField(args, "native"),
-		}
-		out, err := svc.EnsureCloudflaredTunnel(parsed)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, fmt.Sprintf("Tunnel ready for %s", out.Hostname)), nil
-
-	case "remove_local_llm_cloudflared_tunnel":
-		out, err := svc.RemoveHostExposure(ops.RemoveHostExposureArgs{BindingID: stringField(args, "bindingId")})
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Local LLM Cloudflare connector removed"), nil
-
-	case "probe_host_exposure":
-		parsed := ops.ProbeHostExposureArgs{
-			BindingID:   stringField(args, "bindingId"),
-			LocalTarget: stringField(args, "localTarget"),
-		}
-		out, err := svc.ProbeHostExposure(parsed)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, fmt.Sprintf("Exposure summary: %s", out.Summary)), nil
-
-	case "remove_host_exposure":
-		parsed := ops.RemoveHostExposureArgs{
-			BindingID: stringField(args, "bindingId"),
-		}
-		out, err := svc.RemoveHostExposure(parsed)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Removed host exposure"), nil
-
 	case "ensure_host_firewall_rule":
 		parsed := ops.EnsureHostFirewallRuleArgs{
 			BindingID: stringField(args, "bindingId"),
@@ -681,21 +659,21 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, fmt.Sprintf("Provisioned %s '%s' from image '%s'.", kind, out.VMName, out.Image)), nil
 
 	case "start_vm":
-		out, err := svc.StartVM(ops.VMScopedArgs{VMName: vmNameFromArgs(args)}, onData)
+		out, err := svc.StartVM(ops.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Started VM '%s'.", out["vmName"])), nil
 
 	case "stop_vm":
-		out, err := svc.StopVM(ops.VMScopedArgs{VMName: vmNameFromArgs(args)}, onData)
+		out, err := svc.StopVM(ops.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Stopped VM '%s'.", out["vmName"])), nil
 
 	case "restart_vm":
-		out, err := svc.RestartVM(ops.VMScopedArgs{VMName: vmNameFromArgs(args)}, onData)
+		out, err := svc.RestartVM(ops.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -703,7 +681,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "update_vm_resources":
 		out, err := svc.UpdateVMResources(ops.UpdateVMResourcesArgs{
-			VMName: vmNameFromArgs(args),
+			VMName: vmNameFromBinding(binding),
 			CPUs:   intField(args, "cpus"),
 			Memory: stringField(args, "memory"),
 		}, onData)
@@ -713,14 +691,14 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, fmt.Sprintf("Updated resources for '%s' (cpus=%s, memory=%s).", out["vmName"], out["cpus"], out["memory"])), nil
 
 	case "delete_vm":
-		out, err := svc.DeleteVM(ops.VMScopedArgs{VMName: vmNameFromArgs(args)}, onData)
+		out, err := svc.DeleteVM(ops.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Deleted VM '%s'.", out["vmName"])), nil
 
 	case "install_k3s":
-		parsed := installK3sArgs(args)
+		parsed := installK3sArgs(args, binding)
 		out, err := svc.InstallK3s(ctx, parsed, onData)
 		if err != nil {
 			return nil, err
@@ -728,7 +706,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "K3s installation completed."), nil
 
 	case "get_k3s_status":
-		vmName := vmNameFromArgs(args)
+		vmName := vmNameFromBinding(binding)
 		out, err := svc.GetK3sStatus(vmName)
 		if err != nil {
 			return nil, err
@@ -736,7 +714,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "uninstall_k3s":
-		parsed := uninstallK3sArgs(args)
+		parsed := uninstallK3sArgs(args, binding)
 		out, err := svc.UninstallK3s(parsed, onData)
 		if err != nil {
 			return nil, err
@@ -745,7 +723,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 
 	case "install_postgresql":
 		out, err := svc.InstallPostgreSQL(ops.InstallPostgreSQLArgs{
-			VMName:    vmNameFromArgs(args),
+			VMName:    vmNameFromBinding(binding),
 			Namespace: stringField(args, "namespace"),
 			Database:  stringField(args, "database"),
 		}, onData)
@@ -755,54 +733,25 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "PostgreSQL is ready."), nil
 
 	case "get_postgresql_status":
-		out, err := svc.GetPostgreSQLStatus(vmNameFromArgs(args), stringField(args, "namespace"))
+		out, err := svc.GetPostgreSQLStatus(vmNameFromBinding(binding), stringField(args, "namespace"))
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, ""), nil
 
 	case "delete_postgresql":
-		out, err := svc.DeletePostgreSQL(vmNameFromArgs(args), stringField(args, "namespace"), onData)
+		out, err := svc.DeletePostgreSQL(vmNameFromBinding(binding), stringField(args, "namespace"), onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "PostgreSQL deleted."), nil
 
 	case "run_sql":
-		out, err := svc.RunSQL(vmNameFromArgs(args), stringField(args, "namespace"), stringField(args, "database"), stringField(args, "sql"))
+		out, err := svc.RunSQL(vmNameFromBinding(binding), stringField(args, "namespace"), stringField(args, "database"), stringField(args, "sql"))
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "SQL completed."), nil
-
-	case "create_cloudflare_tunnel":
-		out, err := svc.EnsureCloudflaredTunnel(ops.EnsureCloudflaredTunnelArgs{
-			BindingID:         stringField(args, "bindingId"),
-			Hostname:          stringField(args, "hostname"),
-			LocalTarget:       stringField(args, "localTarget"),
-			RunToken:          stringField(args, "runToken"),
-			Connector:         stringField(args, "connector"),
-			AllowedLocalPorts: intSliceField(args, "allowedLocalPorts"),
-			Quick:             boolField(args, "quick"),
-		})
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Cloudflare Tunnel started."), nil
-
-	case "get_cloudflare_tunnel_status":
-		out, err := svc.ProbeHostExposure(ops.ProbeHostExposureArgs{BindingID: stringField(args, "bindingId"), LocalTarget: stringField(args, "localTarget")})
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, ""), nil
-
-	case "delete_cloudflare_tunnel":
-		out, err := svc.RemoveHostExposure(ops.RemoveHostExposureArgs{BindingID: stringField(args, "bindingId")})
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Cloudflare Tunnel deleted."), nil
 
 	case "configure_k3s_load_balancer":
 		out, err := svc.ConfigureK3sLoadBalancer(args, onData)
@@ -819,7 +768,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "Configured K3s HA servers."), nil
 
 	case "install_cluster_agent":
-		parsed := installClusterAgentArgs(args)
+		parsed := installClusterAgentArgs(args, binding)
 		out, err := svc.InstallClusterAgent(parsed, onData)
 		if err != nil {
 			return nil, err
@@ -827,21 +776,21 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "Cluster agent installed."), nil
 
 	case "restart_cluster":
-		out, err := svc.RestartCluster(vmNameFromArgs(args), onData)
+		out, err := svc.RestartCluster(vmNameFromBinding(binding), onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "K3s cluster restarted."), nil
 
 	case "restart_cluster_agent":
-		out, err := svc.RestartClusterAgent(vmNameFromArgs(args), onData)
+		out, err := svc.RestartClusterAgent(vmNameFromBinding(binding), onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "Cluster agent restarted."), nil
 
 	case "install_helm_chart":
-		parsed := installHelmChartArgs(args)
+		parsed := installHelmChartArgs(args, binding)
 		out, err := svc.InstallHelmChart(parsed, onData)
 		if err != nil {
 			return nil, err
@@ -849,7 +798,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, fmt.Sprintf("HelmChart '%s' deployment initiated.", parsed.ReleaseName)), nil
 
 	case "uninstall_helm_chart":
-		parsed := uninstallHelmChartArgs(args)
+		parsed := uninstallHelmChartArgs(args, binding)
 		out, err := svc.UninstallHelmChart(parsed, onData)
 		if err != nil {
 			return nil, err
@@ -857,7 +806,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, fmt.Sprintf("HelmChart '%s' deleted.", parsed.ReleaseName)), nil
 
 	case "apply_manifest":
-		out, err := svc.ApplyManifest(ops.ApplyManifestArgs{VMName: vmNameFromArgs(args), Manifest: stringField(args, "manifest")}, onData)
+		out, err := svc.ApplyManifest(ops.ApplyManifestArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Manifest: stringField(args, "manifest")}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -872,96 +821,86 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 				}
 			}
 		}
-		out, err := svc.PutK8sSecret(ops.PutK8sSecretArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Data: data}, onData)
+		out, err := svc.PutK8sSecret(ops.PutK8sSecretArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Data: data}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "Kubernetes Secret configured."), nil
 
 	case "get_k8s_resource":
-		out, err := svc.GetK8sResource(ops.K8sResourceArgs{VMName: vmNameFromArgs(args), Kind: stringField(args, "kind"), ResourceKind: stringField(args, "resourceKind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")})
+		out, err := svc.GetK8sResource(ops.K8sResourceArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Kind: stringField(args, "kind"), ResourceKind: stringField(args, "resourceKind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")})
 		if err != nil {
 			return nil, err
 		}
+		out = withBindingURI(out, binding, "cluster")
 		return structuredResult(out, ""), nil
 
 	case "delete_k8s_resource":
-		out, err := svc.DeleteK8sResource(ops.K8sResourceArgs{VMName: vmNameFromArgs(args), Kind: stringField(args, "kind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")}, onData)
+		out, err := svc.DeleteK8sResource(ops.K8sResourceArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Kind: stringField(args, "kind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")}, onData)
 		if err != nil {
 			return nil, err
 		}
+		out = withBindingURI(out, binding, "cluster")
 		return structuredResult(out, "Kubernetes resource deleted."), nil
 
 	case "get_k8s_resource_status":
-		out, err := svc.GetK8sResourceStatus(ops.K8sResourceArgs{VMName: vmNameFromArgs(args), Kind: stringField(args, "kind"), ResourceKind: stringField(args, "resourceKind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")})
+		out, err := svc.GetK8sResourceStatus(ops.K8sResourceArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Kind: stringField(args, "kind"), ResourceKind: stringField(args, "resourceKind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")})
 		if err != nil {
 			return nil, err
 		}
+		out = withBindingURI(out, binding, "cluster")
 		return structuredResult(out, ""), nil
 
 	case "list_k8s_events":
 		limit, _ := args["limit"].(float64)
-		out, err := svc.ListK8sEvents(ops.K8sEventsArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Limit: int(limit)})
+		out, err := svc.ListK8sEvents(ops.K8sEventsArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Limit: int(limit)})
 		if err != nil {
 			return nil, err
 		}
+		out = withBindingURI(out, binding, "cluster")
 		return structuredResult(out, ""), nil
 
 	case "install_oci_registry":
-		out, err := svc.InstallOCIRegistry(ops.InstallOCIRegistryArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Image: stringField(args, "image"), StorageSize: stringField(args, "storageSize"), StorageClass: stringField(args, "storageClass"), NodePort: intField(args, "nodePort")}, onData)
+		out, err := svc.InstallOCIRegistry(ops.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Image: stringField(args, "image"), StorageSize: stringField(args, "storageSize"), StorageClass: stringField(args, "storageClass"), NodePort: intField(args, "nodePort")}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "OCI registry deployment initiated."), nil
 
 	case "get_oci_registry_status":
-		out, err := svc.GetOCIRegistryStatus(ops.InstallOCIRegistryArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), Name: stringField(args, "name")})
+		out, err := svc.GetOCIRegistryStatus(ops.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Name: stringField(args, "name")})
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, ""), nil
 
 	case "delete_oci_registry":
-		out, err := svc.DeleteOCIRegistry(ops.InstallOCIRegistryArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace")}, onData)
+		out, err := svc.DeleteOCIRegistry(ops.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace")}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "OCI registry deleted."), nil
 
 	case "configure_k3s_registry":
-		out, err := svc.ConfigureK3sRegistry(ops.ConfigureK3sRegistryArgs{VMName: vmNameFromArgs(args), Endpoint: stringField(args, "endpoint"), Registry: stringField(args, "registry"), Insecure: boolField(args, "insecure")}, onData)
+		out, err := svc.ConfigureK3sRegistry(ops.ConfigureK3sRegistryArgs{VMName: vmNameFromBinding(binding), Endpoint: stringField(args, "endpoint"), Registry: stringField(args, "registry"), Insecure: boolField(args, "insecure")}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "K3s registry configuration applied."), nil
 
 	case "configure_service_domain":
-		out, err := svc.ConfigureServiceDomain(ops.ConfigureServiceDomainArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), IngressName: stringField(args, "ingressName"), Hostname: stringField(args, "hostname"), ServiceName: stringField(args, "serviceName"), ServicePort: intField(args, "servicePort"), IngressClass: stringField(args, "ingressClass")}, onData)
+		out, err := svc.ConfigureServiceDomain(ops.ConfigureServiceDomainArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), IngressName: stringField(args, "ingressName"), Hostname: stringField(args, "hostname"), ServiceName: stringField(args, "serviceName"), ServicePort: intField(args, "servicePort"), IngressClass: stringField(args, "ingressClass")}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "Service domain mapping configured."), nil
 
 	case "remove_service_domain":
-		out, err := svc.RemoveServiceDomain(ops.ConfigureServiceDomainArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace"), IngressName: stringField(args, "ingressName")}, onData)
+		out, err := svc.RemoveServiceDomain(ops.ConfigureServiceDomainArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), IngressName: stringField(args, "ingressName")}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, "Service domain mapping removed."), nil
-
-	case "install_cloudflared_connector":
-		out, err := svc.InstallCloudflaredConnector(ops.InstallCloudflaredConnectorArgs{VMName: vmNameFromArgs(args), Target: stringField(args, "target"), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Token: stringField(args, "token"), Image: stringField(args, "image"), Replicas: intField(args, "replicas"), LocalTargets: cloudflaredLocalTargets(args["localTargets"])}, onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "In-cluster Cloudflare connector deployment initiated."), nil
-
-	case "delete_cloudflared_connector":
-		out, err := svc.DeleteCloudflaredConnector(ops.InstallCloudflaredConnectorArgs{VMName: vmNameFromArgs(args), Namespace: stringField(args, "namespace")}, onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "In-cluster Cloudflare connector deleted."), nil
 
 	case "restart_host_service":
 		out, err := svc.RestartHostService(ops.RestartHostServiceArgs{ServiceName: stringField(args, "serviceName")}, onData)
@@ -1161,7 +1100,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, "k3d is installed."), nil
 
 	case "list_namespaces":
-		vmName := vmNameFromArgs(args)
+		vmName := vmNameFromBinding(binding)
 		namespaces, err := svc.ListNamespaces(vmName)
 		if err != nil {
 			return nil, err
@@ -1170,7 +1109,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "list_storage_classes":
-		vmName := vmNameFromArgs(args)
+		vmName := vmNameFromBinding(binding)
 		storageClasses, err := svc.ListStorageClasses(vmName)
 		if err != nil {
 			return nil, err
@@ -1179,7 +1118,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, ""), nil
 
 	case "list_ingress_classes":
-		vmName := vmNameFromArgs(args)
+		vmName := vmNameFromBinding(binding)
 		ingressClasses, err := svc.ListIngressClasses(vmName)
 		if err != nil {
 			return nil, err
@@ -1187,25 +1126,25 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(map[string]any{"classes": ingressClasses, "ingressClasses": ingressClasses}, ""), nil
 
 	case "list_pods":
-		vmName := vmNameFromArgs(args)
+		vmName := vmNameFromBinding(binding)
 		namespace := stringField(args, "namespace")
 		pods, err := svc.ListPods(vmName, namespace)
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(map[string]any{"pods": pods}, ""), nil
+		return structuredResult(withBindingURI(map[string]any{"pods": pods}, binding, "cluster"), ""), nil
 
 	case "list_services":
-		vmName := vmNameFromArgs(args)
+		vmName := vmNameFromBinding(binding)
 		namespace := stringField(args, "namespace")
 		services, err := svc.ListServices(vmName, namespace)
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(map[string]any{"services": services}, ""), nil
+		return structuredResult(withBindingURI(map[string]any{"services": services}, binding, "cluster"), ""), nil
 
 	case "list_deployments":
-		vmName := vmNameFromArgs(args)
+		vmName := vmNameFromBinding(binding)
 		namespace := stringField(args, "namespace")
 		deployments, err := svc.ListDeployments(vmName, namespace)
 		if err != nil {
@@ -1247,6 +1186,36 @@ func structuredResult(structured any, text string) *mcp.CallToolResult {
 	}
 }
 
+// CapabilityError is the typed owner boundary for a capability invocation
+// failure. Owner records which layer failed — "capability" for capability-
+// owned validation/execution, "admission" for tenant/resource binding, or
+// "lifecycle" for generation state — so clients render capability-owned
+// invalid-input errors distinctly from envelope or transport problems.
+type CapabilityError struct {
+	Owner   string
+	Code    string
+	Message string
+	Err     error
+}
+
+func (e *CapabilityError) Error() string {
+	message := e.Message
+	if message == "" && e.Err != nil {
+		message = e.Err.Error()
+	}
+	if message == "" {
+		message = "capability error"
+	}
+	return message
+}
+
+func (e *CapabilityError) Unwrap() error { return e.Err }
+
+// NewCapabilityError wraps err in the typed owner boundary.
+func NewCapabilityError(owner, code string, err error) *CapabilityError {
+	return &CapabilityError{Owner: owner, Code: code, Err: err}
+}
+
 // ErrorResult builds an MCP error tool result.
 func ErrorResult(err error) *mcp.CallToolResult {
 	if admissionErr, ok := err.(*resource.AdmissionError); ok {
@@ -1258,6 +1227,18 @@ func ErrorResult(err error) *mcp.CallToolResult {
 				"pressure":     admissionErr.Pressure,
 				"reason":       admissionErr.Reason,
 				"retryAfterMs": admissionErr.RetryAfterMs,
+				"owner":        "admission",
+			},
+			IsError: true,
+		}
+	}
+	if capabilityErr, ok := err.(*CapabilityError); ok {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "Error: " + err.Error()}},
+			StructuredContent: map[string]any{
+				"code":    capabilityErr.Code,
+				"owner":   capabilityErr.Owner,
+				"message": capabilityErr.Error(),
 			},
 			IsError: true,
 		}
@@ -1268,14 +1249,39 @@ func ErrorResult(err error) *mcp.CallToolResult {
 	}
 }
 
-func vmNameFromArgs(args map[string]any) string {
-	return stringField(args, "__resolvedVmName")
+func vmNameFromBinding(binding ExecutionBinding) string {
+	return binding.ProviderInstanceName()
+}
+
+func resourceURIFromBinding(binding ExecutionBinding) string {
+	for _, resource := range binding.Resources {
+		if resource.ResourceType == "cluster" && strings.TrimSpace(resource.URI) != "" {
+			return resource.URI
+		}
+	}
+	return ""
+}
+
+func withBindingURI(out map[string]any, binding ExecutionBinding, allowedTypes ...string) map[string]any {
+	if out == nil {
+		out = map[string]any{}
+	}
+	if _, exists := out["uri"]; exists {
+		return out
+	}
+	for _, resource := range binding.Resources {
+		if len(allowedTypes) > 0 && !containsString(allowedTypes, resource.ResourceType) {
+			continue
+		}
+		if strings.TrimSpace(resource.URI) != "" {
+			out["uri"] = resource.URI
+			break
+		}
+	}
+	return out
 }
 
 func stringField(args map[string]any, key string) string {
-	if resolved, ok := args["__resolved_"+key].(string); ok {
-		return strings.TrimSpace(resolved)
-	}
 	v, _ := args[key].(string)
 	return strings.TrimSpace(v)
 }
@@ -1298,9 +1304,9 @@ func postgresqlServiceRelayArgs(args map[string]any) *ops.PostgreSQLServiceRelay
 	}
 }
 
-func postgresqlServiceArgs(args map[string]any) ops.PostgreSQLServiceArgs {
+func postgresqlServiceArgs(args map[string]any, binding ExecutionBinding) ops.PostgreSQLServiceArgs {
 	return ops.PostgreSQLServiceArgs{
-		VMName: vmNameFromArgs(args), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"),
+		VMName: vmNameFromBinding(binding), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"),
 		Instances: intField(args, "instances"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"),
 		RetentionPolicy: stringField(args, "retentionPolicy"), RestartConsumers: optionalBoolField(args, "restartConsumers"),
 		Databases: uniqueStringSlice(stringSliceField(args, "databases")), ConsumerDatabaseKeys: stringMapField(args, "consumerDatabaseKeys"),
@@ -1535,22 +1541,6 @@ func optionalBoolField(args map[string]any, key string) *bool {
 	return &v
 }
 
-func cloudflaredLocalTargets(value any) []ops.CloudflaredLocalTarget {
-	items, ok := value.([]any)
-	if !ok {
-		return nil
-	}
-	targets := make([]ops.CloudflaredLocalTarget, 0, len(items))
-	for _, item := range items {
-		obj, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		targets = append(targets, ops.CloudflaredLocalTarget{LocalPort: intField(obj, "localPort"), Target: stringField(obj, "target")})
-	}
-	return targets
-}
-
 func provisionArgs(args map[string]any) ops.ProvisionVMArgs {
 	vmName := stringField(args, "vmName")
 	if vmName == "" {
@@ -1566,7 +1556,7 @@ func provisionArgs(args map[string]any) ops.ProvisionVMArgs {
 	}
 }
 
-func installK3sArgs(args map[string]any) ops.InstallK3sArgs {
+func installK3sArgs(args map[string]any, binding ExecutionBinding) ops.InstallK3sArgs {
 	var installArgs []string
 	if raw, ok := args["installArgs"].([]any); ok {
 		for _, item := range raw {
@@ -1577,23 +1567,23 @@ func installK3sArgs(args map[string]any) ops.InstallK3sArgs {
 	}
 	return ops.InstallK3sArgs{
 		Target:      stringField(args, "target"),
-		VMName:      vmNameFromArgs(args),
+		VMName:      vmNameFromBinding(binding),
 		ClusterID:   stringField(args, "clusterId"),
 		InstallArgs: installArgs,
 	}
 }
 
-func uninstallK3sArgs(args map[string]any) ops.UninstallK3sArgs {
+func uninstallK3sArgs(args map[string]any, binding ExecutionBinding) ops.UninstallK3sArgs {
 	return ops.UninstallK3sArgs{
 		Target:    stringField(args, "target"),
-		VMName:    vmNameFromArgs(args),
+		VMName:    vmNameFromBinding(binding),
 		ClusterID: stringField(args, "clusterId"),
 	}
 }
 
-func installClusterAgentArgs(args map[string]any) ops.InstallClusterAgentArgs {
+func installClusterAgentArgs(args map[string]any, binding ExecutionBinding) ops.InstallClusterAgentArgs {
 	return ops.InstallClusterAgentArgs{
-		VMName:      vmNameFromArgs(args),
+		VMName:      vmNameFromBinding(binding),
 		ClusterID:   stringField(args, "clusterId"),
 		ClusterName: stringField(args, "clusterName"),
 		AgentID:     stringField(args, "agentId"),
@@ -1641,7 +1631,7 @@ func anySliceField(args map[string]any, name string) []any {
 	return nil
 }
 
-func execCommandArgs(args map[string]any) ops.ExecCommandArgs {
+func execCommandArgs(args map[string]any, binding ExecutionBinding) ops.ExecCommandArgs {
 	var argv []string
 	if raw, ok := args["args"].([]any); ok {
 		for _, item := range raw {
@@ -1651,14 +1641,14 @@ func execCommandArgs(args map[string]any) ops.ExecCommandArgs {
 		}
 	}
 	return ops.ExecCommandArgs{
-		VMName:    vmNameFromArgs(args),
+		VMName:    vmNameFromBinding(binding),
 		Command:   stringField(args, "command"),
 		Args:      argv,
 		TimeoutMs: intField(args, "timeout"),
 	}
 }
 
-func installHelmChartArgs(args map[string]any) ops.InstallHelmChartArgs {
+func installHelmChartArgs(args map[string]any, binding ExecutionBinding) ops.InstallHelmChartArgs {
 	releaseName := stringField(args, "releaseName")
 	if releaseName == "" {
 		releaseName = stringField(args, "chartName")
@@ -1675,7 +1665,7 @@ func installHelmChartArgs(args map[string]any) ops.InstallHelmChartArgs {
 		namespace = "kube-system"
 	}
 	return ops.InstallHelmChartArgs{
-		VMName:      vmNameFromArgs(args),
+		VMName:      vmNameFromBinding(binding),
 		ReleaseName: releaseName,
 		ChartSource: chartSource,
 		Namespace:   namespace,
@@ -1684,7 +1674,7 @@ func installHelmChartArgs(args map[string]any) ops.InstallHelmChartArgs {
 	}
 }
 
-func uninstallHelmChartArgs(args map[string]any) ops.UninstallHelmChartArgs {
+func uninstallHelmChartArgs(args map[string]any, binding ExecutionBinding) ops.UninstallHelmChartArgs {
 	releaseName := stringField(args, "releaseName")
 	if releaseName == "" {
 		releaseName = stringField(args, "chartName")
@@ -1697,7 +1687,7 @@ func uninstallHelmChartArgs(args map[string]any) ops.UninstallHelmChartArgs {
 		namespace = "kube-system"
 	}
 	return ops.UninstallHelmChartArgs{
-		VMName:      vmNameFromArgs(args),
+		VMName:      vmNameFromBinding(binding),
 		ReleaseName: releaseName,
 		Namespace:   namespace,
 	}

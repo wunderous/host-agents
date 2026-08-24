@@ -27,6 +27,15 @@ Providers receive resolved typed coordinates and return observations carrying
 the same URI. They do not mint tenant segments or infer identities from names.
 This keeps a URI stable if the underlying compute or database provider changes.
 
+The complete resource-kind registry is host-owned in
+`internal/resourceid`. It covers every supported reusable entity, including
+hosts, virtual machines, system containers, pods, clusters, databases,
+services, host services, storage, runtimes, models, tunnels, registries, and
+provider-neutral lifecycle projections. A kind is not valid merely because a
+field is named `uri`; it must be registered and must match the capability's
+typed `Requires` or `Produces` binding. Capability edges are derived from
+those bindings as specified by ADR 0004.
+
 ## MCP projection distinction
 
 MCP resource projection URIs such as `opute://tasks/{taskId}` identify
@@ -48,3 +57,6 @@ through the standard `tasks/get` response.
 - Existing name-based callers must migrate in the same breaking cutover; the
   legacy Go TUI only receives the minimum binding/fixture update before its
   scheduled retirement.
+- Kubernetes pod identities are first-class opaque resource URIs. They are
+  issued from observed pod identity coordinates and are not parsed or
+  synthesized by clients.

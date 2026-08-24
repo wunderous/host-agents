@@ -32,7 +32,7 @@ func TestIncusCatalogMatchesExportMinusOmitted(t *testing.T) {
 		"remove_local_llm_k3s_proxy": true, "remove_local_llm_cloudflared_tunnel": true,
 	}
 	for _, tool := range exported {
-		if localLLM[tool.Name] || tools.IsOmittedToolName(tool.Name) || tools.IncusOmittedToolNames[tool.Name] || tools.CatalogExcludedToolNames[tool.Name] {
+		if localLLM[tool.Name] || tools.ProviderOwnedToolNames[tool.Name] || tools.IsOmittedToolName(tool.Name) || tools.IncusOmittedToolNames[tool.Name] || tools.CatalogExcludedToolNames[tool.Name] {
 			continue
 		}
 		want = append(want, tool)

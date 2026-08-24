@@ -283,6 +283,34 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 // add another contract flow without changing the recipe executor.
 func (s *Server) activationValidationFlows() map[string]func(context.Context, map[string]any) (map[string]any, error) {
 	return map[string]func(context.Context, map[string]any) (map[string]any, error){
+		"kubernetes.v1": func(ctx context.Context, bindings map[string]any) (map[string]any, error) {
+			providerID := recipeStringField(bindings, "providerId")
+			if providerID == "" {
+				return nil, fmt.Errorf("kubernetes.v1 activation requires input binding providerId")
+			}
+			s.providerMu.RLock()
+			adapter := s.providerAdapters[providerID]
+			s.providerMu.RUnlock()
+			if adapter == nil {
+				return nil, fmt.Errorf("Kubernetes provider %q is not connected", providerID)
+			}
+			result, err := adapter.Call(ctx, "opute.capability.kubernetes.validate", map[string]any{})
+			if err != nil {
+				return nil, err
+			}
+			if result == nil || result.IsError {
+				return nil, fmt.Errorf("Kubernetes provider %q validation failed", providerID)
+			}
+			observation, ok := result.StructuredContent.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("Kubernetes provider %q returned invalid validation evidence", providerID)
+			}
+			ready, _ := observation["ready"].(bool)
+			if !ready {
+				return nil, fmt.Errorf("Kubernetes provider %q is not ready", providerID)
+			}
+			return observation, nil
+		},
 		"openai-chat.v1": func(ctx context.Context, bindings map[string]any) (map[string]any, error) {
 			endpoint := recipeStringField(bindings, "endpoint")
 			modelRef := recipeStringField(bindings, "modelRef")

@@ -58,6 +58,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -99,7 +108,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "storage",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -354,7 +370,14 @@
       "taskSupport": "optional"
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -474,7 +497,14 @@
       "taskSupport": "optional"
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -506,6 +536,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -565,7 +604,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -592,17 +638,32 @@
         },
         "pruneNow": {
           "type": "boolean"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
     "name": "configure_service_domain",
     "title": "Configure service domain",
     "description": "Map a Kubernetes Service to a caller-selected hostname through the configured ingress class.",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "cluster", "required": true}]},
     "inputSchema": {
       "type": "object",
       "required": [
@@ -610,7 +671,6 @@
         "ingressName",
         "hostname",
         "servicePort",
-        "uri",
         "uri"
       ],
       "properties": {
@@ -759,7 +819,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -917,7 +984,8 @@
       "taskSupport": "optional"
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "produces": [{"sourcePath": "uri", "resourceType": "vm"}]
     }
   },
   {
@@ -942,6 +1010,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -994,7 +1071,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "database",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1034,7 +1118,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "service-domain",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1074,7 +1165,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "storage",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1115,7 +1213,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1263,13 +1368,21 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
     "name": "ensure_cloudflared_tunnel",
     "title": "Ensure Cloudflared Tunnel",
     "description": "Start or ensure a cloudflared tunnel for a host exposure binding",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "tunnel", "required": true}]},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1344,6 +1457,7 @@
     "name": "ensure_host_firewall_rule",
     "title": "Ensure Host Firewall Rule",
     "description": "Ensure host firewall allows traffic for an exposure binding",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "host", "required": true}]},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1491,6 +1605,7 @@
     "name": "ensure_sql_connector",
     "title": "Ensure SQL connector",
     "description": "Idempotent durable host TCP relay for a managed PostgreSQL database (keyed by databaseId)",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "sql-connector", "required": true}]},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1688,7 +1803,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1741,6 +1863,14 @@
         "lxcBinaryPath",
         "systemctlPath",
         "supportedTools"
+      ]
+    },
+    "_meta": {
+      "produces": [
+        {
+          "resourceType": "host",
+          "sourcePath": "uri"
+        }
       ]
     }
   },
@@ -1839,6 +1969,107 @@
         "uri"
       ],
       "additionalProperties": true
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
+    }
+  },
+  {
+    "name": "delete_k8s_resource",
+    "title": "Delete Kubernetes Resource",
+    "description": "Delete a Kubernetes resource from a canonical cluster target.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "resourceName": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "resourceName",
+        "uri"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "deleted": {"type": "boolean"},
+        "uri": {"type": "string"}
+      },
+      "required": [
+        "deleted",
+        "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
+    }
+  },
+  {
+    "name": "list_k8s_events",
+    "title": "List Kubernetes Events",
+    "description": "List bounded Kubernetes events for a canonical cluster target.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "uri"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "events",
+        "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
     }
   },
   {
@@ -1910,6 +2141,16 @@
         "uri"
       ],
       "additionalProperties": true
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
     }
   },
   {
@@ -2044,6 +2285,21 @@
         "database",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "database",
+          "required": true
+        }
+      ],
+      "produces": [
+        {
+          "resourceType": "database",
+          "sourcePath": "uri"
+        }
+      ]
     }
   },
   {
@@ -2114,6 +2370,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2195,6 +2460,21 @@
       "required": [
         "binding",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "service-domain",
+          "required": true
+        }
+      ],
+      "produces": [
+        {
+          "resourceType": "service-domain",
+          "sourcePath": "uri"
+        }
       ]
     }
   },
@@ -2295,12 +2575,28 @@
         "storage",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "storage",
+          "required": true
+        }
+      ],
+      "produces": [
+        {
+          "resourceType": "storage",
+          "sourcePath": "uri"
+        }
+      ]
     }
   },
   {
     "name": "get_sql_connector_status",
     "title": "Get SQL connector status",
     "description": "Read durable SQL connector relay status without teardown",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "sql-connector", "required": true}]},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2374,12 +2670,14 @@
     },
     "outputSchema": {
       "type": "object"
-    }
+    },
+    "_meta": {}
   },
   {
     "name": "get_tidb_service_status",
     "title": "Get TiDB service status",
     "description": "Read SQL-gated TiDB Operator platform readiness without returning credentials.",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "cluster", "required": true}]},
     "inputSchema": {
       "type": "object",
       "required": [
@@ -2432,6 +2730,9 @@
         "uri": {
           "type": "string"
         },
+        "kind": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
@@ -2469,11 +2770,36 @@
       },
       "required": [
         "uri",
+        "kind",
         "name",
         "status",
         "state",
         "release",
         "ipv4"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ],
+      "produces": [
+        {
+          "resourceType": "vm",
+          "sourcePath": "uri"
+        },
+        {
+          "resourceType": "container",
+          "sourcePath": "uri"
+        }
       ]
     }
   },
@@ -2537,6 +2863,15 @@
         "workload",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2583,6 +2918,16 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
     }
   },
   {
@@ -2664,7 +3009,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2775,7 +3132,19 @@
       "taskSupport": "optional"
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2815,6 +3184,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2863,6 +3241,7 @@
     "name": "install_sql_forward_sidecar",
     "title": "Install SQL forward sidecar",
     "description": "Install opute-sql-forward systemd unit on a VM for durable kubectl port-forward",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "cluster", "required": true}]},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2883,7 +3262,6 @@
       },
       "required": [
         "namespace",
-        "uri",
         "uri"
       ]
     },
@@ -3026,6 +3404,15 @@
         "issuers",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3071,6 +3458,15 @@
         "keys",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3110,6 +3506,15 @@
       "required": [
         "configmaps",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
       ]
     }
   },
@@ -3151,6 +3556,15 @@
         "deployments",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3187,6 +3601,15 @@
         "classes",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3198,9 +3621,10 @@
       "properties": {
         "source": {
           "type": "string",
-          "description": "Filter by cluster source: k3s-vm or external",
+          "description": "Filter by cluster source: k3s-vm, k3s-container, or external",
           "enum": [
             "k3s-vm",
+            "k3s-container",
             "external"
           ]
         }
@@ -3234,8 +3658,14 @@
               },
               "lastHeartbeatAt": {
                 "type": "string"
+              },
+              "uri": {
+                "type": "string"
               }
-            }
+            },
+            "required": [
+              "uri"
+            ]
           }
         },
         "total": {
@@ -3245,6 +3675,14 @@
       "required": [
         "clusters",
         "total"
+      ]
+    },
+    "_meta": {
+      "produces": [
+        {
+          "resourceType": "cluster",
+          "sourcePath": "clusters[].uri"
+        }
       ]
     }
   },
@@ -3286,6 +3724,15 @@
         "secrets",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3321,6 +3768,15 @@
       "required": [
         "namespaces",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
       ]
     }
   },
@@ -3394,6 +3850,15 @@
         "claims",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3423,7 +3888,19 @@
         "pods": {
           "type": "array",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "uri": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "uri",
+              "kind"
+            ]
           }
         },
         "uri": {
@@ -3433,6 +3910,22 @@
       "required": [
         "pods",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [
+        {"sourcePath": "uri", "resourceType": "cluster"},
+        {
+          "resourceType": "pod",
+          "sourcePath": "pods[].uri"
+        }
       ]
     }
   },
@@ -3574,6 +4067,15 @@
         "keys",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3671,7 +4173,6 @@
         }
       },
       "required": [
-        "uri",
         "uri"
       ]
     },
@@ -3691,6 +4192,15 @@
       "required": [
         "ports",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
       ]
     }
   },
@@ -3812,7 +4322,15 @@
         "services": {
           "type": "array",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "uri"
+            ]
           }
         },
         "uri": {
@@ -3822,6 +4340,22 @@
       "required": [
         "services",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [
+        {"sourcePath": "uri", "resourceType": "cluster"},
+        {
+          "resourceType": "service",
+          "sourcePath": "services[].uri"
+        }
       ]
     }
   },
@@ -3858,6 +4392,15 @@
       "required": [
         "storageClasses",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
       ]
     }
   },
@@ -3922,7 +4465,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": false
+      "needsApproval": false,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3948,6 +4503,9 @@
             "type": "object",
             "properties": {
               "uri": {
+                "type": "string"
+              },
+              "kind": {
                 "type": "string"
               },
               "name": {
@@ -3987,6 +4545,7 @@
             },
             "required": [
               "uri",
+              "kind",
               "name",
               "status"
             ]
@@ -3996,12 +4555,25 @@
       "required": [
         "vms"
       ]
+    },
+    "_meta": {
+      "produces": [
+        {
+          "resourceType": "vm",
+          "sourcePath": "vms[].uri"
+        },
+        {
+          "resourceType": "container",
+          "sourcePath": "vms[].uri"
+        }
+      ]
     }
   },
   {
     "name": "probe_host_exposure",
     "title": "Probe Host Exposure",
     "description": "Probe local target and tunnel state for a host exposure binding",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "tunnel", "required": true}]},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4096,7 +4668,8 @@
       "taskSupport": "optional"
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "produces": [{"sourcePath": "uri", "resourceType": "vm"}, {"sourcePath": "uri", "resourceType": "container"}]
     }
   },
   {
@@ -4132,6 +4705,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4218,6 +4800,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4264,6 +4855,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4452,12 +5052,22 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
     "name": "release_sql_connector",
     "title": "Release SQL connector",
     "description": "Decrement refCount on a durable SQL connector; optional force drain",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "sql-connector", "required": true}]},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4498,6 +5108,7 @@
     "name": "remove_host_exposure",
     "title": "Remove Host Exposure",
     "description": "Stop tunnel/shim resources for a host exposure binding",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "tunnel", "required": true}]},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4555,6 +5166,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4584,6 +5204,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4611,12 +5240,14 @@
     },
     "outputSchema": {
       "type": "object"
-    }
+    },
+    "_meta": {}
   },
   {
     "name": "remove_tidb_service",
     "title": "Remove TiDB service",
     "description": "Destructively remove the platform TidbCluster and owned data while preserving TiDB Operator. Requires confirm=true.",
+    "_meta": {"requires": [{"argument": "uri", "resourceType": "cluster", "required": true}]},
     "inputSchema": {
       "type": "object",
       "required": [
@@ -4700,7 +5331,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4839,7 +5482,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "database",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4889,7 +5539,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4939,7 +5596,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4982,7 +5651,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "host-service",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5025,7 +5701,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5067,7 +5755,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "storage",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5153,6 +5848,15 @@
         "scope",
         "status"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "host-service",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5228,7 +5932,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5271,7 +5987,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5321,6 +6049,20 @@
         "operationId",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5367,7 +6109,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "service-domain",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5456,7 +6205,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5562,13 +6323,26 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
     "name": "update_vm_resources",
     "title": "Update VM Resources",
     "description": "Update CPU and/or memory limits of an existing VM or system container on the host",
+    "_meta": {"needsApproval": true, "requires": [{"argument": "uri", "resourceType": "vm", "required": true}, {"argument": "uri", "resourceType": "container", "required": true}]},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5619,7 +6393,11 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {"argument": "uri", "resourceType": "vm", "required": true},
+        {"argument": "uri", "resourceType": "container", "required": true}
+      ]
     }
   },
   {

@@ -8,6 +8,7 @@ import (
 )
 
 var identifierPattern = regexp.MustCompile(`^[a-z][a-z0-9.-]{2,127}$`)
+var operationIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{2,127}$`)
 
 func ValidateDescriptor(descriptor PluginDescriptor) error {
 	if descriptor.Schema != PluginDescriptorVersion {
@@ -102,7 +103,7 @@ func validateServices(services []ServiceDefinition) error {
 }
 
 func validateOperation(operation Operation, owner string) error {
-	if !identifierPattern.MatchString(strings.TrimSpace(operation.ID)) || operation.Version < 1 || operation.InputSchema == nil || operation.OutputSchema == nil {
+	if !operationIdentifierPattern.MatchString(strings.TrimSpace(operation.ID)) || operation.Version < 1 || operation.InputSchema == nil || operation.OutputSchema == nil {
 		return fmt.Errorf("%s contains an invalid operation", owner)
 	}
 	switch operation.Effect {

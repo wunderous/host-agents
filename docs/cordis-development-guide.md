@@ -187,7 +187,9 @@ and the repository's MCP compliance tests.
 At minimum, a provider adapter must:
 
 - use Streamable HTTP and negotiate the required protocol revision;
-- perform the standard initialize and capability discovery exchange;
+- use the 2026-07-28 `server/discover` capability discovery exchange; retain
+  `initialize` only where an explicitly supported legacy/dual-era client
+  requires it;
 - use `tools/list` and `tools/call` according to the negotiated contract;
 - preserve structured content, typed errors, cancellation, and task state;
 - keep request/response correlation and terminal stream events intact; and
@@ -216,6 +218,13 @@ Cordis context receives typed services and effects, never transport objects.
 
 **C-03 — One executor.** `internal/plan.Runner` is the only Host Agent plan
 executor. Providers cannot add shell, callback, recipe, or workflow runners.
+
+**C-15 — Generic provider callbacks.** A provider may call the public Host
+Agent MCP interface only to execute an already-admitted neutral primitive
+(artifact, file, service, HTTP, Kubernetes, or typed Incus instance command).
+The callback must use a canonical tenant-scoped URI where a resource target is
+required; it must not request provider installation, bypass admission, or
+import Host Agent internals.
 
 **C-04 — Tool-owned argument validation.** The orchestrator does not validate,
 rewrite, enrich, or reject tool-specific arguments. The owning tool returns
@@ -258,6 +267,30 @@ checkout-local `.beads` ledger.
 graph checks and separate-process MCP tests must prove the dependency and
 runtime boundaries.
 
+**C-16 — Universal typed resource identity.** Every reusable Host Agent entity
+uses a host-registered canonical URI kind. Hosts, VMs, system containers,
+pods, clusters, databases, services, runtimes, models, tunnels, storage, and
+provider-specific resources are not interchangeable strings. Tenant and kind
+validation happen at the Host Agent resolver boundary.
+
+**C-17 — Type-derived capability edges.** Capability relationships are derived
+only from explicit typed `Requires` and `Produces` bindings and compatible
+schema paths. Producer/consumer tool names are never provider-authored, and
+`argumentProducers`, input edges, and output edges are generated projections.
+
+**C-18 — Dynamic plugin independence.** A Cordis plugin may publish a typed
+producer or consumer without knowing the other side. Registration, replacement,
+and removal publish a new immutable catalog revision and recompute edges.
+
+**C-19 — Opaque client identity.** The TUI and other clients preserve resource
+URIs as opaque values. They do not parse kind prefixes, synthesize IDs, or
+maintain a second resource-type or producer authority.
+
+**C-20 — Typed boundary evidence.** A green unit test, health check, HTTP 200,
+or assistant sentence cannot close a typed-edge change. Applicable closure
+requires static catalog, dynamic registry, MCP wire, TUI, model/SSE, tenant,
+stale-revision, and external cleanup evidence.
+
 ## Permanent invariant capture
 
 Every Host Agent plan, refactor, new capability, schema change, lifecycle
@@ -297,7 +330,10 @@ For a new capability or provider change:
    external systems such as network, clock, or model sampling.
 7. Add E2E evidence for the actual model request, raw tool arguments, tool
    result, durable events, and externally observed state.
-8. Re-read this guide and the relevant plan/ADR before milestone closure. Mark
+8. For typed resource changes, validate representative host, VM, container,
+   pod, cluster, database, and service bindings, including a dynamic plugin
+   registration that has no producer/consumer tool knowledge.
+9. Re-read this guide and the relevant plan/ADR before milestone closure. Mark
    the milestone only after its validation is complete, then make the required
    green commit and push before starting the next milestone.
 
@@ -318,6 +354,9 @@ evidence includes all applicable items:
 - reverse-order disposal with no orphaned listener, process, task, or overlay;
 - exactly one system container in the disposable environment; and
 - WSL-only coordination evidence, including the active WSL Dolt adapter path.
+- typed-resource evidence for representative supported entities, dynamic
+  catalog revision changes, incompatible-kind rejection, and opaque URI
+  preservation through the client.
 
 When a gate fails, record the five-whys analysis and fix the owning contract or
 lifecycle seam. Do not add a test-only bypass, a model-specific prompt hack,

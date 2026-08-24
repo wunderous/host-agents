@@ -32,3 +32,18 @@ func TestNewRejectsWhitespaceResourceID(t *testing.T) {
 		t.Fatalf("whitespace error = %v", err)
 	}
 }
+
+func TestKnownTypesCoverSupportedEntityFamilies(t *testing.T) {
+	for _, kind := range []string{TypeHost, TypeVM, TypeContainer, TypePod, TypeCluster, TypeDatabase, TypeService, TypeStorage, TypeModel, TypeTunnel} {
+		if !IsKnownType(kind) {
+			t.Fatalf("supported resource kind %q is not registered", kind)
+		}
+	}
+	uri, err := PodURI("local", "cluster/ns/pod/uid-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := uri.String(); got != "pod:local:cluster/ns/pod/uid-123" {
+		t.Fatalf("pod URI = %q", got)
+	}
+}

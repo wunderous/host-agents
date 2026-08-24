@@ -162,6 +162,21 @@ func TestLegacyEntityIdentityFailsClosedAtMCPBoundary(t *testing.T) {
 	}
 }
 
+func TestDispatchToolRoutesLifecycleCallsThroughProviderBoundary(t *testing.T) {
+	server := newStandaloneTestServer(t, false)
+	result, err := server.DispatchTool(context.Background(), "get_capability_catalog", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("provider lifecycle dispatch failed: %#v", result)
+	}
+	payload, ok := result.StructuredContent.(tools.CapabilityCatalogSnapshot)
+	if !ok || payload.Revision == "" {
+		t.Fatalf("capability catalog result = %#v", result.StructuredContent)
+	}
+}
+
 func TestRedactTaskValuePreservesSecretCollectionShape(t *testing.T) {
 	value := map[string]any{
 		"secretInputs": []any{"token", "password"},
@@ -453,6 +468,78 @@ func TestServerDynamicCapabilityRegistrationPublishesRevisionAndDispatchesTruste
 	}, descriptor.Name)
 	if err != nil || result == nil || result.IsError {
 		t.Fatalf("dynamic capability call = %#v err=%v", result, err)
+	}
+}
+
+func TestDynamicTypedProducerAndConsumerComposeThroughMCPWithoutToolKnowledge(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	if err := server.ops.RegisterResource("host:local:plugin-host", map[string]any{"displayName": "plugin-host"}); err != nil {
+		t.Fatal(err)
+	}
+	producer := tools.CapabilityDescriptor{
+		OperationID: "plugin_list_hosts", Name: "plugin_list_hosts", Version: 1,
+		InputSchema: map[string]any{"type": "object"},
+		OutputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"hosts": map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{"uri": map[string]any{"type": "string"}}, "required": []string{"uri"}}},
+		}},
+		Produces: []tools.ResourceBinding{{ResourceType: "host", SourcePath: "hosts[].uri"}},
+		Effect:   "read", Provider: "incus", Implementation: "host-agent:incus",
+	}
+	consumer := tools.CapabilityDescriptor{
+		OperationID: "plugin_inspect_host", Name: "plugin_inspect_host", Version: 1,
+		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"uri": map[string]any{"type": "string"}}, "required": []string{"uri"}},
+		OutputSchema: map[string]any{"type": "object", "properties": map[string]any{"accepted": map[string]any{"type": "boolean"}}},
+		Requires:     []tools.ResourceBinding{{Argument: "uri", ResourceType: "host", Required: true}},
+		Effect:       "read", Provider: "incus", Implementation: "host-agent:incus",
+	}
+	for _, descriptor := range []tools.CapabilityDescriptor{producer, consumer} {
+		d := descriptor
+		if err := server.RegisterCapability(capabilitycatalog.Registration{Descriptor: d, ProviderID: d.Provider, Implementation: d.Implementation}, func(_ context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+			if d.Name == producer.Name {
+				return structuredResult(map[string]any{"hosts": []map[string]any{{"uri": "host:local:plugin-host"}}}, ""), nil
+			}
+			return structuredResult(map[string]any{"accepted": args["uri"] == "host:local:plugin-host"}, ""), nil
+		}); err != nil {
+			t.Fatalf("register %s: %v", d.Name, err)
+		}
+	}
+	snapshot := server.CatalogSnapshot()
+	var found bool
+	for _, edge := range snapshot.Edges {
+		if edge.SourceTool == producer.Name && edge.TargetTool == consumer.Name && edge.ResourceType == "host" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("dynamic typed edge missing: %#v", snapshot.Edges)
+	}
+
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.mcpServer.Connect(context.Background(), serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = serverSession.Close() }()
+	client := mcp.NewClient(&mcp.Implementation{Name: "typed-edge-test", Version: "test"}, nil)
+	session, err := client.Connect(context.Background(), clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	listed, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Tools) == 0 {
+		t.Fatal("MCP tools/list returned no tools")
+	}
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: consumer.Name, Arguments: map[string]any{"uri": "host:local:plugin-host"}})
+	if err != nil || result.IsError {
+		t.Fatalf("typed consumer call = %#v err=%v", result, err)
+	}
+	value, ok := result.StructuredContent.(map[string]any)
+	if !ok || value["accepted"] != true {
+		t.Fatalf("typed consumer result = %#v", result.StructuredContent)
 	}
 }
 

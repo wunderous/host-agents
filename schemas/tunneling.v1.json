@@ -2,11 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "opute.capability.tunneling.v1",
   "type": "object",
-  "required": ["contractVersion", "ready", "bindings"],
+  "required": ["contractVersion", "ready", "bindings", "placement"],
   "properties": {
     "contractVersion": {"const": "opute.capability.tunneling.v1"},
     "ready": {"type": "boolean"},
     "bindings": {"type": "array"},
+    "placement": {"type": "string", "enum": ["host", "kubernetes", "container"]},
+    "bindingId": {"type": "string"},
+    "targetUri": {"type": "string", "pattern": "^(host|cluster|container):[a-z][a-z0-9-]{0,31}:.+$"},
+    "hostname": {"type": "string"},
+    "probe": {"type": "object"},
+    "deleted": {"type": "boolean"},
     "error": {"type": "string"},
     "provider": {"type": "object"}
   }

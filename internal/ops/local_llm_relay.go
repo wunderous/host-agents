@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 type localLLMRelaySession struct {
@@ -375,17 +374,11 @@ func (s *HostOperationsService) EnsureLocalLLMK3sProxy(args LocalLLMK3sProxyArgs
 	if err != nil {
 		return nil, err
 	}
-	tmpFile := fmt.Sprintf("/tmp/opute-llm-proxy-%d.yaml", time.Now().UnixNano())
-	writeScript := fmt.Sprintf("cat <<'EOF' > %s\n%s\nEOF", tmpFile, manifest)
-	writeRes, err := s.runVMExec(vmName, []string{"bash", "-lc", writeScript}, onData, 30*time.Second)
+	targetURI, err := s.kubernetesTargetURI(vmName)
 	if err != nil {
 		return nil, err
 	}
-	if writeRes.ExitCode != 0 {
-		return nil, fmt.Errorf("failed to write local LLM proxy manifest")
-	}
-	defer func() { _, _ = s.runVMExec(vmName, []string{"rm", "-f", tmpFile}, nil, 30*time.Second) }()
-	if _, err := s.runKubernetesKubectlTimed(vmName, []string{"apply", "-f", tmpFile}, "apply local LLM proxy", 3*time.Minute); err != nil {
+	if _, err := s.ApplyManifest(ApplyManifestArgs{URI: targetURI, Manifest: manifest}, onData); err != nil {
 		return nil, err
 	}
 	return map[string]any{"vmName": vmName, "nodePort": args.NodePort, "namespace": args.Namespace, "serviceName": args.ServiceName, "ready": true}, nil
@@ -404,7 +397,11 @@ func (s *HostOperationsService) RemoveLocalLLMK3sProxy(vmName, namespace string)
 	if !safeGatewayIdentifier.MatchString(strings.ToLower(namespace)) {
 		return nil, fmt.Errorf("namespace is invalid")
 	}
-	if _, err := s.runKubernetesKubectlTimed(vmName, []string{"delete", "namespace", namespace, "--ignore-not-found=true"}, "remove local LLM proxy", 2*time.Minute); err != nil {
+	targetURI, err := s.kubernetesTargetURI(vmName)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.DeleteK8sResource(K8sResourceArgs{URI: targetURI, Kind: "namespace", ResourceName: namespace}, nil); err != nil {
 		return nil, err
 	}
 	return map[string]any{"vmName": vmName, "namespace": namespace, "removed": true}, nil

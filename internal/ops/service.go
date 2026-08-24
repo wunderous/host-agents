@@ -93,8 +93,9 @@ type HostOperationsService struct {
 	postgresqlServiceRelay *postgresqlServiceRelayManager
 	allowInsecureDownloads bool
 	resourceSnapshot       func() map[string]any
-	// kubectlRunner is a test seam for the PostgreSQL service ordering and
-	// readiness contract. When nil, the real guest-exec kubectl path is used.
+	// kubectlRunner is an explicit test seam for the PostgreSQL service ordering
+	// and readiness contract. Production execution always delegates to the
+	// active Kubernetes provider.
 	kubectlRunner func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error)
 	// commandRunnerFn is a test seam for provider command execution (Incus
 	// CLI). When nil, the real provider runtime is used.
@@ -104,6 +105,7 @@ type HostOperationsService struct {
 	containerLookPathFn         func(string) (string, error)
 	containerCommandFn          func(context.Context, string, ...string) ([]byte, error)
 	containerStreamingCommandFn func(context.Context, string, []string, func(string)) error
+	kubernetesExecutor          KubernetesProviderExecutor
 }
 
 type Options struct {
@@ -299,6 +301,7 @@ type VMListResult struct {
 
 type VMInfo struct {
 	URI          string         `json:"uri"`
+	Kind         string         `json:"kind"`
 	Name         string         `json:"name"`
 	Type         string         `json:"type,omitempty"`
 	Status       string         `json:"status"`
@@ -828,6 +831,7 @@ func (s *HostOperationsService) ConfigureK3sHaServers(_ map[string]any, _ func(s
 type k8sMeta struct {
 	Name              string `json:"name"`
 	Namespace         string `json:"namespace"`
+	UID               string `json:"uid"`
 	CreationTimestamp string `json:"creationTimestamp"`
 }
 
@@ -900,19 +904,30 @@ func (s *HostOperationsService) ListIngressClasses(vmName string) ([]string, err
 	return out, nil
 }
 
-func (s *HostOperationsService) ListServices(vmName, namespace string) ([]map[string]string, error) {
+func (s *HostOperationsService) ListServices(vmName, namespace string) ([]map[string]any, error) {
 	data, err := s.getKubernetesList(vmName, "services", namespace)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]map[string]string, 0)
+	out := make([]map[string]any, 0)
 	for _, item := range data["items"].([]any) {
 		m := item.(map[string]any)
 		meta := m["metadata"].(map[string]any)
-		out = append(out, map[string]string{
+		row := map[string]any{
 			"name":      meta["name"].(string),
 			"namespace": meta["namespace"].(string),
-		})
+		}
+		if uri, err := resourceid.ServiceURI(s.tenantID, vmName+"/"+meta["namespace"].(string)+"/"+meta["name"].(string)); err == nil {
+			row["uri"] = uri.String()
+			if s.resourceRegistry != nil {
+				_ = s.RegisterResource(uri.String(), map[string]any{
+					"providerInstanceName": vmName,
+					"namespace":            meta["namespace"].(string),
+					"serviceName":          meta["name"].(string),
+				})
+			}
+		}
+		out = append(out, row)
 	}
 	return out, nil
 }
@@ -927,6 +942,9 @@ func (s *HostOperationsService) ListPods(vmName, namespace string) ([]map[string
 		var item k8sPodItem
 		b, _ := json.Marshal(raw)
 		_ = json.Unmarshal(b, &item)
+		if strings.TrimSpace(item.Metadata.UID) == "" {
+			return nil, fmt.Errorf("Kubernetes pod %q/%q has no metadata.uid; refusing to issue an unstable pod URI", item.Metadata.Namespace, item.Metadata.Name)
+		}
 		ready := true
 		restarts := 0
 		for _, cs := range item.Status.ContainerStatuses {
@@ -938,6 +956,7 @@ func (s *HostOperationsService) ListPods(vmName, namespace string) ([]map[string
 		row := map[string]any{
 			"name":      item.Metadata.Name,
 			"namespace": item.Metadata.Namespace,
+			"kind":      resourceid.TypePod,
 			"status":    defaultString(item.Status.Phase, "Unknown"),
 			"ready":     ready,
 			"restarts":  restarts,
@@ -948,6 +967,21 @@ func (s *HostOperationsService) ListPods(vmName, namespace string) ([]map[string
 		}
 		if item.Spec.NodeName != "" {
 			row["node"] = item.Spec.NodeName
+		}
+		if item.Metadata.UID != "" {
+			resourceID := vmName + "/" + item.Metadata.Namespace + "/" + item.Metadata.Name + "/" + item.Metadata.UID
+			if uri, uriErr := resourceid.PodURI(s.tenantID, resourceID); uriErr == nil {
+				row["uri"] = uri.String()
+				if s.resourceRegistry != nil {
+					_ = s.RegisterResource(uri.String(), map[string]any{
+						"providerInstanceName": vmName,
+						"namespace":            item.Metadata.Namespace,
+						"podName":              item.Metadata.Name,
+						"uid":                  item.Metadata.UID,
+						"clusterResource":      vmName,
+					})
+				}
+			}
 		}
 		out = append(out, row)
 	}
@@ -1018,81 +1052,52 @@ func (s *HostOperationsService) runKubernetesKubectl(vmName string, kubectlArgs 
 }
 
 func (s *HostOperationsService) runKubernetesKubectlTimed(vmName string, kubectlArgs []string, label string, timeout time.Duration) (string, error) {
-	variants := [][]string{
-		s.vmExecArgv(vmName, append([]string{"kubectl"}, kubectlArgs...)),
-		s.vmExecArgv(vmName, append([]string{"k3s", "kubectl"}, kubectlArgs...)),
-	}
-	var lastErr error
-	for _, cmd := range variants {
-		res, err := s.commandRunner(cmd, nil, timeout)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if res.ExitCode != 0 {
-			lastErr = errors.New(firstNonEmpty(res.Stderr, res.Stdout, fmt.Sprintf("exit %d", res.ExitCode)))
-			continue
-		}
-		return strings.TrimSpace(res.Stdout), nil
-	}
-	if lastErr == nil {
-		lastErr = errors.New("unknown error")
-	}
-	return "", fmt.Errorf("failed to %s in %s: %w", label, vmName, lastErr)
+	return s.runKubernetesProviderCommand(context.Background(), vmName, kubectlArgs, nil, label, timeout)
 }
 
 func (s *HostOperationsService) runKubernetesKubectlContext(ctx context.Context, vmName string, kubectlArgs []string, label string, timeout time.Duration) (string, error) {
 	if s.kubectlRunner != nil {
 		return s.kubectlRunner(ctx, vmName, kubectlArgs, nil, label, timeout)
 	}
-	variants := [][]string{
-		append([]string{"kubectl"}, kubectlArgs...),
-		append([]string{"k3s", "kubectl"}, kubectlArgs...),
-	}
-	var lastErr error
-	for _, guestArgv := range variants {
-		res, err := s.runVMExecContext(ctx, vmName, guestArgv, nil, timeout)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if res.ExitCode != 0 {
-			lastErr = errors.New(firstNonEmpty(res.Stderr, res.Stdout, fmt.Sprintf("exit %d", res.ExitCode)))
-			continue
-		}
-		return strings.TrimSpace(res.Stdout), nil
-	}
-	if lastErr == nil {
-		lastErr = errors.New("unknown error")
-	}
-	return "", fmt.Errorf("failed to %s in %s: %w", label, vmName, lastErr)
+	return s.runKubernetesProviderCommand(ctx, vmName, kubectlArgs, nil, label, timeout)
 }
 
 func (s *HostOperationsService) runKubernetesKubectlWithStdinContext(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
 	if s.kubectlRunner != nil {
 		return s.kubectlRunner(ctx, vmName, kubectlArgs, input, label, timeout)
 	}
-	variants := [][]string{
-		append([]string{"kubectl"}, kubectlArgs...),
-		append([]string{"k3s", "kubectl"}, kubectlArgs...),
+	return s.runKubernetesProviderCommand(ctx, vmName, kubectlArgs, input, label, timeout)
+}
+
+func (s *HostOperationsService) runKubernetesProviderCommand(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
+	if s.kubernetesExecutor == nil {
+		return "", fmt.Errorf("Kubernetes provider is required for %s; direct Host Agent kubectl execution is disabled", label)
 	}
-	var lastErr error
-	for _, guestArgv := range variants {
-		res, err := s.runVMExecWithStdinContext(ctx, vmName, guestArgv, input, nil, timeout)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if res.ExitCode != 0 {
-			lastErr = errors.New(firstNonEmpty(res.Stderr, res.Stdout, fmt.Sprintf("exit %d", res.ExitCode)))
-			continue
-		}
-		return strings.TrimSpace(res.Stdout), nil
+	targetURI, err := s.kubernetesTargetURI(vmName)
+	if err != nil {
+		return "", err
 	}
-	if lastErr == nil {
-		lastErr = errors.New("unknown error")
+	args := map[string]any{"kubectlArgs": stringsToAny(kubectlArgs)}
+	if input != nil {
+		args["stdin"] = string(input)
 	}
-	return "", fmt.Errorf("failed to %s in %s: %w", label, vmName, lastErr)
+	out, delegated, err := s.executeKubernetesProvider(KubernetesExecCommandOperation, targetURI, args)
+	if !delegated {
+		return "", fmt.Errorf("Kubernetes provider is required for %s", label)
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to %s in %s: %w", label, vmName, err)
+	}
+	stdout, _ := out["stdout"].(string)
+	return strings.TrimSpace(stdout), nil
+}
+
+func stringsToAny(values []string) []any {
+	result := make([]any, len(values))
+	for index, value := range values {
+		result[index] = value
+	}
+	return result
 }
 
 func (s *HostOperationsService) ensureHelmTargetNamespace(vmName, namespace string) error {

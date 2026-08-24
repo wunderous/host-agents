@@ -69,6 +69,8 @@ type ProviderGenerationRecord struct {
 	ProviderVersion string
 	ManifestHash    string
 	Endpoint        string
+	DescriptorJSON  string
+	ManifestJSON    string
 	CatalogRevision string
 	Status          string
 	CreatedAt       string
@@ -76,8 +78,10 @@ type ProviderGenerationRecord struct {
 }
 
 // CapabilityInvocationRecord is the durable audit envelope for one capability
-// call. Arguments and result are retained as JSON at the host boundary; the
-// capability-owned observation remains opaque to the state store.
+// call. Arguments are the unchanged client/model input; the separate binding
+// JSON records the typed admission context (tenant, canonical resources,
+// provider coordinates, catalog revision, generation). The capability-owned
+// observation remains opaque to the state store.
 type CapabilityInvocationRecord struct {
 	InvocationID      string
 	OperationID       string
@@ -86,6 +90,7 @@ type CapabilityInvocationRecord struct {
 	GenerationID      string
 	Authorization     string
 	ArgumentsJSON     string
+	BindingJSON       string
 	ResultJSON        string
 	ObservationJSON   string
 	TerminalStatus    string
@@ -156,6 +161,8 @@ func Open(dir string) (*Store, error) {
         provider_version TEXT NOT NULL,
         manifest_hash TEXT NOT NULL,
         endpoint TEXT NOT NULL,
+        descriptor_json TEXT NOT NULL DEFAULT '',
+        manifest_json TEXT NOT NULL DEFAULT '',
         catalog_revision TEXT NOT NULL,
         status TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -187,6 +194,24 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate active capability state: %w", err)
 	}
+	for _, column := range []struct {
+		name string
+		def  string
+	}{
+		{name: "descriptor_json", def: "TEXT NOT NULL DEFAULT ''"},
+		{name: "manifest_json", def: "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := ensureTableColumn(db, "provider_generations", column.name, column.def); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("migrate provider generation %s: %w", column.name, err)
+		}
+	}
+	// Legacy invocation rows predate the separate execution binding; the
+	// column must exist before any reader selects it.
+	if err := ensureTableColumn(db, "capability_invocations", "binding_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate capability invocation binding: %w", err)
+	}
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS resource_registry (
         uri TEXT PRIMARY KEY,
         resource_type TEXT NOT NULL,
@@ -216,6 +241,9 @@ func (s *Store) UpsertResource(record resourceid.Record) error {
 	}
 	if record.ResourceID == "" {
 		record.ResourceID = parsed.ResourceID
+	}
+	if record.TenantID != parsed.TenantID || record.ResourceType != parsed.ResourceType || record.ResourceID != parsed.ResourceID {
+		return fmt.Errorf("resource registry identity does not match URI %q", parsed.String())
 	}
 	if record.Status == "" {
 		record.Status = "active"
@@ -258,6 +286,9 @@ func (s *Store) GetResource(uri string) (resourceid.Record, bool, error) {
 	}
 	if err := json.Unmarshal([]byte(coordinates), &record.Coordinates); err != nil {
 		return resourceid.Record{}, false, fmt.Errorf("decode resource coordinates: %w", err)
+	}
+	if record.TenantID != parsed.TenantID || record.ResourceType != parsed.ResourceType || record.ResourceID != parsed.ResourceID || record.URI != parsed.String() {
+		return resourceid.Record{}, false, fmt.Errorf("resource registry record does not match URI %q", parsed.String())
 	}
 	return record, true, nil
 }
@@ -477,18 +508,21 @@ func (s *Store) SaveProviderGeneration(record ProviderGenerationRecord) error {
 	}
 	_, err := s.db.Exec(`INSERT INTO provider_generations(
         generation_id, provider_id, provider_version, manifest_hash, endpoint,
-        catalog_revision, status, created_at, active_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''))
+        descriptor_json, manifest_json, catalog_revision, status, created_at, active_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''))
     ON CONFLICT(generation_id) DO UPDATE SET
         provider_id=excluded.provider_id,
         provider_version=excluded.provider_version,
         manifest_hash=excluded.manifest_hash,
         endpoint=excluded.endpoint,
+        descriptor_json=excluded.descriptor_json,
+        manifest_json=excluded.manifest_json,
         catalog_revision=excluded.catalog_revision,
         status=excluded.status,
         active_at=excluded.active_at`,
 		record.GenerationID, record.ProviderID, record.ProviderVersion, record.ManifestHash,
-		record.Endpoint, record.CatalogRevision, record.Status, record.CreatedAt, record.ActiveAt)
+		record.Endpoint, record.DescriptorJSON, record.ManifestJSON, record.CatalogRevision,
+		record.Status, record.CreatedAt, record.ActiveAt)
 	return err
 }
 
@@ -505,6 +539,9 @@ func (s *Store) RecordCapabilityInvocation(record CapabilityInvocationRecord) er
 	if record.ObservationJSON == "" {
 		record.ObservationJSON = "{}"
 	}
+	if record.BindingJSON == "" {
+		record.BindingJSON = "{}"
+	}
 	if record.Authorization == "" {
 		record.Authorization = "unknown"
 	}
@@ -516,20 +553,21 @@ func (s *Store) RecordCapabilityInvocation(record CapabilityInvocationRecord) er
 	}
 	_, err := s.db.Exec(`INSERT INTO capability_invocations(
         invocation_id, operation_id, capability_version, catalog_revision,
-        generation_id, authorization, arguments_json, result_json,
+        generation_id, authorization, arguments_json, binding_json, result_json,
         observation_json, terminal_status, created_at
-    ) VALUES (?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(invocation_id) DO NOTHING`,
 		record.InvocationID, record.OperationID, record.CapabilityVersion,
 		record.CatalogRevision, record.GenerationID, record.Authorization,
-		record.ArgumentsJSON, record.ResultJSON, record.ObservationJSON,
+		record.ArgumentsJSON, record.BindingJSON, record.ResultJSON, record.ObservationJSON,
 		record.TerminalStatus, record.CreatedAt)
 	return err
 }
 
 func (s *Store) ListProviderGenerations() ([]ProviderGenerationRecord, error) {
 	rows, err := s.db.Query(`SELECT generation_id, provider_id, provider_version,
-        manifest_hash, endpoint, catalog_revision, status, created_at,
+        manifest_hash, endpoint, COALESCE(descriptor_json, ''), COALESCE(manifest_json, ''),
+        catalog_revision, status, created_at,
         COALESCE(active_at, '') FROM provider_generations ORDER BY created_at`)
 	if err != nil {
 		return nil, err
@@ -539,7 +577,8 @@ func (s *Store) ListProviderGenerations() ([]ProviderGenerationRecord, error) {
 	for rows.Next() {
 		var record ProviderGenerationRecord
 		if err := rows.Scan(&record.GenerationID, &record.ProviderID, &record.ProviderVersion,
-			&record.ManifestHash, &record.Endpoint, &record.CatalogRevision, &record.Status,
+			&record.ManifestHash, &record.Endpoint, &record.DescriptorJSON, &record.ManifestJSON,
+			&record.CatalogRevision, &record.Status,
 			&record.CreatedAt, &record.ActiveAt); err != nil {
 			return nil, err
 		}

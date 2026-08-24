@@ -22,6 +22,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -63,7 +72,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "storage",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -344,7 +360,14 @@
       "taskSupport": "optional"
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -464,7 +487,14 @@
       "taskSupport": "optional"
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -496,6 +526,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -555,7 +594,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -582,11 +633,25 @@
         },
         "pruneNow": {
           "type": "boolean"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       }
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -600,7 +665,6 @@
         "ingressName",
         "hostname",
         "servicePort",
-        "uri",
         "uri"
       ],
       "properties": {
@@ -628,6 +692,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -749,7 +822,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -907,7 +987,8 @@
       "taskSupport": "optional"
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "produces": [{"sourcePath": "uri", "resourceType": "vm"}]
     }
   },
   {
@@ -932,6 +1013,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -963,7 +1053,20 @@
       }
     },
     "outputSchema": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "uri": {"type": "string"}
+      }
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
     }
   },
   {
@@ -1016,7 +1119,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "database",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1056,7 +1166,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "service-domain",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1096,7 +1213,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "storage",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1135,7 +1259,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1275,6 +1411,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1318,7 +1463,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1545,7 +1697,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -1598,6 +1757,14 @@
         "lxcBinaryPath",
         "systemctlPath",
         "supportedTools"
+      ]
+    },
+    "_meta": {
+      "produces": [
+        {
+          "resourceType": "host",
+          "sourcePath": "uri"
+        }
       ]
     }
   },
@@ -1696,6 +1863,16 @@
         "uri"
       ],
       "additionalProperties": true
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
     }
   },
   {
@@ -1767,6 +1944,16 @@
         "uri"
       ],
       "additionalProperties": true
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
     }
   },
   {
@@ -1870,6 +2057,21 @@
         "database",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "database",
+          "required": true
+        }
+      ],
+      "produces": [
+        {
+          "resourceType": "database",
+          "sourcePath": "uri"
+        }
+      ]
     }
   },
   {
@@ -1940,6 +2142,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2021,6 +2232,21 @@
       "required": [
         "binding",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "service-domain",
+          "required": true
+        }
+      ],
+      "produces": [
+        {
+          "resourceType": "service-domain",
+          "sourcePath": "uri"
+        }
       ]
     }
   },
@@ -2121,6 +2347,21 @@
         "storage",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "storage",
+          "required": true
+        }
+      ],
+      "produces": [
+        {
+          "resourceType": "storage",
+          "sourcePath": "uri"
+        }
+      ]
     }
   },
   {
@@ -2144,7 +2385,8 @@
     },
     "outputSchema": {
       "type": "object"
-    }
+    },
+    "_meta": {}
   },
   {
     "name": "get_tidb_service_status",
@@ -2174,6 +2416,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2236,6 +2487,15 @@
         "workload",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2276,6 +2536,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2357,7 +2626,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2432,7 +2713,14 @@
       "taskSupport": "optional"
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2472,6 +2760,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2624,6 +2921,15 @@
         "issuers",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2669,6 +2975,15 @@
         "keys",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2708,6 +3023,15 @@
       "required": [
         "configmaps",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
       ]
     }
   },
@@ -2749,6 +3073,15 @@
         "deployments",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2784,6 +3117,15 @@
       "required": [
         "classes",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
       ]
     }
   },
@@ -2838,6 +3180,16 @@
         "events",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
     }
   },
   {
@@ -2849,9 +3201,10 @@
       "properties": {
         "source": {
           "type": "string",
-          "description": "Filter by cluster source: k3s-vm or external",
+          "description": "Filter by cluster source: k3s-vm, k3s-container, or external",
           "enum": [
             "k3s-vm",
+            "k3s-container",
             "external"
           ]
         }
@@ -2885,8 +3238,14 @@
               },
               "lastHeartbeatAt": {
                 "type": "string"
+              },
+              "uri": {
+                "type": "string"
               }
-            }
+            },
+            "required": [
+              "uri"
+            ]
           }
         },
         "total": {
@@ -2896,6 +3255,14 @@
       "required": [
         "clusters",
         "total"
+      ]
+    },
+    "_meta": {
+      "produces": [
+        {
+          "resourceType": "cluster",
+          "sourcePath": "clusters[].uri"
+        }
       ]
     }
   },
@@ -2937,6 +3304,15 @@
         "secrets",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -2972,6 +3348,15 @@
       "required": [
         "namespaces",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
       ]
     }
   },
@@ -3013,6 +3398,15 @@
         "claims",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3042,7 +3436,19 @@
         "pods": {
           "type": "array",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "uri": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "uri",
+              "kind"
+            ]
           }
         },
         "uri": {
@@ -3052,6 +3458,22 @@
       "required": [
         "pods",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [
+        {"sourcePath": "uri", "resourceType": "cluster"},
+        {
+          "resourceType": "pod",
+          "sourcePath": "pods[].uri"
+        }
       ]
     }
   },
@@ -3193,6 +3615,15 @@
         "keys",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3290,7 +3721,6 @@
         }
       },
       "required": [
-        "uri",
         "uri"
       ]
     },
@@ -3310,6 +3740,15 @@
       "required": [
         "ports",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
       ]
     }
   },
@@ -3431,7 +3870,15 @@
         "services": {
           "type": "array",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "uri"
+            ]
           }
         },
         "uri": {
@@ -3441,6 +3888,22 @@
       "required": [
         "services",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "produces": [
+        {"sourcePath": "uri", "resourceType": "cluster"},
+        {
+          "resourceType": "service",
+          "sourcePath": "services[].uri"
+        }
       ]
     }
   },
@@ -3477,6 +3940,15 @@
       "required": [
         "storageClasses",
         "uri"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
       ]
     }
   },
@@ -3541,7 +4013,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": false
+      "needsApproval": false,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3553,7 +4037,8 @@
     },
     "outputSchema": {
       "type": "object"
-    }
+    },
+    "_meta": {}
   },
   {
     "name": "probe_incus_gpu",
@@ -3564,7 +4049,8 @@
     },
     "outputSchema": {
       "type": "object"
-    }
+    },
+    "_meta": {}
   },
   {
     "name": "provision_container",
@@ -3615,7 +4101,8 @@
     },
     "outputSchema": {
       "type": "object"
-    }
+    },
+    "_meta": {}
   },
   {
     "name": "provision_vm",
@@ -3689,7 +4176,8 @@
       "taskSupport": "optional"
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "produces": [{"sourcePath": "uri", "resourceType": "vm"}, {"sourcePath": "uri", "resourceType": "container"}]
     }
   },
   {
@@ -3725,6 +4213,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3811,6 +4308,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -3905,7 +4411,8 @@
     },
     "outputSchema": {
       "type": "object"
-    }
+    },
+    "_meta": {}
   },
   {
     "name": "reconcile_tidb_service",
@@ -3988,6 +4495,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4254,6 +4770,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4283,6 +4808,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4388,6 +4922,15 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4436,7 +4979,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4575,7 +5130,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "database",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4625,7 +5187,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4675,7 +5244,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4718,7 +5299,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "host-service",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4756,7 +5344,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4798,7 +5398,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "storage",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4884,6 +5491,15 @@
         "scope",
         "status"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "host-service",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4954,7 +5570,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -4992,7 +5615,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5042,6 +5677,20 @@
         "operationId",
         "uri"
       ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5088,7 +5737,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "service-domain",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5138,7 +5794,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5244,7 +5912,19 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
     }
   },
   {
@@ -5301,7 +5981,11 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "requires": [
+        {"argument": "uri", "resourceType": "vm", "required": true},
+        {"argument": "uri", "resourceType": "container", "required": true}
+      ]
     }
   },
   {
@@ -6226,6 +6910,15 @@
         "active",
         "enabled",
         "exitCode"
+      ]
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "host-service",
+          "required": true
+        }
       ]
     }
   },

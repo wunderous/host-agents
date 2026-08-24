@@ -132,7 +132,7 @@ func (s *HostOperationsService) ResolveResource(uri, wantType string) (Coordinat
 	if err != nil {
 		return Coordinates{}, fmt.Errorf("resolve resource %s: %w", parsed, err)
 	}
-	if (!found || record.Status != "active") && (parsed.ResourceType == resourceid.TypeVM || parsed.ResourceType == resourceid.TypeContainer || parsed.ResourceType == resourceid.TypeCluster) {
+	if (!found || record.Status != "active") && (parsed.ResourceType == resourceid.TypeVM || parsed.ResourceType == resourceid.TypeContainer) {
 		// Incus inventory is a discoverable single-key resource. Adopt it only
 		// after the provider confirms the instance exists; never turn a display
 		// name into coordinates without that observation.
@@ -142,16 +142,13 @@ func (s *HostOperationsService) ResolveResource(uri, wantType string) (Coordinat
 			if strings.EqualFold(info.Type, "vm") {
 				actualType = resourceid.TypeVM
 			}
-			if parsed.ResourceType != resourceid.TypeCluster && parsed.ResourceType != actualType {
+			if parsed.ResourceType != actualType {
 				return Coordinates{}, fmt.Errorf("resource type mismatch: %s resolves to %s", parsed, actualType)
 			}
 			coordinates := map[string]any{
 				"providerInstanceName": info.Name,
 				"displayName":          info.Name,
 				"instanceType":         info.Type,
-			}
-			if parsed.ResourceType == resourceid.TypeCluster {
-				coordinates["vmName"] = info.Name
 			}
 			if registerErr := s.RegisterResource(parsed.String(), coordinates); registerErr != nil {
 				return Coordinates{}, registerErr

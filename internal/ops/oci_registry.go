@@ -34,7 +34,11 @@ func (s *HostOperationsService) DeleteOCIRegistry(args InstallOCIRegistryArgs, o
 	if err := validateK8sIdentifier(namespace, "namespace"); err != nil {
 		return nil, err
 	}
-	if _, err := s.runKubernetesKubectl(args.VMName, []string{"delete", "namespace", namespace, "--ignore-not-found=true"}, "delete OCI registry namespace"); err != nil {
+	targetURI, err := s.kubernetesTargetURI(args.VMName)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.DeleteK8sResource(K8sResourceArgs{URI: targetURI, Kind: "namespace", ResourceName: namespace}, onData); err != nil {
 		return nil, err
 	}
 	return map[string]any{"vmName": args.VMName, "namespace": namespace, "deleted": true}, nil
@@ -137,7 +141,11 @@ spec:
       targetPort: registry
       nodePort: %d
 `, namespace, name, namespace, storageClass, storageSize, name, namespace, name, name, image, name, name, namespace, name, nodePort)
-	out, err := s.ApplyManifest(ApplyManifestArgs{VMName: vmName, Manifest: manifest}, onData)
+	targetURI, err := s.kubernetesTargetURI(vmName)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.ApplyManifest(ApplyManifestArgs{URI: targetURI, Manifest: manifest}, onData)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +159,11 @@ spec:
 func (s *HostOperationsService) GetOCIRegistryStatus(args InstallOCIRegistryArgs) (map[string]any, error) {
 	namespace := defaultString(args.Namespace, "registry-system")
 	name := defaultString(args.Name, "local-registry")
-	deployment, err := s.GetK8sResource(K8sResourceArgs{VMName: args.VMName, Kind: "deployment", ResourceName: name, Namespace: namespace})
+	targetURI, err := s.kubernetesTargetURI(args.VMName)
+	if err != nil {
+		return nil, err
+	}
+	deployment, err := s.GetK8sResource(K8sResourceArgs{URI: targetURI, Kind: "deployment", ResourceName: name, Namespace: namespace})
 	if err != nil {
 		return nil, err
 	}

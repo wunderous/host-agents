@@ -75,6 +75,21 @@ func TestResourceRegistryRoundTrip(t *testing.T) {
 	}
 }
 
+func TestResourceRegistryRejectsIdentityPollution(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	err = store.UpsertResource(resourceid.Record{
+		URI: "vm:local:worker-01", ResourceType: "pod", TenantID: "local", ResourceID: "worker-01",
+	})
+	if err == nil {
+		t.Fatal("expected URI/type mismatch to be rejected")
+	}
+}
+
 func TestCapabilityInvocationIsDurableAndOpaque(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {

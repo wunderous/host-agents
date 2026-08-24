@@ -25,10 +25,12 @@ type ExecutionSink func(string)
 
 // Capability is implemented by built-in capabilities and dynamically loaded
 // provider operations. Definition is the public declarative contract;
-// ValidateResult is the tool-owned semantic boundary.
+// ValidateResult is the tool-owned semantic boundary. Invoke receives the
+// unchanged raw arguments plus the typed execution binding; the orchestrator
+// never rewrites arguments or hides routing facts inside them.
 type Capability interface {
 	Definition() tools.CapabilityDescriptor
-	Invoke(context.Context, RawArguments, ExecutionSink) (*mcp.CallToolResult, error)
+	Invoke(context.Context, RawArguments, tools.ExecutionBinding, ExecutionSink) (*mcp.CallToolResult, error)
 	ValidateResult(context.Context, *mcp.CallToolResult) (CapabilityObservation, error)
 }
 

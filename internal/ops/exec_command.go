@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
 const defaultExecCommandTimeout = 30 * time.Second
@@ -13,6 +15,55 @@ type ExecCommandArgs struct {
 	Command   string
 	Args      []string
 	TimeoutMs int
+}
+
+// RunInstanceCommandArgs is the neutral guest execution contract used by
+// providers. The target is an opaque, tenant-scoped resource URI rather than
+// a display name, so a provider cannot accidentally fall back from a system
+// container to a VM with the same label.
+type RunInstanceCommandArgs struct {
+	URI       string
+	Command   string
+	Args      []string
+	TimeoutMs int
+}
+
+func (s *HostOperationsService) RunInstanceCommand(args RunInstanceCommandArgs, onData func(string)) (map[string]any, error) {
+	uri, err := s.ResolveResource(strings.TrimSpace(args.URI), "")
+	if err != nil {
+		return nil, err
+	}
+	if uri.ResourceType != resourceid.TypeVM && uri.ResourceType != resourceid.TypeContainer {
+		return nil, fmt.Errorf("instance command requires vm or container URI, got %q", uri.ResourceType)
+	}
+	providerName, ok := uri.Values["providerInstanceName"].(string)
+	if !ok || strings.TrimSpace(providerName) == "" {
+		return nil, fmt.Errorf("resource %s has no provider instance coordinate", uri.URI)
+	}
+	command := strings.TrimSpace(args.Command)
+	if command == "" {
+		return nil, fmt.Errorf("command is required")
+	}
+	timeout := defaultExecCommandTimeout
+	if args.TimeoutMs > 0 {
+		timeout = time.Duration(args.TimeoutMs) * time.Millisecond
+	}
+	res, err := s.runVMExec(providerName, append([]string{command}, args.Args...), onData, timeout)
+	if err != nil {
+		return nil, err
+	}
+	output := res.Stdout
+	if output == "" {
+		output = res.Stderr
+	}
+	return map[string]any{
+		"uri":          uri.URI.String(),
+		"instanceType": uri.Values["instanceType"],
+		"exitCode":     res.ExitCode,
+		"stdout":       res.Stdout,
+		"stderr":       res.Stderr,
+		"output":       output,
+	}, nil
 }
 
 func (s *HostOperationsService) ExecCommand(args ExecCommandArgs, onData func(string)) (map[string]any, error) {

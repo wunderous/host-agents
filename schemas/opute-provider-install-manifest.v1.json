@@ -29,10 +29,15 @@
               "required": ["id", "inputSchema", "outputSchema", "effect", "idempotent", "supportsReadiness"],
               "properties": {
                 "id": {"type": "string"},
+                "description": {"type": "string"},
                 "inputSchema": {"type": "object"},
                 "outputSchema": {"type": "object"},
+                "validationSchema": {"type": "string"},
+                "observationSchema": {"type": "string"},
                 "effect": {"enum": ["read", "mutation", "destructive", "credential_bearing"]},
                 "resourceKinds": {"type": "array", "items": {"type": "string"}},
+                "requires": {"type": "array"},
+                "produces": {"type": "array"},
                 "idempotent": {"type": "boolean"},
                 "supportsReadiness": {"type": "boolean"},
                 "supportsStreaming": {"type": "boolean"}

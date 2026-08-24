@@ -240,12 +240,49 @@ func (s *Server) persistProviderGeneration(g cordis.ProviderGeneration) error {
 	if s.state == nil {
 		return nil
 	}
+	var descriptorJSON, manifestJSON string
+	s.providerMu.RLock()
+	manifest, manifestOK := s.providerManifests[g.Provider.ID]
+	if !manifestOK {
+		for _, candidate := range s.providerCandidateManifests {
+			if candidate.Provider == g.Provider {
+				manifest = candidate
+				manifestOK = true
+				break
+			}
+		}
+	}
+	s.providerMu.RUnlock()
+	if manifestOK {
+		// The descriptor is reconstructed from the validated manifest for
+		// restart recovery. Endpoint and capability identity are the only
+		// trusted inputs required to reconnect; executable/args remain launch
+		// metadata owned by the process supervisor.
+		descriptor := providercontract.PluginDescriptor{
+			Schema:       providercontract.PluginDescriptorVersion,
+			PluginID:     g.Provider.ID,
+			Version:      g.Provider.Version,
+			Capabilities: append([]providercontract.CapabilityRef(nil), manifest.Provides...),
+			Server: providercontract.ServerDescriptor{
+				Transport: "streamable_http",
+				Endpoint:  g.Endpoint,
+			},
+		}
+		if encoded, err := json.Marshal(descriptor); err == nil {
+			descriptorJSON = string(encoded)
+		}
+		if encoded, err := json.Marshal(manifest); err == nil {
+			manifestJSON = string(encoded)
+		}
+	}
 	return s.state.SaveProviderGeneration(state.ProviderGenerationRecord{
 		GenerationID:    g.ID,
 		ProviderID:      g.Provider.ID,
 		ProviderVersion: g.Provider.Version,
 		ManifestHash:    g.ManifestHash,
 		Endpoint:        g.Endpoint,
+		DescriptorJSON:  descriptorJSON,
+		ManifestJSON:    manifestJSON,
 		CatalogRevision: g.CatalogRevision,
 		Status:          string(g.State),
 		CreatedAt:       g.CreatedAt.UTC().Format(time.RFC3339Nano),
@@ -290,6 +327,48 @@ func (s *Server) restoreProviderGenerations() error {
 		}
 		if err := s.providerLifecycle.Restore(generation); err != nil {
 			return err
+		}
+	}
+	for _, record := range records {
+		if record.Status != string(cordis.GenerationActive) || record.DescriptorJSON == "" || record.ManifestJSON == "" {
+			continue
+		}
+		var descriptor providercontract.PluginDescriptor
+		if err := json.Unmarshal([]byte(record.DescriptorJSON), &descriptor); err != nil {
+			continue
+		}
+		var manifest providercontract.InstallManifest
+		if err := json.Unmarshal([]byte(record.ManifestJSON), &manifest); err != nil {
+			continue
+		}
+		if err := providercontract.ValidateDescriptor(descriptor); err != nil {
+			continue
+		}
+		if err := providercontract.ValidateInstallManifest(manifest, providercontract.ProviderRef{ID: descriptor.PluginID, Version: descriptor.Version}); err != nil {
+			continue
+		}
+		manifestHash, err := hashProviderValue(manifest)
+		if err != nil || manifestHash != record.ManifestHash {
+			continue
+		}
+		adapter, err := provideradapter.Connect(context.Background(), descriptor, provideradapter.Options{})
+		if err != nil {
+			// The durable generation remains active and retryable; the provider
+			// may be started after the Host Agent during a supervisor restart.
+			continue
+		}
+		s.providerMu.Lock()
+		s.providerAdapters[record.ProviderID] = adapter
+		s.providerValidation[record.ProviderID] = manifest.Validation.Operation
+		s.providerManifests[record.ProviderID] = manifest
+		s.providerMu.Unlock()
+		if err := s.registerProviderServices(manifest); err != nil {
+			_ = adapter.Close()
+			s.providerMu.Lock()
+			delete(s.providerAdapters, record.ProviderID)
+			delete(s.providerValidation, record.ProviderID)
+			delete(s.providerManifests, record.ProviderID)
+			s.providerMu.Unlock()
 		}
 	}
 	return nil

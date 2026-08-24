@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 )
 
 type InstallHelmChartArgs struct {
@@ -80,20 +79,13 @@ func (s *HostOperationsService) InstallHelmChart(args InstallHelmChartArgs, onDa
 	}
 
 	manifest := renderHelmChartManifest(args)
-	tmpFile := fmt.Sprintf("/tmp/mcp-helm-%s-%d.yaml", releaseName, time.Now().UnixNano())
-	writeScript := fmt.Sprintf("cat <<'EOF' > %s\n%s\nEOF", tmpFile, manifest)
-	writeRes, err := s.runVMExec(vmName, []string{"bash", "-lc", writeScript}, onData, defaultDiscoveryTimeout)
+	targetURI, err := s.kubernetesTargetURI(vmName)
 	if err != nil {
 		return nil, err
 	}
-	if writeRes.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(writeRes.Stderr, writeRes.Stdout, "failed to write HelmChart manifest"))
-	}
-
-	if _, err := s.runKubernetesKubectlTimed(vmName, []string{"apply", "-f", tmpFile}, "apply HelmChart", 3*time.Minute); err != nil {
+	if _, err := s.ApplyManifest(ApplyManifestArgs{URI: targetURI, Manifest: manifest}, onData); err != nil {
 		return nil, err
 	}
-	_, _ = s.runVMExec(vmName, []string{"rm", "-f", tmpFile}, onData, 30*time.Second)
 
 	return map[string]any{
 		"vmName":      vmName,
@@ -118,11 +110,11 @@ func (s *HostOperationsService) UninstallHelmChart(args UninstallHelmChartArgs, 
 		namespace = "kube-system"
 	}
 
-	if _, err := s.runKubernetesKubectl(
-		vmName,
-		[]string{"delete", "helmchart", releaseName, "-n", namespace},
-		"delete HelmChart",
-	); err != nil {
+	targetURI, err := s.kubernetesTargetURI(vmName)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.DeleteK8sResource(K8sResourceArgs{URI: targetURI, Kind: "helmchart", ResourceName: releaseName, Namespace: namespace}, onData); err != nil {
 		return nil, err
 	}
 

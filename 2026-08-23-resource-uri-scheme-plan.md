@@ -1,5 +1,11 @@
 # Resource URI Scheme for Opute Entities — Implementation Plan (2026-08-23)
 
+> Historical plan note: ADR 0004 supersedes the earlier assumption that
+> Kubernetes sub-resources are not separate entities. Pods are now a
+> first-class typed resource, and the same typed `Requires`/`Produces` rules
+> apply across every supported entity kind. This file remains migration
+> history; the ADR and current Cordis guide are authoritative.
+
 ## Goal
 
 Every managed entity in the host agent gets a globally unique resource identifier (URI) of the

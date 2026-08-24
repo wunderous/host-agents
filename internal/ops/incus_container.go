@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
 const (
@@ -28,6 +30,7 @@ type ProvisionContainerArgs struct {
 }
 
 type ContainerStatusResult struct {
+	URI           string `json:"uri"`
 	ContainerName string `json:"containerName"`
 	Image         string `json:"image,omitempty"`
 	Status        string `json:"status"`
@@ -91,7 +94,7 @@ func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, 
 				return ContainerStatusResult{}, err
 			}
 		}
-		return ContainerStatusResult{ContainerName: name, Image: image, Status: "running", InstanceType: "container"}, nil
+		return s.containerStatusResult(name, image, "running"), nil
 	}
 	if err := s.launchIncusContainer(name, image, disk, args.CPUs, strings.TrimSpace(args.Memory), nesting, onData, 10*time.Minute); err != nil {
 		return ContainerStatusResult{}, err
@@ -114,7 +117,22 @@ func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, 
 			return ContainerStatusResult{}, err
 		}
 	}
-	return ContainerStatusResult{ContainerName: name, Image: image, Status: "running", InstanceType: "container"}, nil
+	return s.containerStatusResult(name, image, "running"), nil
+}
+
+func (s *HostOperationsService) containerStatusResult(name, image, status string) ContainerStatusResult {
+	result := ContainerStatusResult{ContainerName: name, Image: image, Status: status, InstanceType: "container"}
+	if uri, err := resourceid.ContainerURI(s.tenantID, name); err == nil {
+		result.URI = uri.String()
+		if s.resourceRegistry != nil {
+			_ = s.RegisterResource(result.URI, map[string]any{
+				"providerInstanceName": name,
+				"displayName":          name,
+				"instanceType":         "container",
+			})
+		}
+	}
+	return result
 }
 
 func (s *HostOperationsService) incusInstanceExists(name string) (bool, error) {

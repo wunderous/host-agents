@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 
 type ClusterListResult struct {
 	Clusters []ClusterDetail `json:"clusters"`
+	Total    int             `json:"total"`
 }
 
 type ClusterNode struct {
@@ -42,25 +44,27 @@ type ClusterDetail struct {
 	VMName string `json:"vmName,omitempty"`
 	// HostId is the owning host agent identity (durable execution owner).
 	HostId string `json:"hostId,omitempty"`
+	// InstanceType is the provider-observed Incus target kind. It is retained
+	// separately from the canonical cluster URI so a container cannot be
+	// mistaken for a VM during later execution.
+	InstanceType string `json:"instanceType,omitempty"`
 }
 
 func (s *HostOperationsService) ListClusters(fast bool) (ClusterListResult, error) {
-	vms, err := s.ListVMs(fast)
+	result, err := s.ListKubernetesClusters("")
 	if err != nil {
 		return ClusterListResult{}, err
 	}
-	clusters := make([]ClusterDetail, 0)
-	for _, vm := range vms.VMs {
-		if vm.K3sInstalled == nil || !*vm.K3sInstalled {
-			continue
-		}
-		detail, err := s.buildClusterDetailFromVM(vm, fast, false)
-		if err != nil {
-			return ClusterListResult{}, err
-		}
-		clusters = append(clusters, detail)
+	if fast {
+		return result, nil
 	}
-	return ClusterListResult{Clusters: clusters}, nil
+	for index := range result.Clusters {
+		cluster := &result.Clusters[index]
+		if enriched, enrichErr := s.enrichClusterDetailRuntimeByURI(cluster.URI, *cluster); enrichErr == nil {
+			*cluster = enriched
+		}
+	}
+	return result, nil
 }
 
 func (s *HostOperationsService) GetClusterDetails(vmName string, fast bool) (ClusterDetail, error) {
@@ -84,15 +88,20 @@ func (s *HostOperationsService) buildClusterDetailFromVM(vm VMInfo, fast bool, r
 	if uri, err := resourceid.ClusterURI(s.tenantID, vm.Name); err == nil {
 		detail.URI = uri.String()
 		if s.resourceRegistry != nil {
+			instanceType := strings.TrimSpace(vm.Type)
+			if instanceType == "virtual-machine" {
+				instanceType = "vm"
+			}
 			_ = s.RegisterResource(detail.URI, map[string]any{
 				"providerInstanceName": vm.Name,
 				"vmName":               vm.Name,
 				"displayName":          vm.Name,
+				"instanceType":         instanceType,
 			})
 		}
 	}
 	if runtime || (!fast && vm.K3sInstalled != nil && *vm.K3sInstalled && strings.EqualFold(vm.Status, "running")) {
-		enriched, err := s.enrichClusterDetailRuntime(vm, detail)
+		enriched, err := s.enrichClusterDetailRuntimeByURI(detail.URI, detail)
 		if err != nil {
 			return detail, nil
 		}
@@ -158,6 +167,7 @@ func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
 		Logs:          []string{},
 		VMName:        vm.Name,
 		HostId:        strings.TrimSpace(vm.HostId),
+		InstanceType:  strings.TrimSpace(vm.Type),
 	}
 	if k3sInstalled != nil {
 		detail.K3sInstalled = k3sInstalled
@@ -165,23 +175,33 @@ func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
 	return detail
 }
 
-func (s *HostOperationsService) enrichClusterDetailRuntime(vm VMInfo, detail ClusterDetail) (ClusterDetail, error) {
-	if vm.K3sInstalled == nil || !*vm.K3sInstalled || !strings.EqualFold(vm.Status, "running") {
+func (s *HostOperationsService) enrichClusterDetailRuntimeByURI(targetURI string, detail ClusterDetail) (ClusterDetail, error) {
+	if detail.K3sInstalled != nil && !*detail.K3sInstalled {
 		return detail, nil
 	}
-	nodes, err := s.discoverClusterNodes(vm.Name)
-	if err != nil {
-		nodes = []ClusterNode{}
+	if strings.TrimSpace(targetURI) == "" {
+		return detail, fmt.Errorf("canonical cluster URI is required for runtime discovery")
 	}
-	version := detail.Version
-	if discovered, err := s.discoverK3sVersion(vm.Name); err == nil && discovered != "" {
-		version = discovered
+	out, delegated, err := s.executeKubernetesProvider(KubernetesGetClusterInfoOperation, targetURI, nil)
+	if !delegated {
+		return detail, fmt.Errorf("Kubernetes provider is required for runtime discovery")
+	}
+	if err != nil {
+		return detail, err
+	}
+	version, _ := out["version"].(string)
+	if strings.TrimSpace(version) == "" {
+		version = detail.Version
+	}
+	nodes := make([]ClusterNode, 0)
+	if encoded, marshalErr := json.Marshal(out["nodes"]); marshalErr == nil {
+		_ = json.Unmarshal(encoded, &nodes)
 	}
 	nodeCount := len(nodes)
 	if nodeCount == 0 {
 		nodeCount = detail.NodeCount
 	}
-	available := vm.K3sInstalled != nil && *vm.K3sInstalled && len(nodes) > 0
+	available := len(nodes) > 0
 	return ClusterDetail{
 		URI:                    detail.URI,
 		ID:                     detail.ID,
@@ -201,54 +221,18 @@ func (s *HostOperationsService) enrichClusterDetailRuntime(vm VMInfo, detail Clu
 		Nodes:                  nodes,
 		Logs:                   detail.Logs,
 		NodeInventoryAvailable: boolPtr(available),
+		InstanceType:           detail.InstanceType,
 	}, nil
 }
 
-func (s *HostOperationsService) discoverClusterNodes(vmName string) ([]ClusterNode, error) {
-	res, err := s.commandRunner([]string{
-		"exec", vmName, "--", "k3s", "kubectl", "get", "nodes",
-		"-o", "custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type,VERSION:.status.nodeInfo.kubeletVersion",
-		"--no-headers",
-	}, nil, defaultDiscoveryTimeout)
-	if err != nil {
-		return nil, err
-	}
-	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "kubectl get nodes failed"))
-	}
-	return parseClusterNodes(res.Stdout, vmName), nil
-}
-
-func (s *HostOperationsService) discoverK3sVersion(vmName string) (string, error) {
-	res, err := s.commandRunner([]string{"exec", vmName, "--", "k3s", "--version"}, nil, defaultDiscoveryTimeout)
-	if err != nil {
-		return "", err
-	}
-	if res.ExitCode != 0 {
-		return "", fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "k3s --version failed"))
-	}
-	lines := strings.Split(strings.TrimSpace(res.Stdout), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
-		return "", nil
-	}
-	first := strings.TrimSpace(lines[0])
-	lower := strings.ToLower(first)
-	const prefix = "k3s version "
-	if strings.HasPrefix(lower, prefix) {
-		return strings.TrimSpace(first[len(prefix):]), nil
-	}
-	return first, nil
-}
-
-func parseClusterNodes(output string, fallbackName string) []ClusterNode {
+// parseClusterNodes only interprets provider-returned inventory. The provider
+// owns the Incus/K3s command; Host Agent keeps this neutral response shaping
+// here so callers receive the established cluster detail contract.
+func parseClusterNodes(output, fallbackName string) []ClusterNode {
 	lines := strings.Split(output, "\n")
 	nodes := make([]ClusterNode, 0, len(lines))
 	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		parts := strings.Fields(trimmed)
+		parts := strings.Fields(strings.TrimSpace(line))
 		if len(parts) == 0 {
 			continue
 		}
@@ -256,33 +240,14 @@ func parseClusterNodes(output string, fallbackName string) []ClusterNode {
 		if name == "" {
 			name = fallbackName
 		}
-		status := "Unknown"
+		node := ClusterNode{Name: name, Status: "Unknown", Roles: "control-plane"}
 		if len(parts) > 1 {
-			status = parts[1]
+			node.Status = parts[1]
 		}
-		roles := "control-plane"
-		age := ""
-		version := ""
-		for i := 2; i < len(parts); i++ {
-			part := parts[i]
-			if strings.HasPrefix(part, "v") && strings.Contains(part, ".") {
-				version = part
-			} else if roles == "control-plane" && !strings.HasPrefix(part, "v") {
-				roles = part
-			} else if age == "" {
-				age = part
-			}
+		if len(parts) > 2 {
+			node.Version = parts[2]
 		}
-		if version == "" && len(parts) > 2 {
-			version = parts[2]
-		}
-		nodes = append(nodes, ClusterNode{
-			Name:    name,
-			Status:  status,
-			Roles:   roles,
-			Age:     age,
-			Version: version,
-		})
+		nodes = append(nodes, node)
 	}
 	return nodes
 }
