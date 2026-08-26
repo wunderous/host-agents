@@ -3,12 +3,10 @@ package ops
 import "testing"
 
 func TestBuildBaseClusterDetailDoesNotInventRuntimeMetrics(t *testing.T) {
-	installed := true
 	detail := buildBaseClusterDetail(VMInfo{
-		Name:         "opute-dev-cnpg",
-		Status:       "Stopped",
-		ProviderID:   "incus",
-		K3sInstalled: &installed,
+		Name:       "opute-dev-cnpg",
+		Status:     "Stopped",
+		ProviderID: "incus",
 	})
 
 	if detail.Status != "Stopped" {
@@ -26,8 +24,8 @@ func TestBuildBaseClusterDetailDoesNotInventRuntimeMetrics(t *testing.T) {
 	if detail.VMName != "opute-dev-cnpg" {
 		t.Fatalf("vmName = %q, want backing VM identity", detail.VMName)
 	}
-	if detail.ID != "k3s-opute-dev-cnpg" {
-		t.Fatalf("id = %q, want typed k3s cluster identifier", detail.ID)
+	if detail.ID != "opute-dev-cnpg" {
+		t.Fatalf("id = %q, want provider-neutral cluster identity", detail.ID)
 	}
 }
 

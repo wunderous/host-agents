@@ -44,3 +44,41 @@ func TestInputRequiredTaskAcceptsStandardUpdates(t *testing.T) {
 		t.Fatalf("status after completion = %s", got.Status)
 	}
 }
+
+func TestRestoreSnapshotKeepsTerminalTaskFindableAfterRestart(t *testing.T) {
+	registry := NewRegistry()
+	restored, ok := registry.RestoreSnapshot(map[string]any{
+		"taskId":         "durable-task-1",
+		"toolName":       "run_host_command",
+		"toolArgs":       map[string]any{"command": "true"},
+		"status":         "completed",
+		"createdAt":      "2026-08-24T00:00:00Z",
+		"lastUpdatedAt":  "2026-08-24T00:01:00Z",
+		"ttlMs":          float64(60_000),
+		"pollIntervalMs": float64(3_000),
+		"result": map[string]any{
+			"content":           []map[string]any{{"type": "text", "text": "done"}},
+			"structuredContent": map[string]any{"ok": true},
+			"isError":           false,
+		},
+	})
+	if !ok || restored == nil {
+		t.Fatal("terminal task snapshot was not restored")
+	}
+	view, found := registry.Get("durable-task-1")
+	if !found || view.Status != StatusCompleted || view.ToolResult == nil {
+		t.Fatalf("restored task = %#v", view)
+	}
+	if result := registry.ToGetTaskResult(view); result["result"] == nil {
+		t.Fatalf("restored task omitted final result: %#v", result)
+	}
+
+	interrupted, ok := registry.RestoreSnapshot(map[string]any{
+		"taskId":   "durable-task-2",
+		"toolName": "run_host_command",
+		"status":   "working",
+	})
+	if !ok || interrupted.Status != StatusFailed {
+		t.Fatalf("interrupted task status = %#v, want failed", interrupted)
+	}
+}

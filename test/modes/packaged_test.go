@@ -101,6 +101,7 @@ func hostEnv(t *testing.T, incusPath, stateDir, lockDir string) []string {
 		env = append(env, assignment)
 	}
 	return append(env,
+		"OPUTE_REMOTE_AGENT_ID=test-host-agent",
 		"OPUTE_INFRA_PROVIDER_ID=incus",
 		"OPUTE_INCUS_BINARY_PATH="+incusPath,
 		"OPUTE_STANDALONE_STATE_DIR="+stateDir,

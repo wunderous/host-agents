@@ -140,8 +140,9 @@ The Host Agent must pass model-generated tool arguments through without:
 The owning tool/provider contract is authoritative for its input and semantic
 validation. The Host Agent performs only the protocol work needed to invoke
 the declared capability and preserves the tool's typed success or error. Raw
-model JSON arguments must remain available in the durable call evidence so the
-model request, audit record, UI, and execution input cannot diverge.
+model JSON arguments remain available only in the transient execution path;
+durable call evidence stores the schema-redacted projection so the audit
+record, UI, and execution binding cannot diverge without persisting secrets.
 
 This does not prohibit a tool from rejecting invalid input. It prohibits the
 orchestrator from pretending to know the internals of a tool and adding a
@@ -211,7 +212,9 @@ covered by a local heuristic.
 
 **C-01 — Provider-neutral core.** Core packages may know typed contracts,
 capability IDs, schemas, and generic transport rules, but not concrete
-provider lifecycle behavior.
+provider lifecycle behavior. A Kubernetes provider may implement the neutral
+`opute.capability.kubernetes` surface; provider names such as K3s must not
+become agent-facing operation IDs or catalog routes.
 
 **C-02 — MCP opacity.** MCP knowledge stops at `internal/cordis/mcp`. The
 Cordis context receives typed services and effects, never transport objects.
@@ -243,12 +246,25 @@ prose are evidence, not completion authority.
 
 **C-08 — Generation affinity.** Active, candidate, draining, and stopped
 generations are explicit. Existing work never silently migrates between them.
+Candidate adapters remain isolated from active lookup until neutral readiness,
+catalog publication, and activation all succeed. Production sessions capture
+the generation they use; they must not check a generation and then resolve a
+mutable current adapter. Activation failure leaves the previous active
+generation available and retryable.
 
 **C-09 — Reversible effects.** Every service, listener, task, overlay,
 credential reference, process, and connection has an idempotent disposer.
+Provider lifecycle must use those Cordis-owned sessions, fibers, and disposers
+in production. A map insertion, unit-only lifecycle test, or provider-local
+cleanup is not a substitute for atomic activation, rollback, and deterministic
+reverse-order disposal.
 
-**C-10 — Redacted evidence.** Secrets never enter prompts, tool arguments,
-events, task projections, operation records, traces, or inspector output.
+**C-10 — Redacted evidence.** Secret values may exist only in the transient,
+typed execution binding when the owning capability requires them; they never
+enter prompts or untyped evidence. Durable plan documents, node observations,
+events, task projections, operation records, traces, and inspector output use
+typed schema redaction projections (for example, write-only secret fields),
+not key-name heuristics. Unknown durable projections fail closed.
 
 **C-11 — LLM-independent core.** MCP serving, typed host operations,
 catalog/status, approval, plan validation, task inspection, cancellation, and
@@ -281,6 +297,44 @@ schema paths. Producer/consumer tool names are never provider-authored, and
 **C-18 — Dynamic plugin independence.** A Cordis plugin may publish a typed
 producer or consumer without knowing the other side. Registration, replacement,
 and removal publish a new immutable catalog revision and recompute edges.
+Provider replacement is candidate → ready → active → draining; catalog
+publication is part of activation, and any publication or readiness failure
+rolls back without exposing provider-specific names or stale generation edges.
+
+**C-22 — Provider task ownership.** A provider MCP adapter that permits
+task-augmented results must bridge task creation, polling, cancellation,
+correlation, and terminal state into the Host Agent task contract. If it does
+not implement that bridge, its manifest and operation contract must explicitly
+prohibit provider task results and enforce synchronous-only behavior. MCP SDK
+discovery or an in-process structured result does not make provider tasks
+pollable or cancellable through the Host Agent.
+
+**C-23 — Runtime-kind and executor agreement.** A canonical `vm:` resource and
+`container:` resource are distinct typed identities. Lifecycle admission must
+resolve the returned resource kind and the owning execution layer before guest
+execution; an explicit target must agree with the observed instance type, and
+unsupported kinds must fail closed before side effects. The Host Agent does
+not expose a provider-specific installer operation; K3s lifecycle work
+enters through the neutral Kubernetes capability and the active provider
+generation. The provider owns concrete K3s/container setup, while the Host
+Agent owns admission, target URI resolution, and generation-safe dispatch.
+Operation names do not establish executor ownership or cross-layer compatibility. Adding support for another kind
+requires the descriptor/binding, admission, implementation, catalog revision,
+and boundary tests to change together. Prompt rewrites, URI aliases, and
+test-only target overrides are forbidden.
+
+**C-24 — E2E target preflight and cleanup.** A mutating agentic E2E must
+preflight the target runtime and executor contract before creating resources.
+On WSL2/Hyper-V/Incus, nested KVM can be healthy while QEMU guest memory above
+about 2815MiB fails; the validated default smoke profile is 2 vCPU / 2 GiB,
+while K3s automation defaults to a system container. This is an
+infrastructure precondition, not K3s or database evidence. If setup creates a
+disposable target and a later step fails, the test deletes that exact target
+through the product path where possible, verifies inventory absence, removes
+temporary agent configuration or projections, and keeps local/prod credentials
+and authority stores separate. An existing production cluster must not receive
+a second temporary agent identity or bridge projection merely to satisfy a
+localhost test.
 
 **C-19 — Opaque client identity.** The TUI and other clients preserve resource
 URIs as opaque values. They do not parse kind prefixes, synthesize IDs, or
@@ -290,6 +344,19 @@ maintain a second resource-type or producer authority.
 or assistant sentence cannot close a typed-edge change. Applicable closure
 requires static catalog, dynamic registry, MCP wire, TUI, model/SSE, tenant,
 stale-revision, and external cleanup evidence.
+
+**C-21 — Canonical Host Agent identity.** A running Host Agent has one explicit
+opaque `OPUTE_REMOTE_AGENT_ID`, and exact equality is the only identity used
+for routing, ownership, sessions, inventory, and canonicalization. Fingerprint,
+instance, hostname, provider, and display metadata are admission/provenance
+evidence only; different IDs remain distinct even when they share a machine.
+Missing, stale, conflicting, or ambiguous IDs fail closed. Runtime aliases,
+fuzzy identity matching, preferred-ID constants, first-connected fallbacks,
+silent operation reassignment, and provider/TUI identity resolution are
+forbidden. The one-time local alias-field cleanup is complete and its startup
+rewrite is retired. Identity changes require explicit re-onboarding or a
+separately reviewed offline durable-state migration and a new boundary-matched
+verification record.
 
 ## Permanent invariant capture
 
@@ -333,7 +400,10 @@ For a new capability or provider change:
 8. For typed resource changes, validate representative host, VM, container,
    pod, cluster, database, and service bindings, including a dynamic plugin
    registration that has no producer/consumer tool knowledge.
-9. Re-read this guide and the relevant plan/ADR before milestone closure. Mark
+9. Preflight the selected runtime/executor, record the canonical resource kind,
+   and make the cleanup assertion fail closed if a disposable target or
+   temporary projection remains.
+10. Re-read this guide and the relevant plan/ADR before milestone closure. Mark
    the milestone only after its validation is complete, then make the required
    green commit and push before starting the next milestone.
 
@@ -357,6 +427,8 @@ evidence includes all applicable items:
 - typed-resource evidence for representative supported entities, dynamic
   catalog revision changes, incompatible-kind rejection, and opaque URI
   preservation through the client.
+- runtime-kind/executor agreement evidence, including preflight capability,
+  the selected MCP implementation layer, and exact disposable-target cleanup.
 
 When a gate fails, record the five-whys analysis and fix the owning contract or
 lifecycle seam. Do not add a test-only bypass, a model-specific prompt hack,

@@ -27,7 +27,6 @@ import (
 const (
 	defaultDiscoveryTimeout = 45 * time.Second
 	provisionVMTimeout      = 10 * time.Minute
-	hostK3sServiceWait      = 120 * time.Second
 	clusterAgentServiceName = "opute-cluster-agent"
 	sqlConnectorMaxPerHost  = 32
 	sqlConnectorIdleDrain   = 120 * time.Second
@@ -300,20 +299,19 @@ type VMListResult struct {
 }
 
 type VMInfo struct {
-	URI          string         `json:"uri"`
-	Kind         string         `json:"kind"`
-	Name         string         `json:"name"`
-	Type         string         `json:"type,omitempty"`
-	Status       string         `json:"status"`
-	State        map[string]any `json:"state"`
-	IPv4         []string       `json:"ipv4"`
-	Release      string         `json:"release"`
-	ProviderID   string         `json:"providerId"`
-	CPUs         *int           `json:"cpus,omitempty"`
-	Memory       string         `json:"memory,omitempty"`
-	Disk         string         `json:"disk,omitempty"`
-	AgentReady   *bool          `json:"agentReady,omitempty"`
-	K3sInstalled *bool          `json:"k3sInstalled,omitempty"`
+	URI        string         `json:"uri"`
+	Kind       string         `json:"kind"`
+	Name       string         `json:"name"`
+	Type       string         `json:"type,omitempty"`
+	Status     string         `json:"status"`
+	State      map[string]any `json:"state"`
+	IPv4       []string       `json:"ipv4"`
+	Release    string         `json:"release"`
+	ProviderID string         `json:"providerId"`
+	CPUs       *int           `json:"cpus,omitempty"`
+	Memory     string         `json:"memory,omitempty"`
+	Disk       string         `json:"disk,omitempty"`
+	AgentReady *bool          `json:"agentReady,omitempty"`
 	// HostId is the owning host agent identity (durable execution owner).
 	HostId string `json:"hostId,omitempty"`
 }
@@ -572,258 +570,6 @@ func (s *HostOperationsService) stopVMArgs(vmName string) []string {
 
 func (s *HostOperationsService) deleteVMArgs(vmName string) []string {
 	return []string{"delete", vmName, "--force"}
-}
-
-// --- K3s ---
-
-type InstallK3sArgs struct {
-	Target      string   `json:"target,omitempty"`
-	VMName      string   `json:"vmName,omitempty"`
-	ClusterID   string   `json:"clusterId,omitempty"`
-	Version     string   `json:"version,omitempty"`
-	InstallArgs []string `json:"installArgs,omitempty"`
-}
-
-func (s *HostOperationsService) InstallK3s(ctx context.Context, args InstallK3sArgs, onData func(string)) (map[string]any, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	target := strings.TrimSpace(args.Target)
-	vmName := strings.TrimSpace(args.VMName)
-	if target == "" && vmName != "" {
-		target = s.resolveInstallK3sTarget(vmName, args.Target)
-	}
-	// Pin a concrete version by default. update.k3s.io channel resolution often
-	// 404s from guest NAT; the upstream script then treats "stable" as a GitHub
-	// release tag and fails on .../download/stable/sha256sum-amd64.txt.
-	k3sVersion := strings.TrimSpace(args.Version)
-	if k3sVersion == "" {
-		k3sVersion = "v1.31.8+k3s1"
-	}
-	// Keep curl's failure reason in the task result. Silent curl failures leave
-	// only the pin marker in the host-agent error, which is not enough to
-	// distinguish guest DNS, TLS, or upstream availability problems.
-	curlFlags := "-sSfL"
-	if s.allowInsecureDownloads {
-		// Some local VM images do not contain the host's corporate CA. Keep the
-		// weaker TLS behavior explicit and standalone-only; platform mode remains
-		// certificate-verifying by default.
-		curlFlags = "-k -sSfL --retry 4 --retry-delay 2 --retry-connrefused"
-	}
-	installArgs := args.InstallArgs
-	if target == "container" {
-		installArgs = containerK3sInstallArgs(installArgs)
-	}
-	execEnv := ""
-	if len(installArgs) > 0 {
-		execEnv = fmt.Sprintf(" INSTALL_K3S_EXEC=%s", shellEscape(strings.Join(installArgs, " ")))
-	}
-	// Single-line bash -c (not login -lc): Incus/guest argv must not depend on
-	// multiline -c parsing. Echo a pin marker so failures prove this path ran.
-	installCmd := fmt.Sprintf(
-		`echo OPUTE_K3S_PIN=%s && tmp=$(mktemp) && curl %s https://get.k3s.io -o "$tmp" && env INSTALL_K3S_VERSION=%s%s sh "$tmp"; ec=$?; rm -f "$tmp"; exit $ec`,
-		shellEscape(k3sVersion),
-		curlFlags,
-		shellEscape(k3sVersion),
-		execEnv,
-	)
-	if target == "host" {
-		if err := s.requireSharedHostOwner("install_k3s_host"); err != nil {
-			return nil, err
-		}
-		clusterID := strings.TrimSpace(args.ClusterID)
-		if clusterID == "" {
-			return nil, errors.New("clusterId is required for host K3s installation")
-		}
-		prep := `if test -x /usr/local/bin/k3s-uninstall.sh; then /usr/local/bin/k3s-uninstall.sh || true; fi
-rm -f /etc/systemd/system/k3s.service.env /etc/systemd/system/k3s.service 2>/dev/null || true
-systemctl daemon-reload 2>/dev/null || true`
-		if _, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", prep}, onData, 0); err != nil {
-			return nil, err
-		}
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		res, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-c", installCmd}, onData, 0)
-		if err != nil {
-			return nil, err
-		}
-		if res.ExitCode != 0 && !isRecoverableHostK3sInstall(res) {
-			return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "failed to install K3s on host"))
-		}
-		if err := s.waitForSystemdActive("k3s", onData, hostK3sServiceWait); err != nil {
-			return nil, err
-		}
-		ready, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", "sudo -n /usr/local/bin/k3s kubectl get nodes -o name"}, onData, defaultDiscoveryTimeout)
-		if err != nil || ready.ExitCode != 0 {
-			return nil, fmt.Errorf("%s", firstNonEmpty(ready.Stderr, ready.Stdout, "K3s API not ready on host"))
-		}
-		return map[string]any{"clusterId": clusterID, "serviceName": "k3s", "status": "active", "target": "host"}, nil
-	}
-
-	if vmName == "" {
-		return nil, errors.New("vmName is required")
-	}
-	if target == "container" {
-		if err := s.ensureIncusInstanceAutostart(vmName); err != nil {
-			return nil, fmt.Errorf("enable container autostart: %w", err)
-		}
-		if err := s.ensureContainerNesting(vmName); err != nil {
-			return nil, fmt.Errorf("enable container nesting: %w", err)
-		}
-		if restartErr := s.restartIncusInstanceIfRunning(vmName, onData); restartErr != nil {
-			return nil, restartErr
-		}
-	} else if target == "vm" {
-		if err := s.ensureIncusVMAutostart(vmName); err != nil {
-			return nil, fmt.Errorf("enable VM autostart: %w", err)
-		}
-	} else {
-		return nil, fmt.Errorf("target must be vm, container, or host")
-	}
-	if err := s.waitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {
-		return nil, err
-	}
-	if target == "container" {
-		if err := s.waitForContainerNetworkReady(ctx, vmName, onData, 3*time.Minute); err != nil {
-			return nil, err
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if target == "container" {
-		if _, err := s.ensureContainerK3sKubeletConfig(vmName, onData); err != nil {
-			return nil, fmt.Errorf("prepare K3s container kubelet config: %w", err)
-		}
-		existing, existingErr := s.runVMExec(vmName, []string{"bash", "-lc", "test -x /usr/local/bin/k3s"}, onData, 30*time.Second)
-		if existingErr == nil && existing.ExitCode == 0 {
-			if onData != nil {
-				onData("K3s already installed in container; checking readiness before repair...")
-			}
-			status, statusErr := s.GetK3sStatus(vmName)
-			if statusErr == nil && strings.EqualFold(fmt.Sprint(status["status"]), "ready") && s.containerK3sHasCanonicalInstallArg(vmName, onData) {
-				if err := s.waitForK3sNodeReady(ctx, vmName, onData, 2*time.Minute); err != nil {
-					return nil, err
-				}
-				_ = s.setIncusInstanceConfig(vmName, oputeK3sInstalledLabel, "true")
-				return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "active", "repaired": false}, nil
-			}
-			// An executable without a ready API, or without the canonical
-			// v1.31 service argument, is an incomplete install. Remove only
-			// that incomplete/unrepairable install and retry; never replace a
-			// ready cluster that already has the canonical service argument.
-			if onData != nil {
-				onData("K3s container install is present but not ready; removing the incomplete install before retrying...")
-			}
-			uninstall, uninstallErr := s.runVMExec(vmName, []string{"bash", "-lc", "/usr/local/bin/k3s-uninstall.sh"}, onData, 5*time.Minute)
-			if uninstallErr != nil || uninstall.ExitCode != 0 {
-				return nil, fmt.Errorf("remove incomplete K3s container install: %s", firstNonEmpty(uninstall.Stderr, uninstall.Stdout, "uninstall failed"))
-			}
-		}
-	}
-	if onData != nil {
-		onData(fmt.Sprintf("Downloading and checksum-verifying pinned K3s %s on the host before guest installation...", k3sVersion))
-	}
-	artifacts, err := downloadK3sGuestArtifacts(ctx, k3sVersion)
-	if err != nil {
-		return nil, fmt.Errorf("stage K3s artifacts from host: %w", err)
-	}
-	stageBinary, err := s.runVMExecWithStdinContext(ctx, vmName, []string{"sh", "-c", "tmp=$(mktemp) && cat > \"$tmp\" && chmod 0755 \"$tmp\" && mv -f \"$tmp\" /usr/local/bin/k3s"}, artifacts.Binary, onData, 5*time.Minute)
-	if err != nil || stageBinary.ExitCode != 0 {
-		return nil, fmt.Errorf("stage K3s binary in instance: %s", firstNonEmpty(stageBinary.Stderr, stageBinary.Stdout, errString(err, "guest binary staging failed")))
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	guestInstallCmd := fmt.Sprintf(
-		`tmp=$(mktemp) && cat > "$tmp" && chmod 0700 "$tmp" && env INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s%s sh "$tmp"; ec=$?; rm -f "$tmp"; exit $ec`,
-		shellEscape(k3sVersion),
-		execEnv,
-	)
-	install, err := s.runVMExecWithStdinContext(ctx, vmName, []string{"bash", "-c", guestInstallCmd}, artifacts.Installer, onData, 15*time.Minute)
-	if err != nil {
-		return nil, err
-	}
-	if install.ExitCode != 0 {
-		return nil, fmt.Errorf("%s\nK3s service diagnostics:\n%s", firstNonEmpty(install.Stderr, install.Stdout, "failed to install K3s in instance"), s.k3sServiceDiagnostics(vmName))
-	}
-	if target == "container" {
-		changed, cfgErr := s.ensureContainerK3sKubeletConfig(vmName, onData)
-		if cfgErr != nil {
-			return nil, fmt.Errorf("finalize K3s container kubelet config: %w", cfgErr)
-		}
-		if changed {
-			if restartErr := s.restartVMK3sIfPresent(vmName, onData); restartErr != nil {
-				return nil, restartErr
-			}
-		}
-		if err := s.waitForK3sNodeReady(ctx, vmName, onData, 5*time.Minute); err != nil {
-			return nil, fmt.Errorf("%w\nK3s service diagnostics:\n%s", err, s.k3sServiceDiagnostics(vmName))
-		}
-	} else if err := s.waitForVMServiceActive(vmName, "k3s", onData, 5*time.Minute); err != nil {
-		return nil, err
-	}
-	_ = s.setIncusInstanceConfig(vmName, oputeK3sInstalledLabel, "true")
-	return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "active"}, nil
-}
-
-type UninstallK3sArgs struct {
-	Target    string `json:"target,omitempty"`
-	VMName    string `json:"vmName,omitempty"`
-	ClusterID string `json:"clusterId,omitempty"`
-}
-
-func (s *HostOperationsService) UninstallK3s(args UninstallK3sArgs, onData func(string)) (map[string]any, error) {
-	target := strings.TrimSpace(args.Target)
-	if target == "host" {
-		if err := s.requireSharedHostOwner("uninstall_k3s_host"); err != nil {
-			return nil, err
-		}
-		clusterID := strings.TrimSpace(args.ClusterID)
-		if clusterID == "" {
-			return nil, errors.New("clusterId is required for host K3s uninstall")
-		}
-		res, err := s.hostCommandRunner([]string{"bash", "-lc", "/usr/local/bin/k3s-uninstall.sh"}, onData, 0)
-		if err != nil || res.ExitCode != 0 {
-			return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "failed to uninstall K3s from host"))
-		}
-		verify, err := s.hostCommandRunner([]string{"bash", "-lc", "test ! -x /usr/local/bin/k3s"}, onData, 0)
-		if err != nil || verify.ExitCode != 0 {
-			return nil, errors.New("k3s is still installed on host after uninstall")
-		}
-		return map[string]any{"clusterId": clusterID, "serviceName": "k3s", "status": "removed", "target": "host"}, nil
-	}
-	vmName := strings.TrimSpace(args.VMName)
-	if vmName == "" {
-		return nil, errors.New("vmName is required")
-	}
-	if target == "" {
-		target = s.resolveInstallK3sTarget(vmName, args.Target)
-	}
-	if err := s.waitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {
-		return nil, err
-	}
-	uninstall, err := s.runVMExec(vmName, []string{"bash", "-lc", "/usr/local/bin/k3s-uninstall.sh"}, onData, 0)
-	if err != nil || uninstall.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(uninstall.Stderr, uninstall.Stdout, "failed to uninstall K3s from instance"))
-	}
-	verify, err := s.runVMExec(vmName, []string{"bash", "-lc", "test ! -x /usr/local/bin/k3s"}, onData, 0)
-	if err != nil || verify.ExitCode != 0 {
-		return nil, errors.New("k3s is still installed in instance after uninstall")
-	}
-	return map[string]any{"vmName": vmName, "serviceName": "k3s", "status": "removed", "target": target}, nil
-}
-
-func (s *HostOperationsService) ConfigureK3sLoadBalancer(_ map[string]any, _ func(string)) (map[string]any, error) {
-	return nil, errors.New("configure_k3s_load_balancer is not implemented in the Go host agent; HA load balancer setup requires the full TypeScript host MCP implementation")
-}
-
-func (s *HostOperationsService) ConfigureK3sHaServers(_ map[string]any, _ func(string)) (map[string]any, error) {
-	return nil, errors.New("configure_k3s_ha_servers is not implemented in the Go host agent; multi-server HA provisioning requires the full TypeScript host MCP implementation")
 }
 
 // --- Kubernetes inventory ---
@@ -1498,13 +1244,6 @@ func (s *HostOperationsService) waitForVMServiceActive(vmName, service string, o
 		time.Sleep(3 * time.Second)
 	}
 	return fmt.Errorf("VM service '%s' on '%s' did not become active within %s", service, vmName, timeout)
-}
-
-func isRecoverableHostK3sInstall(res hostexec.Result) bool {
-	out := res.Stdout + "\n" + res.Stderr
-	return strings.Contains(out, "Failed to restart k3s.service") ||
-		strings.Contains(out, "Unit k3s.service not found") ||
-		strings.Contains(out, "k3s.service.env")
 }
 
 func shellEscape(value string) string {

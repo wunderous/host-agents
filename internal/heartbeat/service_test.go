@@ -21,12 +21,12 @@ func TestParseMcpResponseBodyJSON(t *testing.T) {
 }
 
 func TestParseMcpResponseBodySSE(t *testing.T) {
-	raw := []byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"agentId\":\"local-bridge-host\"}}\n\n")
+	raw := []byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"agentId\":\"test-host-agent\"}}\n\n")
 	result, err := parseMcpResponseBody(raw)
 	if err != nil {
 		t.Fatalf("parseMcpResponseBody: %v", err)
 	}
-	if result["agentId"] != "local-bridge-host" {
+	if result["agentId"] != "test-host-agent" {
 		t.Fatalf("expected agentId, got %#v", result)
 	}
 }

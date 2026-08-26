@@ -117,12 +117,12 @@ curl -sf -X POST "http://127.0.0.1:$PORT/mcp" \
   -H "mcp-session-id: $SESSION_ID" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
   -o "$TOOLS_BODY"
-for tool in create_vm list_vms get_host_info install_k3s; do
+for tool in create_vm list_vms get_host_info; do
   grep -q "\"$tool\"" "$TOOLS_BODY" || fail "tools/list missing $tool"
 done
 TOOL_COUNT=$(grep -o '"name"' "$TOOLS_BODY" | wc -l)
 [ "$TOOL_COUNT" -ge 50 ] || fail "expected >=50 tools, got $TOOL_COUNT"
-pass "tools/list returned $TOOL_COUNT tools (includes create_vm, list_vms, get_host_info, install_k3s)"
+pass "tools/list returned $TOOL_COUNT tools (includes create_vm, list_vms, get_host_info)"
 
 echo
 echo "[7/7] Verifying auth rejection without token..."

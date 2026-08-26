@@ -19,7 +19,7 @@ import (
 const (
 	ollamaContextConfigRelativePath = ".config/opute/ollama-runtime.json"
 	ollamaContextMinimum            = 512
-	ollamaContextMaximum            = 1048576
+	ollamaContextMaximum            = 32768
 )
 
 type contextSettingArgs struct {
@@ -90,7 +90,7 @@ func readContextSize() (int, error) {
 	if err == nil {
 		var raw map[string]any
 		if json.Unmarshal(data, &raw) == nil {
-			if value, ok := raw["contextSize"].(float64); ok && int(value) > 0 {
+			if value, ok := raw["contextSize"].(float64); ok && int(value) >= ollamaContextMinimum && int(value) <= ollamaContextMaximum {
 				return int(value), nil
 			}
 		}
@@ -268,7 +268,7 @@ func contextSizeFromUnit(unit string) int {
 		}
 		value := strings.TrimSpace(strings.SplitN(line, "OLLAMA_CONTEXT_LENGTH=", 2)[1])
 		value = strings.Trim(value, "\"'")
-		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed >= ollamaContextMinimum && parsed <= ollamaContextMaximum {
 			return parsed
 		}
 	}

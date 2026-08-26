@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
+	"github.com/wunderous/host-agents/internal/cordis"
 	provideradapter "github.com/wunderous/host-agents/internal/cordis/mcp"
 	"github.com/wunderous/host-agents/internal/ops"
 )
@@ -23,10 +24,11 @@ func (e *kubernetesProviderExecutor) Execute(ctx context.Context, operation stri
 	if e == nil || e.server == nil {
 		return nil, fmt.Errorf("Kubernetes provider executor is unavailable")
 	}
-	providerID, adapter, err := e.activeProvider()
+	providerID, session, adapter, err := e.activeProvider()
 	if err != nil {
 		return nil, err
 	}
+	defer session.Close()
 	arguments := cloneArguments(request.Arguments)
 	if request.TargetURI != "" {
 		arguments["targetUri"] = request.TargetURI
@@ -35,7 +37,7 @@ func (e *kubernetesProviderExecutor) Execute(ctx context.Context, operation stri
 			arguments["instanceType"] = request.InstanceType
 		}
 	}
-	result, err := adapter.Call(ctx, operation, arguments)
+	result, err := adapter.CallSynchronousOnly(ctx, operation, arguments)
 	if err != nil {
 		return nil, fmt.Errorf("Kubernetes provider %q operation %q: %w", providerID, operation, err)
 	}
@@ -43,7 +45,7 @@ func (e *kubernetesProviderExecutor) Execute(ctx context.Context, operation stri
 		return nil, fmt.Errorf("Kubernetes provider %q returned no result", providerID)
 	}
 	if result.IsError {
-		return nil, fmt.Errorf("Kubernetes provider %q operation %q failed", providerID, operation)
+		return nil, fmt.Errorf("Kubernetes provider %q operation %q failed: %v", providerID, operation, result.StructuredContent)
 	}
 	if result.StructuredContent == nil {
 		return map[string]any{}, nil
@@ -59,35 +61,43 @@ func (e *kubernetesProviderExecutor) Execute(ctx context.Context, operation stri
 	return output, nil
 }
 
-func (e *kubernetesProviderExecutor) activeProvider() (string, *provideradapter.Adapter, error) {
+func (e *kubernetesProviderExecutor) activeProvider() (string, *cordis.GenerationSession, *provideradapter.Adapter, error) {
 	e.server.providerMu.RLock()
 	defer e.server.providerMu.RUnlock()
 	var candidates []struct {
 		id      string
+		session *cordis.GenerationSession
 		adapter *provideradapter.Adapter
 	}
 	for providerID, manifest := range e.server.providerManifests {
 		if !providesCapability(manifest.Provides, ops.KubernetesCapabilityID) {
 			continue
 		}
-		if _, ok := e.server.providerLifecycle.Active(providerID); !ok {
+		session, err := e.server.providerLifecycle.OpenSession(providerID)
+		if err != nil {
 			continue
 		}
-		adapter := e.server.providerAdapters[providerID]
+		adapter := e.server.providerGenerationAdapters[session.GenerationID()]
 		if adapter != nil {
 			candidates = append(candidates, struct {
 				id      string
+				session *cordis.GenerationSession
 				adapter *provideradapter.Adapter
-			}{providerID, adapter})
+			}{providerID, session, adapter})
+		} else {
+			session.Close()
 		}
 	}
 	if len(candidates) == 0 {
-		return "", nil, fmt.Errorf("no active Kubernetes provider is installed")
+		return "", nil, nil, fmt.Errorf("no active Kubernetes provider is installed")
 	}
 	if len(candidates) > 1 {
-		return "", nil, fmt.Errorf("multiple active Kubernetes providers are available; typed provider provenance is required")
+		for _, candidate := range candidates {
+			candidate.session.Close()
+		}
+		return "", nil, nil, fmt.Errorf("multiple active Kubernetes providers are available; typed provider provenance is required")
 	}
-	return candidates[0].id, candidates[0].adapter, nil
+	return candidates[0].id, candidates[0].session, candidates[0].adapter, nil
 }
 
 func providesCapability(refs []providercontract.CapabilityRef, capabilityID string) bool {

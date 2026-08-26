@@ -86,14 +86,14 @@ Validation performed on 2026-08-24 from the WSL checkout:
   returned a `host-plan.v1` stop, disable, and remove-file sequence; a separate
   finalize call with no external IDs completed without attempting an API call.
 - Loaded the disposable Cloudflare credentials from the ignored Opute
-  `.env.cloudflare.local` source without printing their values. The dev live
-  canary created a real tunnel and DNS record through the product MCP; its
-  connector stage remained `await_connector` because the local dev connector
-  was not running. Cleanup was then executed through the MCP lifecycle: the
-  binding/API resources, all five retry-created canary connections, and their
-  workflow secrets were removed. Host Agent MCP inventory returned zero
-  remaining canary bindings/connections, and external DNS resolution returned
-  zero A/CNAME records for the disposable hostname.
+  `.env.cloudflare.local` source without printing their values. The current
+  live canary (`runId=bf82533b`) ran with the connector-enabled Host Agent,
+  reached `publication_status=active`, returned a public probe status of 200,
+  and completed Host Agent prepare cleanup followed by the Go provider
+  finalizer with zero cleanup errors. Cloudflare API queries for the exact
+  disposable hostname and tunnel name returned zero active records/tunnels;
+  recursive DNS still cached the name briefly, so authoritative API state is
+  the deletion gate.
 - Exercised the new provider operation
   `opute.capability.tunneling.install-kubernetes-connector` with
   `targetUri=cluster:local:opute-clean-k3s`. The provider invoked only Host
@@ -116,35 +116,43 @@ Validation performed on 2026-08-24 from the WSL checkout:
   provider-backed inventory path.
 - Tightened the local ignored Cloudflare credential and tunnel-token files to
   owner-only mode (`0600`). Values remain process inputs only.
-- Built and exercised the standalone `com.opute.k3s` provider with real MCP
+- Built and exercised the standalone `com.opute.k3s` provider (manifest
+  version `1.0.1`) with real MCP
   `initialize`, negotiated `server/discover`, `tools/list`, and `tools/call`
   exchanges. Host Agent installation and activation then exposed the dynamic
   Kubernetes operations without adding a Cloudflare or direct-kubectl route.
 - Through Host Agent MCP, `list_kubernetes_clusters` discovered
   `cluster:local:opute-clean-k3s` with `instanceType=container`; a disposable
-  Namespace and ConfigMap were applied, read, event-listed, deleted, and
-  verified absent. A `container:` URI supplied to a cluster operation was
-  rejected before provider execution.
+  Namespace and ConfigMap were applied, read, status-probed, event-listed,
+  deleted, and verified absent. `cluster:other:opute-clean-k3s`, a missing
+  `targetUri`, a display-name-only target, and a `container:` URI were all
+  rejected before provider execution. The live inventory reported one Ready
+  node on K3s `v1.31.8+k3s1`.
 - The Go Cloudflare provider finalizer deleted real disposable tunnels and DNS
-  records using their observed IDs. Cloudflare inventory showed the tunnels
-  absent from `is_deleted=false` and marked `deleted_at` in the API; DNS record
-  lookups returned `success=false`. A recovery run first failed under an
-  intentionally invalid API token while both resources remained present, then
-  retried with the same IDs and completed successfully. The provider now also
-  rejects HTTP-200 Cloudflare envelopes with `success=false`.
-- The live host connector reached Cloudflare: the local service registered four
-  tunnel connections and received the disposable route. That validator run
-  lost its product MCP transport before recording terminal publication state;
-  its two disposable resource pairs were subsequently finalized through the
-  real provider MCP and externally verified absent. The remaining operational
-  gap is stabilizing the shared dev reverse-tunnel identity so the validator
-  can record a complete active-publication terminal event.
+  records using their observed IDs. The provider now also rejects HTTP-200
+  Cloudflare envelopes with `success=false`; the Host Agent recovery regression
+  test proves a failed finalizer leaves the active generation and adapter
+  connected, and a retry drains and stops that generation only after success.
 - The validator now records secret, connection, binding, tunnel, and DNS
   creation state and performs best-effort finalization/revocation in `finally`
   while preserving the primary failure and sanitizing cleanup errors.
+- The validator's cumulative dogfood gate reports three consecutive green live
+  canaries but remains policy-blocked at `2/7` consecutive days; this is a
+  monitoring-window requirement, not a failed connector or cleanup result.
+- Ran a fresh active-generation lifecycle through the disposable Host Agent
+  MCP endpoint. The managed connector reached `active` with one Cloudflare
+  connection; Host Agent teardown completed generic stop/disable/file removal
+  followed by provider finalization. The generation then reported inactive and
+  disconnected, the service was inactive/disabled with no unit file, and exact
+  authoritative API checks returned no tunnel and zero DNS records.
+- Ran live finalization recovery with the same lifecycle. Removing provider
+  credentials caused finalization to fail after prepare while the generation
+  remained active and connected and both external resources remained. After
+  restoring credentials, resuming the same durable teardown completed and
+  removed the exact tunnel and DNS record. The provider phase is now carried in
+  the declared `inputs` object, and the prepare plan uses the Host Agent's
+  canonical tenant-scoped host-service URI.
 
-`go test ./...`, the standalone K3s and Cloudflare provider suites, catalog
-JSON validation, and `git diff --check` remain release checks after the live
-fixes.
-- `go test ./...`, `go -C plugins/tunneling/cloudflare test ./...`, and
-  `git diff --check` remain release checks after the live fixes.
+Release checks for this change are `go test ./...`, `go vet ./...`, the
+standalone K3s and Cloudflare provider suites, catalog JSON validation, the
+product typecheck, and `git diff --check`.

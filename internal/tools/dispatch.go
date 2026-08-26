@@ -286,7 +286,7 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			if _, present := args["setDefault"]; present {
 				setDefault = boolField(args, "setDefault")
 			}
-			out, err := svc.InstallOllamaModel(ctx, ops.InstallOllamaModelArgs{ModelRef: modelRef, Port: optionalIntField(args, "port"), SetDefault: setDefault})
+			out, err := svc.InstallOllamaModel(ctx, ops.InstallOllamaModelArgs{ModelRef: modelRef, Port: optionalIntField(args, "port"), Role: role, SetDefault: setDefault})
 			if err != nil {
 				return nil, err
 			}
@@ -425,27 +425,6 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, "PostgreSQL service relay was released"), nil
-
-	case "reconcile_tidb_service":
-		out, err := svc.ReconcileTiDBService(ctx, ops.TiDBServiceArgs{VMName: vmNameFromBinding(binding), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), PDReplicas: intField(args, "pdReplicas"), TiKVReplicas: intField(args, "tikvReplicas"), TiDBReplicas: intField(args, "tidbReplicas"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"), TiDBVersion: stringField(args, "tidbVersion"), RetentionPolicy: stringField(args, "retentionPolicy")}, onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "TiDB service is ready"), nil
-
-	case "get_tidb_service_status":
-		out, err := svc.GetTiDBServiceStatus(ctx, ops.TiDBServiceArgs{VMName: vmNameFromBinding(binding), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace")})
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "TiDB service status returned"), nil
-
-	case "remove_tidb_service":
-		out, err := svc.RemoveTiDBService(ctx, ops.TiDBServiceArgs{VMName: vmNameFromBinding(binding), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"), RetentionPolicy: stringField(args, "retentionPolicy")}, boolField(args, "confirm"))
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "TiDB service was removed"), nil
 
 	case "reset_incus_stack":
 		out, err := svc.ResetIncusStack(ctx, ops.ResetIncusStackArgs{
@@ -697,30 +676,6 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, fmt.Sprintf("Deleted VM '%s'.", out["vmName"])), nil
 
-	case "install_k3s":
-		parsed := installK3sArgs(args, binding)
-		out, err := svc.InstallK3s(ctx, parsed, onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "K3s installation completed."), nil
-
-	case "get_k3s_status":
-		vmName := vmNameFromBinding(binding)
-		out, err := svc.GetK3sStatus(vmName)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, ""), nil
-
-	case "uninstall_k3s":
-		parsed := uninstallK3sArgs(args, binding)
-		out, err := svc.UninstallK3s(parsed, onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "K3s uninstall completed."), nil
-
 	case "install_postgresql":
 		out, err := svc.InstallPostgreSQL(ops.InstallPostgreSQLArgs{
 			VMName:    vmNameFromBinding(binding),
@@ -752,42 +707,6 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 			return nil, err
 		}
 		return structuredResult(out, "SQL completed."), nil
-
-	case "configure_k3s_load_balancer":
-		out, err := svc.ConfigureK3sLoadBalancer(args, onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Configured K3s load balancer."), nil
-
-	case "configure_k3s_ha_servers":
-		out, err := svc.ConfigureK3sHaServers(args, onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Configured K3s HA servers."), nil
-
-	case "install_cluster_agent":
-		parsed := installClusterAgentArgs(args, binding)
-		out, err := svc.InstallClusterAgent(parsed, onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Cluster agent installed."), nil
-
-	case "restart_cluster":
-		out, err := svc.RestartCluster(vmNameFromBinding(binding), onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "K3s cluster restarted."), nil
-
-	case "restart_cluster_agent":
-		out, err := svc.RestartClusterAgent(vmNameFromBinding(binding), onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "Cluster agent restarted."), nil
 
 	case "install_helm_chart":
 		parsed := installHelmChartArgs(args, binding)
@@ -881,13 +800,6 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, "OCI registry deleted."), nil
 
-	case "configure_k3s_registry":
-		out, err := svc.ConfigureK3sRegistry(ops.ConfigureK3sRegistryArgs{VMName: vmNameFromBinding(binding), Endpoint: stringField(args, "endpoint"), Registry: stringField(args, "registry"), Insecure: boolField(args, "insecure")}, onData)
-		if err != nil {
-			return nil, err
-		}
-		return structuredResult(out, "K3s registry configuration applied."), nil
-
 	case "configure_service_domain":
 		out, err := svc.ConfigureServiceDomain(ops.ConfigureServiceDomainArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), IngressName: stringField(args, "ingressName"), Hostname: stringField(args, "hostname"), ServiceName: stringField(args, "serviceName"), ServicePort: intField(args, "servicePort"), IngressClass: stringField(args, "ingressClass")}, onData)
 		if err != nil {
@@ -910,14 +822,14 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		return structuredResult(out, fmt.Sprintf("Restarted service '%s'.", out["serviceName"])), nil
 
 	case "set_host_service_state":
-		out, err := svc.SetHostServiceState(ops.SetHostServiceStateArgs{ServiceName: stringField(args, "serviceName"), State: stringField(args, "state"), Scope: stringField(args, "scope")}, onData)
+		out, err := svc.SetHostServiceState(ops.SetHostServiceStateArgs{ServiceName: serviceNameFromBinding(args, binding), State: stringField(args, "state"), Scope: serviceScopeFromBinding(args, binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
 		return structuredResult(out, fmt.Sprintf("Applied service state '%s' to '%s'.", out["state"], out["serviceName"])), nil
 
 	case "inspect_host_service":
-		out, err := svc.InspectHostService(ops.InspectHostServiceArgs{ServiceName: stringField(args, "serviceName"), Scope: stringField(args, "scope")}, onData)
+		out, err := svc.InspectHostService(ops.InspectHostServiceArgs{ServiceName: serviceNameFromBinding(args, binding), Scope: serviceScopeFromBinding(args, binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -1262,6 +1174,20 @@ func resourceURIFromBinding(binding ExecutionBinding) string {
 	return ""
 }
 
+func serviceNameFromBinding(args map[string]any, binding ExecutionBinding) string {
+	if name := stringField(args, "serviceName"); name != "" {
+		return name
+	}
+	return binding.StringCoordinate("serviceName")
+}
+
+func serviceScopeFromBinding(args map[string]any, binding ExecutionBinding) string {
+	if scope := stringField(args, "scope"); scope != "" {
+		return scope
+	}
+	return binding.StringCoordinate("scope")
+}
+
 func withBindingURI(out map[string]any, binding ExecutionBinding, allowedTypes ...string) map[string]any {
 	if out == nil {
 		out = map[string]any{}
@@ -1323,7 +1249,22 @@ func resolveLocalLLMModelArg(args map[string]any) (string, error) {
 		return modelRef, nil
 	}
 	switch stringField(args, "modelPreset") {
-	case "", "qwen3.5":
+	case "":
+		if localLLMRuntime(args) == "llama-cpp" {
+			return "qwen3.5-0.8b/base-llama", nil
+		}
+		return ops.DefaultOllamaModel, nil
+	case "lfm2-2.6b":
+		if localLLMRuntime(args) == "llama-cpp" {
+			return "", fmt.Errorf("model preset %q requires the ollama runtime", stringField(args, "modelPreset"))
+		}
+		return ops.DefaultOllamaModel, nil
+	case "lfm2.5-thinking":
+		if localLLMRuntime(args) == "llama-cpp" {
+			return "", fmt.Errorf("model preset %q requires the ollama runtime", stringField(args, "modelPreset"))
+		}
+		return "lfm2.5-thinking:1.2b", nil
+	case "qwen3.5":
 		if localLLMRuntime(args) == "llama-cpp" {
 			return "qwen3.5-0.8b/base-llama", nil
 		}
@@ -1553,47 +1494,6 @@ func provisionArgs(args map[string]any) ops.ProvisionVMArgs {
 		Memory:       stringField(args, "memory"),
 		Disk:         stringField(args, "disk"),
 		InstanceType: stringField(args, "instanceType"),
-	}
-}
-
-func installK3sArgs(args map[string]any, binding ExecutionBinding) ops.InstallK3sArgs {
-	var installArgs []string
-	if raw, ok := args["installArgs"].([]any); ok {
-		for _, item := range raw {
-			if s, ok := item.(string); ok {
-				installArgs = append(installArgs, s)
-			}
-		}
-	}
-	return ops.InstallK3sArgs{
-		Target:      stringField(args, "target"),
-		VMName:      vmNameFromBinding(binding),
-		ClusterID:   stringField(args, "clusterId"),
-		InstallArgs: installArgs,
-	}
-}
-
-func uninstallK3sArgs(args map[string]any, binding ExecutionBinding) ops.UninstallK3sArgs {
-	return ops.UninstallK3sArgs{
-		Target:    stringField(args, "target"),
-		VMName:    vmNameFromBinding(binding),
-		ClusterID: stringField(args, "clusterId"),
-	}
-}
-
-func installClusterAgentArgs(args map[string]any, binding ExecutionBinding) ops.InstallClusterAgentArgs {
-	return ops.InstallClusterAgentArgs{
-		VMName:      vmNameFromBinding(binding),
-		ClusterID:   stringField(args, "clusterId"),
-		ClusterName: stringField(args, "clusterName"),
-		AgentID:     stringField(args, "agentId"),
-		BridgeToken: stringField(args, "bridgeToken"),
-		BridgeURL:   stringField(args, "bridgeUrl"),
-		BridgePort:  intField(args, "bridgePort"),
-		APIEndpoint: stringField(args, "apiEndpoint"),
-		ProviderID:  stringField(args, "providerId"),
-		ResourceID:  stringField(args, "resourceId"),
-		Source:      stringField(args, "source"),
 	}
 }
 

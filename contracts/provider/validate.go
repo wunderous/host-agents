@@ -80,10 +80,28 @@ func validateServices(services []ServiceDefinition) error {
 		if !identifierPattern.MatchString(strings.TrimSpace(service.ID)) || service.Version < 1 {
 			return fmt.Errorf("invalid provider service definition")
 		}
+		// A service declares exactly one neutral capability family. Without it
+		// the host cannot key the service, resolve an offering, or decide which
+		// family a dependency belongs to.
+		if !identifierPattern.MatchString(strings.TrimSpace(service.CapabilityID)) {
+			return fmt.Errorf("provider service %q must declare a neutral capabilityId", service.ID)
+		}
 		if seenServices[service.ID] {
 			return fmt.Errorf("duplicate provider service %q", service.ID)
 		}
 		seenServices[service.ID] = true
+		// Dependencies are a live injection graph, not documentation. Shape
+		// is validated here; satisfiability is decided at mount time against
+		// the services actually provided to the Cordis context, because a
+		// dependency may be owned by a different provider.
+		for _, dependency := range service.Dependencies {
+			if !identifierPattern.MatchString(strings.TrimSpace(dependency.ID)) || dependency.Version < 1 {
+				return fmt.Errorf("provider service %q declares an invalid dependency", service.ID)
+			}
+			if strings.TrimSpace(dependency.ID) == strings.TrimSpace(service.CapabilityID) {
+				return fmt.Errorf("provider service %q depends on itself", service.ID)
+			}
+		}
 		for _, operation := range service.Operations {
 			if err := validateOperation(operation, "provider service "+service.ID); err != nil {
 				return err
@@ -106,20 +124,83 @@ func validateOperation(operation Operation, owner string) error {
 	if !operationIdentifierPattern.MatchString(strings.TrimSpace(operation.ID)) || operation.Version < 1 || operation.InputSchema == nil || operation.OutputSchema == nil {
 		return fmt.Errorf("%s contains an invalid operation", owner)
 	}
+	if err := validateResultTypes(operation); err != nil {
+		return fmt.Errorf("%s result selectors: %w", owner, err)
+	}
 	switch operation.Effect {
 	case "read", "mutation", "destructive", "credential_bearing":
 	default:
 		return fmt.Errorf("provider operation %q has unsupported effect %q", operation.ID, operation.Effect)
 	}
-	for _, binding := range append(append([]ResourceBinding(nil), operation.Requires...), operation.Produces...) {
+	if operation.TaskSupport != "" && operation.TaskSupport != "sync_only" && operation.TaskSupport != "bridged" {
+		return fmt.Errorf("provider operation %q has unsupported taskSupport %q", operation.ID, operation.TaskSupport)
+	}
+	for _, binding := range operation.Requires {
 		if strings.TrimSpace(binding.ResourceType) == "" {
 			return fmt.Errorf("provider operation %q has a resource binding without resourceType", operation.ID)
 		}
 		if strings.TrimSpace(binding.Argument) == "" && strings.TrimSpace(binding.SourcePath) == "" {
 			return fmt.Errorf("provider operation %q has a resource binding without argument or sourcePath", operation.ID)
 		}
+		if binding.SelectorID != "" {
+			return fmt.Errorf("provider operation %q requires bindings cannot reference result selectors", operation.ID)
+		}
+	}
+	for _, binding := range operation.Produces {
+		if strings.TrimSpace(binding.ResourceType) == "" {
+			return fmt.Errorf("provider operation %q has a resource binding without resourceType", operation.ID)
+		}
+		if strings.TrimSpace(binding.SourcePath) == "" {
+			return fmt.Errorf("provider operation %q has a produced binding without sourcePath", operation.ID)
+		}
+		if binding.SelectorID != "" && (operation.OutputType == "" || !hasSelector(operation, binding.SelectorID)) {
+			return fmt.Errorf("provider operation %q references unknown selector %q", operation.ID, binding.SelectorID)
+		}
 	}
 	return nil
+}
+
+func validateResultTypes(operation Operation) error {
+	seenTypes := make(map[string]bool, len(operation.ResultTypes))
+	for _, resultType := range operation.ResultTypes {
+		if strings.TrimSpace(resultType.ID) == "" || resultType.Version < 1 || seenTypes[resultType.ID] {
+			return fmt.Errorf("result types require unique ids and positive versions")
+		}
+		seenTypes[resultType.ID] = true
+		seenSelectors := make(map[string]bool, len(resultType.Selectors))
+		for _, selector := range resultType.Selectors {
+			if strings.TrimSpace(selector.ID) == "" || strings.TrimSpace(selector.SourcePath) == "" || seenSelectors[selector.ID] {
+				return fmt.Errorf("result type %q contains an invalid selector", resultType.ID)
+			}
+			seenSelectors[selector.ID] = true
+			switch selector.NormalizedCardinality() {
+			case "one", "many":
+			default:
+				return fmt.Errorf("selector %q has unsupported cardinality %q", selector.ID, selector.Cardinality)
+			}
+		}
+	}
+	if operation.OutputType != "" && !seenTypes[operation.OutputType] {
+		return fmt.Errorf("output type %q is not declared", operation.OutputType)
+	}
+	if len(operation.ResultTypes) > 0 && operation.OutputType == "" {
+		return fmt.Errorf("result selectors require an output type")
+	}
+	return nil
+}
+
+func hasSelector(operation Operation, selectorID string) bool {
+	for _, resultType := range operation.ResultTypes {
+		if resultType.ID != operation.OutputType {
+			continue
+		}
+		for _, selector := range resultType.Selectors {
+			if selector.ID == selectorID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateCapabilityRefs(refs []CapabilityRef) error {

@@ -36,7 +36,6 @@ type ClusterDetail struct {
 	Memory                 string        `json:"memory,omitempty"`
 	Disk                   string        `json:"disk,omitempty"`
 	AgentReady             *bool         `json:"agentReady,omitempty"`
-	K3sInstalled           *bool         `json:"k3sInstalled,omitempty"`
 	Nodes                  []ClusterNode `json:"nodes"`
 	Logs                   []string      `json:"logs"`
 	NodeInventoryAvailable *bool         `json:"nodeInventoryAvailable,omitempty"`
@@ -100,7 +99,7 @@ func (s *HostOperationsService) buildClusterDetailFromVM(vm VMInfo, fast bool, r
 			})
 		}
 	}
-	if runtime || (!fast && vm.K3sInstalled != nil && *vm.K3sInstalled && strings.EqualFold(vm.Status, "running")) {
+	if runtime || (!fast && strings.EqualFold(vm.Status, "running")) {
 		enriched, err := s.enrichClusterDetailRuntimeByURI(detail.URI, detail)
 		if err != nil {
 			return detail, nil
@@ -112,37 +111,17 @@ func (s *HostOperationsService) buildClusterDetailFromVM(vm VMInfo, fast bool, r
 
 func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
 	ipv4 := normalizeClusterIpv4(vm.IPv4)
-	k3sInstalled := vm.K3sInstalled
 	status := "Unknown"
-	stoppedOrUnknown := "Stopped"
-	if !strings.EqualFold(vm.Status, "running") {
-		stoppedOrUnknown = "Unknown"
-	}
-
-	if k3sInstalled != nil && *k3sInstalled {
-		if strings.EqualFold(vm.Status, "running") {
-			status = "Ready"
-		} else {
-			status = "Stopped"
-		}
-	} else if k3sInstalled != nil && !*k3sInstalled {
-		if strings.EqualFold(vm.Status, "running") {
-			status = "NotInstalled"
-		} else {
-			status = stoppedOrUnknown
-		}
-	} else if !strings.EqualFold(vm.Status, "running") {
-		status = stoppedOrUnknown
+	if strings.EqualFold(vm.Status, "running") {
+		status = "Running"
+	} else if strings.EqualFold(vm.Status, "stopped") {
+		status = "Stopped"
 	}
 
 	// Runtime metrics are evidence, not optimistic placeholders. A stopped
 	// guest cannot report its k3s version or node inventory, and a failed live
 	// probe must remain visibly unavailable instead of looking authoritative.
 	version := ""
-	if k3sInstalled != nil && !*k3sInstalled {
-		version = "Not installed"
-	}
-
 	nodeCount := 0
 
 	detail := ClusterDetail{
@@ -150,10 +129,10 @@ func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
 		// Cluster ids are typed entity identifiers on the Platform boundary.
 		// Keep the provider namespace while using the shared identifier charset;
 		// the old colon form was rejected by the MCP output schema.
-		ID:            fmt.Sprintf("k3s-%s", vm.Name),
+		ID:            vm.Name,
 		Name:          vm.Name,
 		Status:        status,
-		Provider:      "k3s",
+		Provider:      "kubernetes",
 		InfraProvider: vm.ProviderID,
 		Version:       version,
 		NodeCount:     nodeCount,
@@ -169,16 +148,10 @@ func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
 		HostId:        strings.TrimSpace(vm.HostId),
 		InstanceType:  strings.TrimSpace(vm.Type),
 	}
-	if k3sInstalled != nil {
-		detail.K3sInstalled = k3sInstalled
-	}
 	return detail
 }
 
 func (s *HostOperationsService) enrichClusterDetailRuntimeByURI(targetURI string, detail ClusterDetail) (ClusterDetail, error) {
-	if detail.K3sInstalled != nil && !*detail.K3sInstalled {
-		return detail, nil
-	}
 	if strings.TrimSpace(targetURI) == "" {
 		return detail, fmt.Errorf("canonical cluster URI is required for runtime discovery")
 	}
@@ -217,7 +190,6 @@ func (s *HostOperationsService) enrichClusterDetailRuntimeByURI(targetURI string
 		Memory:                 detail.Memory,
 		Disk:                   detail.Disk,
 		AgentReady:             detail.AgentReady,
-		K3sInstalled:           detail.K3sInstalled,
 		Nodes:                  nodes,
 		Logs:                   detail.Logs,
 		NodeInventoryAvailable: boolPtr(available),
@@ -226,8 +198,8 @@ func (s *HostOperationsService) enrichClusterDetailRuntimeByURI(targetURI string
 }
 
 // parseClusterNodes only interprets provider-returned inventory. The provider
-// owns the Incus/K3s command; Host Agent keeps this neutral response shaping
-// here so callers receive the established cluster detail contract.
+// owns concrete control-plane commands; Host Agent keeps this response shaping
+// neutral so callers receive the established cluster detail contract.
 func parseClusterNodes(output, fallbackName string) []ClusterNode {
 	lines := strings.Split(output, "\n")
 	nodes := make([]ClusterNode, 0, len(lines))

@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/hostmcp"
 )
@@ -58,7 +60,7 @@ func NewHTTPServer(opts HTTPOptions) *HTTPServer {
 	}
 	h.mcpHandler = mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return opts.HostServer.MCP()
-	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true})
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.handleHealth)
 	mux.HandleFunc("/mcp", h.handleMCP)
@@ -140,9 +142,6 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSONRPCResult(w, envelope.ID, result)
 		return
-	}
-	if envelope.Method == "tools/call" {
-		body = normalizeToolCallTaskAugmentation(body)
 	}
 	r.Body = io.NopCloser(strings.NewReader(string(body)))
 	if envelope.Method == "tools/call" {
@@ -237,60 +236,26 @@ func validateModernExtensionRequest(r *http.Request, method string, raw json.Raw
 	if strings.HasPrefix(method, "tasks/") {
 		var capabilities map[string]json.RawMessage
 		if err := json.Unmarshal(meta["io.modelcontextprotocol/clientCapabilities"], &capabilities); err != nil {
-			return &protocolRequestError{code: -32021, message: "MCP Tasks extension capability is required"}
+			return &protocolRequestError{code: -32003, message: "Missing required client capability", data: map[string]any{"requiredCapabilities": map[string]any{"extensions": map[string]any{"io.modelcontextprotocol/tasks": map[string]any{}}}}}
 		}
 		var extensions map[string]json.RawMessage
 		if err := json.Unmarshal(capabilities["extensions"], &extensions); err != nil {
-			return &protocolRequestError{code: -32021, message: "MCP Tasks extension capability is required"}
+			return &protocolRequestError{code: -32003, message: "Missing required client capability", data: map[string]any{"requiredCapabilities": map[string]any{"extensions": map[string]any{"io.modelcontextprotocol/tasks": map[string]any{}}}}}
 		}
 		if _, ok := extensions["io.modelcontextprotocol/tasks"]; !ok {
-			return &protocolRequestError{code: -32021, message: "MCP Tasks extension capability is required"}
+			return &protocolRequestError{code: -32003, message: "Missing required client capability", data: map[string]any{"requiredCapabilities": map[string]any{"extensions": map[string]any{"io.modelcontextprotocol/tasks": map[string]any{}}}}}
+		}
+		if method == "tasks/get" || method == "tasks/update" || method == "tasks/cancel" {
+			var taskID string
+			if taskRaw, ok := params["taskId"]; !ok || json.Unmarshal(taskRaw, &taskID) != nil || strings.TrimSpace(taskID) == "" {
+				return &protocolRequestError{code: -32602, message: method + " requires params.taskId"}
+			}
+			if name := strings.TrimSpace(r.Header.Get("Mcp-Name")); name == "" || name != taskID {
+				return &protocolRequestError{code: -32020, message: "Mcp-Name header must match params.taskId"}
+			}
 		}
 	}
 	return nil
-}
-
-// normalizeToolCallTaskAugmentation maps normative params.task to _meta.task for go-sdk handlers.
-func normalizeToolCallTaskAugmentation(body []byte) []byte {
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return body
-	}
-	paramsRaw, ok := envelope["params"]
-	if !ok {
-		return body
-	}
-	var params map[string]json.RawMessage
-	if err := json.Unmarshal(paramsRaw, &params); err != nil {
-		return body
-	}
-	taskRaw, hasTask := params["task"]
-	if !hasTask {
-		return body
-	}
-	meta := map[string]json.RawMessage{}
-	if existing, ok := params["_meta"]; ok {
-		_ = json.Unmarshal(existing, &meta)
-	}
-	if _, ok := meta["task"]; !ok {
-		meta["task"] = taskRaw
-	}
-	metaBytes, err := json.Marshal(meta)
-	if err != nil {
-		return body
-	}
-	params["_meta"] = metaBytes
-	delete(params, "task")
-	newParams, err := json.Marshal(params)
-	if err != nil {
-		return body
-	}
-	envelope["params"] = newParams
-	out, err := json.Marshal(envelope)
-	if err != nil {
-		return body
-	}
-	return out
 }
 
 func (h *HTTPServer) authorize(r *http.Request) bool {
@@ -322,13 +287,34 @@ func writeJSONRPCResult(w http.ResponseWriter, id any, result any) {
 func writeJSONRPCError(w http.ResponseWriter, id any, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	code := -32603
+	message := err.Error()
+	var data any
+	var protocolErr *protocolRequestError
+	if errors.As(err, &protocolErr) {
+		code = protocolErr.code
+		message = protocolErr.message
+		data = protocolErr.data
+	}
+	var rpcErr *jsonrpc.Error
+	if errors.As(err, &rpcErr) {
+		code = int(rpcErr.Code)
+		message = rpcErr.Message
+		if len(rpcErr.Data) > 0 {
+			_ = json.Unmarshal(rpcErr.Data, &data)
+		}
+	}
+	errorBody := map[string]any{
+		"code":    code,
+		"message": message,
+	}
+	if data != nil {
+		errorBody["data"] = data
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      id,
-		"error": map[string]any{
-			"code":    -32603,
-			"message": err.Error(),
-		},
+		"error":   errorBody,
 	})
 }
 

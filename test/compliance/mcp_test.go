@@ -71,6 +71,10 @@ func TestMCPInputRequiredTaskRoundTripOverHTTP(t *testing.T) {
 			if err := mcphttp.ApplyToolsCallRequestHeaders(req, "request_task_input"); err != nil {
 				t.Fatal(err)
 			}
+		} else if method == "tasks/get" || method == "tasks/update" {
+			if taskID, ok := params["taskId"].(string); ok {
+				req.Header.Set("Mcp-Name", taskID)
+			}
 		}
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -93,7 +97,6 @@ func TestMCPInputRequiredTaskRoundTripOverHTTP(t *testing.T) {
 	callParams := map[string]any{
 		"name":      "request_task_input",
 		"arguments": map[string]any{"prompt": "Continue?", "responseType": "boolean"},
-		"task":      map[string]any{"ttl": 60_000},
 		"_meta":     meta,
 	}
 	created := call(1, "tools/call", callParams)
@@ -221,18 +224,10 @@ func TestMCPAuthProtectsMCPButNotHealth(t *testing.T) {
 	}
 }
 
-func TestMCPTasksList(t *testing.T) {
+func TestMCPTasksListIsNotSupported(t *testing.T) {
 	hs := newTestServer(t)
-	result, err := hs.HandleExtensionMethod("tasks/list", nil)
-	if err != nil {
-		t.Fatalf("tasks/list: %v", err)
-	}
-	m, ok := result.(map[string]any)
-	if !ok {
-		t.Fatalf("unexpected result type %T", result)
-	}
-	if _, ok := m["tasks"]; !ok {
-		t.Fatalf("missing tasks key: %+v", m)
+	if _, err := hs.HandleExtensionMethod("tasks/list", nil); err == nil {
+		t.Fatal("tasks/list must not enumerate tasks in the Tasks extension")
 	}
 }
 

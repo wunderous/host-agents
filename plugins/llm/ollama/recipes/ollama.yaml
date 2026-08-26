@@ -1,6 +1,6 @@
 contractVersion: runtime-recipe.v1
 recipeId: com.opute.ollama.managed-linux
-recipeVersion: 1.2.2
+recipeVersion: 1.2.5
 runtime:
   id: provider-llm
   servingContract: openai-chat.v1
@@ -45,13 +45,13 @@ inputs:
     default: http://127.0.0.1:11434
     schema: {type: string, format: uri}
   model:
-    default: qwen3.5:2b
+    default: hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M
     schema: {type: string, pattern: '^[A-Za-z0-9._:/-]+$'}
   contextSize:
     default: 32768
-    schema: {type: integer, minimum: 512, maximum: 1048576}
+    schema: {type: integer, minimum: 512, maximum: 32768}
   recipeRevision:
-    default: 1.2.2
+    default: 1.2.5
     schema: {type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'}
 plan:
   contractVersion: host-plan.v1

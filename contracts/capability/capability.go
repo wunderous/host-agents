@@ -8,6 +8,11 @@ const (
 	Kubernetes = "opute.capability.kubernetes.v1"
 
 	KubernetesValidateOperation          = "opute.capability.kubernetes.validate"
+	KubernetesProvisionOperation         = "opute.capability.kubernetes.provision"
+	KubernetesStatusOperation            = "opute.capability.kubernetes.status"
+	KubernetesConfigureRegistryOperation = "opute.capability.kubernetes.configure-registry"
+	KubernetesRemoveOperation            = "opute.capability.kubernetes.remove"
+	KubernetesRestartOperation           = "opute.capability.kubernetes.restart"
 	KubernetesApplyManifestOperation     = "opute.capability.kubernetes.apply-manifest"
 	KubernetesPutSecretOperation         = "opute.capability.kubernetes.put-secret"
 	KubernetesGetResourceOperation       = "opute.capability.kubernetes.get-resource"

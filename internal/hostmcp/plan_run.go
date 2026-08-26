@@ -126,10 +126,7 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
-	redactedPlan := redactPlanDocument(encoded)
-	if recipeMetadata != nil {
-		redactedPlan = redactPlanDocumentForRecipe(encoded, recipeMetadata)
-	}
+	redactedPlan := s.redactPlanDocument(encoded, recipeMetadata, snapshot)
 	resume, _ := args["resume"].(bool)
 
 	record, found, err := s.state.FindPlan(doc.PlanID, doc.Generation, doc.IdempotencyKey)
@@ -176,8 +173,8 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 			CatalogRevision: snapshot.Revision,
 			Status:          "working",
 			PlanJSON:        redactedPlan,
-			RecipeJSON:      redactedMetadata(recipeMetadata),
-			StateJSON:       marshalPlanState(initialPlanState("", doc)),
+			RecipeJSON:      s.redactedMetadata(recipeMetadata),
+			StateJSON:       s.marshalPlanState(initialPlanState("", doc), &doc),
 		}
 		var created bool
 		record, created, err = s.state.CreatePlan(record)
@@ -222,14 +219,14 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 	stateValue.PlanID = doc.PlanID
 	stateValue.Generation = doc.Generation
 	stateValue.Status = "running"
-	if err := s.state.UpdatePlan(record.RunID, "running", marshalPlanState(stateValue), ""); err != nil {
+	if err := s.state.UpdatePlan(record.RunID, "running", s.marshalPlanState(stateValue, &doc), ""); err != nil {
 		return tools.ErrorResult(fmt.Errorf("start plan run: %w", err)), nil
 	}
 
 	taskCtx, cancel := context.WithCancel(context.Background())
-	taskArgs := map[string]any{"plan": redactTaskValue(args["plan"]), "resume": resume}
+	taskArgs := map[string]any{"plan": s.redactedPlanTaskValue(encoded, recipeMetadata, snapshot), "resume": resume}
 	if recipeMetadata != nil {
-		taskArgs["recipe"] = redactTaskValue(recipeMetadata)
+		taskArgs["recipe"] = s.redactedMetadata(recipeMetadata)
 	}
 	rec := s.tasks.CreateWithID(record.RunID, taskName, taskArgs, time.Hour, taskDescription, map[string]any{
 		"planId":          doc.PlanID,
@@ -243,7 +240,7 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 		s.tasks.Cancel(rec.TaskID)
 		stateValue.Status = "unknown"
 		stateValue.Error = "host plan server is closing"
-		_ = s.state.UpdatePlan(record.RunID, "unknown", marshalPlanState(stateValue), stateValue.Error)
+		_ = s.state.UpdatePlan(record.RunID, "unknown", s.marshalPlanState(stateValue, &doc), stateValue.Error)
 		return tools.ErrorResult(fmt.Errorf("host plan server is closing")), nil
 	}
 	s.planCancels[record.RunID] = cancel
@@ -276,7 +273,7 @@ func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc,
 		Capabilities:    planCapabilitiesFromSnapshot(snapshot),
 		CatalogRevision: snapshot.Revision,
 		Sink: func(value plan.RunState) error {
-			return s.state.UpdatePlan(runID, value.Status, marshalPlanState(value), value.Error)
+			return s.state.UpdatePlan(runID, value.Status, s.marshalPlanState(value, &doc), value.Error)
 		},
 	}
 	final, runErr := runner.Run(ctx, doc, stateValue)
@@ -344,15 +341,15 @@ func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc,
 		}
 	}
 	if runErr == nil && status == "completed" && activeRuntime.Capability != "" {
-		if err := s.state.CompletePlanWithActiveCapability(runID, marshalPlanState(final), activeRuntime); err != nil {
+		if err := s.state.CompletePlanWithActiveCapability(runID, s.marshalPlanState(final, &doc), activeRuntime); err != nil {
 			status = "failed"
 			final.Status = status
 			final.Error = fmt.Sprintf("commit active runtime: %v", err)
-			_ = s.state.UpdatePlan(runID, status, marshalPlanState(final), final.Error)
+			_ = s.state.UpdatePlan(runID, status, s.marshalPlanState(final, &doc), final.Error)
 			runErr = err
 		}
 	} else {
-		_ = s.state.UpdatePlan(runID, status, marshalPlanState(final), final.Error)
+		_ = s.state.UpdatePlan(runID, status, s.marshalPlanState(final, &doc), final.Error)
 	}
 	if cancelled {
 		return
@@ -361,7 +358,7 @@ func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc,
 		s.tasks.Fail(runID, runErr.Error())
 		return
 	}
-	s.tasks.Complete(runID, tasks.ToolResult{StructuredContent: planRunStateResult(final)})
+	s.tasks.Complete(runID, tasks.ToolResult{StructuredContent: s.planRunStateResult(final, &doc)})
 }
 
 func (s *Server) handleGetHostPlanRun(args map[string]any) (*mcp.CallToolResult, error) {
@@ -451,7 +448,7 @@ func (s *Server) planRunResult(record state.PlanRecord) *mcp.CallToolResult {
 	return structuredResult(result, "")
 }
 
-func redactedMetadata(value map[string]any) string {
+func (s *Server) redactedMetadata(value map[string]any) string {
 	if value == nil {
 		return ""
 	}
@@ -464,11 +461,33 @@ func redactedMetadata(value map[string]any) string {
 		return `{"redacted":true}`
 	}
 	redactRecipeMetadataSecrets(generic)
+	s.redactProviderTeardownMetadata(generic)
 	redacted, err := json.Marshal(redactTaskValue(generic))
 	if err != nil {
 		return `{"redacted":true}`
 	}
 	return string(redacted)
+}
+
+func (s *Server) redactProviderTeardownMetadata(value any) {
+	metadata, ok := value.(map[string]any)
+	if !ok {
+		return
+	}
+	providerID, _ := metadata["providerId"].(string)
+	inputs, _ := metadata["providerTeardownInputs"].(map[string]any)
+	if providerID == "" || inputs == nil {
+		return
+	}
+	s.providerMu.RLock()
+	manifest, found := s.providerManifests[providerID]
+	s.providerMu.RUnlock()
+	if !found || manifest.Teardown == nil {
+		metadata["providerTeardownInputs"] = map[string]any{"redacted": true}
+		return
+	}
+	properties := schemaMap(manifest.Teardown.InputSchema, "properties")
+	metadata["providerTeardownInputs"] = redactEvidenceBySchema(inputs, properties["inputs"])
 }
 
 func applyRecipeOutputMapping(stateValue *plan.RunState, metadata map[string]any) {
@@ -544,77 +563,77 @@ func redactRecipeMetadataSecrets(value any) {
 	if !ok {
 		return
 	}
-	secretNames, _ := metadata["secretInputs"].([]any)
+	secretNames := recipeSecretNameSet(metadata)
 	expandedPlan, _ := metadata["expandedPlan"].(map[string]any)
 	variables, _ := expandedPlan["variables"].(map[string]any)
 	inputs, _ := variables["inputs"].(map[string]any)
-	for _, rawName := range secretNames {
-		name, ok := rawName.(string)
-		if ok && inputs != nil {
-			inputs[name] = "[redacted]"
-		}
-	}
-}
-
-func redactPlanDocumentForRecipe(encoded []byte, metadata map[string]any) string {
-	var document map[string]any
-	if json.Unmarshal(encoded, &document) != nil {
-		return `{"redacted":true}`
-	}
-	variables, _ := document["variables"].(map[string]any)
-	inputs, _ := variables["inputs"].(map[string]any)
-	secretNames, _ := metadata["secretInputs"].([]string)
-	if len(secretNames) == 0 {
-		if generic, ok := metadata["secretInputs"].([]any); ok {
-			for _, value := range generic {
-				if name, ok := value.(string); ok {
-					secretNames = append(secretNames, name)
-				}
-			}
-		}
-	}
-	for _, name := range secretNames {
+	for name := range secretNames {
 		if inputs != nil {
 			inputs[name] = "[redacted]"
 		}
 	}
-	redacted, err := json.Marshal(redactTaskValue(document))
+	activation, _ := metadata["activation"].(map[string]any)
+	bindings, _ := activation["inputBindings"].(map[string]any)
+	inputNames, _ := metadata["activationInputNames"].(map[string]any)
+	for binding, inputName := range inputNames {
+		if name, ok := inputName.(string); ok {
+			if _, secret := secretNames[name]; secret && bindings != nil {
+				bindings[binding] = "[redacted]"
+			}
+		}
+	}
+}
+
+func (s *Server) redactPlanDocument(encoded []byte, metadata map[string]any, snapshot tools.CapabilityCatalogSnapshot) string {
+	var document map[string]any
+	if json.Unmarshal(encoded, &document) != nil {
+		return `{"redacted":true}`
+	}
+	redacted, err := json.Marshal(s.redactPlanEvidence(document, recipeSecretNameSet(metadata), planCapabilitiesFromSnapshot(snapshot)))
 	if err != nil {
 		return `{"redacted":true}`
 	}
 	return string(redacted)
 }
 
-func planRunStateResult(value plan.RunState) map[string]any {
-	return map[string]any{
-		"runId":      value.RunID,
-		"planId":     value.PlanID,
-		"generation": value.Generation,
-		"status":     value.Status,
-		"nodes":      value.Nodes,
-		"outputs":    redactTaskValue(value.Outputs),
-		"error":      value.Error,
+func (s *Server) redactedPlanTaskValue(encoded []byte, metadata map[string]any, snapshot tools.CapabilityCatalogSnapshot) any {
+	var document map[string]any
+	if json.Unmarshal(encoded, &document) != nil {
+		return map[string]any{"redacted": true}
 	}
+	return s.redactPlanEvidence(document, recipeSecretNameSet(metadata), planCapabilitiesFromSnapshot(snapshot))
 }
 
-func marshalPlanState(value plan.RunState) string {
-	encoded, err := json.Marshal(planRunStateResult(value))
+func (s *Server) planRunStateResult(value plan.RunState, doc *plan.Document) map[string]any {
+	return s.redactPlanRunState(value, doc)
+}
+
+func (s *Server) marshalPlanState(value plan.RunState, doc *plan.Document) string {
+	encoded, err := json.Marshal(s.planRunStateResult(value, doc))
 	if err != nil {
 		return `{"status":"unknown","error":"failed to encode plan state"}`
 	}
 	return string(encoded)
 }
 
-func redactPlanDocument(encoded []byte) string {
-	var value any
-	if json.Unmarshal(encoded, &value) != nil {
-		return `{"redacted":true}`
+func recipeSecretNameSet(metadata map[string]any) map[string]struct{} {
+	result := map[string]struct{}{}
+	if metadata == nil {
+		return result
 	}
-	redacted, err := json.Marshal(redactTaskValue(value))
-	if err != nil {
-		return `{"redacted":true}`
+	switch values := metadata["secretInputs"].(type) {
+	case []string:
+		for _, name := range values {
+			result[name] = struct{}{}
+		}
+	case []any:
+		for _, value := range values {
+			if name, ok := value.(string); ok {
+				result[name] = struct{}{}
+			}
+		}
 	}
-	return string(redacted)
+	return result
 }
 
 // cancelHostPlan handles both the durable plan record and the live task. The

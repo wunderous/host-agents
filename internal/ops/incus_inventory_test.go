@@ -40,7 +40,7 @@ func TestBuildVMInfoFromIncusListItemMapsResources(t *testing.T) {
 	}
 
 	ready := true
-	info := buildVMInfoFromIncusListItem(item, &ready, nil)
+	info := buildVMInfoFromIncusListItem(item, &ready)
 	if info.Name != "opute-k3s-dogfood" {
 		t.Fatalf("name = %q", info.Name)
 	}
@@ -82,7 +82,7 @@ func TestBuildVMInfoFromIncusListItemOmitsAgentReadyOnFastPath(t *testing.T) {
 		Status: "Running",
 		Type:   "virtual-machine",
 	}
-	info := buildVMInfoFromIncusListItem(item, nil, nil)
+	info := buildVMInfoFromIncusListItem(item, nil)
 	if info.AgentReady != nil {
 		t.Fatalf("agentReady = %v want omitted", info.AgentReady)
 	}
@@ -92,16 +92,6 @@ func TestNormalizeClusterIpv4PrefersRoutableAddress(t *testing.T) {
 	got := normalizeClusterIpv4([]string{"10.42.0.10", "10.123.133.201"})
 	if len(got) != 2 || got[0] != "10.123.133.201" {
 		t.Fatalf("ipv4 order = %#v", got)
-	}
-}
-
-func TestResolveK3sInstalledFromLabel(t *testing.T) {
-	item := incusListItem{
-		Config: map[string]string{oputeK3sInstalledLabel: "true"},
-	}
-	got := resolveK3sInstalledFromLabel(item)
-	if got == nil || !*got {
-		t.Fatalf("k3sInstalled = %#v want true", got)
 	}
 }
 
@@ -123,7 +113,7 @@ func TestBuildVMInfoFromIncusListItemUsesExpandedConfigAndDevices(t *testing.T) 
 		},
 	}
 
-	info := buildVMInfoFromIncusListItem(item, nil, nil)
+	info := buildVMInfoFromIncusListItem(item, nil)
 	if info.CPUs == nil || *info.CPUs != 2 {
 		t.Fatalf("cpus = %v want 2", info.CPUs)
 	}
@@ -151,7 +141,7 @@ func TestBuildVMInfoFromIncusListItemFallsBackToStateUsage(t *testing.T) {
 		},
 	}
 
-	info := buildVMInfoFromIncusListItem(item, nil, nil)
+	info := buildVMInfoFromIncusListItem(item, nil)
 	if info.CPUs != nil {
 		t.Fatalf("cpus = %v want nil", info.CPUs)
 	}

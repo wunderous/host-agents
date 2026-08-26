@@ -58,8 +58,6 @@ func (s *Server) handleProviderInstall(args map[string]any) (*mcp.CallToolResult
 	s.providerMu.Lock()
 	previousAdapter := s.providerAdapters[manifest.Provider.ID]
 	previousValidation := s.providerValidation[manifest.Provider.ID]
-	s.providerAdapters[manifest.Provider.ID] = adapter
-	s.providerValidation[manifest.Provider.ID] = manifest.Validation.Operation
 	s.providerCandidates[candidate.ID] = adapter
 	s.providerCandidateManifests[candidate.ID] = manifest
 	if previousAdapter != nil {
@@ -109,8 +107,13 @@ func (s *Server) handleProviderInstall(args map[string]any) (*mcp.CallToolResult
 
 func (s *Server) handleProviderValidate(args map[string]any) (*mcp.CallToolResult, error) {
 	providerID := recipeStringField(args, "provider")
+	session, err := s.providerLifecycle.OpenSession(providerID)
+	if err != nil {
+		return tools.ErrorResult(err), nil
+	}
+	defer session.Close()
 	s.providerMu.RLock()
-	adapter := s.providerAdapters[providerID]
+	adapter := s.providerGenerationAdapters[session.GenerationID()]
 	validationOperation := s.providerValidation[providerID]
 	s.providerMu.RUnlock()
 	if adapter == nil {
@@ -123,7 +126,7 @@ func (s *Server) handleProviderValidate(args map[string]any) (*mcp.CallToolResul
 	if operation == "" {
 		return tools.ErrorResult(fmt.Errorf("provider %q does not declare a validation operation", providerID)), nil
 	}
-	result, err := adapter.Call(context.Background(), operation, args)
+	result, err := adapter.CallSynchronousOnly(context.Background(), operation, args)
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
@@ -143,17 +146,10 @@ func (s *Server) handleProviderStatus(args map[string]any) (*mcp.CallToolResult,
 	return structuredResult(result, ""), nil
 }
 
-func (s *Server) cleanupProviderCandidate(generationID, providerID string) {
+func (s *Server) cleanupProviderCandidate(generationID, _ string) {
 	_ = s.providerLifecycle.Fail(generationID, "provider setup failed")
 	s.providerMu.Lock()
 	adapter := s.providerCandidates[generationID]
-	if previous := s.providerPreviousAdapters[generationID]; previous != nil {
-		s.providerAdapters[providerID] = previous
-		s.providerValidation[providerID] = s.providerPreviousValidation[generationID]
-	} else {
-		delete(s.providerAdapters, providerID)
-		delete(s.providerValidation, providerID)
-	}
 	delete(s.providerCandidates, generationID)
 	delete(s.providerCandidateManifests, generationID)
 	delete(s.providerPreviousAdapters, generationID)
@@ -359,6 +355,7 @@ func (s *Server) restoreProviderGenerations() error {
 		}
 		s.providerMu.Lock()
 		s.providerAdapters[record.ProviderID] = adapter
+		s.providerGenerationAdapters[record.GenerationID] = adapter
 		s.providerValidation[record.ProviderID] = manifest.Validation.Operation
 		s.providerManifests[record.ProviderID] = manifest
 		s.providerMu.Unlock()
@@ -366,6 +363,7 @@ func (s *Server) restoreProviderGenerations() error {
 			_ = adapter.Close()
 			s.providerMu.Lock()
 			delete(s.providerAdapters, record.ProviderID)
+			delete(s.providerGenerationAdapters, record.GenerationID)
 			delete(s.providerValidation, record.ProviderID)
 			delete(s.providerManifests, record.ProviderID)
 			s.providerMu.Unlock()

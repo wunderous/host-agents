@@ -12,8 +12,6 @@ import (
 	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
-const oputeK3sInstalledLabel = "user.opute.k3s_installed"
-
 type incusListItem struct {
 	Name            string                    `json:"name"`
 	Status          string                    `json:"status"`
@@ -218,15 +216,7 @@ func (s *HostOperationsService) mapIncusListItem(item incusListItem, fast bool) 
 		ready := s.probeIncusAgent(item.Name)
 		agentReady = &ready
 	}
-	k3sInstalled := resolveK3sInstalledFromLabel(item)
-	if k3sInstalled == nil && status == "running" && !fast && agentReady != nil && *agentReady {
-		installed := s.probeK3sInstalled(item.Name)
-		k3sInstalled = &installed
-		if installed {
-			_ = s.setIncusInstanceConfig(item.Name, oputeK3sInstalledLabel, "true")
-		}
-	}
-	info := buildVMInfoFromIncusListItem(item, agentReady, k3sInstalled)
+	info := buildVMInfoFromIncusListItem(item, agentReady)
 	info.HostId = strings.TrimSpace(s.agentID)
 	resourceType := resourceid.TypeContainer
 	if strings.EqualFold(mapIncusInstanceType(item.Type), "vm") {
@@ -263,36 +253,22 @@ func (s *HostOperationsService) mapIncusListItem(item incusListItem, fast bool) 
 	return info, nil
 }
 
-func resolveK3sInstalledFromLabel(item incusListItem) *bool {
-	switch pickIncusConfigValue(item, oputeK3sInstalledLabel) {
-	case "true":
-		installed := true
-		return &installed
-	case "false":
-		notInstalled := false
-		return &notInstalled
-	default:
-		return nil
-	}
-}
-
-func buildVMInfoFromIncusListItem(item incusListItem, agentReady *bool, k3sInstalled *bool) VMInfo {
+func buildVMInfoFromIncusListItem(item incusListItem, agentReady *bool) VMInfo {
 	cpus := extractIncusCPUCount(item)
 	memory := extractIncusMemory(item)
 	disk := extractIncusDisk(item)
 	info := VMInfo{
-		Kind:         resourceid.TypeVM,
-		Name:         item.Name,
-		Type:         mapIncusInstanceType(item.Type),
-		Status:       mapIncusStatus(item.Status),
-		State:        map[string]any{"incusStatus": item.Status},
-		IPv4:         normalizeClusterIpv4(extractIPv4FromState(item.State)),
-		Release:      extractIncusRelease(item),
-		ProviderID:   "incus",
-		Memory:       memory,
-		Disk:         disk,
-		AgentReady:   agentReady,
-		K3sInstalled: k3sInstalled,
+		Kind:       resourceid.TypeVM,
+		Name:       item.Name,
+		Type:       mapIncusInstanceType(item.Type),
+		Status:     mapIncusStatus(item.Status),
+		State:      map[string]any{"incusStatus": item.Status},
+		IPv4:       normalizeClusterIpv4(extractIPv4FromState(item.State)),
+		Release:    extractIncusRelease(item),
+		ProviderID: "incus",
+		Memory:     memory,
+		Disk:       disk,
+		AgentReady: agentReady,
 	}
 	if !strings.EqualFold(info.Type, "vm") {
 		info.Kind = resourceid.TypeContainer
@@ -664,12 +640,6 @@ func (s *HostOperationsService) waitForIncusAgent(vmName string, timeout time.Du
 func (s *HostOperationsService) probeIncusAgent(vmName string) bool {
 	res, err := s.commandRunner([]string{"exec", vmName, "--", "true"}, nil, 15*time.Second)
 	return err == nil && res.ExitCode == 0
-}
-
-func (s *HostOperationsService) probeK3sInstalled(vmName string) bool {
-	script := "test -x /usr/local/bin/k3s && systemctl is-active k3s >/dev/null 2>&1 && printf installed"
-	res, err := s.commandRunner([]string{"exec", vmName, "--", "/bin/sh", "-lc", script}, nil, 15*time.Second)
-	return err == nil && res.ExitCode == 0 && strings.TrimSpace(res.Stdout) == "installed"
 }
 
 func (s *HostOperationsService) setIncusInstanceConfig(vmName, key, value string) error {

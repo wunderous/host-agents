@@ -15,7 +15,7 @@ func TestRunServerLoadsModeFromEnvFileBeforeApplyingDefaults(t *testing.T) {
 	t.Setenv("OPUTE_HOST_AGENT_ENV_FILE", "")
 	t.Setenv("OPUTE_INFRA_PROVIDER_ID", "")
 	envPath := filepath.Join(t.TempDir(), "agent.env")
-	if err := os.WriteFile(envPath, []byte("OPUTE_AGENT_MODE=platform\nOPUTE_INFRA_PROVIDER_ID=incus\n"), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte("OPUTE_AGENT_MODE=platform\nOPUTE_INFRA_PROVIDER_ID=incus\nOPUTE_REMOTE_AGENT_ID=test-host-agent\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -32,6 +32,7 @@ func TestRunServerLoadsModeFromEnvFileBeforeApplyingDefaults(t *testing.T) {
 func TestRunServerRejectsUnsupportedTransportFromEnvOverride(t *testing.T) {
 	t.Setenv("OPUTE_AGENT_MODE", "")
 	t.Setenv("OPUTE_TRANSPORT", "")
+	t.Setenv("OPUTE_REMOTE_AGENT_ID", "test-host-agent")
 
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), []string{"serve", "--check", "--env", "OPUTE_TRANSPORT=stdio"}, &stdout, &stderr)

@@ -211,8 +211,19 @@ func TestIncusCatalogPublishesVMInventoryContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := BuildCapabilityCatalog("incus", definitions)
+	for _, descriptor := range snapshot.Tools {
+		if descriptor.OperationID != "list_vms" {
+			continue
+		}
+		if descriptor.OutputType != "vm.uri" || len(descriptor.ResultTypes) != 1 || len(descriptor.ResultTypes[0].Selectors) != 1 || descriptor.ResultTypes[0].Selectors[0].ID != "uri" {
+			t.Fatalf("list_vms result selector contract = %#v", descriptor)
+		}
+	}
 	for _, edge := range snapshot.Edges {
 		if edge.SourceTool == "list_vms" && edge.TargetTool == "get_vm_info" && edge.TargetArgument == "uri" && edge.SourcePath == "vms[].uri" {
+			if edge.SelectorID != "uri" {
+				t.Fatalf("VM inventory continuation selector = %#v", edge)
+			}
 			return
 		}
 	}
@@ -225,8 +236,7 @@ func TestCanonicalBuiltInTargetsDeclareExecutionBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	wanted := map[string]string{
-		"start_vm": "vm", "install_k3s": "vm", "list_namespaces": "cluster",
-		"list_pods": "cluster", "configure_k3s_registry": "cluster",
+		"start_vm": "vm", "list_namespaces": "cluster", "list_pods": "cluster",
 	}
 	seen := map[string]bool{}
 	for _, definition := range definitions {
@@ -245,6 +255,15 @@ func TestCanonicalBuiltInTargetsDeclareExecutionBindings(t *testing.T) {
 			t.Fatalf("expected built-in definition %q was not loaded", name)
 		}
 	}
+}
+
+func mustLoadDefinitions(t *testing.T, providerID string) []ToolDefinition {
+	t.Helper()
+	defs, err := HostToolDefinitionsForProvider(providerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return defs
 }
 
 func hasRequiredBinding(bindings []ResourceBinding, resourceType string) bool {

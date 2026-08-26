@@ -57,6 +57,7 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 		env = append(env, assignment)
 	}
 	env = append(env,
+		"OPUTE_REMOTE_AGENT_ID=test-host-agent",
 		"OPUTE_AGENT_MODE=standalone",
 		"OPUTE_INFRA_PROVIDER_ID=incus",
 		"OPUTE_STANDALONE_STATE_DIR="+t.TempDir(),
@@ -196,6 +197,10 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 			if err := mcphttp.ApplyToolsCallRequestHeaders(req, "request_task_input"); err != nil {
 				t.Fatal(err)
 			}
+		} else if method == "tasks/get" || method == "tasks/update" {
+			if taskID, ok := params["taskId"].(string); ok {
+				req.Header.Set("Mcp-Name", taskID)
+			}
 		}
 		response, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -218,7 +223,6 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 	created := callRaw(11, "tools/call", map[string]any{
 		"name":      "request_task_input",
 		"arguments": map[string]any{"prompt": "Continue?", "responseType": "boolean"},
-		"task":      map[string]any{"ttl": 60_000},
 		"_meta":     meta,
 	})
 	if created["resultType"] != "task" {

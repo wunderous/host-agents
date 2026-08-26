@@ -51,7 +51,7 @@ func TestResourceRegistryRoundTrip(t *testing.T) {
 	}
 	defer store.Close()
 	record := resourceid.Record{
-		URI: "model:local:qwen3.5:2b", Coordinates: map[string]any{"runtime": "ollama"},
+		URI: "model:local:hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M", Coordinates: map[string]any{"runtime": "ollama"},
 	}
 	if err := store.UpsertResource(record); err != nil {
 		t.Fatal(err)
@@ -110,5 +110,36 @@ func TestCapabilityInvocationIsDurableAndOpaque(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("durable invocation count = %d", count)
+	}
+}
+
+func TestTaskSnapshotSurvivesStoreRestart(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveTaskSnapshot("task-1", "run_host_command", "running", map[string]any{
+		"taskId": "task-1", "toolName": "run_host_command", "status": "completed",
+		"result": map[string]any{"content": []map[string]any{{"type": "text", "text": "done"}}},
+	}); err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	snapshots, err := reopened.ListTaskSnapshots()
+	if err != nil || len(snapshots) != 1 {
+		t.Fatalf("snapshots=%v err=%v", snapshots, err)
+	}
+	if snapshots[0]["taskId"] != "task-1" || snapshots[0]["status"] != "completed" {
+		t.Fatalf("snapshot=%v", snapshots[0])
 	}
 }

@@ -17,6 +17,11 @@ const KubernetesCapabilityID = capabilitycontract.Kubernetes
 
 const (
 	KubernetesValidateOperation          = capabilitycontract.KubernetesValidateOperation
+	KubernetesProvisionOperation         = capabilitycontract.KubernetesProvisionOperation
+	KubernetesStatusOperation            = capabilitycontract.KubernetesStatusOperation
+	KubernetesConfigureRegistryOperation = capabilitycontract.KubernetesConfigureRegistryOperation
+	KubernetesRemoveOperation            = capabilitycontract.KubernetesRemoveOperation
+	KubernetesRestartOperation           = capabilitycontract.KubernetesRestartOperation
 	KubernetesApplyManifestOperation     = capabilitycontract.KubernetesApplyManifestOperation
 	KubernetesPutSecretOperation         = capabilitycontract.KubernetesPutSecretOperation
 	KubernetesGetResourceOperation       = capabilitycontract.KubernetesGetResourceOperation
@@ -128,7 +133,7 @@ func (s *HostOperationsService) executeUnboundKubernetesProvider(operation strin
 
 // ListKubernetesClusters is the neutral inventory operation. The active
 // Kubernetes provider supplies the concrete discovery; there is deliberately
-// no provider-less Incus/K3s execution fallback.
+// no provider-less execution fallback.
 func (s *HostOperationsService) ListKubernetesClusters(source string) (ClusterListResult, error) {
 	if out, delegated, err := s.executeUnboundKubernetesProvider(KubernetesListClustersOperation, map[string]any{"source": strings.TrimSpace(source)}); delegated {
 		if err != nil {
@@ -155,7 +160,7 @@ func (s *HostOperationsService) ListKubernetesClusters(source string) (ClusterLi
 				return ClusterListResult{}, uriErr
 			}
 			cluster.URI = uri.String()
-			cluster.ID = "k3s-" + cluster.Name
+			cluster.ID = cluster.URI
 			if cluster.VMName == "" {
 				cluster.VMName = cluster.Name
 			}

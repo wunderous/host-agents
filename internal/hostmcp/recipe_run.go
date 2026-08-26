@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	providercontract "github.com/wunderous/host-agents/contracts/provider"
+	"github.com/wunderous/host-agents/internal/cordis"
 	"github.com/wunderous/host-agents/internal/plan"
 	"github.com/wunderous/host-agents/internal/recipe"
 	"github.com/wunderous/host-agents/internal/state"
@@ -201,7 +203,7 @@ func (s *Server) validateRecipeActivation(ctx context.Context, runID string, met
 	if !ok {
 		return state.ActiveRuntimeRecord{}, nil, fmt.Errorf("no host-agent activation validation flow exists for serving contract %q", contract)
 	}
-	observation, err := flow(ctx, bindings)
+	observation, err := flow(ctx, bindings, recipeStringField(metadata, "providerGenerationId"))
 	if err != nil {
 		return state.ActiveRuntimeRecord{}, nil, fmt.Errorf("activation validation failed: %w", err)
 	}
@@ -246,6 +248,10 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 	if generationID == "" {
 		return nil
 	}
+	s.providerMu.RLock()
+	manifest, manifestOK := s.providerCandidateManifests[generationID]
+	previousManifest, previousManifestOK := s.providerManifests[manifest.Provider.ID]
+	s.providerMu.RUnlock()
 	if err := s.providerLifecycle.MarkReady(generationID); err != nil {
 		return fmt.Errorf("provider generation readiness: %w", err)
 	}
@@ -254,26 +260,83 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 			return fmt.Errorf("persist provider generation readiness: %w", err)
 		}
 	}
+	// Publish and validate the candidate's neutral capability surface before
+	// moving the lifecycle manager to active. Dispatch remains fail-closed until
+	// activation because the candidate is not in the active adapter map.
+	if manifestOK {
+		if err := s.registerProviderServicesForGeneration(manifest, generationID); err != nil {
+			_ = s.providerLifecycle.Fail(generationID, err.Error())
+			_ = s.restoreProviderManifest(manifest.Provider.ID, previousManifest, previousManifestOK)
+			return fmt.Errorf("register provider services: %w", err)
+		}
+	}
 	previous, activated, err := s.providerLifecycle.Activate(generationID)
 	if err != nil {
+		if manifestOK {
+			_ = s.restoreProviderManifest(manifest.Provider.ID, previousManifest, previousManifestOK)
+		}
 		return fmt.Errorf("provider generation activation: %w", err)
 	}
 	if previous != nil {
 		if err := s.persistProviderGeneration(*previous); err != nil {
-			return fmt.Errorf("persist draining provider generation: %w", err)
+			return s.rollbackProviderActivation(manifest, manifestOK, previousManifest, previousManifestOK, activated, previous, fmt.Errorf("persist draining provider generation: %w", err))
 		}
 	}
 	if err := s.persistProviderGeneration(activated); err != nil {
-		return fmt.Errorf("persist active provider generation: %w", err)
+		return s.rollbackProviderActivation(manifest, manifestOK, previousManifest, previousManifestOK, activated, previous, fmt.Errorf("persist active provider generation: %w", err))
 	}
-	s.providerMu.RLock()
-	manifest, ok := s.providerCandidateManifests[generationID]
-	s.providerMu.RUnlock()
-	if ok {
-		if err := s.registerProviderServices(manifest); err != nil {
-			return fmt.Errorf("register provider services: %w", err)
+	s.providerMu.Lock()
+	adapter := s.providerCandidates[generationID]
+	if adapter != nil {
+		s.providerGenerationAdapters[generationID] = adapter
+		s.providerAdapters[activated.Provider.ID] = adapter
+	}
+	if manifestOK {
+		s.providerValidation[activated.Provider.ID] = manifest.Validation.Operation
+		s.providerManifests[activated.Provider.ID] = manifest
+	}
+	s.providerMu.Unlock()
+	s.completeProviderCandidate(generationID)
+	return nil
+}
+
+func (s *Server) rollbackProviderActivation(candidate providercontract.InstallManifest, candidateOK bool, previousManifest providercontract.InstallManifest, previousManifestOK bool, activated cordis.ProviderGeneration, previous *cordis.ProviderGeneration, cause error) error {
+	previousID := ""
+	if previous != nil {
+		previousID = previous.ID
+	}
+	rollbackErr := s.providerLifecycle.RollbackActivation(activated.ID, previousID)
+	if rollbackErr == nil && previous != nil {
+		if restored, ok := s.providerLifecycle.Get(previous.ID); ok {
+			if err := s.persistProviderGeneration(restored); err != nil {
+				rollbackErr = fmt.Errorf("persist restored provider generation: %w", err)
+			}
 		}
 	}
+	manifestErr := error(nil)
+	if candidateOK {
+		manifestErr = s.restoreProviderManifest(candidate.Provider.ID, previousManifest, previousManifestOK)
+	}
+	if rollbackErr != nil || manifestErr != nil {
+		return fmt.Errorf("%w; rollback failed: lifecycle=%v catalog=%v", cause, rollbackErr, manifestErr)
+	}
+	return cause
+}
+
+func (s *Server) restoreProviderManifest(providerID string, manifest providercontract.InstallManifest, ok bool) error {
+	if ok {
+		generationID := func() string {
+			if active, activeOK := s.providerLifecycle.Active(manifest.Provider.ID); activeOK {
+				return active.ID
+			}
+			return ""
+		}()
+		if generationID == "" {
+			return fmt.Errorf("provider %q has no active generation for catalog restore", providerID)
+		}
+		return s.registerProviderServicesForGeneration(manifest, generationID)
+	}
+	s.retireProviderCapabilities(providerID, "")
 	return nil
 }
 
@@ -281,20 +344,41 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 // registry. Recipes select a serving contract; they never select an
 // implementation-specific validator or executable. New generic capabilities
 // add another contract flow without changing the recipe executor.
-func (s *Server) activationValidationFlows() map[string]func(context.Context, map[string]any) (map[string]any, error) {
-	return map[string]func(context.Context, map[string]any) (map[string]any, error){
-		"kubernetes.v1": func(ctx context.Context, bindings map[string]any) (map[string]any, error) {
+func (s *Server) activationValidationFlows() map[string]func(context.Context, map[string]any, string) (map[string]any, error) {
+	return map[string]func(context.Context, map[string]any, string) (map[string]any, error){
+		"kubernetes.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
 			providerID := recipeStringField(bindings, "providerId")
 			if providerID == "" {
 				return nil, fmt.Errorf("kubernetes.v1 activation requires input binding providerId")
 			}
+			var session *cordis.GenerationSession
+			var err error
+			if generationID != "" {
+				session, err = s.providerLifecycle.OpenSessionForGeneration(providerID, generationID)
+			} else {
+				session, err = s.providerLifecycle.OpenSession(providerID)
+			}
+			if err != nil {
+				return nil, err
+			}
+			defer session.Close()
 			s.providerMu.RLock()
-			adapter := s.providerAdapters[providerID]
+			adapter := s.providerGenerationAdapters[session.GenerationID()]
+			if adapter == nil {
+				// Activation validation runs *before* activateProviderGeneration
+				// promotes the generation's adapter out of providerCandidates,
+				// so the generation under validation is still a candidate here.
+				// Reading only the active map made every kubernetes.v1
+				// activation fail with "is not connected" while its provider MCP
+				// was connected and serving — the capability could never be
+				// installed through opute.provider.install.
+				adapter = s.providerCandidates[session.GenerationID()]
+			}
 			s.providerMu.RUnlock()
 			if adapter == nil {
 				return nil, fmt.Errorf("Kubernetes provider %q is not connected", providerID)
 			}
-			result, err := adapter.Call(ctx, "opute.capability.kubernetes.validate", map[string]any{})
+			result, err := adapter.CallSynchronousOnly(ctx, "opute.capability.kubernetes.validate", map[string]any{})
 			if err != nil {
 				return nil, err
 			}
@@ -311,7 +395,7 @@ func (s *Server) activationValidationFlows() map[string]func(context.Context, ma
 			}
 			return observation, nil
 		},
-		"openai-chat.v1": func(ctx context.Context, bindings map[string]any) (map[string]any, error) {
+		"openai-chat.v1": func(ctx context.Context, bindings map[string]any, _ string) (map[string]any, error) {
 			endpoint := recipeStringField(bindings, "endpoint")
 			modelRef := recipeStringField(bindings, "modelRef")
 			if endpoint == "" {
@@ -335,7 +419,7 @@ func (s *Server) activationValidationFlows() map[string]func(context.Context, ma
 			}
 			return observation, nil
 		},
-		"http-exposure.v1": func(ctx context.Context, bindings map[string]any) (map[string]any, error) {
+		"http-exposure.v1": func(ctx context.Context, bindings map[string]any, _ string) (map[string]any, error) {
 			endpoints := []string{}
 			if endpoint := recipeStringField(bindings, "endpoint"); endpoint != "" {
 				endpoints = append(endpoints, endpoint)
@@ -435,7 +519,7 @@ func (s *Server) ensureRecipeActivation(record state.PlanRecord, metadata map[st
 		stateValue.Outputs = map[string]any{}
 	}
 	stateValue.Outputs["activation"] = observation
-	if err := s.state.CompletePlanWithActiveRuntime(record.RunID, marshalPlanState(stateValue), active); err != nil {
+	if err := s.state.CompletePlanWithActiveRuntime(record.RunID, s.marshalPlanState(stateValue, nil), active); err != nil {
 		return state.PlanRecord{}, err
 	}
 	updated, found, err := s.state.GetPlan(record.RunID)

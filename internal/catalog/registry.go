@@ -11,6 +11,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/wunderous/host-agents/internal/capability"
 	"github.com/wunderous/host-agents/internal/resourceid"
+	"github.com/wunderous/host-agents/internal/selectors"
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
@@ -426,6 +427,9 @@ func (r *Registry) validateDescriptor(descriptor tools.CapabilityDescriptor) err
 	if err := validateJSONSchema(descriptor.OperationID+" output", descriptor.OutputSchema); err != nil {
 		return err
 	}
+	if err := selectors.Validate(descriptor.OutputSchema, descriptor.OutputType, descriptor.ResultTypes); err != nil {
+		return fmt.Errorf("capability %q result selectors: %w", descriptor.OperationID, err)
+	}
 	if descriptor.Version < 1 {
 		return fmt.Errorf("capability %q must declare a positive version", descriptor.OperationID)
 	}
@@ -471,6 +475,15 @@ func (r *Registry) validateBinding(descriptor tools.CapabilityDescriptor, bindin
 	}
 	if schemaPathType(schema, path) != "string" {
 		return fmt.Errorf("capability %q resource binding path %q must be a string", descriptor.OperationID, path)
+	}
+	if direction == "produces" && binding.SelectorID != "" {
+		selector, ok := selectors.Find(descriptor.OutputType, binding.SelectorID, descriptor.ResultTypes)
+		if !ok {
+			return fmt.Errorf("capability %q produced binding references unknown selector %q", descriptor.OperationID, binding.SelectorID)
+		}
+		if selector.SourcePath != binding.SourcePath {
+			return fmt.Errorf("capability %q selector %q sourcePath %q disagrees with produced binding path %q", descriptor.OperationID, binding.SelectorID, selector.SourcePath, binding.SourcePath)
+		}
 	}
 	return nil
 }

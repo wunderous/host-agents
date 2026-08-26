@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -92,6 +93,66 @@ func (r *Registry) CreateWithID(taskID, toolName string, toolArgs map[string]any
 	rec := newRecord(taskID, toolName, toolArgs, ttl, description, metadata, cancel)
 	r.tasks[taskID] = rec
 	return rec
+}
+
+// RestoreSnapshot rehydrates a terminal task handle from durable state. Work
+// that was still executing when the process stopped is made failed because
+// the in-memory continuation is gone; the handle itself remains queryable.
+func (r *Registry) RestoreSnapshot(snapshot map[string]any) (*Record, bool) {
+	taskID, _ := snapshot["taskId"].(string)
+	toolName, _ := snapshot["toolName"].(string)
+	if taskID == "" || toolName == "" {
+		return nil, false
+	}
+	toolArgs, _ := snapshot["toolArgs"].(map[string]any)
+	description, _ := snapshot["description"].(string)
+	metadata, _ := snapshot["metadata"].(map[string]any)
+	rec := r.CreateWithID(taskID, toolName, toolArgs, durationFromMilliseconds(snapshot["ttlMs"]), description, metadata, nil)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if createdAt, ok := snapshot["createdAt"].(string); ok && createdAt != "" {
+		rec.CreatedAt = createdAt
+	}
+	if updatedAt, ok := snapshot["lastUpdatedAt"].(string); ok && updatedAt != "" {
+		rec.LastUpdatedAt = updatedAt
+	}
+	if ttl, ok := snapshot["ttlMs"].(float64); ok {
+		rec.TTL = int64(ttl)
+	}
+	if poll, ok := snapshot["pollIntervalMs"].(float64); ok {
+		rec.PollInterval = int(poll)
+	}
+	status, _ := snapshot["status"].(string)
+	rec.StatusMessage, _ = snapshot["statusMessage"].(string)
+	switch Status(status) {
+	case StatusCompleted:
+		rec.Status = StatusCompleted
+		if result, ok := snapshot["result"]; ok {
+			encoded, err := json.Marshal(result)
+			if err == nil {
+				var toolResult ToolResult
+				if json.Unmarshal(encoded, &toolResult) == nil {
+					rec.ToolResult = &toolResult
+				}
+			}
+		}
+	case StatusCancelled:
+		rec.Status = StatusCancelled
+	case StatusFailed:
+		rec.Status = StatusFailed
+	default:
+		rec.Status = StatusFailed
+		rec.StatusMessage = "The Host Agent restarted before the task completed."
+	}
+	r.tasks[taskID] = rec
+	return rec, true
+}
+
+func durationFromMilliseconds(value any) time.Duration {
+	if number, ok := value.(float64); ok && number > 0 {
+		return time.Duration(number) * time.Millisecond
+	}
+	return DefaultTTL
 }
 
 func (r *Registry) create(toolName string, toolArgs map[string]any, ttl time.Duration, description string, metadata map[string]any, cancel func()) *Record {
@@ -262,17 +323,8 @@ func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 		"status":         rec.Status,
 		"createdAt":      rec.CreatedAt,
 		"lastUpdatedAt":  rec.LastUpdatedAt,
-		"ttl":            rec.TTL,
-		"pollInterval":   rec.PollInterval,
 		"ttlMs":          rec.TTL,
 		"pollIntervalMs": rec.PollInterval,
-		"logs":           rec.Logs,
-	}
-	if rec.Description != "" {
-		out["description"] = rec.Description
-	}
-	if rec.Metadata != nil {
-		out["metadata"] = rec.Metadata
 	}
 	if rec.StatusMessage != "" {
 		out["statusMessage"] = rec.StatusMessage
@@ -337,7 +389,6 @@ var TaskAwareTools = map[string]bool{
 	"start_vm":                      true,
 	"stop_vm":                       true,
 	"restart_vm":                    true,
-	"install_k3s":                   true,
 	"install_postgresql":            true,
 	"reconcile_postgresql_service":  true,
 	"remove_postgresql_service":     true,
@@ -366,16 +417,9 @@ var TaskAwareTools = map[string]bool{
 	// manager and connector process. Keep its lifetime on the standard MCP
 	// task contract rather than coupling it to the request transport.
 	"ensure_cloudflared_tunnel":   true,
-	"configure_k3s_load_balancer": true,
-	"configure_k3s_ha_servers":    true,
-	"uninstall_k3s":               true,
-	"restart_cluster":             true,
-	"drain_cluster_nodes":         true,
 	"configure_network":           true,
 	"remove_vm_network_device":    true,
-	"install_cluster_agent":       true,
 	"install_host_agent":          true,
-	"restart_cluster_agent":       true,
 	"install_local_llm_model":     true,
 	"configure_local_llm_model":   true,
 	"start_local_llm_runtime":     true,

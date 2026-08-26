@@ -9,7 +9,7 @@ import (
 
 func TestK3sManifestDeclaresNeutralCapabilityAndOperations(t *testing.T) {
 	manifest := k3sManifest()
-	if err := providercontract.ValidateInstallManifest(manifest, providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.0"}); err != nil {
+	if err := providercontract.ValidateInstallManifest(manifest, providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.1"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(manifest.Provides) != 1 || manifest.Provides[0].ID != capabilitycontract.Kubernetes {
@@ -20,6 +20,11 @@ func TestK3sManifestDeclaresNeutralCapabilityAndOperations(t *testing.T) {
 		seen[operation.ID] = true
 	}
 	for _, operation := range []string{
+		capabilitycontract.KubernetesProvisionOperation,
+		capabilitycontract.KubernetesStatusOperation,
+		capabilitycontract.KubernetesConfigureRegistryOperation,
+		capabilitycontract.KubernetesRestartOperation,
+		capabilitycontract.KubernetesRemoveOperation,
 		capabilitycontract.KubernetesApplyManifestOperation,
 		capabilitycontract.KubernetesPutSecretOperation,
 		capabilitycontract.KubernetesGetResourceOperation,
@@ -32,6 +37,20 @@ func TestK3sManifestDeclaresNeutralCapabilityAndOperations(t *testing.T) {
 	} {
 		if !seen[operation] {
 			t.Fatalf("missing provider operation %q", operation)
+		}
+	}
+}
+
+func TestK3sTargetOperationsDeclareCanonicalClusterBinding(t *testing.T) {
+	for _, operation := range operations() {
+		if operation.ID == capabilitycontract.KubernetesValidateOperation || operation.ID == capabilitycontract.KubernetesListClustersOperation {
+			if len(operation.Requires) != 0 {
+				t.Fatalf("unbound inventory operation %q unexpectedly requires a target: %#v", operation.ID, operation.Requires)
+			}
+			continue
+		}
+		if len(operation.Requires) != 1 || operation.Requires[0].Argument != "targetUri" || operation.Requires[0].ResourceType != "cluster" || !operation.Requires[0].Required {
+			t.Fatalf("operation %q is missing required canonical cluster binding: %#v", operation.ID, operation.Requires)
 		}
 	}
 }

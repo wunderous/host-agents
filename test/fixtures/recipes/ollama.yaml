@@ -1,6 +1,6 @@
 contractVersion: runtime-recipe.v1
 recipeId: first-party-ollama
-recipeVersion: 0.1.1
+recipeVersion: 0.1.4
 runtime:
   id: ollama
   servingContract: openai-chat.v1
@@ -25,7 +25,7 @@ inputs:
       type: string
       format: uri
   modelRef:
-    default: qwen3.5:2b
+    default: hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M
     schema:
       type: string
       minLength: 1

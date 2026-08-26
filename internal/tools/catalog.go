@@ -240,6 +240,9 @@ func materializeSchemaBindings(def *ToolDefinition) {
 			if binding.SourcePath != "" {
 				item["sourcePath"] = binding.SourcePath
 			}
+			if binding.SelectorID != "" {
+				item["selectorId"] = binding.SelectorID
+			}
 			if binding.Required {
 				item["required"] = true
 			}
@@ -287,9 +290,6 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"get_postgresql_service_status":    true,
 		"remove_postgresql_service":        true,
 		"release_postgresql_service_relay": true,
-		"reconcile_tidb_service":           true,
-		"get_tidb_service_status":          true,
-		"remove_tidb_service":              true,
 		"install_incus_stack":              true,
 		"probe_incus_gpu":                  true,
 		"provision_container":              true,
@@ -317,7 +317,6 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"delete_k8s_resource":              true,
 		"put_k8s_secret":                   true,
 		"install_oci_registry":             true,
-		"configure_k3s_registry":           true,
 		"configure_service_domain":         true,
 		"remove_service_domain":            true,
 		"reset_incus_stack":                true,
@@ -441,14 +440,6 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}, "storageClass": map[string]any{"type": "string"}, "storageSize": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "restartConsumers": map[string]any{"type": "boolean"}, "localRelay": postgresqlServiceRelaySchema(),
 		}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
-		Name: "reconcile_tidb_service", Title: "Reconcile TiDB service", Description: "Install or reconcile an explicitly selected TiDB service. Credentials remain operator-owned and are not returned.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "clusterName", "namespace"}, "properties": map[string]any{
-			"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "pdReplicas": map[string]any{"type": "integer"}, "tikvReplicas": map[string]any{"type": "integer"}, "tidbReplicas": map[string]any{"type": "integer"}, "storageClass": map[string]any{"type": "string"}, "storageSize": map[string]any{"type": "string"}, "tidbVersion": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}},
-		}}, OutputSchema: map[string]any{"type": "object"},
-	}, ToolDefinition{
-		Name: "get_tidb_service_status", Title: "Get TiDB service status", Description: "Read TiDB service readiness without returning credentials.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "clusterName", "namespace"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"},
-	}, ToolDefinition{
-		Name: "remove_tidb_service", Title: "Remove TiDB service", Description: "Destructively remove a caller-defined TidbCluster. Requires confirm=true.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "clusterName", "namespace", "confirm"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
-	}, ToolDefinition{
 		Name: "get_postgresql_service_status", Title: "Get PostgreSQL service status", Description: "Read SQL-gated CloudNativePG PostgreSQL service readiness without returning credentials. When already ready, an optional localRelay is reconciled without enqueueing a second CNPG task.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "instances": map[string]any{"type": "integer"}, "localRelay": postgresqlServiceRelaySchema()}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name: "remove_postgresql_service", Title: "Remove PostgreSQL service", Description: "Destructively remove a caller-defined PostgreSQL CNPG service and owned data while preserving the operator. Requires confirm=true.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "confirm"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "clusterName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "retentionPolicy": map[string]any{"type": "string", "enum": []string{"delete", "retain"}}, "localRelay": postgresqlServiceRelaySchema(), "confirm": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"},
@@ -487,11 +478,11 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}, ToolDefinition{
 		Name:        "set_host_service_state",
 		Title:       "Set host service state",
-		Description: "Start, stop, restart, enable, or disable a validated host service; user scope is the default.",
-		InputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "state"}, "properties": map[string]any{
-			"serviceName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_.@:-]+$`},
-			"state":       map[string]any{"type": "string", "enum": []string{"start", "stop", "restart", "enable", "disable"}},
-			"scope":       map[string]any{"type": "string", "enum": []string{"user", "system"}},
+		Description: "Start, stop, restart, enable, or disable a validated host service selected by canonical tenant-scoped URI; user scope is the default.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"uri", "state"}, "properties": map[string]any{
+			"uri":   map[string]any{"type": "string", "minLength": 1, "description": "Canonical Host Agent resource URI returned by discovery.", resourceTypeKeyword: "host-service"},
+			"state": map[string]any{"type": "string", "enum": []string{"start", "stop", "restart", "enable", "disable"}},
+			"scope": map[string]any{"type": "string", "enum": []string{"user", "system"}},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "state", "scope", "status"}},
 	}, ToolDefinition{
@@ -586,7 +577,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Title:       "Put Kubernetes Secret",
 		Description: "Create or replace a generic Kubernetes Secret without returning its values.",
 		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "name", "data"}, "properties": map[string]any{
-			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "data": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "data": map[string]any{"type": "object", "writeOnly": true, "additionalProperties": map[string]any{"type": "string"}},
 		}},
 		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
@@ -595,14 +586,6 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Description: "Install a generic OCI registry inside a VM-backed Kubernetes cluster.",
 		InputSchema: map[string]any{"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
 			"vmName": map[string]any{"type": "string"}, "namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "storageSize": map[string]any{"type": "string"}, "storageClass": map[string]any{"type": "string"}, "nodePort": map[string]any{"type": "integer"},
-		}},
-		OutputSchema: map[string]any{"type": "object"},
-	}, ToolDefinition{
-		Name:        "configure_k3s_registry",
-		Title:       "Configure K3s registry",
-		Description: "Configure a K3s cluster to pull images from an OCI registry endpoint.",
-		InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "endpoint"}, "properties": map[string]any{
-			"vmName": map[string]any{"type": "string"}, "endpoint": map[string]any{"type": "string"}, "registry": map[string]any{"type": "string"}, "insecure": map[string]any{"type": "boolean"},
 		}},
 		OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
@@ -764,7 +747,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"modelRef":    map[string]any{"type": "string"},
 			"model":       map[string]any{"type": "string", "description": "Generic alias for modelRef."},
 			"role":        map[string]any{"type": "string", "enum": []string{"language", "embedding"}},
-			"modelPreset": map[string]any{"type": "string", "enum": []string{"qwen3.5", "qwen3.5-0.8b"}},
+			"modelPreset": map[string]any{"type": "string", "enum": []string{"lfm2-2.6b", "lfm2.5-thinking", "qwen3.5", "qwen3.5-0.8b"}},
 			"numGpu":      map[string]any{"type": "integer"},
 			"numCtx":      map[string]any{"type": "integer"},
 		}},
@@ -777,7 +760,7 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"model":                   map[string]any{"type": "string", "description": "Generic alias for modelRef."},
 			"role":                    map[string]any{"type": "string", "enum": []string{"language", "embedding"}, "description": "Generic model role. Embedding models are not made the chat default unless setDefault is explicit."},
 			"setDefault":              map[string]any{"type": "boolean", "description": "For Ollama, keep this model as the default chat/runtime model; set false for an embedding-only resident model."},
-			"modelPreset":             map[string]any{"type": "string", "enum": []string{"qwen3.5", "qwen3.5-0.8b"}},
+			"modelPreset":             map[string]any{"type": "string", "enum": []string{"lfm2-2.6b", "lfm2.5-thinking", "qwen3.5", "qwen3.5-0.8b"}},
 			"createAs":                map[string]any{"type": "string"},
 			"numGpu":                  map[string]any{"type": "integer"},
 			"numCtx":                  map[string]any{"type": "integer"},

@@ -43,7 +43,7 @@ func standaloneCleanEnv(extra ...string) []string {
 		}
 		env = append(env, assignment)
 	}
-	return append(env, extra...)
+	return append(append(env, "OPUTE_REMOTE_AGENT_ID=test-host-agent"), extra...)
 }
 
 func freeStandalonePort(t *testing.T) int {

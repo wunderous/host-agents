@@ -58,3 +58,34 @@ func TestConnectRejectsProviderWithoutManifestTool(t *testing.T) {
 		t.Fatal("provider without manifest tool was accepted")
 	}
 }
+
+func TestCallSynchronousOnlyRejectsProviderTaskResult(t *testing.T) {
+	server := mcp.NewServer(&mcp.Implementation{Name: "task-provider", Version: "1.0.0"}, nil)
+	server.AddTool(&mcp.Tool{Name: "opute.provider.get_install_manifest", InputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{StructuredContent: providercontract.InstallManifest{
+			Schema:     providercontract.InstallManifestVersion,
+			Provider:   providercontract.ProviderRef{ID: "com.opute.example", Version: "1.0.0"},
+			Provides:   []providercontract.CapabilityRef{{ID: "opute.capability.example.v1", Version: 1}},
+			Recipes:    []providercontract.RecipeRef{{ID: "example", Source: providercontract.RecipeSource{URI: "https://example.invalid/recipe.yaml", Revision: "immutable", SHA256: "sha256:abc"}}},
+			Validation: providercontract.ValidationRef{Capability: "opute.capability.example.v1", Operation: "validate"},
+		}}, nil
+	})
+	server.AddTool(&mcp.Tool{Name: "validate", InputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{StructuredContent: map[string]any{"resultType": "task", "taskId": "downstream-task"}}, nil
+	})
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	adapter, err := Connect(context.Background(), providercontract.PluginDescriptor{
+		Schema: providercontract.PluginDescriptorVersion, PluginID: "com.opute.example", Version: "1.0.0",
+		Capabilities: []providercontract.CapabilityRef{{ID: "opute.capability.example.v1", Version: 1}},
+		Server:       providercontract.ServerDescriptor{Transport: "streamable_http", Endpoint: httpServer.URL},
+	}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adapter.Close()
+	if _, err := adapter.CallSynchronousOnly(context.Background(), "validate", nil); err == nil {
+		t.Fatal("provider task result was accepted by synchronous-only adapter")
+	}
+}

@@ -26,15 +26,25 @@ func (s *Server) handleProviderTeardown(args map[string]any) (*mcp.CallToolResul
 	if generation := recipeStringField(args, "generation"); generation != "" && generation != active.ID {
 		return tools.ErrorResult(fmt.Errorf("provider generation %q is not active; active generation is %q", generation, active.ID)), nil
 	}
+	session, sessionErr := s.providerLifecycle.OpenSession(providerID)
+	if sessionErr != nil {
+		return tools.ErrorResult(sessionErr), nil
+	}
+	defer session.Close()
 	s.providerMu.RLock()
-	adapter := s.providerAdapters[providerID]
+	adapter := s.providerGenerationAdapters[session.GenerationID()]
+	if adapter == nil {
+		adapter = s.providerAdapters[providerID]
+	}
 	s.providerMu.RUnlock()
 	if adapter == nil {
 		return tools.ErrorResult(fmt.Errorf("provider %q is not connected", providerID)), nil
 	}
 	prepareArgs := cloneProviderTeardownArgs(args)
 	prepareArgs["phase"] = "prepare"
-	result, err := adapter.Call(context.Background(), providerTeardownOperation, prepareArgs)
+	providerInputs := s.providerTeardownInputs(args)
+	prepareArgs["inputs"] = providerInputs
+	result, err := adapter.CallSynchronousOnly(context.Background(), providerTeardownOperation, prepareArgs)
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
@@ -58,9 +68,35 @@ func (s *Server) handleProviderTeardown(args map[string]any) (*mcp.CallToolResul
 		"providerVersion":         active.Provider.Version,
 		"providerGenerationId":    active.ID,
 		"teardownContractVersion": "provider-teardown.v1",
-		"providerTeardownInputs":  redactTaskValue(args["inputs"]),
+		"providerTeardownInputs":  redactTaskValue(providerInputs),
 	}
+	// The plan runner may finalize the provider before this handler returns;
+	// release the preparation session before handing control to it.
+	session.Close()
 	return s.handleRunHostPlanWithMetadata(map[string]any{"plan": doc, "resume": recipeBoolField(args, "resume")}, metadata, "opute.provider.teardown", "Tearing down provider...")
+}
+
+// providerTeardownInputs adds the host-resolved service URI to the neutral
+// provider callback. Providers must execute service mutations through the
+// canonical tenant-scoped URI; they must not reconstruct a target from a
+// display name or assume the local tenant.
+func (s *Server) providerTeardownInputs(args map[string]any) map[string]any {
+	inputs := map[string]any{}
+	if raw, ok := args["inputs"].(map[string]any); ok {
+		for key, value := range raw {
+			inputs[key] = value
+		}
+	}
+	serviceName := recipeStringField(inputs, "serviceName")
+	if serviceName == "" || s.ops == nil {
+		return inputs
+	}
+	scope := recipeStringField(inputs, "scope")
+	if scope == "" {
+		scope = "user"
+	}
+	inputs["serviceUri"] = fmt.Sprintf("host-service:%s:%s/%s", s.ops.TenantID(), scope, serviceName)
+	return inputs
 }
 
 func cloneProviderTeardownArgs(args map[string]any) map[string]any {
@@ -77,20 +113,41 @@ func (s *Server) completeProviderTeardown(metadata map[string]any) error {
 	if providerID == "" || generationID == "" {
 		return fmt.Errorf("provider teardown metadata is incomplete")
 	}
+	session, sessionErr := s.providerLifecycle.OpenSession(providerID)
+	if sessionErr != nil {
+		return fmt.Errorf("open provider teardown session: %w", sessionErr)
+	}
+	defer session.Close()
+	if session.GenerationID() != generationID {
+		session.Close()
+		return fmt.Errorf("provider teardown generation %q is no longer active", generationID)
+	}
 	s.providerMu.RLock()
-	adapter := s.providerAdapters[providerID]
+	adapter := s.providerGenerationAdapters[session.GenerationID()]
+	if adapter == nil {
+		adapter = s.providerAdapters[providerID]
+	}
 	s.providerMu.RUnlock()
 	if adapter == nil {
 		return fmt.Errorf("provider %q is not connected for teardown finalization", providerID)
 	}
 	inputs, _ := metadata["providerTeardownInputs"].(map[string]any)
-	finalize, err := adapter.Call(context.Background(), providerTeardownOperation, map[string]any{"phase": "finalize", "inputs": inputs})
+	if _, redacted := inputs["redacted"]; redacted {
+		return fmt.Errorf("provider teardown inputs are redacted; resume requires the provider inputs to be supplied again")
+	}
+	finalizeInputs := make(map[string]any, len(inputs)+1)
+	for key, value := range inputs {
+		finalizeInputs[key] = value
+	}
+	finalizeInputs["phase"] = "finalize"
+	finalize, err := adapter.CallSynchronousOnly(context.Background(), providerTeardownOperation, map[string]any{"phase": "finalize", "inputs": finalizeInputs})
 	if err != nil {
 		return fmt.Errorf("finalize provider teardown: %w", err)
 	}
 	if finalize == nil || finalize.IsError {
 		return fmt.Errorf("provider %q teardown finalization failed", providerID)
 	}
+	session.Close()
 	if err := s.providerLifecycle.Drain(context.Background(), generationID); err != nil {
 		return fmt.Errorf("drain provider generation: %w", err)
 	}
@@ -101,6 +158,7 @@ func (s *Server) completeProviderTeardown(metadata map[string]any) error {
 	}
 	s.providerMu.Lock()
 	delete(s.providerAdapters, providerID)
+	delete(s.providerGenerationAdapters, generationID)
 	delete(s.providerValidation, providerID)
 	s.providerMu.Unlock()
 	s.retireProviderCapabilities(providerID, generationID)

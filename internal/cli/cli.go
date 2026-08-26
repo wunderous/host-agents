@@ -481,7 +481,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  opute-host-agent                   server-only standalone MCP profile (HTTP)")
 	fmt.Fprintln(out, "  opute-host-agent serve             MCP server only (HTTP)")
 	fmt.Fprintln(out, "  opute-host-agent recipe validate --source ./recipe.yaml")
-	fmt.Fprintln(out, "  opute-host-agent recipe apply --source ./recipe.yaml --activate --input model=qwen3.5:2b")
+	fmt.Fprintln(out, "  opute-host-agent recipe apply --source ./recipe.yaml --activate --input model=hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M")
 	fmt.Fprintln(out, "  opute-host-agent recipe status --run-id RUN_ID")
 	fmt.Fprintln(out, "  opute-host-agent provider install --source ./plugin.yaml --activate")
 	fmt.Fprintln(out)

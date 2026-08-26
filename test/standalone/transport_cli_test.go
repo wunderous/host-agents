@@ -32,6 +32,7 @@ func TestDeprecatedTransportFlagIsRejectOnly(t *testing.T) {
 	}
 	binary := buildStandaloneBinary(t)
 	baseEnv := []string{
+		"OPUTE_REMOTE_AGENT_ID=test-host-agent",
 		"OPUTE_AGENT_MODE=standalone",
 		"OPUTE_INFRA_PROVIDER_ID=incus",
 		"OPUTE_STANDALONE_STATE_DIR=" + t.TempDir(),

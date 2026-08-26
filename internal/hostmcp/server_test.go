@@ -177,22 +177,20 @@ func TestDispatchToolRoutesLifecycleCallsThroughProviderBoundary(t *testing.T) {
 	}
 }
 
-func TestRedactTaskValuePreservesSecretCollectionShape(t *testing.T) {
-	value := map[string]any{
-		"secretInputs": []any{"token", "password"},
-		"token":        "super-secret",
-		"nested":       map[string]any{"value": "safe"},
+func TestTaskProjectionUsesDeclaredWriteOnlySchema(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	projected := server.redactTaskArgs("put_k8s_secret", map[string]any{
+		"uri":   "cluster:local:demo",
+		"name":  "runtime",
+		"data":  map[string]any{"token": "super-secret"},
+		"label": "token-shaped-but-not-secret-by-schema",
+	})
+	data, ok := projected["data"].(string)
+	if !ok || data != redactedEvidenceValue {
+		t.Fatalf("writeOnly data was not redacted: %#v", projected)
 	}
-	redacted := redactTaskValue(value).(map[string]any)
-	secretInputs, ok := redacted["secretInputs"].([]any)
-	if !ok || len(secretInputs) != 2 || secretInputs[0] != "[redacted]" || secretInputs[1] != "[redacted]" {
-		t.Fatalf("secret collection shape/content was not redacted safely: %#v", redacted["secretInputs"])
-	}
-	if redacted["token"] != "[redacted]" {
-		t.Fatalf("scalar token was not redacted: %#v", redacted["token"])
-	}
-	if redacted["nested"].(map[string]any)["value"] != "safe" {
-		t.Fatalf("non-sensitive nested value was unexpectedly changed: %#v", redacted["nested"])
+	if projected["label"] != "token-shaped-but-not-secret-by-schema" {
+		t.Fatalf("projection still uses key-name heuristics: %#v", projected)
 	}
 }
 

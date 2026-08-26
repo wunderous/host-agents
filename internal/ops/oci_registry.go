@@ -1,12 +1,9 @@
 package ops
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
-	"time"
 )
 
 type InstallOCIRegistryArgs struct {
@@ -17,13 +14,6 @@ type InstallOCIRegistryArgs struct {
 	StorageSize  string `json:"storageSize,omitempty"`
 	StorageClass string `json:"storageClass,omitempty"`
 	NodePort     int    `json:"nodePort,omitempty"`
-}
-
-type ConfigureK3sRegistryArgs struct {
-	VMName   string `json:"vmName"`
-	Endpoint string `json:"endpoint"`
-	Registry string `json:"registry,omitempty"`
-	Insecure bool   `json:"insecure,omitempty"`
 }
 
 func (s *HostOperationsService) DeleteOCIRegistry(args InstallOCIRegistryArgs, onData func(string)) (map[string]any, error) {
@@ -168,50 +158,4 @@ func (s *HostOperationsService) GetOCIRegistryStatus(args InstallOCIRegistryArgs
 		return nil, err
 	}
 	return map[string]any{"vmName": args.VMName, "namespace": namespace, "name": name, "status": "installed", "deployment": deployment["resource"]}, nil
-}
-
-func (s *HostOperationsService) ConfigureK3sRegistry(args ConfigureK3sRegistryArgs, onData func(string)) (map[string]any, error) {
-	vmName := strings.TrimSpace(args.VMName)
-	endpoint := strings.TrimRight(strings.TrimSpace(args.Endpoint), "/")
-	if vmName == "" || endpoint == "" {
-		return nil, errors.New("vmName and endpoint are required")
-	}
-	parsed, err := url.Parse(endpoint)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || strings.ContainsAny(endpoint, "\r\n") {
-		return nil, errors.New("endpoint must be an http or https URL")
-	}
-	registry := strings.TrimSpace(args.Registry)
-	if registry == "" {
-		registry = parsed.Host
-	}
-	if strings.ContainsAny(registry, "\r\n'") {
-		return nil, errors.New("registry is invalid")
-	}
-	if changed, err := s.ensureContainerK3sKubeletConfig(vmName, onData); err != nil {
-		return nil, fmt.Errorf("ensure K3s container kubelet config: %w", err)
-	} else if changed && onData != nil {
-		onData("Applied K3s container kubelet config before registry update")
-	}
-	protocol := "https"
-	if args.Insecure {
-		protocol = "http"
-	}
-	config := fmt.Sprintf("mirrors:\n  %s:\n    endpoint:\n      - %s\nconfigs: {}\n", registry, protocol+"://"+parsed.Host)
-	encoded := base64.StdEncoding.EncodeToString([]byte(config))
-	write := fmt.Sprintf("mkdir -p /etc/rancher/k3s; printf %%s %s | base64 -d > /etc/rancher/k3s/registries.yaml", shellEscape(encoded))
-	res, err := s.runVMExec(vmName, []string{"bash", "-lc", write}, onData, defaultDiscoveryTimeout)
-	if err != nil {
-		return nil, err
-	}
-	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("write K3s registry configuration failed: %s", firstNonEmpty(res.Stderr, res.Stdout))
-	}
-	restart, err := s.runVMExec(vmName, []string{"systemctl", "restart", "k3s"}, onData, 2*time.Minute)
-	if err != nil {
-		return nil, err
-	}
-	if restart.ExitCode != 0 {
-		return nil, fmt.Errorf("restart K3s failed: %s", firstNonEmpty(restart.Stderr, restart.Stdout))
-	}
-	return map[string]any{"vmName": vmName, "registry": registry, "endpoint": protocol + "://" + parsed.Host, "insecure": args.Insecure, "restarted": true}, nil
 }

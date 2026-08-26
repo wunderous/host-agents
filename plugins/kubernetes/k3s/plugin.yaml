@@ -1,6 +1,6 @@
 schema: opute-provider-plugin.v1
 pluginId: com.opute.k3s
-version: 1.0.0
+version: 1.0.1
 capabilities:
   - id: opute.capability.kubernetes.v1
     version: 1

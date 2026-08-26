@@ -359,26 +359,6 @@
       "support": "stable"
     },
     {
-      "name": "install_k3s",
-      "classification": "mutation",
-      "support": "experimental"
-    },
-    {
-      "name": "get_k3s_status",
-      "classification": "read_only",
-      "support": "experimental"
-    },
-    {
-      "name": "restart_cluster",
-      "classification": "mutation",
-      "support": "experimental"
-    },
-    {
-      "name": "uninstall_k3s",
-      "classification": "destructive",
-      "support": "experimental"
-    },
-    {
       "name": "list_namespaces",
       "classification": "read_only",
       "support": "experimental"
@@ -457,11 +437,6 @@
     {
       "name": "delete_oci_registry",
       "classification": "destructive",
-      "support": "experimental"
-    },
-    {
-      "name": "configure_k3s_registry",
-      "classification": "mutation",
       "support": "experimental"
     },
     {
@@ -586,21 +561,6 @@
     },
     {
       "name": "delete_cloudflare_tunnel",
-      "classification": "destructive",
-      "support": "experimental"
-    },
-    {
-      "name": "reconcile_tidb_service",
-      "classification": "mutation",
-      "support": "experimental"
-    },
-    {
-      "name": "get_tidb_service_status",
-      "classification": "read_only",
-      "support": "experimental"
-    },
-    {
-      "name": "remove_tidb_service",
       "classification": "destructive",
       "support": "experimental"
     },

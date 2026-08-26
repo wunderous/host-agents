@@ -211,343 +211,6 @@
     }
   },
   {
-    "name": "configure_k3s_ha_servers",
-    "title": "Configure K3s HA servers",
-    "description": "Provision or reuse K3s server VMs and bootstrap/join them into the planned HA cluster topology",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "apiEndpoint": {
-          "type": "string",
-          "description": "Cluster API endpoint exposed by the load balancer"
-        },
-        "loadBalancerVmName": {
-          "type": "string",
-          "description": "Load balancer VM name"
-        },
-        "loadBalancerApiPort": {
-          "type": "number",
-          "description": "Load balancer API port (default: 6443)"
-        },
-        "tokenSecretRef": {
-          "type": "string",
-          "description": "K3s token secret reference"
-        },
-        "tokenValue": {
-          "type": "string",
-          "description": "Resolved K3s join token value supplied by the Bridge"
-        },
-        "tlsSans": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "TLS subject alternate names for the cluster API endpoint"
-        },
-        "serverNodes": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "vmName": {
-                "type": "string"
-              },
-              "bootstrap": {
-                "type": "boolean"
-              },
-              "installArgs": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": [
-              "id",
-              "vmName",
-              "bootstrap",
-              "installArgs"
-            ]
-          }
-        },
-        "image": {
-          "type": "string",
-          "description": "Optional Incus image alias or remote image reference"
-        },
-        "cpus": {
-          "type": "number",
-          "description": "CPU count (default: 2)"
-        },
-        "memory": {
-          "type": "string",
-          "description": "Memory limit such as 2GiB (default: 2GiB)"
-        },
-        "disk": {
-          "type": "string",
-          "description": "Optional root disk size such as 20GiB"
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "apiEndpoint",
-        "loadBalancerVmName",
-        "tokenSecretRef",
-        "tlsSans",
-        "serverNodes",
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "clusterId": {
-          "type": "string"
-        },
-        "serviceName": {
-          "type": "string",
-          "enum": [
-            "k3s"
-          ]
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "active"
-          ]
-        },
-        "kubeconfigContent": {
-          "type": "string"
-        },
-        "servers": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "vmName": {
-                "type": "string"
-              },
-              "status": {
-                "type": "string"
-              },
-              "ipv4": {
-                "type": "string"
-              },
-              "health": {
-                "type": "object",
-                "additionalProperties": true
-              }
-            },
-            "required": [
-              "id",
-              "vmName",
-              "status"
-            ]
-          }
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "clusterId",
-        "serviceName",
-        "status",
-        "servers",
-        "uri"
-      ]
-    },
-    "execution": {
-      "taskSupport": "optional"
-    },
-    "_meta": {
-      "needsApproval": true,
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "cluster",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
-    "name": "configure_k3s_load_balancer",
-    "title": "Configure K3s HA load balancer",
-    "description": "Provision or reuse a VM, install HAProxy, and forward the K3s API port to planned server nodes",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "image": {
-          "type": "string",
-          "description": "Optional Incus image alias or remote image reference"
-        },
-        "cpus": {
-          "type": "number",
-          "description": "CPU count (default: 2)"
-        },
-        "memory": {
-          "type": "string",
-          "description": "Memory limit such as 2GiB (default: 2GiB)"
-        },
-        "disk": {
-          "type": "string",
-          "description": "Optional root disk size such as 20GiB"
-        },
-        "apiPort": {
-          "type": "number",
-          "description": "Kubernetes API listen port (default: 6443)"
-        },
-        "serverBackends": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "vmName": {
-                "type": "string"
-              },
-              "host": {
-                "type": "string"
-              },
-              "port": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "host"
-            ]
-          }
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "serverBackends",
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "clusterId": {
-          "type": "string"
-        },
-        "vmName": {
-          "type": "string"
-        },
-        "serviceName": {
-          "type": "string",
-          "enum": [
-            "haproxy"
-          ]
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "active"
-          ]
-        },
-        "apiEndpoint": {
-          "type": "string"
-        },
-        "apiPort": {
-          "type": "number"
-        },
-        "ipv4": {
-          "type": "string"
-        },
-        "backends": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": true
-          }
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "clusterId",
-        "vmName",
-        "serviceName",
-        "status",
-        "apiEndpoint",
-        "apiPort",
-        "backends",
-        "uri"
-      ]
-    },
-    "execution": {
-      "taskSupport": "optional"
-    },
-    "_meta": {
-      "needsApproval": true,
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "cluster",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
-    "name": "configure_k3s_registry",
-    "title": "Configure K3s registry",
-    "description": "Configure a K3s cluster to pull images from an OCI registry endpoint.",
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "endpoint",
-        "uri"
-      ],
-      "properties": {
-        "endpoint": {
-          "type": "string"
-        },
-        "registry": {
-          "type": "string"
-        },
-        "insecure": {
-          "type": "boolean"
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    },
-    "_meta": {
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "cluster",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
     "name": "configure_network",
     "title": "Configure Network",
     "description": "Attach a bridged NIC device to a VM so it joins a host network bridge (e.g. wlan0)",
@@ -663,7 +326,15 @@
     "name": "configure_service_domain",
     "title": "Configure service domain",
     "description": "Map a Kubernetes Service to a caller-selected hostname through the configured ingress class.",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "cluster", "required": true}]},
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
+    },
     "inputSchema": {
       "type": "object",
       "required": [
@@ -985,7 +656,12 @@
     },
     "_meta": {
       "needsApproval": true,
-      "produces": [{"sourcePath": "uri", "resourceType": "vm"}]
+      "produces": [
+        {
+          "sourcePath": "uri",
+          "resourceType": "vm"
+        }
+      ]
     }
   },
   {
@@ -1329,60 +1005,18 @@
     }
   },
   {
-    "name": "drain_cluster_nodes",
-    "title": "Drain Cluster Nodes",
-    "description": "Drain all schedulable K3s nodes in a multi-node cluster from inside the VM",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "vmName": {
-          "type": "string"
-        },
-        "drainedNodes": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "vmName",
-        "drainedNodes",
-        "uri"
-      ]
-    },
-    "_meta": {
-      "needsApproval": true,
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "cluster",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
     "name": "ensure_cloudflared_tunnel",
     "title": "Ensure Cloudflared Tunnel",
     "description": "Start or ensure a cloudflared tunnel for a host exposure binding",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "tunnel", "required": true}]},
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "tunnel",
+          "required": true
+        }
+      ]
+    },
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1457,7 +1091,15 @@
     "name": "ensure_host_firewall_rule",
     "title": "Ensure Host Firewall Rule",
     "description": "Ensure host firewall allows traffic for an exposure binding",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "host", "required": true}]},
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "host",
+          "required": true
+        }
+      ]
+    },
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1605,7 +1247,15 @@
     "name": "ensure_sql_connector",
     "title": "Ensure SQL connector",
     "description": "Idempotent durable host TCP relay for a managed PostgreSQL database (keyed by databaseId)",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "sql-connector", "required": true}]},
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "sql-connector",
+          "required": true
+        }
+      ]
+    },
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1978,7 +1628,12 @@
           "required": true
         }
       ],
-      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
+      "produces": [
+        {
+          "sourcePath": "uri",
+          "resourceType": "cluster"
+        }
+      ]
     }
   },
   {
@@ -2011,8 +1666,12 @@
     "outputSchema": {
       "type": "object",
       "properties": {
-        "deleted": {"type": "boolean"},
-        "uri": {"type": "string"}
+        "deleted": {
+          "type": "boolean"
+        },
+        "uri": {
+          "type": "string"
+        }
       },
       "required": [
         "deleted",
@@ -2027,7 +1686,12 @@
           "required": true
         }
       ],
-      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
+      "produces": [
+        {
+          "sourcePath": "uri",
+          "resourceType": "cluster"
+        }
+      ]
     }
   },
   {
@@ -2069,7 +1733,12 @@
           "required": true
         }
       ],
-      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
+      "produces": [
+        {
+          "sourcePath": "uri",
+          "resourceType": "cluster"
+        }
+      ]
     }
   },
   {
@@ -2150,7 +1819,12 @@
           "required": true
         }
       ],
-      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
+      "produces": [
+        {
+          "sourcePath": "uri",
+          "resourceType": "cluster"
+        }
+      ]
     }
   },
   {
@@ -2596,7 +2270,15 @@
     "name": "get_sql_connector_status",
     "title": "Get SQL connector status",
     "description": "Read durable SQL connector relay status without teardown",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "sql-connector", "required": true}]},
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "sql-connector",
+          "required": true
+        }
+      ]
+    },
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2674,37 +2356,6 @@
     "_meta": {}
   },
   {
-    "name": "get_tidb_service_status",
-    "title": "Get TiDB service status",
-    "description": "Read SQL-gated TiDB Operator platform readiness without returning credentials.",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "cluster", "required": true}]},
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "uri"
-      ],
-      "properties": {
-        "clusterName": {
-          "type": "string"
-        },
-        "namespace": {
-          "type": "string"
-        },
-        "instances": {
-          "type": "integer"
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
-  },
-  {
     "name": "get_vm_info",
     "title": "Get VM info",
     "description": "Get detailed information and runtime state for an Incus virtual machine",
@@ -2779,6 +2430,21 @@
       ]
     },
     "_meta": {
+      "outputType": "vm.uri",
+      "resultTypes": [
+        {
+          "id": "vm.uri",
+          "version": 1,
+          "selectors": [
+            {
+              "id": "uri",
+              "sourcePath": "uri",
+              "cardinality": "one",
+              "labelPath": "name"
+            }
+          ]
+        }
+      ],
       "requires": [
         {
           "argument": "uri",
@@ -2794,11 +2460,13 @@
       "produces": [
         {
           "resourceType": "vm",
-          "sourcePath": "uri"
+          "sourcePath": "uri",
+          "selectorId": "uri"
         },
         {
           "resourceType": "container",
-          "sourcePath": "uri"
+          "sourcePath": "uri",
+          "selectorId": "uri"
         }
       ]
     }
@@ -2927,99 +2595,10 @@
           "required": true
         }
       ],
-      "produces": [{"sourcePath": "uri", "resourceType": "cluster"}]
-    }
-  },
-  {
-    "name": "install_cluster_agent",
-    "title": "Install Cluster Agent",
-    "description": "Install and activate the Opute cluster agent service inside a VM",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "clusterName": {
-          "type": "string",
-          "description": "Managed cluster display name"
-        },
-        "agentId": {
-          "type": "string",
-          "description": "Cluster agent identifier"
-        },
-        "bridgeToken": {
-          "type": "string",
-          "description": "Bridge bearer token for guest agent registration"
-        },
-        "bridgeUrl": {
-          "type": "string",
-          "description": "Explicit bridge URL reachable from the guest VM"
-        },
-        "bridgePort": {
-          "type": "number",
-          "description": "Bridge port to use when bridgeUrl is omitted and the host should auto-resolve the bridge address"
-        },
-        "providerId": {
-          "type": "string",
-          "description": "Infrastructure provider identifier (incus)"
-        },
-        "apiEndpoint": {
-          "type": "string",
-          "description": "Optional cluster API endpoint"
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "clusterName",
-        "agentId",
-        "bridgeToken",
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "vmName": {
-          "type": "string"
-        },
-        "bridgeUrl": {
-          "type": "string"
-        },
-        "serviceName": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "active"
-          ]
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "vmName",
-        "bridgeUrl",
-        "serviceName",
-        "status",
-        "uri"
-      ]
-    },
-    "_meta": {
-      "needsApproval": true,
-      "requires": [
+      "produces": [
         {
-          "argument": "uri",
-          "resourceType": "vm",
-          "required": true
-        },
-        {
-          "argument": "uri",
-          "resourceType": "container",
-          "required": true
+          "sourcePath": "uri",
+          "resourceType": "cluster"
         }
       ]
     }
@@ -3080,71 +2659,6 @@
           "type": "string"
         }
       }
-    }
-  },
-  {
-    "name": "install_k3s",
-    "title": "Install K3s",
-    "description": "Install K3s inside a VM and verify the service becomes active",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "vmName": {
-          "type": "string"
-        },
-        "serviceName": {
-          "type": "string",
-          "enum": [
-            "k3s"
-          ]
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "active"
-          ]
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "vmName",
-        "serviceName",
-        "status",
-        "uri"
-      ]
-    },
-    "execution": {
-      "taskSupport": "optional"
-    },
-    "_meta": {
-      "needsApproval": true,
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "vm",
-          "required": true
-        },
-        {
-          "argument": "uri",
-          "resourceType": "container",
-          "required": true
-        }
-      ]
     }
   },
   {
@@ -3241,7 +2755,15 @@
     "name": "install_sql_forward_sidecar",
     "title": "Install SQL forward sidecar",
     "description": "Install opute-sql-forward systemd unit on a VM for durable kubectl port-forward",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "cluster", "required": true}]},
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
+    },
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3338,9 +2860,6 @@
                 "type": "string"
               },
               "version": {
-                "type": "string"
-              },
-              "stableId": {
                 "type": "string"
               },
               "metadata": {
@@ -3921,7 +3440,10 @@
         }
       ],
       "produces": [
-        {"sourcePath": "uri", "resourceType": "cluster"},
+        {
+          "sourcePath": "uri",
+          "resourceType": "cluster"
+        },
         {
           "resourceType": "pod",
           "sourcePath": "pods[].uri"
@@ -4351,7 +3873,10 @@
         }
       ],
       "produces": [
-        {"sourcePath": "uri", "resourceType": "cluster"},
+        {
+          "sourcePath": "uri",
+          "resourceType": "cluster"
+        },
         {
           "resourceType": "service",
           "sourcePath": "services[].uri"
@@ -4557,14 +4082,31 @@
       ]
     },
     "_meta": {
+      "outputType": "vm.uri",
+      "resultTypes": [
+        {
+          "id": "vm.uri",
+          "version": 1,
+          "selectors": [
+            {
+              "id": "uri",
+              "sourcePath": "vms[].uri",
+              "cardinality": "many",
+              "labelPath": "vms[].name"
+            }
+          ]
+        }
+      ],
       "produces": [
         {
           "resourceType": "vm",
-          "sourcePath": "vms[].uri"
+          "sourcePath": "vms[].uri",
+          "selectorId": "uri"
         },
         {
           "resourceType": "container",
-          "sourcePath": "vms[].uri"
+          "sourcePath": "vms[].uri",
+          "selectorId": "uri"
         }
       ]
     }
@@ -4573,7 +4115,15 @@
     "name": "probe_host_exposure",
     "title": "Probe Host Exposure",
     "description": "Probe local target and tunnel state for a host exposure binding",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "tunnel", "required": true}]},
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "tunnel",
+          "required": true
+        }
+      ]
+    },
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4669,7 +4219,16 @@
     },
     "_meta": {
       "needsApproval": true,
-      "produces": [{"sourcePath": "uri", "resourceType": "vm"}, {"sourcePath": "uri", "resourceType": "container"}]
+      "produces": [
+        {
+          "sourcePath": "uri",
+          "resourceType": "vm"
+        },
+        {
+          "sourcePath": "uri",
+          "resourceType": "container"
+        }
+      ]
     }
   },
   {
@@ -4694,7 +4253,8 @@
           "type": "object",
           "additionalProperties": {
             "type": "string"
-          }
+          },
+          "writeOnly": true
         },
         "uri": {
           "type": "string",
@@ -4790,61 +4350,6 @@
               "type": "boolean"
             }
           }
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    },
-    "_meta": {
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "cluster",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
-    "name": "reconcile_tidb_service",
-    "title": "Reconcile TiDB service",
-    "description": "Install or reconcile TiDB Operator and a SQL-gated TiDB platform cluster. Credentials remain operator-owned and are not returned.",
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "uri"
-      ],
-      "properties": {
-        "clusterName": {
-          "type": "string"
-        },
-        "namespace": {
-          "type": "string"
-        },
-        "instances": {
-          "type": "integer"
-        },
-        "storageClass": {
-          "type": "string"
-        },
-        "storageSize": {
-          "type": "string"
-        },
-        "retentionPolicy": {
-          "type": "string",
-          "enum": [
-            "delete",
-            "retain"
-          ]
-        },
-        "localRelay": {
-          "type": "object"
         },
         "uri": {
           "type": "string",
@@ -5067,7 +4572,15 @@
     "name": "release_sql_connector",
     "title": "Release SQL connector",
     "description": "Decrement refCount on a durable SQL connector; optional force drain",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "sql-connector", "required": true}]},
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "sql-connector",
+          "required": true
+        }
+      ]
+    },
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5108,7 +4621,15 @@
     "name": "remove_host_exposure",
     "title": "Remove Host Exposure",
     "description": "Stop tunnel/shim resources for a host exposure binding",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "tunnel", "required": true}]},
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "tunnel",
+          "required": true
+        }
+      ]
+    },
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5242,48 +4763,6 @@
       "type": "object"
     },
     "_meta": {}
-  },
-  {
-    "name": "remove_tidb_service",
-    "title": "Remove TiDB service",
-    "description": "Destructively remove the platform TidbCluster and owned data while preserving TiDB Operator. Requires confirm=true.",
-    "_meta": {"requires": [{"argument": "uri", "resourceType": "cluster", "required": true}]},
-    "inputSchema": {
-      "type": "object",
-      "required": [
-        "confirm",
-        "uri"
-      ],
-      "properties": {
-        "clusterName": {
-          "type": "string"
-        },
-        "namespace": {
-          "type": "string"
-        },
-        "retentionPolicy": {
-          "type": "string",
-          "enum": [
-            "delete",
-            "retain"
-          ]
-        },
-        "localRelay": {
-          "type": "object"
-        },
-        "confirm": {
-          "type": "boolean"
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      }
-    },
-    "outputSchema": {
-      "type": "object"
-    }
   },
   {
     "name": "remove_vm_network_device",
@@ -5487,125 +4966,6 @@
         {
           "argument": "uri",
           "resourceType": "database",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
-    "name": "restart_cluster",
-    "title": "Restart Cluster",
-    "description": "Restart K3s inside a VM and verify the service becomes active again",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "vmName": {
-          "type": "string"
-        },
-        "serviceName": {
-          "type": "string",
-          "enum": [
-            "k3s"
-          ]
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "active"
-          ]
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "vmName",
-        "serviceName",
-        "status",
-        "uri"
-      ]
-    },
-    "_meta": {
-      "needsApproval": true,
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "cluster",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
-    "name": "restart_cluster_agent",
-    "title": "Restart Cluster Agent",
-    "description": "Restart the Opute cluster agent service inside a VM and verify it becomes active again",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "vmName": {
-          "type": "string"
-        },
-        "serviceName": {
-          "type": "string",
-          "enum": [
-            "opute-cluster-agent"
-          ]
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "active"
-          ]
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "vmName",
-        "serviceName",
-        "status",
-        "uri"
-      ]
-    },
-    "_meta": {
-      "needsApproval": true,
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "vm",
-          "required": true
-        },
-        {
-          "argument": "uri",
-          "resourceType": "container",
           "required": true
         }
       ]
@@ -6159,68 +5519,6 @@
     }
   },
   {
-    "name": "uninstall_k3s",
-    "title": "Uninstall K3s",
-    "description": "Uninstall K3s inside a VM and verify the binary is removed",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "vmName": {
-          "type": "string"
-        },
-        "serviceName": {
-          "type": "string",
-          "enum": [
-            "k3s"
-          ]
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "removed"
-          ]
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "vmName",
-        "serviceName",
-        "status",
-        "uri"
-      ]
-    },
-    "_meta": {
-      "needsApproval": true,
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "vm",
-          "required": true
-        },
-        {
-          "argument": "uri",
-          "resourceType": "container",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
     "name": "uninstall_provider_tools",
     "title": "Uninstall Provider Tools",
     "description": "Remove active provider association from the host after ensuring no VMs remain",
@@ -6342,7 +5640,21 @@
     "name": "update_vm_resources",
     "title": "Update VM Resources",
     "description": "Update CPU and/or memory limits of an existing VM or system container on the host",
-    "_meta": {"needsApproval": true, "requires": [{"argument": "uri", "resourceType": "vm", "required": true}, {"argument": "uri", "resourceType": "container", "required": true}]},
+    "_meta": {
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "vm",
+          "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
+        }
+      ]
+    },
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6390,13 +5702,6 @@
         "vmName",
         "status",
         "uri"
-      ]
-    },
-    "_meta": {
-      "needsApproval": true,
-      "requires": [
-        {"argument": "uri", "resourceType": "vm", "required": true},
-        {"argument": "uri", "resourceType": "container", "required": true}
       ]
     }
   },

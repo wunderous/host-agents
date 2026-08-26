@@ -18,7 +18,7 @@ func TestRenderOllamaSystemdUnitUsesSharedConcurrencyPolicy(t *testing.T) {
 	unit, err := renderOllamaSystemdUnit(OllamaRuntimeConfig{
 		Port:            11434,
 		BinaryPath:      "/usr/local/bin/ollama",
-		ModelRef:        "qwen3.5:2b",
+		ModelRef:        "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M",
 		ModelsDirectory: "/var/lib/opute/ollama/models",
 		ContextSize:     32768,
 	})
@@ -41,16 +41,24 @@ func TestRenderOllamaSystemdUnitUsesSharedConcurrencyPolicy(t *testing.T) {
 	}
 }
 
+func TestOllamaContextDefaultIs32K(t *testing.T) {
+	t.Setenv("OPUTE_OLLAMA_CONTEXT_SIZE", "")
+	t.Setenv("OLLAMA_CONTEXT_LENGTH", "")
+	if got := ollamaContextSizeFromEnvironment(); got != 32768 {
+		t.Fatalf("ollamaContextSizeFromEnvironment() = %d, want 32768", got)
+	}
+}
+
 func TestOllamaModelNamesMatchTags(t *testing.T) {
 	for _, test := range []struct {
 		left  string
 		right string
 		want  bool
 	}{
-		{"qwen3.5:2b", "qwen3.5:2b", true},
-		{"qwen3.5:2b", "qwen3.5:2b:latest", true},
+		{"hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M", "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M", true},
+		{"hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M", "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M:latest", true},
 		{"hf.co/mradermacher/granite-embedding-small-english-r2-GGUF:Q4_K_M", "hf.co/mradermacher/granite-embedding-small-english-r2-GGUF:Q4_K_M", true},
-		{"other-model", "qwen3.5:2b", false},
+		{"other-model", "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M", false},
 	} {
 		if got := ollamaModelNamesMatch(test.left, test.right); got != test.want {
 			t.Fatalf("ollamaModelNamesMatch(%q, %q) = %v, want %v", test.left, test.right, got, test.want)
@@ -154,6 +162,16 @@ func TestConfigureOllamaModelContextPersistsGenericModelMapping(t *testing.T) {
 	}
 }
 
+func TestConfigureOllamaModelContextRejectsAbove32K(t *testing.T) {
+	_, err := (&HostOperationsService{}).ConfigureOllamaModelContext(t.Context(), ConfigureOllamaModelContextArgs{
+		ModelRef:    "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M",
+		ContextSize: 65536,
+	})
+	if err == nil {
+		t.Fatal("ConfigureOllamaModelContext accepted a context larger than the 32K maximum")
+	}
+}
+
 func TestGetOllamaModelContextFallsBackToRunningContextLength(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -169,7 +187,7 @@ func TestGetOllamaModelContextFallsBackToRunningContextLength(t *testing.T) {
 		case "/api/show":
 			_, _ = fmt.Fprint(writer, `{"parameters":"","details":{"parent_model":""}}`)
 		case "/api/ps":
-			_, _ = fmt.Fprint(writer, `{"models":[{"name":"qwen3.5:2b","context_length":32768}]}`)
+			_, _ = fmt.Fprint(writer, `{"models":[{"name":"hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M","context_length":32768}]}`)
 		default:
 			http.NotFound(writer, request)
 		}
@@ -181,7 +199,7 @@ func TestGetOllamaModelContextFallsBackToRunningContextLength(t *testing.T) {
 	}
 	t.Setenv("OPUTE_OLLAMA_PORT", strconv.Itoa(port))
 
-	result, err := (&HostOperationsService{}).GetOllamaModelContext(t.Context(), "qwen3.5:2b")
+	result, err := (&HostOperationsService{}).GetOllamaModelContext(t.Context(), "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,6 +248,15 @@ func TestWarmOllamaModelUsesSelectedReferenceAndKeepAlive(t *testing.T) {
 	}
 	if keepAlive, ok := received.KeepAlive.(float64); !ok || keepAlive != -1 {
 		t.Fatalf("keep_alive = %#v, want -1", received.KeepAlive)
+	}
+}
+
+func TestShouldWarmOllamaModelSkipsEmbeddingModels(t *testing.T) {
+	if shouldWarmOllamaModel("embedding") {
+		t.Fatal("embedding models must not be warmed through /api/generate")
+	}
+	if !shouldWarmOllamaModel("language") || !shouldWarmOllamaModel("") {
+		t.Fatal("language models must retain the chat warm-up path")
 	}
 }
 

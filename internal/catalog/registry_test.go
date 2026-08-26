@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
 	"github.com/wunderous/host-agents/internal/capability"
 	"github.com/wunderous/host-agents/internal/tools"
 )
@@ -90,6 +91,51 @@ func TestRegistryValidatesExplicitBindingsAndRevisionResolution(t *testing.T) {
 	invalid.Requires = []tools.ResourceBinding{{Argument: "missing", ResourceType: "vm"}}
 	if err := registry.Register(executable(invalid)); err == nil {
 		t.Fatal("binding to an undeclared input was accepted")
+	}
+}
+
+func TestSelectorOnlyDescriptorChangePublishesNewRevisionAndRejectsStaleResolution(t *testing.T) {
+	value := descriptor("list_vms")
+	value.OutputSchema = map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"vms": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"uri":  map[string]any{"type": "string"},
+						"name": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+	value.OutputType = "vm.uri"
+	value.ResultTypes = []capabilitycontract.ResultType{{
+		ID: "vm.uri", Version: 1,
+		Selectors: []capabilitycontract.ResultSelector{{ID: "uri", SourcePath: "vms[].uri", Cardinality: capabilitycontract.CardinalityMany, LabelPath: "vms[].name"}},
+	}}
+	value.Produces = []tools.ResourceBinding{{ResourceType: "vm", SourcePath: "vms[].uri", SelectorID: "uri"}}
+	registry := NewRegistry(tools.CapabilityCatalogSnapshot{ProviderID: "incus"}, Options{ProviderID: "incus", KnownResourceKinds: map[string]bool{"vm": true}})
+	registration := Registration{Descriptor: value, ProviderID: "incus", Implementation: "incus-v1", Capability: executable(value)}
+	if err := registry.RegisterRegistration(registration); err != nil {
+		t.Fatalf("selector descriptor rejected: %v", err)
+	}
+	first := registry.Snapshot()
+	if _, err := registry.Resolve("list_vms", first.Revision); err != nil {
+		t.Fatalf("current selector descriptor did not resolve: %v", err)
+	}
+	value.ResultTypes[0].Selectors[0].LabelPath = "vms[].uri"
+	if err := registry.Upsert(Registration{Descriptor: value, ProviderID: "incus", Implementation: "incus-v1", Capability: executable(value)}); err != nil {
+		t.Fatalf("selector-only update rejected: %v", err)
+	}
+	updated := registry.Snapshot()
+	if first.Revision == updated.Revision {
+		t.Fatal("selector-only descriptor change did not publish a new revision")
+	}
+	if _, err := registry.Resolve("list_vms", first.Revision); err == nil {
+		t.Fatal("stale selector generation resolved")
 	}
 }
 

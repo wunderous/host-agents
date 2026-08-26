@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"sort"
@@ -30,7 +31,7 @@ func main() {
 	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-k3s", Version: "1.0.0"}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}}})
 	addManifestTool(server, manifest)
 	addOperations(server)
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true})
 	log.Printf("Opute K3s provider listening on :%s/mcp", port)
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)
@@ -40,10 +41,10 @@ func main() {
 func k3sManifest() providercontract.InstallManifest {
 	return providercontract.InstallManifest{
 		Schema:     providercontract.InstallManifestVersion,
-		Provider:   providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.0"},
+		Provider:   providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.1"},
 		Provides:   []providercontract.CapabilityRef{{ID: kubernetesCapability, Version: 1}},
 		Recipes:    []providercontract.RecipeRef{{ID: "com.opute.k3s.managed", Source: providercontract.RecipeSource{URI: "recipes/kubernetes.yaml", Revision: "working-tree", SHA256: "sha256:058d01adece826a08598c200df440ffa2406b0bf7a98a50543446fd7420c24d1"}, Mode: "kubernetes"}},
-		Services:   []providercontract.ServiceDefinition{{ID: "opute.capability.kubernetes", Version: 1, Operations: operations()}},
+		Services:   []providercontract.ServiceDefinition{{ID: "opute.capability.kubernetes", CapabilityID: kubernetesCapability, Version: 1, Operations: operations()}},
 		Validation: providercontract.ValidationRef{Capability: kubernetesCapability, Operation: capabilitycontract.KubernetesValidateOperation},
 	}
 }
@@ -58,25 +59,55 @@ func operations() []providercontract.Operation {
 	destructive := func(id string, input map[string]any) providercontract.Operation {
 		return providerOperation(id, "destructive", input)
 	}
+	targetRead := func(id string, input map[string]any) providercontract.Operation {
+		operation := read(id, input)
+		operation.Requires = []providercontract.ResourceBinding{clusterTargetBinding()}
+		return operation
+	}
+	targetMutation := func(id string, input map[string]any) providercontract.Operation {
+		operation := mutation(id, input)
+		operation.Requires = []providercontract.ResourceBinding{clusterTargetBinding()}
+		return operation
+	}
+	targetDestructive := func(id string, input map[string]any) providercontract.Operation {
+		operation := destructive(id, input)
+		operation.Requires = []providercontract.ResourceBinding{clusterTargetBinding()}
+		return operation
+	}
 	return []providercontract.Operation{
 		read(capabilitycontract.KubernetesValidateOperation, map[string]any{"type": "object"}),
-		mutation(capabilitycontract.KubernetesApplyManifestOperation, targetSchema(map[string]any{"manifest": map[string]any{"type": "string", "minLength": 1, "maxLength": maxManifestBytes}}, "manifest")),
-		mutation(capabilitycontract.KubernetesPutSecretOperation, targetSchema(map[string]any{"namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "data": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}}, "namespace", "name", "data")),
-		read(capabilitycontract.KubernetesGetResourceOperation, targetSchema(resourceFields(), "kind", "resourceName")),
-		destructive(capabilitycontract.KubernetesDeleteResourceOperation, targetSchema(resourceFields(), "kind", "resourceName")),
-		read(capabilitycontract.KubernetesGetResourceStatusOperation, targetSchema(resourceFields(), "resourceKind", "resourceName")),
-		read(capabilitycontract.KubernetesListEventsOperation, targetSchema(map[string]any{"namespace": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 200}})),
+		targetMutation(capabilitycontract.KubernetesProvisionOperation, targetSchema(map[string]any{
+			"version": map[string]any{"type": "string", "minLength": 1, "maxLength": 64},
+		}, "version")),
+		targetRead(capabilitycontract.KubernetesStatusOperation, targetSchema(map[string]any{})),
+		targetMutation(capabilitycontract.KubernetesConfigureRegistryOperation, targetSchema(map[string]any{
+			"endpoint": map[string]any{"type": "string", "minLength": 1, "maxLength": 512},
+			"registry": map[string]any{"type": "string", "minLength": 1, "maxLength": 256},
+			"insecure": map[string]any{"type": "boolean"},
+		}, "endpoint")),
+		targetMutation(capabilitycontract.KubernetesRestartOperation, targetSchema(map[string]any{})),
+		targetDestructive(capabilitycontract.KubernetesRemoveOperation, targetSchema(map[string]any{})),
+		targetMutation(capabilitycontract.KubernetesApplyManifestOperation, targetSchema(map[string]any{"manifest": map[string]any{"type": "string", "minLength": 1, "maxLength": maxManifestBytes}}, "manifest")),
+		targetMutation(capabilitycontract.KubernetesPutSecretOperation, targetSchema(map[string]any{"namespace": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "data": map[string]any{"type": "object", "writeOnly": true, "additionalProperties": map[string]any{"type": "string"}}}, "namespace", "name", "data")),
+		targetRead(capabilitycontract.KubernetesGetResourceOperation, targetSchema(resourceFields(), "kind", "resourceName")),
+		targetDestructive(capabilitycontract.KubernetesDeleteResourceOperation, targetSchema(resourceFields(), "kind", "resourceName")),
+		targetRead(capabilitycontract.KubernetesGetResourceStatusOperation, targetSchema(resourceFields(), "resourceKind", "resourceName")),
+		targetRead(capabilitycontract.KubernetesListEventsOperation, targetSchema(map[string]any{"namespace": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 200}})),
 		read(capabilitycontract.KubernetesListClustersOperation, map[string]any{"type": "object", "properties": map[string]any{"source": map[string]any{"type": "string"}}}),
-		read(capabilitycontract.KubernetesGetClusterInfoOperation, targetSchema(map[string]any{})),
-		read(capabilitycontract.KubernetesExecCommandOperation, targetSchema(map[string]any{
+		targetRead(capabilitycontract.KubernetesGetClusterInfoOperation, targetSchema(map[string]any{})),
+		targetRead(capabilitycontract.KubernetesExecCommandOperation, targetSchema(map[string]any{
 			"kubectlArgs": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string", "minLength": 1}},
 			"stdin":       map[string]any{"type": "string", "writeOnly": true},
 		}, "kubectlArgs")),
 	}
 }
 
+func clusterTargetBinding() providercontract.ResourceBinding {
+	return providercontract.ResourceBinding{Argument: "targetUri", ResourceType: "cluster", Required: true}
+}
+
 func providerOperation(id, effect string, input map[string]any) providercontract.Operation {
-	return providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: map[string]any{"type": "object"}, Effect: effect, Idempotent: true, SupportsReadiness: effect != "read"}
+	return providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: map[string]any{"type": "object"}, Effect: effect, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: "sync_only"}
 }
 
 func targetSchema(properties map[string]any, operationRequired ...string) map[string]any {
@@ -121,6 +152,31 @@ func dispatch(ctx context.Context, operation string, args map[string]any) (*mcp.
 	switch operation {
 	case capabilitycontract.KubernetesValidateOperation:
 		return structured(map[string]any{"contractVersion": kubernetesCapability, "ready": true})
+	case capabilitycontract.KubernetesProvisionOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return provision(ctx, args)
+	case capabilitycontract.KubernetesStatusOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return getClusterInfo(ctx, args)
+	case capabilitycontract.KubernetesConfigureRegistryOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return configureRegistry(ctx, args)
+	case capabilitycontract.KubernetesRestartOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return restart(ctx, args)
+	case capabilitycontract.KubernetesRemoveOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return remove(ctx, args)
 	case capabilitycontract.KubernetesApplyManifestOperation:
 		if err := requireTarget(args); err != nil {
 			return nil, err
@@ -196,6 +252,108 @@ func dispatch(ctx context.Context, operation string, args map[string]any) (*mcp.
 	default:
 		return nil, fmt.Errorf("unknown K3s provider operation %q", operation)
 	}
+}
+
+func provision(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	instance := stringInput(args, "providerInstanceName")
+	version := stringInput(args, "version")
+	if version == "" {
+		version = defaultK3sVersion
+	}
+	if strings.ContainsAny(version, "\x00\r\n ';&|`$()") {
+		return nil, fmt.Errorf("version contains unsafe characters")
+	}
+	if kind := stringInput(args, "instanceType"); kind == "container" {
+		if _, err := runCommand(ctx, []string{"config", "set", instance, "security.nesting=true"}, nil); err != nil {
+			return nil, fmt.Errorf("enable container nesting: %w", err)
+		}
+	}
+	if _, err := runCommand(ctx, []string{"start", instance}, nil); err != nil && !strings.Contains(strings.ToLower(err.Error()), "already running") {
+		return nil, fmt.Errorf("start Kubernetes target: %w", err)
+	}
+	install := fmt.Sprintf(
+		"%s && env INSTALL_K3S_VERSION=%s sh -c %s",
+		ensureCurlCommand,
+		shellQuote(version),
+		shellQuote("curl -sfL https://get.k3s.io | sh -"),
+	)
+	if _, err := runCommand(ctx, []string{"exec", instance, "--", "bash", "-lc", install}, nil); err != nil {
+		return nil, fmt.Errorf("provision Kubernetes runtime: %w", err)
+	}
+	result, err := getClusterInfo(ctx, args)
+	if err != nil {
+		return nil, fmt.Errorf("verify Kubernetes runtime: %w", err)
+	}
+	object, _ := result.StructuredContent.(map[string]any)
+	object["provisioned"] = true
+	object["version"] = version
+	return structured(object)
+}
+
+func configureRegistry(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	instance := stringInput(args, "providerInstanceName")
+	endpoint := strings.TrimRight(stringInput(args, "endpoint"), "/")
+	parsed, err := url.Parse(endpoint)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || strings.ContainsAny(endpoint, "\x00\r\n") {
+		return nil, fmt.Errorf("endpoint must be an absolute http or https URL")
+	}
+	registry := stringInput(args, "registry")
+	if registry == "" {
+		registry = parsed.Host
+	}
+	if strings.ContainsAny(registry, "\x00\r\n ';&|`$()") {
+		return nil, fmt.Errorf("registry contains unsafe characters")
+	}
+	protocol := "https"
+	if insecure, _ := args["insecure"].(bool); insecure {
+		protocol = "http"
+	}
+	config := fmt.Sprintf("mirrors:\n  %s:\n    endpoint:\n      - %s\nconfigs: {}\n", registry, protocol+"://"+parsed.Host)
+	encoded := base64.StdEncoding.EncodeToString([]byte(config))
+	write := fmt.Sprintf("mkdir -p /etc/rancher/k3s; printf '%%s' %s | base64 -d > /etc/rancher/k3s/registries.yaml", shellQuote(encoded))
+	if _, err := runCommand(ctx, []string{"exec", instance, "--", "bash", "-lc", write}, nil); err != nil {
+		return nil, fmt.Errorf("configure Kubernetes registry: %w", err)
+	}
+	if _, err := runCommand(ctx, []string{"exec", instance, "--", "systemctl", "restart", "k3s"}, nil); err != nil {
+		return nil, fmt.Errorf("restart Kubernetes runtime after registry configuration: %w", err)
+	}
+	return structured(map[string]any{
+		"targetUri":  stringInput(args, "targetUri"),
+		"registry":   registry,
+		"endpoint":   protocol + "://" + parsed.Host,
+		"configured": true,
+	})
+}
+
+func restart(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	instance := stringInput(args, "providerInstanceName")
+	if _, err := runCommand(ctx, []string{"exec", instance, "--", "systemctl", "restart", "k3s"}, nil); err != nil {
+		return nil, fmt.Errorf("restart Kubernetes runtime: %w", err)
+	}
+	result, err := getClusterInfo(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	object, _ := result.StructuredContent.(map[string]any)
+	object["restarted"] = true
+	return structured(object)
+}
+
+func remove(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	instance := stringInput(args, "providerInstanceName")
+	if _, err := runCommand(ctx, []string{"exec", instance, "--", "bash", "-lc", "/usr/local/bin/k3s-uninstall.sh"}, nil); err != nil {
+		return nil, fmt.Errorf("remove Kubernetes runtime: %w", err)
+	}
+	return structured(map[string]any{"targetUri": stringInput(args, "targetUri"), "removed": true})
+}
+
+const (
+	defaultK3sVersion = "v1.31.8+k3s1"
+	ensureCurlCommand = "if ! command -v curl >/dev/null 2>&1; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y curl; fi"
+)
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\\"'\\\"'") + "'"
 }
 
 func putSecret(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {

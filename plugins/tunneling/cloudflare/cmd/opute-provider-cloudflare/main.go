@@ -28,7 +28,7 @@ func main() {
 	addManifestTool(server, manifest)
 	addCloudflareOperations(server)
 	addTeardownTool(server)
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true})
 	log.Printf("Opute Cloudflare provider listening on :%s/mcp", port)
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)
@@ -41,10 +41,10 @@ func cloudflareManifest() providercontract.InstallManifest {
 		Provides: []providercontract.CapabilityRef{{ID: tunnelingCapability, Version: 1}},
 		Recipes: []providercontract.RecipeRef{
 			{ID: "com.opute.cloudflare.tunneling", Source: providercontract.RecipeSource{URI: "recipes/tunneling.yaml", Revision: "working-tree", SHA256: "sha256:2f404972cbe5c463b8fe501973894c241341b2621e5941fad06af1434a958bc7"}, Mode: "tunnel"},
-			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:092810c1e394beee437a672e7e0ed1db9cf0786a3a050c5077536912eeb4e367"}, Mode: "managed"},
+			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:b665b9e50ebb64389dcca167d4b95b02f867fbb33d806d6254e6047fb8e9d9b3"}, Mode: "managed"},
 		},
-		Services:   []providercontract.ServiceDefinition{{ID: "opute.capability.tunneling", Version: 1, Operations: cloudflareOperations()}},
-		Teardown:   &providercontract.Operation{ID: "opute.provider.teardown", Version: 1, InputSchema: teardownSchema(), OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "plan"}}, Effect: "destructive", ResourceKinds: []string{"service", "tunnel"}, Idempotent: true, SupportsReadiness: true},
+		Services:   []providercontract.ServiceDefinition{{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: cloudflareOperations()}},
+		Teardown:   &providercontract.Operation{ID: "opute.provider.teardown", Version: 1, InputSchema: teardownSchema(), OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "plan"}}, Effect: "destructive", ResourceKinds: []string{"service", "tunnel"}, Idempotent: true, SupportsReadiness: true, TaskSupport: "sync_only"},
 		Validation: providercontract.ValidationRef{Capability: tunnelingCapability, Operation: "opute.capability.tunneling.validate"},
 	}
 }
@@ -81,7 +81,7 @@ func cloudflareOperations() []providercontract.Operation {
 }
 
 func providerOperation(id, effect string, input, output map[string]any, resources []string, requires []providercontract.ResourceBinding) providercontract.Operation {
-	return providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: output, Effect: effect, ResourceKinds: resources, Requires: requires, Idempotent: true, SupportsReadiness: effect != "read"}
+	return providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: output, Effect: effect, ResourceKinds: resources, Requires: requires, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: "sync_only"}
 }
 
 func validationSchema() map[string]any {
@@ -250,7 +250,12 @@ func reconcileHostTunnel(ctx context.Context, client *hostagentclient.Client, ar
 	if _, err := callHost(ctx, client, "ensure_host_service_supervisor", map[string]any{"scope": "user"}); err != nil {
 		return err
 	}
-	if _, err := callHost(ctx, client, "set_host_service_state", map[string]any{"serviceName": serviceName, "state": "start", "scope": "user"}); err != nil {
+	if _, err := callHost(ctx, client, "set_host_service_state", map[string]any{
+		"uri":         hostServiceURI(serviceName),
+		"serviceName": serviceName,
+		"state":       "start",
+		"scope":       "user",
+	}); err != nil {
 		return err
 	}
 	if target := stringInput(args, "localTarget", ""); target != "" {
@@ -363,12 +368,16 @@ func removeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 	for _, call := range []struct {
 		name string
 		args map[string]any
-	}{{"set_host_service_state", map[string]any{"serviceName": serviceName, "state": "stop", "scope": "user"}}, {"set_host_service_state", map[string]any{"serviceName": serviceName, "state": "disable", "scope": "user"}}, {"remove_host_file", map[string]any{"path": serviceFile, "confirm": true}}} {
+	}{{"set_host_service_state", map[string]any{"uri": hostServiceURI(serviceName), "serviceName": serviceName, "state": "stop", "scope": "user"}}, {"set_host_service_state", map[string]any{"uri": hostServiceURI(serviceName), "serviceName": serviceName, "state": "disable", "scope": "user"}}, {"remove_host_file", map[string]any{"path": serviceFile, "confirm": true}}} {
 		if _, err := callHost(ctx, client, call.name, call.args); err != nil {
 			return nil, err
 		}
 	}
 	return structured(map[string]any{"contractVersion": tunnelingCapability, "ready": true, "deleted": true, "bindingId": stringInput(args, "bindingId", ""), "placement": firstNonEmpty(stringInput(args, "placement", ""), "host")})
+}
+
+func hostServiceURI(serviceName string) string {
+	return "host-service:local:user/" + strings.TrimSpace(serviceName)
 }
 
 func cloudflaredManifest(namespace, name, image string, replicas int, token string, localTargets any) string {
@@ -426,6 +435,7 @@ spec:
 func addTeardownTool(server *mcp.Server) {
 	server.AddTool(&mcp.Tool{Name: "opute.provider.teardown", Description: "Return a generic cleanup plan and finalize Cloudflare API resources", InputSchema: teardownSchema(), OutputSchema: map[string]any{"type": "object"}}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var input struct {
+			Phase  string         `json:"phase"`
 			Inputs map[string]any `json:"inputs"`
 		}
 		if request != nil && request.Params != nil {
@@ -433,7 +443,7 @@ func addTeardownTool(server *mcp.Server) {
 				return nil, err
 			}
 		}
-		if stringInput(input.Inputs, "phase", "") == "finalize" {
+		if firstNonEmpty(input.Phase, stringInput(input.Inputs, "phase", "")) == "finalize" {
 			if err := cleanupExternalResources(ctx, input.Inputs); err != nil {
 				return nil, err
 			}
@@ -441,8 +451,9 @@ func addTeardownTool(server *mcp.Server) {
 		}
 		serviceName := firstNonEmpty(stringInput(input.Inputs, "serviceName", ""), "opute-cloudflare-tunnel.service")
 		serviceFile := firstNonEmpty(stringInput(input.Inputs, "serviceFile", ""), "~/.config/systemd/user/"+serviceName)
+		serviceURI := firstNonEmpty(stringInput(input.Inputs, "serviceUri", ""), hostServiceURI(serviceName))
 		cleanupKey := stringInput(input.Inputs, "tunnelId", "") + "-" + strings.Join(stringSliceInput(input.Inputs, "dnsRecordIds"), ",")
-		return structured(map[string]any{"contractVersion": "host-plan.v1", "plan": teardownPlan("com.opute.cloudflare.teardown", serviceName, serviceFile, cleanupKey)})
+		return structured(map[string]any{"contractVersion": "host-plan.v1", "plan": teardownPlan("com.opute.cloudflare.teardown", serviceName, serviceFile, serviceURI, cleanupKey)})
 	})
 }
 
@@ -621,8 +632,10 @@ func cloudflareDelete(ctx context.Context, token, endpoint string) error {
 	}
 	return nil
 }
-func teardownPlan(planID, serviceName, serviceFile, cleanupKey string) map[string]any {
-	return map[string]any{"contractVersion": "host-plan.v1", "planId": planID, "generation": 1, "idempotencyKey": planID + "-" + serviceName + "-" + serviceFile + "-" + cleanupKey, "nodes": []any{map[string]any{"id": "stop", "action": map[string]any{"tool": "set_host_service_state", "args": map[string]any{"serviceName": serviceName, "state": "stop", "scope": "user"}}, "validate": map[string]any{"tool": "inspect_host_service", "args": map[string]any{"serviceName": serviceName, "scope": "user"}, "assert": []any{map[string]any{"path": "/active", "op": "eq", "value": false}}}}, map[string]any{"id": "disable", "dependsOn": []string{"stop"}, "action": map[string]any{"tool": "set_host_service_state", "args": map[string]any{"serviceName": serviceName, "state": "disable", "scope": "user"}}, "validate": map[string]any{"tool": "inspect_host_service", "args": map[string]any{"serviceName": serviceName, "scope": "user"}, "assert": []any{map[string]any{"path": "/enabled", "op": "eq", "value": false}}}}, map[string]any{"id": "remove-service-file", "dependsOn": []string{"disable"}, "action": map[string]any{"tool": "remove_host_file", "args": map[string]any{"path": serviceFile, "confirm": true}}, "validate": map[string]any{"tool": "inspect_host_file", "args": map[string]any{"path": serviceFile}, "assert": []any{map[string]any{"path": "/exists", "op": "eq", "value": false}}}}}}
+func teardownPlan(planID, serviceName, serviceFile, serviceURI, cleanupKey string) map[string]any {
+	serviceArgs := map[string]any{"uri": serviceURI, "state": "stop", "scope": "user"}
+	inspectArgs := map[string]any{"uri": serviceURI, "scope": "user"}
+	return map[string]any{"contractVersion": "host-plan.v1", "planId": planID, "generation": 1, "idempotencyKey": planID + "-" + serviceName + "-" + serviceFile + "-" + cleanupKey, "nodes": []any{map[string]any{"id": "stop", "action": map[string]any{"tool": "set_host_service_state", "args": serviceArgs}, "validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/active", "op": "eq", "value": false}}}}, map[string]any{"id": "disable", "dependsOn": []string{"stop"}, "action": map[string]any{"tool": "set_host_service_state", "args": map[string]any{"uri": serviceURI, "state": "disable", "scope": "user"}}, "validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/enabled", "op": "eq", "value": false}}}}, map[string]any{"id": "remove-service-file", "dependsOn": []string{"disable"}, "action": map[string]any{"tool": "remove_host_file", "args": map[string]any{"path": serviceFile, "confirm": true}}, "validate": map[string]any{"tool": "inspect_host_file", "args": map[string]any{"path": serviceFile}, "assert": []any{map[string]any{"path": "/exists", "value": false, "op": "eq"}}}}}}
 }
 func structured(value any) (*mcp.CallToolResult, error) {
 	encoded, err := json.Marshal(value)

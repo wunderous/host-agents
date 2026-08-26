@@ -75,7 +75,7 @@ func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, 
 			return ContainerStatusResult{}, err
 		}
 		if nesting {
-			if err := s.ensureContainerK3sDevices(name); err != nil {
+			if err := s.ensureContainerRuntimeDevices(name); err != nil {
 				return ContainerStatusResult{}, err
 			}
 		}
@@ -183,7 +183,7 @@ func (s *HostOperationsService) launchIncusContainer(name, image, disk string, c
 		return fmt.Errorf("launch container: %s", firstNonEmpty(launched.Stderr, launched.Stdout, errString(err, fmt.Sprintf("incus exited %d", launched.ExitCode))))
 	}
 	if nesting {
-		if err := s.ensureContainerK3sDevices(name); err != nil {
+		if err := s.ensureContainerRuntimeDevices(name); err != nil {
 			return err
 		}
 	}
@@ -424,11 +424,12 @@ func (s *HostOperationsService) ensureContainerNesting(name string) error {
 			return fmt.Errorf("enable security.nesting: %s", firstNonEmpty(set.Stderr, set.Stdout, "incus config set failed"))
 		}
 	}
-	return s.ensureContainerK3sDevices(name)
+	return s.ensureContainerRuntimeDevices(name)
 }
 
-// ensureContainerK3sDevices attaches runtime devices required for K3s inside an Incus system container.
-func (s *HostOperationsService) ensureContainerK3sDevices(name string) error {
+// ensureContainerRuntimeDevices attaches generic runtime devices required by
+// nested workloads inside an Incus system container.
+func (s *HostOperationsService) ensureContainerRuntimeDevices(name string) error {
 	if fileExists("/dev/kmsg") {
 		if err := s.ensureIncusDevice(name, "kmsg", []string{
 			"config", "device", "add", name, "kmsg", "unix-char",

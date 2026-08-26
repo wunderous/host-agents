@@ -94,6 +94,40 @@ func localLLMRelayCIDRsEqual(existing []*net.IPNet, desired []string) bool {
 	return true
 }
 
+// localLLMRelayBindingsConflict reports whether two relay bindings cannot hold
+// their listeners at the same time. Ports must match, and the addresses must
+// overlap: identical addresses conflict, and a wildcard bind (empty, 0.0.0.0
+// or ::) conflicts with every address on that port. Distinct unicast
+// addresses on the same port do not conflict and must both be allowed to run.
+func localLLMRelayBindingsConflict(existingHost string, existingPort int, desiredHost string, desiredPort int) bool {
+	if desiredPort == 0 || existingPort != desiredPort {
+		return false
+	}
+	return localLLMRelayHostsOverlap(existingHost, desiredHost)
+}
+
+func localLLMRelayHostsOverlap(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if localLLMRelayHostIsWildcard(a) || localLLMRelayHostIsWildcard(b) {
+		return true
+	}
+	ipA := net.ParseIP(a)
+	ipB := net.ParseIP(b)
+	if ipA != nil && ipB != nil {
+		return ipA.Equal(ipB)
+	}
+	return strings.EqualFold(a, b)
+}
+
+func localLLMRelayHostIsWildcard(value string) bool {
+	if value == "" {
+		return true
+	}
+	ip := net.ParseIP(value)
+	return ip != nil && ip.IsUnspecified()
+}
+
 func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs) (map[string]any, error) {
 	if err := ValidateLocalLLMRelayArgs(args); err != nil {
 		return nil, err
@@ -124,10 +158,17 @@ func (m *localLLMRelayManager) start(ctx context.Context, args LocalLLMRelayArgs
 	} else {
 		// A previous generic exposure may have been removed from the control
 		// plane without removing its persisted relay session. Reclaim a stale
-		// tracked listener when the new desired binding explicitly requests the
-		// same port; otherwise reconciliation fails with EADDRINUSE.
+		// tracked listener only when the new desired binding would actually
+		// collide with it; otherwise reconciliation fails with EADDRINUSE.
+		//
+		// The bind identity of a TCP listener is (host, port), not the port
+		// alone. Matching on the port by itself tore down a live, perfectly
+		// compatible session on a different address: ensuring the dogfood cell
+		// relay on 10.0.100.1:11435 evicted the local dev relay on
+		// 127.0.0.1:11435, which no OS conflict ever required, and left the
+		// local chat runtime unreachable.
 		for id, existing := range m.sessions {
-			if args.ListenPort != 0 && existing.listenPort == args.ListenPort {
+			if localLLMRelayBindingsConflict(existing.listenHost, existing.listenPort, args.ListenHost, args.ListenPort) {
 				stale = existing
 				delete(m.sessions, id)
 				break

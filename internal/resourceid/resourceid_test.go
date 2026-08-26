@@ -6,11 +6,11 @@ import (
 )
 
 func TestParseAllowsColonsInResourceID(t *testing.T) {
-	u, err := Parse("model:local:qwen3.5:2b")
+	u, err := Parse("model:local:hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := u.String(); got != "model:local:qwen3.5:2b" {
+	if got := u.String(); got != "model:local:hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M" {
 		t.Fatalf("round trip = %q", got)
 	}
 }

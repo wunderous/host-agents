@@ -77,58 +77,6 @@ func (s *HostOperationsService) GetLocalStatus() (map[string]any, error) {
 	}, nil
 }
 
-func (s *HostOperationsService) GetK3sStatus(vmName string) (map[string]any, error) {
-	nodesJSON, err := s.runKubernetesKubectlTimed(vmName, []string{"get", "nodes", "-o", "json"}, "get K3s nodes", 30*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	var nodes struct {
-		Items []struct {
-			Metadata struct {
-				Name string `json:"name"`
-			} `json:"metadata"`
-			Status struct {
-				NodeInfo struct {
-					KubeletVersion string `json:"kubeletVersion"`
-				} `json:"nodeInfo"`
-				Conditions []struct {
-					Type   string `json:"type"`
-					Status string `json:"status"`
-				} `json:"conditions"`
-			} `json:"status"`
-		} `json:"items"`
-	}
-	if err := json.Unmarshal([]byte(nodesJSON), &nodes); err != nil {
-		return nil, fmt.Errorf("parse K3s nodes: %w", err)
-	}
-	ready := 0
-	items := make([]map[string]any, 0, len(nodes.Items))
-	version := ""
-	for _, node := range nodes.Items {
-		nodeReady := false
-		for _, condition := range node.Status.Conditions {
-			if condition.Type == "Ready" {
-				nodeReady = condition.Status == "True"
-			}
-		}
-		if nodeReady {
-			ready++
-		}
-		if version == "" {
-			version = node.Status.NodeInfo.KubeletVersion
-		}
-		items = append(items, map[string]any{"name": node.Metadata.Name, "ready": nodeReady, "version": node.Status.NodeInfo.KubeletVersion})
-	}
-	return map[string]any{
-		"vmName":         vmName,
-		"status":         map[bool]string{true: "ready", false: "pending"}[len(items) > 0 && ready == len(items)],
-		"nodes":          items,
-		"readyNodes":     ready,
-		"totalNodes":     len(items),
-		"kubeletVersion": version,
-	}, nil
-}
-
 type InstallPostgreSQLArgs struct {
 	VMName    string `json:"vmName"`
 	Namespace string `json:"namespace,omitempty"`

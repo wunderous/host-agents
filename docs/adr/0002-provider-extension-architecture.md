@@ -936,7 +936,7 @@ recipes:
     mode: managed
     inputs:
       endpoint: http://127.0.0.1:11434
-      model: qwen3.5:2b
+      model: hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M
 validation:
   capability: opute.capability.llm-serving.v1
   operation: validate
@@ -1185,7 +1185,7 @@ opute-host-agent provider install --source ./plugins/llm/ollama/plugin.yaml --ac
 opute-host-agent provider status --provider com.opute.ollama
 opute-host-agent provider reload --provider com.opute.ollama
 opute-host-agent recipe validate --source ./plugins/llm/ollama/recipes/ollama.yaml
-opute-host-agent recipe apply --source ./plugins/llm/ollama/recipes/ollama.yaml --input model=qwen3.5:2b
+opute-host-agent recipe apply --source ./plugins/llm/ollama/recipes/ollama.yaml --input model=hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M
 ```
 
 The CLI and MCP handlers call the same internal packages.

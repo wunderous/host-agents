@@ -110,7 +110,7 @@ func NewProviderLifecycleManager(policy DrainPolicy) *ProviderLifecycleManager {
 }
 
 func (m *ProviderLifecycleManager) CreateCandidate(provider providercontract.ProviderRef, manifestHash, endpoint, catalogRevision string) (ProviderGeneration, error) {
-	if m == nil || provider.ID == "" || provider.Version == "" || manifestHash == "" || endpoint == "" {
+	if m == nil || provider.ID == "" || provider.Version == "" || manifestHash == "" || endpoint == "" || strings.TrimSpace(catalogRevision) == "" {
 		return ProviderGeneration{}, fmt.Errorf("provider, manifest hash, endpoint, and catalog revision are required")
 	}
 	m.mu.Lock()
@@ -163,6 +163,34 @@ func (m *ProviderLifecycleManager) Activate(id string) (previous *ProviderGenera
 	return previous, *candidate, nil
 }
 
+// RollbackActivation restores the previous active generation after a
+// post-activation failure. The new generation is failed and remains
+// undispatchable; the previous generation becomes active again.
+func (m *ProviderLifecycleManager) RollbackActivation(id, previousID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current, ok := m.generations[id]
+	if !ok || m.active[current.Provider.ID] != id || current.State != GenerationActive {
+		return fmt.Errorf("provider generation %q is not the active generation", id)
+	}
+	if current.Sessions > 0 {
+		return fmt.Errorf("provider generation %q has %d active session(s)", id, current.Sessions)
+	}
+	if previousID == "" {
+		delete(m.active, current.Provider.ID)
+		current.State = GenerationFailed
+		return nil
+	}
+	previous, ok := m.generations[previousID]
+	if !ok || previous.Provider.ID != current.Provider.ID || previous.State != GenerationDraining {
+		return fmt.Errorf("provider generation %q cannot restore previous generation %q", id, previousID)
+	}
+	previous.State = GenerationActive
+	current.State = GenerationFailed
+	m.active[current.Provider.ID] = previousID
+	return nil
+}
+
 func (m *ProviderLifecycleManager) Active(providerID string) (ProviderGeneration, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -184,6 +212,28 @@ func (m *ProviderLifecycleManager) OpenSession(providerID string) (*GenerationSe
 	}
 	generation.Sessions++
 	return &GenerationSession{manager: m, generationID: id}, nil
+}
+
+// OpenSessionForGeneration binds work to an explicitly selected generation.
+// Candidate validation uses this seam before activation; it never consults
+// the mutable provider-to-active lookup.
+func (m *ProviderLifecycleManager) OpenSessionForGeneration(providerID, generationID string) (*GenerationSession, error) {
+	if strings.TrimSpace(generationID) == "" {
+		return nil, fmt.Errorf("provider generation is required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	generation, ok := m.generations[generationID]
+	if !ok || generation.Provider.ID != providerID {
+		return nil, fmt.Errorf("provider generation %q is not registered for provider %q", generationID, providerID)
+	}
+	switch generation.State {
+	case GenerationCandidate, GenerationReady, GenerationActive, GenerationDraining:
+		generation.Sessions++
+		return &GenerationSession{manager: m, generationID: generationID}, nil
+	default:
+		return nil, fmt.Errorf("provider generation %q is %s", generationID, generation.State)
+	}
 }
 
 type GenerationSession struct {
@@ -245,6 +295,9 @@ func (m *ProviderLifecycleManager) Fail(id string, reason string) error {
 		return fmt.Errorf("provider generation %q not found", id)
 	}
 	generation.State = GenerationFailed
+	if m.active[generation.Provider.ID] == id {
+		delete(m.active, generation.Provider.ID)
+	}
 	return nil
 }
 

@@ -125,7 +125,8 @@ func Open(dir string) (*Store, error) {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         result_json TEXT,
-        error_message TEXT
+        error_message TEXT,
+        task_snapshot_json TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS plan_runs (
         run_id TEXT PRIMARY KEY,
@@ -205,6 +206,10 @@ func Open(dir string) (*Store, error) {
 			db.Close()
 			return nil, fmt.Errorf("migrate provider generation %s: %w", column.name, err)
 		}
+	}
+	if err := ensureTableColumn(db, "operations", "task_snapshot_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate task snapshot state: %w", err)
 	}
 	// Legacy invocation rows predate the separate execution binding; the
 	// column must exist before any reader selects it.
@@ -723,6 +728,55 @@ func (s *Store) Fail(operationID, message string) error {
 func (s *Store) Cancel(operationID string) error {
 	_, err := s.db.Exec(`UPDATE operations SET status = 'cancelled', updated_at = ? WHERE operation_id = ? AND status IN ('working', 'unknown')`, time.Now().UTC().Format(time.RFC3339Nano), operationID)
 	return err
+}
+
+// SaveTaskSnapshot stores the protocol-visible state of an MCP Tasks handle.
+// It is separate from the legacy operation projection so a task can be
+// reconstructed after the in-memory executor has gone away.
+func (s *Store) SaveTaskSnapshot(taskID, toolName, description string, snapshot any) error {
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return fmt.Errorf("encode task snapshot: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	status := "working"
+	if value, ok := snapshot.(map[string]any); ok {
+		if candidate, ok := value["status"].(string); ok && candidate != "" {
+			status = candidate
+		}
+	}
+	_, err = s.db.Exec(`INSERT INTO operations(
+        operation_id, tool_name, status, description, created_at, updated_at, task_snapshot_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(operation_id) DO UPDATE SET
+        tool_name=excluded.tool_name,
+        status=excluded.status,
+        description=excluded.description,
+        updated_at=excluded.updated_at,
+        task_snapshot_json=excluded.task_snapshot_json`,
+		taskID, toolName, status, description, now, now, string(encoded))
+	return err
+}
+
+func (s *Store) ListTaskSnapshots() ([]map[string]any, error) {
+	rows, err := s.db.Query(`SELECT task_snapshot_json FROM operations WHERE task_snapshot_json <> '' ORDER BY updated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var snapshots []map[string]any
+	for rows.Next() {
+		var encoded string
+		if err := rows.Scan(&encoded); err != nil {
+			return nil, err
+		}
+		var snapshot map[string]any
+		if err := json.Unmarshal([]byte(encoded), &snapshot); err != nil {
+			return nil, fmt.Errorf("decode task snapshot: %w", err)
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, rows.Err()
 }
 
 func (s *Store) List(limit int) ([]map[string]any, error) {

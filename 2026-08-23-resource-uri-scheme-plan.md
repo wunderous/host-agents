@@ -41,7 +41,7 @@ all in-repo call sites updated in the same change.
   `qwen3.5:2b`) but must be non-empty and whitespace-free.
 - Resource-type constants (closed vocabulary, kept in parity with `knownResourceKinds` at
   `internal/hostmcp/server.go:105`, extended): `vm`, `container`, `host`, `cluster`,
-  `postgres-service`, `tidb-service`, `sqlite-database`, `database` (bridge inventory),
+  `postgres-service`, `sqlite-database`, `database` (bridge inventory),
   `tunnel`, `llm-runtime`, `model`, `host-service`, `sql-connector`, `oci-registry`,
   `service-domain`, `service` (tenant-owned application/service identity).
 - Typed errors: `ErrInvalidURI`, `ErrUnknownType`, `ErrForeignTenant`.
@@ -96,7 +96,7 @@ New `internal/ops/resource_resolver.go`:
   `vm`/`container`/`cluster`/`host-service`/`tunnel`/`llm-runtime`, verify existence via the
   backing system (incus list, systemd unit, tunnel unit) and upsert. This keeps pre-existing
   resources addressable without a migration sweep.
-- Compound entities (`postgres-service`, `tidb-service`) fail closed with a "reconcile first"
+- Compound entities (`postgres-service`) fail closed with a "reconcile first"
   error (coordinates cannot be guessed safely).
 - Registration hooks: the canonical compute-provider operation
   `opute.capability.compute.provision` (Incus implements VM and system-container
@@ -116,7 +116,6 @@ Entity→URI mapping (resource-id = canonical logical id; provider coordinates s
 | `host` | host agent instance id (`agentID`) | — |
 | `cluster` | backing instance name | vmName, discovered cluster name |
 | `postgres-service` | clusterName (per-tenant unique; collision fails closed) | vmName, namespace |
-| `tidb-service` | clusterName | vmName, namespace |
 | `sqlite-database` | `<consumerId>/<databaseName>` | path |
 | `tunnel` | bindingId | — |
 | `llm-runtime` | `ollama` (singleton) | runtime |
@@ -163,7 +162,7 @@ statuses, host info…).
   `put_k8s_secret`, `apply_manifest`, helm tools, etc. take `uri` (of vm/cluster) **plus** k8s
   coordinates (kind/name/namespace) — documented decision.
 - **Databases**: `get/remove_postgresql_service` `{uri}`; `reconcile_postgresql_service`
-  keeps desired-state/placement args, registers + returns `uri`; same split for TiDB; SQLite
+  keeps desired-state/placement args, registers + returns `uri`; SQLite
   ensure/get/remove take `uri` (`sqlite-database:<t>:<consumer>/<name>`);
   `get_sql_connector_status`/`release_sql_connector` take `uri`.
 - **Tunnels**: `get_cloudflare_tunnel_status`, `probe_host_exposure`, `remove_host_exposure`,
@@ -255,7 +254,7 @@ status, and `bd dolt test` must pass before implementation begins. Then run
 
 - catalogRevision bump invalidates stale sessions and persisted plan re-runs — fail-closed,
   intended.
-- Pre-existing postgres/tidb services need one reconcile before uri-addressable (compound
+- Pre-existing PostgreSQL services need one reconcile before uri-addressable (compound
   coordinates).
 - `reset_incus_stack` and provider teardown must deregister affected rows to avoid registry
   drift.

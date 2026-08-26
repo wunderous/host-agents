@@ -14,17 +14,27 @@ func TestListClustersHonorsExplicitDetailMode(t *testing.T) {
 	}
 }
 
-func TestResolveLocalLLMModelArgUsesQwen35Default(t *testing.T) {
-	for _, preset := range []string{"", "qwen3.5"} {
-		modelRef, err := resolveLocalLLMModelArg(map[string]any{"modelPreset": preset})
+func TestResolveLocalLLMModelArgUsesLFM26Default(t *testing.T) {
+	var modelRef string
+	var err error
+	for _, preset := range []string{"", "lfm2-2.6b"} {
+		modelRef, err = resolveLocalLLMModelArg(map[string]any{"modelPreset": preset})
 		if err != nil {
 			t.Fatalf("preset %q: %v", preset, err)
 		}
-		if modelRef != "qwen3.5:2b" {
+		if modelRef != "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M" {
 			t.Fatalf("preset %q resolved to %q", preset, modelRef)
 		}
 	}
-	modelRef, err := resolveLocalLLMModelArg(map[string]any{"modelPreset": "qwen3.5-0.8b"})
+	modelRef, err = resolveLocalLLMModelArg(map[string]any{"modelPreset": "lfm2.5-thinking"})
+	if err != nil || modelRef != "lfm2.5-thinking:1.2b" {
+		t.Fatalf("explicit LFM2.5 Thinking 1.2B preset resolved to %q: %v", modelRef, err)
+	}
+	modelRef, err = resolveLocalLLMModelArg(map[string]any{"modelPreset": "qwen3.5"})
+	if err != nil || modelRef != "qwen3.5:2b" {
+		t.Fatalf("explicit Qwen3.5 2B Ollama preset resolved to %q: %v", modelRef, err)
+	}
+	modelRef, err = resolveLocalLLMModelArg(map[string]any{"modelPreset": "qwen3.5-0.8b"})
 	if err != nil || modelRef != "qwen3.5:0.8b" {
 		t.Fatalf("explicit 0.8B Ollama preset resolved to %q: %v", modelRef, err)
 	}

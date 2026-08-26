@@ -31,8 +31,9 @@ func main() {
 			Mode:   "external",
 		}},
 		Services: []providercontract.ServiceDefinition{{
-			ID:      "opute.capability.llm-serving",
-			Version: 1,
+			ID:           "opute.capability.llm-serving",
+			CapabilityID: "opute.capability.llm-serving.v1",
+			Version:      1,
 			Operations: []providercontract.Operation{{
 				ID:                "opute.capability.llm-serving.validate",
 				InputSchema:       map[string]any{"type": "object", "required": []string{"endpoint"}, "properties": map[string]any{"endpoint": map[string]any{"type": "string"}, "model": map[string]any{"type": "string"}}},
@@ -40,12 +41,14 @@ func main() {
 				Effect:            "read",
 				Idempotent:        true,
 				SupportsReadiness: true,
+				TaskSupport:       "sync_only",
 			}, {
 				ID:           "opute.capability.llm-serving.get-context-size",
 				InputSchema:  map[string]any{"type": "object", "properties": map[string]any{}},
 				OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "capability", "setting", "contextSize", "persisted"}},
 				Effect:       "read",
 				Idempotent:   true,
+				TaskSupport:  "sync_only",
 			}, {
 				ID:                "opute.capability.llm-serving.set-context-size",
 				InputSchema:       map[string]any{"type": "object", "required": []string{"contextSize"}, "properties": map[string]any{"contextSize": map[string]any{"type": "integer", "minimum": ollamaContextMinimum, "maximum": ollamaContextMaximum}}},
@@ -53,6 +56,7 @@ func main() {
 				Effect:            "mutation",
 				Idempotent:        true,
 				SupportsReadiness: true,
+				TaskSupport:       "sync_only",
 			}},
 		}},
 		Teardown: &providercontract.Operation{
@@ -63,6 +67,7 @@ func main() {
 			ResourceKinds:     []string{"service"},
 			Idempotent:        true,
 			SupportsReadiness: true,
+			TaskSupport:       "sync_only",
 		},
 		Validation: providercontract.ValidationRef{Capability: "opute.capability.llm-serving.v1", Operation: "opute.capability.llm-serving.validate"},
 	}
@@ -71,7 +76,7 @@ func main() {
 	addValidationTool(server)
 	addContextTools(server)
 	addTeardownTool(server)
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true})
 	log.Printf("Opute Ollama provider listening on :%s/mcp", port)
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)

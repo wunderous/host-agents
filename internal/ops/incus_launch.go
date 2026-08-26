@@ -47,21 +47,6 @@ func (s *HostOperationsService) readIncusInstanceType(name string) (string, erro
 	return strings.TrimSpace(info.Type), nil
 }
 
-func (s *HostOperationsService) resolveInstallK3sTarget(vmName, explicitTarget string) string {
-	target := strings.TrimSpace(explicitTarget)
-	if target != "" {
-		return target
-	}
-	instanceType, err := s.readIncusInstanceType(vmName)
-	if err != nil {
-		return "container"
-	}
-	if strings.EqualFold(instanceType, "container") {
-		return "container"
-	}
-	return "vm"
-}
-
 type incusProfileDevice struct {
 	Type string `json:"type"`
 	Path string `json:"path,omitempty"`

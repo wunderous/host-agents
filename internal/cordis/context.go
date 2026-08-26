@@ -5,6 +5,7 @@ package cordis
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -59,11 +60,15 @@ type Context struct {
 	current      *fiber
 	applyMu      sync.Mutex
 	nextID       uint64
+	nextFiberSeq uint64
 }
 
 type fiber struct {
-	ctx       *Context
-	id        string
+	ctx *Context
+	id  string
+	// seq is the mount order. Disposal must reverse the order fibers were
+	// applied in, and map iteration cannot express that.
+	seq       uint64
 	effects   []Effect
 	listeners []func()
 	services  []ServiceKey
@@ -141,7 +146,8 @@ func (c *Context) Plugin(plugin Plugin) (Fiber, error) {
 			return nil, fmt.Errorf("plugin %q requires unavailable service %q", plugin.ID(), dependency)
 		}
 	}
-	f := &fiber{ctx: c, id: plugin.ID()}
+	c.nextFiberSeq++
+	f := &fiber{ctx: c, id: plugin.ID(), seq: c.nextFiberSeq}
 	c.current = f
 	c.mu.Unlock()
 
@@ -343,6 +349,10 @@ func (c *Context) Dispose(ctx context.Context) error {
 		fibers = append(fibers, fiber)
 	}
 	c.mu.RUnlock()
+	// Sort by mount order so disposal is deterministically the reverse of
+	// application. Ranging over the plugin map would dispose in Go's
+	// randomized map order, which C-09 forbids.
+	sort.Slice(fibers, func(i, j int) bool { return fibers[i].seq < fibers[j].seq })
 	var firstErr error
 	for index := len(fibers) - 1; index >= 0; index-- {
 		if err := fibers[index].Dispose(ctx); err != nil && firstErr == nil {

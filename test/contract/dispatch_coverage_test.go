@@ -27,8 +27,6 @@ var requiredPlatformPostgresDispatch = []string{
 	"reset_incus_stack",
 }
 
-var requiredPlatformTidbDispatch = []string{"reconcile_tidb_service", "get_tidb_service_status", "remove_tidb_service"}
-
 var requiredVmResourceDispatch = []string{
 	"update_vm_resources",
 }
@@ -75,23 +73,6 @@ func TestPlatformPostgresAndResetToolsHaveDispatchCoverage(t *testing.T) {
 		}
 		if !catalog[name] {
 			t.Fatalf("platform/reset tool %q missing from the tunnel catalog", name)
-		}
-	}
-}
-
-func TestPlatformTidbToolsHaveDispatchAndCatalogCoverage(t *testing.T) {
-	dispatched := loadDispatchToolNames(t)
-	incus, err := tools.HostToolDefinitionsForProvider("incus")
-	if err != nil {
-		t.Fatal(err)
-	}
-	catalog := make(map[string]bool, len(incus))
-	for _, tool := range incus {
-		catalog[tool.Name] = true
-	}
-	for _, name := range requiredPlatformTidbDispatch {
-		if !dispatched[name] || !catalog[name] || !tools.StandaloneToolNames[name] {
-			t.Fatalf("TiDB tool %q is missing dispatch, tunnel catalog, or standalone catalog coverage", name)
 		}
 	}
 }

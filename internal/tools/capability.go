@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
 )
 
 // CapabilityDescriptor is the stable, client-facing metadata for one host
@@ -14,34 +16,36 @@ import (
 // separate field so callers can persist a stable identity without treating
 // presentation text as executable input.
 type CapabilityDescriptor struct {
-	OperationID         string              `json:"operationId"`
-	Version             int                 `json:"version,omitempty"`
-	Name                string              `json:"name"`
-	Title               string              `json:"title,omitempty"`
-	Description         string              `json:"description,omitempty"`
-	InputSchema         map[string]any      `json:"inputSchema"`
-	OutputSchema        map[string]any      `json:"outputSchema,omitempty"`
-	Effect              string              `json:"effect"`
-	Privilege           string              `json:"privilege,omitempty"`
-	RequiresApproval    bool                `json:"requiresApproval"`
-	Provider            string              `json:"provider"`
-	Implementation      string              `json:"implementation"`
-	ResourceKinds       []string            `json:"resourceKinds,omitempty"`
-	RequiredFields      []string            `json:"requiredFields,omitempty"`
-	ProducedObservables []string            `json:"producedObservables,omitempty"`
-	ArgumentProducers   map[string][]string `json:"argumentProducers,omitempty"`
-	DefaultLabels       map[string]string   `json:"defaultLabels,omitempty"`
-	GateMessage         string              `json:"gateMessage,omitempty"`
-	Consequence         string              `json:"consequence,omitempty"`
-	Idempotent          bool                `json:"idempotent"`
-	SupportsReadiness   bool                `json:"supportsReadiness"`
-	ValidationSchema    string              `json:"validationSchema,omitempty"`
-	ObservationSchema   string              `json:"observationSchema,omitempty"`
-	GenerationID        string              `json:"generationId,omitempty"`
-	Requires            []ResourceBinding   `json:"requires,omitempty"`
-	Produces            []ResourceBinding   `json:"produces,omitempty"`
-	InputEdges          []CapabilityEdge    `json:"inputEdges,omitempty"`
-	OutputEdges         []CapabilityEdge    `json:"outputEdges,omitempty"`
+	OperationID         string                          `json:"operationId"`
+	Version             int                             `json:"version,omitempty"`
+	Name                string                          `json:"name"`
+	Title               string                          `json:"title,omitempty"`
+	Description         string                          `json:"description,omitempty"`
+	InputSchema         map[string]any                  `json:"inputSchema"`
+	OutputSchema        map[string]any                  `json:"outputSchema,omitempty"`
+	OutputType          string                          `json:"outputType,omitempty"`
+	ResultTypes         []capabilitycontract.ResultType `json:"resultTypes,omitempty"`
+	Effect              string                          `json:"effect"`
+	Privilege           string                          `json:"privilege,omitempty"`
+	RequiresApproval    bool                            `json:"requiresApproval"`
+	Provider            string                          `json:"provider"`
+	Implementation      string                          `json:"implementation"`
+	ResourceKinds       []string                        `json:"resourceKinds,omitempty"`
+	RequiredFields      []string                        `json:"requiredFields,omitempty"`
+	ProducedObservables []string                        `json:"producedObservables,omitempty"`
+	ArgumentProducers   map[string][]string             `json:"argumentProducers,omitempty"`
+	DefaultLabels       map[string]string               `json:"defaultLabels,omitempty"`
+	GateMessage         string                          `json:"gateMessage,omitempty"`
+	Consequence         string                          `json:"consequence,omitempty"`
+	Idempotent          bool                            `json:"idempotent"`
+	SupportsReadiness   bool                            `json:"supportsReadiness"`
+	ValidationSchema    string                          `json:"validationSchema,omitempty"`
+	ObservationSchema   string                          `json:"observationSchema,omitempty"`
+	GenerationID        string                          `json:"generationId,omitempty"`
+	Requires            []ResourceBinding               `json:"requires,omitempty"`
+	Produces            []ResourceBinding               `json:"produces,omitempty"`
+	InputEdges          []CapabilityEdge                `json:"inputEdges,omitempty"`
+	OutputEdges         []CapabilityEdge                `json:"outputEdges,omitempty"`
 }
 
 // ResourceBinding is a declarative public relationship owned by the
@@ -51,6 +55,7 @@ type ResourceBinding struct {
 	Argument     string `json:"argument,omitempty"`
 	ResourceType string `json:"resourceType"`
 	SourcePath   string `json:"sourcePath,omitempty"`
+	SelectorID   string `json:"selectorId,omitempty"`
 	Required     bool   `json:"required,omitempty"`
 }
 
@@ -63,6 +68,7 @@ type CapabilityEdge struct {
 	TargetTool     string `json:"targetTool"`
 	TargetArgument string `json:"targetArgument"`
 	ResourceType   string `json:"resourceType"`
+	SelectorID     string `json:"selectorId,omitempty"`
 	Required       bool   `json:"required,omitempty"`
 }
 
@@ -250,7 +256,7 @@ func deriveCapabilityEdges(descriptors []CapabilityDescriptor) []CapabilityEdge 
 					edges = append(edges, CapabilityEdge{
 						SourceTool: source.Name, SourcePath: produced.SourcePath,
 						TargetTool: target.Name, TargetArgument: required.Argument,
-						ResourceType: required.ResourceType, Required: required.Required,
+						ResourceType: required.ResourceType, SelectorID: produced.SelectorID, Required: required.Required,
 					})
 				}
 			}
@@ -353,6 +359,8 @@ func capabilityDescriptor(providerID string, def ToolDefinition) CapabilityDescr
 		SupportsReadiness: metaBool(def.Meta, "supportsReadiness") || effect != "read",
 		Requires:          resourceBindings(def, "requires"),
 		Produces:          resourceBindings(def, "produces"),
+		OutputType:        metaString(def.Meta, "outputType", ""),
+		ResultTypes:       resultTypes(def.Meta),
 	}
 }
 
@@ -489,6 +497,7 @@ func explicitResourceBindings(meta map[string]any, key string) []ResourceBinding
 		binding := ResourceBinding{ResourceType: resourceType}
 		binding.Argument, _ = object["argument"].(string)
 		binding.SourcePath, _ = object["sourcePath"].(string)
+		binding.SelectorID, _ = object["selectorId"].(string)
 		binding.Required, _ = object["required"].(bool)
 		bindings = append(bindings, binding)
 	}
@@ -496,6 +505,25 @@ func explicitResourceBindings(meta map[string]any, key string) []ResourceBinding
 		return nil
 	}
 	return bindings
+}
+
+func resultTypes(meta map[string]any) []capabilitycontract.ResultType {
+	if meta == nil {
+		return nil
+	}
+	raw, ok := meta["resultTypes"]
+	if !ok {
+		return nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var types []capabilitycontract.ResultType
+	if err := json.Unmarshal(encoded, &types); err != nil {
+		return nil
+	}
+	return types
 }
 
 func requiredFields(schema map[string]any) []string {

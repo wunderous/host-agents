@@ -35,7 +35,7 @@ func TestProbeOpenAICompatibleServer(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":[{"id":"qwen3.5:2b"}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M"}]}`))
 			return
 		}
 		if r.URL.Path == "/v1/chat/completions" {
@@ -50,14 +50,14 @@ func TestProbeOpenAICompatibleServer(t *testing.T) {
 	service := &HostOperationsService{}
 	result, err := service.ProbeOpenAICompatibleServer(context.Background(), ProbeOpenAICompatibleArgs{
 		Endpoint:    server.URL + "/v1",
-		ModelRef:    "qwen3.5:2b",
+		ModelRef:    "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M",
 		IncludeChat: true,
 		BearerToken: "test-token",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Ready || !result.ChatReady || !result.StreamingChatReady || result.ModelRef != "qwen3.5:2b" {
+	if !result.Ready || !result.ChatReady || !result.StreamingChatReady || result.ModelRef != "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M" {
 		t.Fatalf("unexpected runtime observation: %+v", result)
 	}
 }

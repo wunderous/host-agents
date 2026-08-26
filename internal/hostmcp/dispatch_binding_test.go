@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	_ "modernc.org/sqlite"
@@ -16,6 +17,7 @@ import (
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
 	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
@@ -83,6 +85,41 @@ func bindingTestDescriptor(name string, requires ...tools.ResourceBinding) tools
 		Implementation: "host-agent:incus",
 		ResourceKinds:  []string{"vm"},
 		Requires:       requires,
+	}
+}
+
+func TestProviderDispatchDoesNotHoldAdmissionWhileCallingProviderCallback(t *testing.T) {
+	server, _ := newBindingTestServer(t)
+	config := resource.DefaultConfig(t.TempDir())
+	config.MaxNormal = 1
+	admission, err := resource.NewCoordinator(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.admission = admission
+
+	descriptor := bindingTestDescriptor("opute.capability.fake.callback")
+	descriptor.Provider = "incus"
+	descriptor.Implementation = "provider:incus"
+	capability := &capturingCapability{descriptor: descriptor}
+	if err := server.RegisterCapabilityModule(capability, descriptor.Provider, descriptor.Implementation); err != nil {
+		t.Fatal(err)
+	}
+
+	release, err := admission.Acquire(context.Background(), "provider-admission-regression")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	result, err := server.DispatchTool(ctx, descriptor.OperationID, map[string]any{"raw": true}, nil)
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("provider callback dispatch acquired a nested admission permit: result=%#v err=%v", result, err)
+	}
+	if capability.receivedArgs["raw"] != true {
+		t.Fatalf("provider callback did not receive raw arguments: %#v", capability.receivedArgs)
 	}
 }
 

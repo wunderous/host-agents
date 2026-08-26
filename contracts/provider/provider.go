@@ -2,7 +2,12 @@
 // Agent and independently built provider MCP servers.
 package provider
 
-import "time"
+import (
+	"strings"
+	"time"
+
+	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
+)
 
 const (
 	PluginDescriptorVersion = "opute-provider-plugin.v1"
@@ -79,20 +84,26 @@ type InstallManifest struct {
 }
 
 type Operation struct {
-	ID                string            `json:"id" yaml:"id"`
-	Version           int               `json:"version" yaml:"version"`
-	Description       string            `json:"description,omitempty" yaml:"description,omitempty"`
-	InputSchema       map[string]any    `json:"inputSchema" yaml:"inputSchema"`
-	OutputSchema      map[string]any    `json:"outputSchema" yaml:"outputSchema"`
-	ValidationSchema  string            `json:"validationSchema,omitempty" yaml:"validationSchema,omitempty"`
-	ObservationSchema string            `json:"observationSchema,omitempty" yaml:"observationSchema,omitempty"`
-	Effect            string            `json:"effect" yaml:"effect"`
-	ResourceKinds     []string          `json:"resourceKinds,omitempty" yaml:"resourceKinds,omitempty"`
-	Requires          []ResourceBinding `json:"requires,omitempty" yaml:"requires,omitempty"`
-	Produces          []ResourceBinding `json:"produces,omitempty" yaml:"produces,omitempty"`
-	Idempotent        bool              `json:"idempotent" yaml:"idempotent"`
-	SupportsReadiness bool              `json:"supportsReadiness" yaml:"supportsReadiness"`
-	SupportsStreaming bool              `json:"supportsStreaming,omitempty" yaml:"supportsStreaming,omitempty"`
+	ID                string                          `json:"id" yaml:"id"`
+	Version           int                             `json:"version" yaml:"version"`
+	Description       string                          `json:"description,omitempty" yaml:"description,omitempty"`
+	InputSchema       map[string]any                  `json:"inputSchema" yaml:"inputSchema"`
+	OutputSchema      map[string]any                  `json:"outputSchema" yaml:"outputSchema"`
+	OutputType        string                          `json:"outputType,omitempty" yaml:"outputType,omitempty"`
+	ResultTypes       []capabilitycontract.ResultType `json:"resultTypes,omitempty" yaml:"resultTypes,omitempty"`
+	ValidationSchema  string                          `json:"validationSchema,omitempty" yaml:"validationSchema,omitempty"`
+	ObservationSchema string                          `json:"observationSchema,omitempty" yaml:"observationSchema,omitempty"`
+	Effect            string                          `json:"effect" yaml:"effect"`
+	ResourceKinds     []string                        `json:"resourceKinds,omitempty" yaml:"resourceKinds,omitempty"`
+	Requires          []ResourceBinding               `json:"requires,omitempty" yaml:"requires,omitempty"`
+	Produces          []ResourceBinding               `json:"produces,omitempty" yaml:"produces,omitempty"`
+	Idempotent        bool                            `json:"idempotent" yaml:"idempotent"`
+	SupportsReadiness bool                            `json:"supportsReadiness" yaml:"supportsReadiness"`
+	SupportsStreaming bool                            `json:"supportsStreaming,omitempty" yaml:"supportsStreaming,omitempty"`
+	// TaskSupport is explicit because MCP discovery does not transfer task
+	// ownership through the Host Agent boundary. Providers currently use
+	// sync_only until a Host Agent task bridge is implemented.
+	TaskSupport string `json:"taskSupport,omitempty" yaml:"taskSupport,omitempty"`
 }
 
 // ResourceBinding is provider-declared metadata. The host validates its
@@ -102,14 +113,28 @@ type ResourceBinding struct {
 	Argument     string `json:"argument,omitempty" yaml:"argument,omitempty"`
 	ResourceType string `json:"resourceType" yaml:"resourceType"`
 	SourcePath   string `json:"sourcePath,omitempty" yaml:"sourcePath,omitempty"`
+	SelectorID   string `json:"selectorId,omitempty" yaml:"selectorId,omitempty"`
 	Required     bool   `json:"required,omitempty" yaml:"required,omitempty"`
 }
 
+// ServiceDefinition is the unit of provider composition. A service maps to
+// exactly one neutral capability family and is mounted as one Cordis plugin,
+// so its identity is the host's runtime key for everything the service
+// offers. Dependencies are resolved against the service keys already
+// provided to the Cordis context before the mount is allowed to proceed.
 type ServiceDefinition struct {
 	ID           string          `json:"id" yaml:"id"`
+	CapabilityID string          `json:"capabilityId" yaml:"capabilityId"`
 	Version      int             `json:"version" yaml:"version"`
 	Operations   []Operation     `json:"operations" yaml:"operations"`
 	Dependencies []CapabilityRef `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+}
+
+// ServiceKey is the stable, neutral runtime identity of one provider service.
+// It is an opaque composite: callers compare it, index by it, and never parse
+// it back into a provider or service name.
+func ServiceKey(providerID, serviceID string) string {
+	return strings.TrimSpace(providerID) + "/" + strings.TrimSpace(serviceID)
 }
 
 type ProviderEvent struct {

@@ -86,9 +86,6 @@ func Load() Config {
 		tenantID = "local"
 	}
 	agentID := strings.TrimSpace(envValue("OPUTE_REMOTE_AGENT_ID"))
-	if agentID == "" {
-		agentID = "local-bridge-host"
-	}
 	mcpAuth := strings.TrimSpace(envValue("MCP_AUTH_TOKEN"))
 	tunnelAuth := firstNonEmpty(
 		envValue("OPUTE_REMOTE_AGENT_AUTH_TOKEN"),
@@ -176,6 +173,12 @@ func (c Config) Validate() error {
 	if mode != "platform" && mode != "standalone" {
 		return fmt.Errorf("invalid agent mode %q: expected platform or standalone", c.AgentMode)
 	}
+	if strings.TrimSpace(c.RemoteAgentID) == "" {
+		return fmt.Errorf("OPUTE_REMOTE_AGENT_ID is required; the host agent must be onboarded with one canonical id")
+	}
+	if err := validateAgentID(c.RemoteAgentID); err != nil {
+		return err
+	}
 	if c.HostMCPPort < 0 {
 		return fmt.Errorf("HOST_MCP_PORT must be non-negative")
 	}
@@ -255,6 +258,22 @@ func validateInstanceID(value string) error {
 		valid := ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-'
 		if !valid || (i == 0 && ch == '-') || (i == len(value)-1 && ch == '-') {
 			return fmt.Errorf("OPUTE_HOST_AGENT_INSTANCE %q is invalid: use [a-z0-9][a-z0-9-]{0,62}", value)
+		}
+	}
+	return nil
+}
+
+func validateAgentID(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("OPUTE_REMOTE_AGENT_ID is required")
+	}
+	if len(value) > 255 {
+		return fmt.Errorf("OPUTE_REMOTE_AGENT_ID must be at most 255 characters")
+	}
+	for _, ch := range value {
+		if ch < 0x21 || ch > 0x7e {
+			return fmt.Errorf("OPUTE_REMOTE_AGENT_ID %q is invalid: use printable non-whitespace characters", value)
 		}
 	}
 	return nil

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
 	hostcapability "github.com/wunderous/host-agents/internal/capability"
@@ -51,6 +52,7 @@ type Server struct {
 	providerContext            *cordis.Context
 	providerLifecycle          *cordis.ProviderLifecycleManager
 	providerAdapters           map[string]*provideradapter.Adapter
+	providerGenerationAdapters map[string]*provideradapter.Adapter
 	providerMu                 sync.RWMutex
 	providerValidation         map[string]string
 	providerCandidates         map[string]*provideradapter.Adapter
@@ -123,15 +125,6 @@ func NewServer(opts Options) (*Server, error) {
 		Tools:     &mcp.ToolCapabilities{ListChanged: true},
 		Resources: &mcp.ResourceCapabilities{ListChanged: true},
 	}
-	capabilities.Experimental = map[string]any{
-		"tasks": map[string]any{
-			"list":   map[string]any{},
-			"cancel": map[string]any{},
-			"requests": map[string]any{
-				"tools": map[string]any{"call": map[string]any{}},
-			},
-		},
-	}
 	serverVersion := opts.Version
 	if serverVersion == "" {
 		serverVersion = version.Version
@@ -156,6 +149,7 @@ func NewServer(opts Options) (*Server, error) {
 		providerContext:            cordis.NewContext(),
 		providerLifecycle:          cordis.NewProviderLifecycleManager(cordis.DrainPolicy{}),
 		providerAdapters:           make(map[string]*provideradapter.Adapter),
+		providerGenerationAdapters: make(map[string]*provideradapter.Adapter),
 		providerValidation:         make(map[string]string),
 		providerCandidates:         make(map[string]*provideradapter.Adapter),
 		providerCandidateManifests: make(map[string]providercontract.InstallManifest),
@@ -172,6 +166,10 @@ func NewServer(opts Options) (*Server, error) {
 		}
 		hs.state = store
 		opts.Ops.SetResourceRegistry(store)
+		if err := hs.restoreTasks(); err != nil {
+			_ = store.Close()
+			return nil, fmt.Errorf("restore MCP tasks: %w", err)
+		}
 		if err := hs.restoreProviderGenerations(); err != nil {
 			_ = store.Close()
 			return nil, fmt.Errorf("restore provider generations: %w", err)
@@ -214,9 +212,14 @@ func (s *Server) Close() error {
 	s.providerMu.Lock()
 	adapters := s.providerAdapters
 	s.providerAdapters = make(map[string]*provideradapter.Adapter)
+	generationAdapters := s.providerGenerationAdapters
+	s.providerGenerationAdapters = make(map[string]*provideradapter.Adapter)
 	s.providerValidation = make(map[string]string)
-	uniqueAdapters := make(map[*provideradapter.Adapter]struct{}, len(adapters)+len(s.providerCandidates))
+	uniqueAdapters := make(map[*provideradapter.Adapter]struct{}, len(adapters)+len(generationAdapters)+len(s.providerCandidates))
 	for _, adapter := range adapters {
+		uniqueAdapters[adapter] = struct{}{}
+	}
+	for _, adapter := range generationAdapters {
 		uniqueAdapters[adapter] = struct{}{}
 	}
 	for _, adapter := range s.providerCandidates {
@@ -339,15 +342,19 @@ func (s *Server) retireProviderCapabilities(providerID, generationID string) {
 // call through the currently active provider adapter; no provider-specific
 // symbols enter the Host Agent catalog.
 func (s *Server) registerProviderServices(manifest providercontract.InstallManifest) error {
+	generationID := ""
+	if generation, ok := s.providerLifecycle.Active(manifest.Provider.ID); ok {
+		generationID = generation.ID
+	}
+	return s.registerProviderServicesForGeneration(manifest, generationID)
+}
+
+func (s *Server) registerProviderServicesForGeneration(manifest providercontract.InstallManifest, generationID string) error {
 	if err := s.registry.AuthorizeProvider(manifest.Provider.ID); err != nil {
 		return err
 	}
 	previousCatalog := s.registry.Snapshot()
 	implementation := "provider:" + manifest.Provider.ID
-	generationID := ""
-	if generation, ok := s.providerLifecycle.Active(manifest.Provider.ID); ok {
-		generationID = generation.ID
-	}
 	providerCapabilities := make([]hostcapability.Capability, 0)
 	providerDescriptors := make([]tools.CapabilityDescriptor, 0)
 	for _, service := range manifest.Services {
@@ -369,6 +376,8 @@ func (s *Server) registerProviderServices(manifest providercontract.InstallManif
 				Description:       description,
 				InputSchema:       operation.InputSchema,
 				OutputSchema:      operation.OutputSchema,
+				OutputType:        operation.OutputType,
+				ResultTypes:       operation.ResultTypes,
 				Effect:            operation.Effect,
 				Privilege:         operation.Effect,
 				RequiresApproval:  operation.Effect != "read",
@@ -386,10 +395,21 @@ func (s *Server) registerProviderServices(manifest providercontract.InstallManif
 			}
 			providerCapability := hostcapability.NewProviderAdapter(descriptor, func(ctx context.Context, args hostcapability.RawArguments, _ tools.ExecutionBinding, _ hostcapability.ExecutionSink) (*mcp.CallToolResult, error) {
 				if descriptor.GenerationID != "" {
-					active, ok := s.providerLifecycle.Active(manifest.Provider.ID)
-					if !ok || active.ID != descriptor.GenerationID {
+					session, err := s.providerLifecycle.OpenSession(manifest.Provider.ID)
+					if err != nil || session.GenerationID() != descriptor.GenerationID {
+						if err == nil {
+							session.Close()
+						}
 						return tools.ErrorResult(fmt.Errorf("provider generation %q is no longer active", descriptor.GenerationID)), nil
 					}
+					defer session.Close()
+					s.providerMu.RLock()
+					adapter := s.providerGenerationAdapters[session.GenerationID()]
+					s.providerMu.RUnlock()
+					if adapter == nil {
+						return tools.ErrorResult(fmt.Errorf("provider generation %q is not connected", descriptor.GenerationID)), nil
+					}
+					return adapter.CallSynchronousOnly(ctx, operation.ID, args)
 				}
 				s.providerMu.RLock()
 				adapter := s.providerAdapters[manifest.Provider.ID]
@@ -397,7 +417,7 @@ func (s *Server) registerProviderServices(manifest providercontract.InstallManif
 				if adapter == nil {
 					return tools.ErrorResult(fmt.Errorf("provider %q is not active", manifest.Provider.ID)), nil
 				}
-				return adapter.Call(ctx, operation.ID, args)
+				return adapter.CallSynchronousOnly(ctx, operation.ID, args)
 			})
 			providerCapabilities = append(providerCapabilities, providerCapability)
 			providerDescriptors = append(providerDescriptors, descriptor)
@@ -456,7 +476,7 @@ func providerBindings(bindings []providercontract.ResourceBinding) []tools.Resou
 	for _, binding := range bindings {
 		converted = append(converted, tools.ResourceBinding{
 			Argument: binding.Argument, ResourceType: binding.ResourceType,
-			SourcePath: binding.SourcePath, Required: binding.Required,
+			SourcePath: binding.SourcePath, SelectorID: binding.SelectorID, Required: binding.Required,
 		})
 	}
 	return converted
@@ -511,7 +531,13 @@ func (s *Server) DispatchTool(ctx context.Context, name string, args map[string]
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
-	if s.admission == nil {
+	// Provider operations are orchestration boundaries, not host-local
+	// primitives. A provider may call the public Host Agent callback to run a
+	// generic primitive; holding this process's admission lock while waiting
+	// for that callback would deadlock the shared-host coordinator (the outer
+	// provider call holds a normal/read permit while the callback may require a
+	// heavy/write permit such as ensure_host_artifact or apply_manifest).
+	if s.admission == nil || s.isProviderCapability(name) {
 		return s.dispatchRegisteredOrBuiltIn(ctx, name, rawArgs, binding, onData)
 	}
 	release, err := s.admission.Acquire(ctx, name)
@@ -520,6 +546,17 @@ func (s *Server) DispatchTool(ctx context.Context, name string, args map[string]
 	}
 	defer release()
 	return s.dispatchRegisteredOrBuiltIn(ctx, name, rawArgs, binding, onData)
+}
+
+func (s *Server) isProviderCapability(name string) bool {
+	s.catalogMu.RLock()
+	capabilityValue := s.capabilities[name]
+	s.catalogMu.RUnlock()
+	if capabilityValue == nil {
+		return false
+	}
+	definition := capabilityValue.Definition()
+	return strings.HasPrefix(strings.TrimSpace(definition.Implementation), "provider:")
 }
 
 func cloneArguments(args map[string]any) map[string]any {
@@ -708,7 +745,7 @@ func (s *Server) recordCapabilityInvocation(value hostcapability.Capability, raw
 		return
 	}
 	descriptor := value.Definition()
-	argumentsJSON, err := json.Marshal(rawArgs)
+	argumentsJSON, err := redactEvidenceJSON(rawArgs, descriptor.InputSchema)
 	if err != nil {
 		return
 	}
@@ -722,16 +759,19 @@ func (s *Server) recordCapabilityInvocation(value hostcapability.Capability, raw
 	resultEnvelope := map[string]any{"isError": false}
 	if result != nil {
 		resultEnvelope["isError"] = result.IsError
-		resultEnvelope["structured"] = result.StructuredContent
-		resultEnvelope["content"] = result.Content
+		resultEnvelope["structured"] = redactEvidenceBySchema(result.StructuredContent, descriptor.OutputSchema)
+		// Text content has no typed schema projection. Durable invocation
+		// evidence retains the structured result and omits arbitrary provider
+		// text rather than risking a secret-bearing diagnostic.
+		resultEnvelope["content"] = []any{}
 	}
 	if invocationErr != nil {
-		resultEnvelope["error"] = map[string]any{"message": invocationErr.Error()}
+		resultEnvelope["error"] = map[string]any{"message": "capability invocation failed"}
 		if capabilityErr, ok := invocationErr.(*tools.CapabilityError); ok {
 			resultEnvelope["error"] = map[string]any{
 				"owner":   capabilityErr.Owner,
 				"code":    capabilityErr.Code,
-				"message": capabilityErr.Error(),
+				"message": "capability invocation failed",
 			}
 		}
 	}
@@ -739,7 +779,7 @@ func (s *Server) recordCapabilityInvocation(value hostcapability.Capability, raw
 	if err != nil {
 		return
 	}
-	observationJSON, err := json.Marshal(observation)
+	observationJSON, err := json.Marshal(redactCapabilityObservation(observation, descriptor.OutputSchema))
 	if err != nil {
 		return
 	}
@@ -762,7 +802,7 @@ func (s *Server) recordCapabilityInvocation(value hostcapability.Capability, raw
 		CatalogRevision:   catalogRevision,
 		GenerationID:      descriptor.GenerationID,
 		Authorization:     authorization,
-		ArgumentsJSON:     string(argumentsJSON),
+		ArgumentsJSON:     argumentsJSON,
 		BindingJSON:       string(bindingJSON),
 		ResultJSON:        string(resultJSON),
 		ObservationJSON:   string(observationJSON),
@@ -772,6 +812,36 @@ func (s *Server) recordCapabilityInvocation(value hostcapability.Capability, raw
 
 func (s *Server) Tasks() *tasks.Registry {
 	return s.tasks
+}
+
+func (s *Server) persistTask(rec *tasks.Record) {
+	if s.state == nil || rec == nil {
+		return
+	}
+	snapshot := s.tasks.ToGetTaskResult(rec)
+	snapshot["toolName"] = rec.ToolName
+	snapshot["toolArgs"] = redactTaskValue(rec.ToolArgs)
+	if rec.Description != "" {
+		snapshot["description"] = rec.Description
+	}
+	if rec.Metadata != nil {
+		snapshot["metadata"] = redactTaskValue(rec.Metadata)
+	}
+	_ = s.state.SaveTaskSnapshot(rec.TaskID, rec.ToolName, rec.Description, snapshot)
+}
+
+func (s *Server) restoreTasks() error {
+	if s.state == nil {
+		return nil
+	}
+	snapshots, err := s.state.ListTaskSnapshots()
+	if err != nil {
+		return err
+	}
+	for _, snapshot := range snapshots {
+		s.tasks.RestoreSnapshot(snapshot)
+	}
+	return nil
 }
 
 func (s *Server) AbortAllConsoleStreams() {
@@ -1060,6 +1130,7 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 			if !ok || rec == nil {
 				return tools.ErrorResult(fmt.Errorf("operation cannot be cancelled: %s", id)), nil
 			}
+			s.persistTask(rec)
 			return structuredResult(s.tasks.ToGetTaskResult(rec), ""), nil
 		}
 	}
@@ -1080,12 +1151,15 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		return s.console.ResizeConsole(opID, width, height)
 	}
 	if name == "request_task_input" {
-		if !hasTaskAugmentation(req) || !taskExtensionDeclared(req) {
-			return tools.ErrorResult(fmt.Errorf("request_task_input requires the MCP Tasks extension")), nil
+		if !taskExtensionDeclared(req) {
+			return nil, missingTasksCapabilityError()
 		}
 		return s.createInputRequestTask(args)
 	}
-	if tasks.TaskAwareTools[name] && hasTaskAugmentation(req) && taskExtensionDeclared(req) {
+	if tasks.TaskAwareTools[name] {
+		if !taskExtensionDeclared(req) {
+			return nil, missingTasksCapabilityError()
+		}
 		return s.createAsyncTask(name, args)
 	}
 	onData := func(chunk string) {}
@@ -1125,17 +1199,21 @@ func (s *Server) createInputRequestTask(args map[string]any) (*mcp.CallToolResul
 	// Bind the task ID into the resume closure after creation without retaining
 	// request arguments in the durable projection.
 	var taskID string
-	rec := s.tasks.CreateWithInput("request_task_input", redactTaskArgs(args), time.Hour, desc, nil, cancel, inputRequests, func(responses map[string]any) {
+	rec := s.tasks.CreateWithInput("request_task_input", s.redactTaskArgs("request_task_input", args), time.Hour, desc, nil, cancel, inputRequests, func(responses map[string]any) {
 		result := tasks.ToolResult{StructuredContent: map[string]any{"response": responses["response"]}}
 		s.tasks.Complete(taskID, result)
 		if s.state != nil {
 			_ = s.state.Complete(taskID, result)
+		}
+		if completed, ok := s.tasks.Get(taskID); ok {
+			s.persistTask(completed)
 		}
 	})
 	taskID = rec.TaskID
 	if s.state != nil {
 		_ = s.state.Create(rec.TaskID, "request_task_input", desc)
 	}
+	s.persistTask(rec)
 	return &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: desc}},
 		StructuredContent: s.tasks.ToCreateTaskResult(rec),
@@ -1164,18 +1242,6 @@ func structuredResult(value any, text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: content, StructuredContent: value}
 }
 
-func hasTaskAugmentation(req *mcp.CallToolRequest) bool {
-	if req.Params == nil {
-		return false
-	}
-	if req.Params.Meta != nil {
-		if _, ok := req.Params.Meta["task"]; ok {
-			return true
-		}
-	}
-	return false
-}
-
 func taskExtensionDeclared(req *mcp.CallToolRequest) bool {
 	if req == nil || req.Params == nil || req.Params.Meta == nil {
 		return false
@@ -1192,16 +1258,36 @@ func taskExtensionDeclared(req *mcp.CallToolRequest) bool {
 	return ok
 }
 
+func missingTasksCapabilityError() error {
+	data, err := json.Marshal(mcp.MissingRequiredClientCapabilityData{
+		RequiredCapabilities: &mcp.ClientCapabilities{
+			Extensions: map[string]any{"io.modelcontextprotocol/tasks": map[string]any{}},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	// The Tasks extension draft defines -32003 for this condition. The Go SDK
+	// also exposes a newer SEP-2575 code, but this endpoint follows the
+	// extension specification advertised by server/discover.
+	return &jsonrpc.Error{
+		Code:    -32003,
+		Message: "Missing required client capability",
+		Data:    data,
+	}
+}
+
 func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToolResult, error) {
 	desc := fmt.Sprintf("Executing %s...", name)
 	if vm, ok := args["vmName"].(string); ok && vm != "" {
 		desc = fmt.Sprintf("Running %s on '%s'...", name, vm)
 	}
 	taskCtx, cancel := context.WithCancel(context.Background())
-	rec := s.tasks.CreateWithCancel(name, redactTaskArgs(args), time.Hour, desc, nil, cancel)
+	rec := s.tasks.CreateWithCancel(name, s.redactTaskArgs(name, args), time.Hour, desc, nil, cancel)
 	if s.state != nil {
 		_ = s.state.Create(rec.TaskID, name, desc)
 	}
+	s.persistTask(rec)
 	go func(taskID string) {
 		onData := func(chunk string) { s.tasks.AppendLog(taskID, chunk) }
 		result, err := s.DispatchTool(taskCtx, name, args, onData)
@@ -1210,23 +1296,34 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 				_ = s.state.Fail(taskID, err.Error())
 			}
 			s.tasks.Fail(taskID, err.Error())
+			if failed, ok := s.tasks.Get(taskID); ok {
+				s.persistTask(failed)
+			}
 			return
 		}
 		if result.IsError {
-			message := "operation failed"
+			redactedResult := s.redactTaskResult(name, result)
+			tr := tasks.ToolResult{StructuredContent: redactedResult.StructuredContent, IsError: true}
 			for _, content := range result.Content {
-				if text, ok := content.(*mcp.TextContent); ok && strings.TrimSpace(text.Text) != "" {
-					message = text.Text
-					break
+				if text, ok := content.(*mcp.TextContent); ok {
+					tr.Content = append(tr.Content, map[string]any{"type": "text", "text": text.Text})
 				}
 			}
+			// A tool-level failure is still a successful JSON-RPC execution. The
+			// Tasks spec requires it to be a completed task containing the normal
+			// CallToolResult with isError:true; failed is reserved for JSON-RPC
+			// errors during execution.
+			s.tasks.Complete(taskID, tr)
 			if s.state != nil {
-				_ = s.state.Fail(taskID, message)
+				_ = s.state.Complete(taskID, tr)
 			}
-			s.tasks.Fail(taskID, message)
+			if completed, ok := s.tasks.Get(taskID); ok {
+				s.persistTask(completed)
+			}
 			return
 		}
-		tr := tasks.ToolResult{StructuredContent: result.StructuredContent, IsError: result.IsError}
+		redactedResult := s.redactTaskResult(name, result)
+		tr := tasks.ToolResult{StructuredContent: redactedResult.StructuredContent, IsError: redactedResult.IsError}
 		for _, c := range result.Content {
 			if tc, ok := c.(*mcp.TextContent); ok {
 				tr.Content = append(tr.Content, map[string]any{"type": "text", "text": tc.Text})
@@ -1236,6 +1333,9 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 		if s.state != nil {
 			_ = s.state.Complete(taskID, tr)
 		}
+		if completed, ok := s.tasks.Get(taskID); ok {
+			s.persistTask(completed)
+		}
 	}(rec.TaskID)
 	return &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: desc}},
@@ -1243,11 +1343,48 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 	}, nil
 }
 
-// redactTaskArgs keeps task inspection useful without retaining credentials or
-// arbitrary manifests in the in-memory task registry. The original arguments
-// remain available only to the running goroutine.
-func redactTaskArgs(args map[string]any) map[string]any {
-	return redactTaskValue(args).(map[string]any)
+// redactTaskArgs projects task arguments through the operation's declared
+// input schema. The original arguments remain available only to the running
+// goroutine; durable task state never guesses sensitivity from key names.
+func (s *Server) redactTaskArgs(name string, args map[string]any) map[string]any {
+	descriptor, ok := s.taskCapabilityDescriptor(name)
+	if !ok {
+		return map[string]any{"redacted": true}
+	}
+	projected, ok := redactEvidenceBySchema(args, descriptor.InputSchema).(map[string]any)
+	if !ok {
+		return map[string]any{"redacted": true}
+	}
+	return projected
+}
+
+func (s *Server) redactTaskResult(name string, result *mcp.CallToolResult) *mcp.CallToolResult {
+	if result == nil {
+		return nil
+	}
+	descriptor, ok := s.taskCapabilityDescriptor(name)
+	if !ok {
+		return &mcp.CallToolResult{Content: result.Content, IsError: result.IsError, StructuredContent: map[string]any{"redacted": true}}
+	}
+	return &mcp.CallToolResult{
+		Content:           result.Content,
+		IsError:           result.IsError,
+		StructuredContent: redactEvidenceBySchema(result.StructuredContent, descriptor.OutputSchema),
+	}
+}
+
+func (s *Server) taskCapabilityDescriptor(name string) (tools.CapabilityDescriptor, bool) {
+	s.catalogMu.RLock()
+	defer s.catalogMu.RUnlock()
+	if capabilityValue := s.capabilities[name]; capabilityValue != nil {
+		return capabilityValue.Definition(), true
+	}
+	for _, descriptor := range s.catalog.Tools {
+		if descriptor.Name == name || descriptor.OperationID == name {
+			return descriptor, true
+		}
+	}
+	return tools.CapabilityDescriptor{}, false
 }
 
 func redactTaskValue(value any) any {
@@ -1255,11 +1392,6 @@ func redactTaskValue(value any) any {
 	case map[string]any:
 		out := make(map[string]any, len(typed))
 		for key, child := range typed {
-			lower := strings.ToLower(key)
-			if strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "secret") || lower == "manifest" || lower == "sql" {
-				out[key] = redactSensitiveTaskValue(child)
-				continue
-			}
 			out[key] = redactTaskValue(child)
 		}
 		return out
@@ -1271,25 +1403,6 @@ func redactTaskValue(value any) any {
 		return out
 	default:
 		return value
-	}
-}
-
-func redactSensitiveTaskValue(value any) any {
-	switch typed := value.(type) {
-	case []any:
-		out := make([]any, len(typed))
-		for i := range typed {
-			out[i] = "[redacted]"
-		}
-		return out
-	case []string:
-		out := make([]string, len(typed))
-		for i := range typed {
-			out[i] = "[redacted]"
-		}
-		return out
-	default:
-		return "[redacted]"
 	}
 }
 
@@ -1307,12 +1420,6 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 			},
 			"_meta": map[string]any{"io.modelcontextprotocol/serverInfo": map[string]any{"name": "host-agent", "version": version.Version}},
 		}, nil
-	case "tasks/list":
-		items := make([]map[string]any, 0)
-		for _, rec := range s.tasks.List() {
-			items = append(items, s.tasks.ToGetTaskResult(rec))
-		}
-		return map[string]any{"tasks": items}, nil
 	case "tasks/get":
 		var p struct {
 			TaskID string `json:"taskId"`
@@ -1336,6 +1443,10 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		if !ok || rec == nil {
 			return nil, fmt.Errorf("cannot cancel task: %s", p.TaskID)
 		}
+		if s.state != nil {
+			_ = s.state.Cancel(p.TaskID)
+		}
+		s.persistTask(rec)
 		return map[string]any{"resultType": "complete"}, nil
 	case "tasks/update":
 		var p struct {
@@ -1354,12 +1465,16 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		if _, ok := s.tasks.Get(p.TaskID); !ok {
 			return nil, fmt.Errorf("task not found: %s", p.TaskID)
 		}
-		if _, ok := s.tasks.Update(p.TaskID, p.InputResponses); !ok {
+		updated, ok := s.tasks.Update(p.TaskID, p.InputResponses)
+		if !ok {
 			return nil, fmt.Errorf("task cannot accept input: %s", p.TaskID)
 		}
+		s.persistTask(updated)
 		return map[string]any{"resultType": "complete"}, nil
 	case "resources/list":
-		return s.listTaskResources()
+		// Task enumeration is intentionally not exposed. A caller must already
+		// possess an unguessable task ID to read its status or logs.
+		return map[string]any{"resultType": "complete", "resources": []map[string]any{}}, nil
 	case "resources/read":
 		var p struct {
 			URI string `json:"uri"`
@@ -1369,28 +1484,11 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		}
 		return s.readTaskResource(p.URI)
 	default:
+		if method == "tasks/list" {
+			return nil, &jsonrpc.Error{Code: jsonrpc.CodeMethodNotFound, Message: "Method not found: tasks/list"}
+		}
 		return nil, fmt.Errorf("unsupported extension method: %s", method)
 	}
-}
-
-func (s *Server) listTaskResources() (map[string]any, error) {
-	resources := make([]map[string]any, 0)
-	for _, rec := range s.tasks.List() {
-		resources = append(resources, map[string]any{
-			"uri":         fmt.Sprintf("mcp://host/tasks/%s", rec.TaskID),
-			"name":        fmt.Sprintf("Status for task %s", rec.TaskID[:8]),
-			"description": rec.StatusMessage,
-			"mimeType":    "application/json",
-		})
-		if len(rec.Logs) > 0 || rec.Status == tasks.StatusWorking {
-			resources = append(resources, map[string]any{
-				"uri":      fmt.Sprintf("mcp://host/tasks/%s/logs", rec.TaskID),
-				"name":     fmt.Sprintf("Logs for task %s", rec.TaskID[:8]),
-				"mimeType": "text/plain",
-			})
-		}
-	}
-	return map[string]any{"resultType": "complete", "resources": resources}, nil
 }
 
 func (s *Server) readTaskResource(uri string) (map[string]any, error) {

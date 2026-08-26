@@ -24,7 +24,6 @@ const (
 	TypeHost            = "host"
 	TypeCluster         = "cluster"
 	TypePostgresService = "postgres-service"
-	TypeTiDBService     = "tidb-service"
 	TypeSQLiteDatabase  = "sqlite-database"
 	TypeDatabase        = "database"
 	TypeTunnel          = "tunnel"
@@ -39,7 +38,6 @@ const (
 	TypeStorage         = "storage"
 	TypeImage           = "image"
 	TypeProfile         = "profile"
-	TypeK3s             = "k3s"
 	TypeCloudflared     = "cloudflared"
 	TypeLanguage        = "language"
 	TypeEmbedding       = "embedding"
@@ -49,10 +47,10 @@ const (
 
 var knownTypes = map[string]struct{}{
 	TypeVM: {}, TypeContainer: {}, TypePod: {}, TypeHost: {}, TypeCluster: {},
-	TypePostgresService: {}, TypeTiDBService: {}, TypeSQLiteDatabase: {}, TypeDatabase: {},
+	TypePostgresService: {}, TypeSQLiteDatabase: {}, TypeDatabase: {},
 	TypeTunnel: {}, TypeLLMRuntime: {}, TypeModel: {}, TypeHostService: {},
 	TypeSQLConnector: {}, TypeOCIRegistry: {}, TypeServiceDomain: {}, TypeService: {},
-	TypeNetwork: {}, TypeStorage: {}, TypeImage: {}, TypeProfile: {}, TypeK3s: {},
+	TypeNetwork: {}, TypeStorage: {}, TypeImage: {}, TypeProfile: {},
 	TypeCloudflared: {}, TypeLanguage: {}, TypeEmbedding: {}, TypeOperation: {}, TypePlan: {},
 }
 

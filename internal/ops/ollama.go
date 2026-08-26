@@ -18,7 +18,10 @@ import (
 
 const (
 	defaultOllamaPort     = 11434
-	defaultOllamaModel    = "qwen3.5:2b"
+	DefaultOllamaModel    = "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M"
+	defaultOllamaModel    = DefaultOllamaModel
+	ollamaContextMinimum  = 512
+	ollamaContextMaximum  = 32768
 	ollamaServiceName     = "opute-ollama.service"
 	ollamaNumParallel     = 1
 	ollamaMaxLoadedModels = 2
@@ -69,6 +72,7 @@ type ProbeOllamaArgs struct {
 type InstallOllamaModelArgs struct {
 	ModelRef string
 	Port     *int
+	Role     string
 	// SetDefault controls which installed model a generic runtime start/probe
 	// uses. Embedding models can be pulled without replacing the chat default.
 	SetDefault bool
@@ -107,12 +111,12 @@ func defaultOllamaRuntimeConfig() OllamaRuntimeConfig {
 func ollamaContextSizeFromEnvironment() int {
 	for _, name := range []string{"OPUTE_OLLAMA_CONTEXT_SIZE", "OLLAMA_CONTEXT_LENGTH"} {
 		if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
-			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed >= ollamaContextMinimum && parsed <= ollamaContextMaximum {
 				return parsed
 			}
 		}
 	}
-	return 0
+	return ollamaContextMaximum
 }
 
 func loadOllamaRuntimeConfig() OllamaRuntimeConfig {
@@ -141,7 +145,7 @@ func loadOllamaRuntimeConfig() OllamaRuntimeConfig {
 	if strings.TrimSpace(persisted.ModelsDirectory) != "" {
 		cfg.ModelsDirectory = strings.TrimSpace(persisted.ModelsDirectory)
 	}
-	if persisted.ContextSize > 0 {
+	if persisted.ContextSize >= ollamaContextMinimum && persisted.ContextSize <= ollamaContextMaximum {
 		cfg.ContextSize = persisted.ContextSize
 	}
 	if len(persisted.ModelContexts) > 0 {
@@ -174,7 +178,7 @@ func readOllamaServiceContextSize() int {
 			}
 			value := strings.TrimSpace(strings.SplitN(line, "OLLAMA_CONTEXT_LENGTH=", 2)[1])
 			value = strings.Trim(value, "\"'")
-			if parsed, parseErr := strconv.Atoi(value); parseErr == nil && parsed > 0 {
+			if parsed, parseErr := strconv.Atoi(value); parseErr == nil && parsed >= ollamaContextMinimum && parsed <= ollamaContextMaximum {
 				return parsed
 			}
 		}
@@ -215,6 +219,9 @@ func saveOllamaRuntimeConfig(cfg OllamaRuntimeConfig) error {
 }
 
 func renderOllamaSystemdUnit(cfg OllamaRuntimeConfig) (string, error) {
+	if cfg.ContextSize != 0 && (cfg.ContextSize < ollamaContextMinimum || cfg.ContextSize > ollamaContextMaximum) {
+		return "", fmt.Errorf("contextSize must be between %d and %d tokens", ollamaContextMinimum, ollamaContextMaximum)
+	}
 	if runtime.GOOS != "linux" {
 		return "", fmt.Errorf("Ollama host runtime requires Linux or WSL2")
 	}
@@ -454,23 +461,29 @@ func (s *HostOperationsService) InstallOllamaModel(ctx context.Context, args Ins
 		return nil, fmt.Errorf("pull Ollama model %q: %w", modelRef, err)
 	}
 	effectiveModelRef := modelRef
-	if configured, ok := cfg.ModelContexts[modelRef]; ok && strings.TrimSpace(configured.EffectiveModelRef) != "" {
+	if configured, ok := cfg.ModelContexts[modelRef]; ok && configured.ContextSize >= ollamaContextMinimum && configured.ContextSize <= ollamaContextMaximum && strings.TrimSpace(configured.EffectiveModelRef) != "" {
 		effectiveModelRef = strings.TrimSpace(configured.EffectiveModelRef)
 	}
-	if err := warmOllamaModel(ctx, cfg, effectiveModelRef); err != nil {
-		return nil, fmt.Errorf("warm Ollama model %q: %w", effectiveModelRef, err)
+	if shouldWarmOllamaModel(args.Role) {
+		if err := warmOllamaModel(ctx, cfg, effectiveModelRef); err != nil {
+			return nil, fmt.Errorf("warm Ollama model %q: %w", effectiveModelRef, err)
+		}
 	}
-	probe, err := s.ProbeOllama(ctx, ProbeOllamaArgs{IncludeChat: true, ModelRef: modelRef})
+	probe, err := s.ProbeOllama(ctx, ProbeOllamaArgs{IncludeChat: shouldWarmOllamaModel(args.Role), ModelRef: modelRef})
 	if err != nil {
 		return nil, err
 	}
 	if !probe.Ready || !probe.OpenAIModelsReady {
 		return nil, fmt.Errorf("Ollama model %q did not become ready: %s", modelRef, probe.LoadError)
 	}
-	if strings.TrimSpace(probe.LoadedModel) == "" {
+	if shouldWarmOllamaModel(args.Role) && strings.TrimSpace(probe.LoadedModel) == "" {
 		return nil, fmt.Errorf("Ollama model %q did not become resident after warm", effectiveModelRef)
 	}
 	return probe, nil
+}
+
+func shouldWarmOllamaModel(role string) bool {
+	return strings.TrimSpace(role) != "embedding"
 }
 
 // warmOllamaModel asks Ollama to load the selected model without requiring a
@@ -653,8 +666,8 @@ func (s *HostOperationsService) ConfigureOllamaModelContext(ctx context.Context,
 	if !ollamaModelRefPattern.MatchString(modelRef) {
 		return nil, fmt.Errorf("invalid Ollama model reference")
 	}
-	if args.ContextSize <= 0 {
-		return nil, fmt.Errorf("contextSize must be greater than zero")
+	if args.ContextSize < ollamaContextMinimum || args.ContextSize > ollamaContextMaximum {
+		return nil, fmt.Errorf("contextSize must be between %d and %d tokens", ollamaContextMinimum, ollamaContextMaximum)
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
 	root := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/wunderous/host-agents/internal/resourceid"
+	"github.com/wunderous/host-agents/internal/selectors"
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
@@ -27,6 +28,7 @@ func validateProducedResources(descriptor tools.CapabilityDescriptor, structured
 		return fmt.Errorf("decode produced resource output: %w", err)
 	}
 	allowedByPath := make(map[string]map[string]bool)
+	selectorByPath := make(map[string]string)
 	for _, binding := range descriptor.Produces {
 		path := strings.TrimSpace(binding.SourcePath)
 		kind := strings.TrimSpace(binding.ResourceType)
@@ -39,9 +41,23 @@ func validateProducedResources(descriptor tools.CapabilityDescriptor, structured
 			allowedByPath[path] = kinds
 		}
 		kinds[kind] = true
+		if binding.SelectorID != "" {
+			selectorByPath[path] = binding.SelectorID
+		}
 	}
 	for path, allowedKinds := range allowedByPath {
 		values, found := valuesAtPath(document, strings.Split(path, "."))
+		if selectorID := selectorByPath[path]; selectorID != "" {
+			candidates, err := selectors.Evaluate(document, descriptor.OutputType, selectorID, descriptor.ResultTypes)
+			if err != nil {
+				return fmt.Errorf("capability %q selector %q failed: %w", descriptor.OperationID, selectorID, err)
+			}
+			values = make([]any, 0, len(candidates))
+			for _, candidate := range candidates {
+				values = append(values, candidate.Value)
+			}
+			found = true
+		}
 		if !found || len(values) == 0 {
 			return fmt.Errorf("capability %q did not return declared resource output %q", descriptor.OperationID, path)
 		}

@@ -35,7 +35,7 @@ func TestWriteContextSizePreservesSharedRuntimeConfiguration(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
 		t.Fatal(err)
 	}
-	original := map[string]any{"port": 11434, "modelRef": "qwen3.5:2b", "modelContexts": map[string]any{"demo": map[string]any{"contextSize": 4096}}}
+	original := map[string]any{"port": 11434, "modelRef": "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M", "modelContexts": map[string]any{"demo": map[string]any{"contextSize": 4096}}}
 	data, _ := json.Marshal(original)
 	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		t.Fatal(err)
@@ -81,5 +81,11 @@ func TestContextSizeFromUnit(t *testing.T) {
 	}
 	if got := contextSizeFromUnit("Environment=OLLAMA_HOST=127.0.0.1:11434\n"); got != 0 {
 		t.Fatalf("contextSizeFromUnit() = %d, want 0", got)
+	}
+}
+
+func TestWriteContextSizeRejectsAbove32K(t *testing.T) {
+	if _, err := writeContextSize(t.Context(), 65536); err == nil {
+		t.Fatal("writeContextSize accepted a context larger than the 32K maximum")
 	}
 }
