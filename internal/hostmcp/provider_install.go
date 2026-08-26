@@ -55,15 +55,10 @@ func (s *Server) handleProviderInstall(args map[string]any) (*mcp.CallToolResult
 		_ = adapter.Close()
 		return tools.ErrorResult(fmt.Errorf("persist provider generation: %w", err)), nil
 	}
+	s.emitProviderLifecycleEvent(context.Background(), ProviderEventCandidate, manifest.Provider.ID, candidate.ID, "")
 	s.providerMu.Lock()
-	previousAdapter := s.providerAdapters[manifest.Provider.ID]
-	previousValidation := s.providerValidation[manifest.Provider.ID]
 	s.providerCandidates[candidate.ID] = adapter
 	s.providerCandidateManifests[candidate.ID] = manifest
-	if previousAdapter != nil {
-		s.providerPreviousAdapters[candidate.ID] = previousAdapter
-		s.providerPreviousValidation[candidate.ID] = previousValidation
-	}
 	s.providerMu.Unlock()
 
 	recipeRef, err := selectProviderRecipe(manifest, recipeStringField(args, "mode"))
@@ -113,7 +108,7 @@ func (s *Server) handleProviderValidate(args map[string]any) (*mcp.CallToolResul
 	}
 	defer session.Close()
 	s.providerMu.RLock()
-	adapter := s.providerGenerationAdapters[session.GenerationID()]
+	adapter := s.providerGenerationAdapter(providerID, session.GenerationID())
 	validationOperation := s.providerValidation[providerID]
 	s.providerMu.RUnlock()
 	if adapter == nil {
@@ -136,9 +131,10 @@ func (s *Server) handleProviderValidate(args map[string]any) (*mcp.CallToolResul
 func (s *Server) handleProviderStatus(args map[string]any) (*mcp.CallToolResult, error) {
 	providerID := recipeStringField(args, "provider")
 	active, activeOK := s.providerLifecycle.Active(providerID)
-	s.providerMu.RLock()
-	connected := s.providerAdapters[providerID] != nil
-	s.providerMu.RUnlock()
+	connected := false
+	if activeOK {
+		connected = s.providerGenerationAdapter(providerID, active.ID) != nil
+	}
 	result := map[string]any{"providerId": providerID, "connected": connected, "active": activeOK}
 	if activeOK {
 		result["generation"] = active
@@ -152,8 +148,6 @@ func (s *Server) cleanupProviderCandidate(generationID, _ string) {
 	adapter := s.providerCandidates[generationID]
 	delete(s.providerCandidates, generationID)
 	delete(s.providerCandidateManifests, generationID)
-	delete(s.providerPreviousAdapters, generationID)
-	delete(s.providerPreviousValidation, generationID)
 	s.providerMu.Unlock()
 	if adapter != nil {
 		_ = adapter.Close()
@@ -167,8 +161,6 @@ func (s *Server) completeProviderCandidate(generationID string) {
 	s.providerMu.Lock()
 	delete(s.providerCandidates, generationID)
 	delete(s.providerCandidateManifests, generationID)
-	delete(s.providerPreviousAdapters, generationID)
-	delete(s.providerPreviousValidation, generationID)
 	s.providerMu.Unlock()
 }
 
@@ -353,17 +345,18 @@ func (s *Server) restoreProviderGenerations() error {
 			// may be started after the Host Agent during a supervisor restart.
 			continue
 		}
+		if err := s.mountProviderGeneration(manifest, record.GenerationID, adapter); err != nil {
+			_ = adapter.Close()
+			continue
+		}
 		s.providerMu.Lock()
-		s.providerAdapters[record.ProviderID] = adapter
-		s.providerGenerationAdapters[record.GenerationID] = adapter
 		s.providerValidation[record.ProviderID] = manifest.Validation.Operation
 		s.providerManifests[record.ProviderID] = manifest
 		s.providerMu.Unlock()
 		if err := s.registerProviderServices(manifest); err != nil {
+			_ = s.unmountProviderGeneration(record.ProviderID, record.GenerationID)
 			_ = adapter.Close()
 			s.providerMu.Lock()
-			delete(s.providerAdapters, record.ProviderID)
-			delete(s.providerGenerationAdapters, record.GenerationID)
 			delete(s.providerValidation, record.ProviderID)
 			delete(s.providerManifests, record.ProviderID)
 			s.providerMu.Unlock()

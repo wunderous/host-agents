@@ -342,6 +342,52 @@ func (f *fiber) Dispose(ctx context.Context) error {
 	return firstErr
 }
 
+// DisposePlugin disposes exactly one mounted plugin by id, releasing the
+// services it provided and running its effects in reverse. Disposing an
+// unknown or already-disposed plugin is a no-op, so retirement is idempotent.
+func (c *Context) DisposePlugin(ctx context.Context, id string) error {
+	c.mu.RLock()
+	f, ok := c.plugins[id]
+	c.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	return f.Dispose(ctx)
+}
+
+// ServiceKeys returns the keys of every service currently provided, sorted so
+// the listing is stable. It exposes identity only: resolving a key still goes
+// through Resolve, so no caller can reach a fiber or an effect through it.
+func (c *Context) ServiceKeys() []ServiceKey {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	keys := make([]ServiceKey, 0, len(c.services))
+	for key := range c.services {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	return keys
+}
+
+// PluginIDs returns the ids of every live plugin in the order they were
+// mounted. Disposal order is defined as the reverse of this, so a caller
+// tearing down a subset gets the same ordering guarantee Dispose gives the
+// whole context (C-09).
+func (c *Context) PluginIDs() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	fibers := make([]*fiber, 0, len(c.plugins))
+	for _, f := range c.plugins {
+		fibers = append(fibers, f)
+	}
+	sort.Slice(fibers, func(i, j int) bool { return fibers[i].seq < fibers[j].seq })
+	ids := make([]string, 0, len(fibers))
+	for _, f := range fibers {
+		ids = append(ids, f.id)
+	}
+	return ids
+}
+
 func (c *Context) Dispose(ctx context.Context) error {
 	c.mu.RLock()
 	fibers := make([]*fiber, 0, len(c.plugins))

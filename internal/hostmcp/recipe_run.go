@@ -260,6 +260,14 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 			return fmt.Errorf("persist provider generation readiness: %w", err)
 		}
 	}
+	s.emitProviderLifecycleEvent(context.Background(), ProviderEventReady, manifest.Provider.ID, generationID, "")
+	// Admission is asked before Activate, so a denial stops the transition
+	// rather than reporting on one that already happened.
+	if err := s.admitProvider(context.Background(), manifest.Provider.ID, generationID); err != nil {
+		_ = s.providerLifecycle.Fail(generationID, err.Error())
+		_ = s.restoreProviderManifest(manifest.Provider.ID, previousManifest, previousManifestOK)
+		return err
+	}
 	// Publish and validate the candidate's neutral capability surface before
 	// moving the lifecycle manager to active. Dispatch remains fail-closed until
 	// activation because the candidate is not in the active adapter map.
@@ -287,20 +295,46 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 	}
 	s.providerMu.Lock()
 	adapter := s.providerCandidates[generationID]
+	s.providerMu.Unlock()
 	if adapter != nil {
-		s.providerGenerationAdapters[generationID] = adapter
-		s.providerAdapters[activated.Provider.ID] = adapter
+		if err := s.mountProviderGeneration(manifest, generationID, adapter); err != nil {
+			return s.rollbackProviderActivation(manifest, manifestOK, previousManifest, previousManifestOK, activated, previous, fmt.Errorf("mount provider generation: %w", err))
+		}
 	}
+	s.providerMu.Lock()
 	if manifestOK {
 		s.providerValidation[activated.Provider.ID] = manifest.Validation.Operation
 		s.providerManifests[activated.Provider.ID] = manifest
 	}
 	s.providerMu.Unlock()
 	s.completeProviderCandidate(generationID)
+	// The predecessor is disposed last, once the replacement is mounted and its
+	// durable rows are written. Overlapping the two is what makes the swap
+	// reversible: every failure above this point rolls back by disposing the
+	// replacement, with the predecessor never having been touched.
+	if previous != nil {
+		s.emitProviderLifecycleEvent(context.Background(), ProviderEventDraining, previous.Provider.ID, previous.ID, "superseded")
+		if err := s.unmountProviderGeneration(previous.Provider.ID, previous.ID); err != nil {
+			// The replacement is live and durable; failing the activation now
+			// would be a lie. Report the leak on the stopped event instead.
+			s.emitProviderLifecycleEvent(context.Background(), ProviderEventStopped, previous.Provider.ID, previous.ID, fmt.Sprintf("superseded; dispose failed: %v", err))
+		} else {
+			s.emitProviderLifecycleEvent(context.Background(), ProviderEventStopped, previous.Provider.ID, previous.ID, "superseded")
+		}
+	}
+	// Emitted only once the mount and the durable rows are in place, so an
+	// observer that reacts to activation always finds a usable generation.
+	s.emitProviderLifecycleEvent(context.Background(), ProviderEventActivated, activated.Provider.ID, activated.ID, "")
 	return nil
 }
 
+// rollbackProviderActivation undoes a failed activation. The predecessor is
+// deliberately still mounted at this point — it is disposed only after the
+// replacement has fully succeeded — so rolling back is disposing what was just
+// mounted, not reconstructing what was torn down. There is no restore path to
+// get wrong.
 func (s *Server) rollbackProviderActivation(candidate providercontract.InstallManifest, candidateOK bool, previousManifest providercontract.InstallManifest, previousManifestOK bool, activated cordis.ProviderGeneration, previous *cordis.ProviderGeneration, cause error) error {
+	unmountErr := s.unmountProviderGeneration(activated.Provider.ID, activated.ID)
 	previousID := ""
 	if previous != nil {
 		previousID = previous.ID
@@ -317,8 +351,8 @@ func (s *Server) rollbackProviderActivation(candidate providercontract.InstallMa
 	if candidateOK {
 		manifestErr = s.restoreProviderManifest(candidate.Provider.ID, previousManifest, previousManifestOK)
 	}
-	if rollbackErr != nil || manifestErr != nil {
-		return fmt.Errorf("%w; rollback failed: lifecycle=%v catalog=%v", cause, rollbackErr, manifestErr)
+	if rollbackErr != nil || manifestErr != nil || unmountErr != nil {
+		return fmt.Errorf("%w; rollback failed: lifecycle=%v catalog=%v unmount=%v", cause, rollbackErr, manifestErr, unmountErr)
 	}
 	return cause
 }
@@ -363,7 +397,7 @@ func (s *Server) activationValidationFlows() map[string]func(context.Context, ma
 			}
 			defer session.Close()
 			s.providerMu.RLock()
-			adapter := s.providerGenerationAdapters[session.GenerationID()]
+			adapter := s.providerGenerationAdapter(providerID, session.GenerationID())
 			if adapter == nil {
 				// Activation validation runs *before* activateProviderGeneration
 				// promotes the generation's adapter out of providerCandidates,

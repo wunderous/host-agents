@@ -227,3 +227,27 @@ func TestDisposedFiberReleasesItsIDForRemount(t *testing.T) {
 		t.Fatalf("remount after disposal failed: %v", err)
 	}
 }
+
+func TestPluginIDsFollowMountOrderNotLexicalOrder(t *testing.T) {
+	ctx := NewContext()
+	// Mount in an order that is the exact reverse of lexical, so a sorted
+	// listing cannot be mistaken for a mount-ordered one. Callers reverse this
+	// slice to dispose, and that reversal is only correct if the order is the
+	// order things were applied.
+	mounted := []string{"zulu", "yankee", "xray", "alpha"}
+	for _, id := range mounted {
+		disposed := make([]string, 0, 1)
+		if _, err := ctx.Plugin(orderedPlugin{id: id, disposed: &disposed}); err != nil {
+			t.Fatalf("mount %q: %v", id, err)
+		}
+	}
+	got := ctx.PluginIDs()
+	if len(got) != len(mounted) {
+		t.Fatalf("PluginIDs() = %v, want %d entries", got, len(mounted))
+	}
+	for index, id := range mounted {
+		if got[index] != id {
+			t.Fatalf("PluginIDs() = %v, want mount order %v", got, mounted)
+		}
+	}
+}

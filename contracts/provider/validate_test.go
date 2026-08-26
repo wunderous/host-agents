@@ -34,6 +34,7 @@ func TestValidateInstallManifestPinsRecipesAndIdentity(t *testing.T) {
 		Provider:   ProviderRef{ID: descriptor.PluginID, Version: descriptor.Version},
 		Provides:   descriptor.Capabilities,
 		Recipes:    []RecipeRef{{ID: "example", Source: RecipeSource{URI: "https://example.invalid/recipe.yaml", Revision: "commit", SHA256: "sha256:abc"}}},
+		Services:   []ServiceDefinition{{ID: "example", CapabilityID: descriptor.Capabilities[0].ID, Version: 1}},
 		Validation: ValidationRef{Capability: descriptor.Capabilities[0].ID, Operation: "validate"},
 	}
 	if err := ValidateInstallManifest(manifest, manifest.Provider); err != nil {
@@ -157,5 +158,20 @@ func TestServiceKeyIsStableAcrossProviderAndService(t *testing.T) {
 	}
 	if ServiceKey("com.opute.other", "opute.capability.example") == key {
 		t.Fatal("two providers offering one family must not share a service key")
+	}
+}
+
+func TestValidateServicesRequiresAtLeastOneService(t *testing.T) {
+	// A serviceless manifest would install and activate while owning nothing:
+	// no plugin is mounted, so the adapter connected to the provider has no
+	// fiber to dispose it and no service through which to reach it.
+	if err := validateServices(nil); err == nil {
+		t.Fatal("a manifest with no services was accepted")
+	}
+	if err := validateServices([]ServiceDefinition{}); err == nil {
+		t.Fatal("a manifest with an empty service list was accepted")
+	}
+	if err := validateServices([]ServiceDefinition{validService()}); err != nil {
+		t.Fatalf("a manifest with one valid service was rejected: %v", err)
 	}
 }

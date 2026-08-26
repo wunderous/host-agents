@@ -18,6 +18,7 @@ func TestConnectDiscoversToolsAndValidatesManifest(t *testing.T) {
 			Provider:   providercontract.ProviderRef{ID: "com.opute.example", Version: "1.0.0"},
 			Provides:   []providercontract.CapabilityRef{{ID: "opute.capability.example.v1", Version: 1}},
 			Recipes:    []providercontract.RecipeRef{{ID: "example", Source: providercontract.RecipeSource{URI: "https://example.invalid/recipe.yaml", Revision: "immutable", SHA256: "sha256:abc"}}},
+			Services:   []providercontract.ServiceDefinition{{ID: "example", CapabilityID: "opute.capability.example.v1", Version: 1}},
 			Validation: providercontract.ValidationRef{Capability: "opute.capability.example.v1", Operation: "validate"},
 		}}, nil
 	})
@@ -67,6 +68,7 @@ func TestCallSynchronousOnlyRejectsProviderTaskResult(t *testing.T) {
 			Provider:   providercontract.ProviderRef{ID: "com.opute.example", Version: "1.0.0"},
 			Provides:   []providercontract.CapabilityRef{{ID: "opute.capability.example.v1", Version: 1}},
 			Recipes:    []providercontract.RecipeRef{{ID: "example", Source: providercontract.RecipeSource{URI: "https://example.invalid/recipe.yaml", Revision: "immutable", SHA256: "sha256:abc"}}},
+			Services:   []providercontract.ServiceDefinition{{ID: "example", CapabilityID: "opute.capability.example.v1", Version: 1}},
 			Validation: providercontract.ValidationRef{Capability: "opute.capability.example.v1", Operation: "validate"},
 		}}, nil
 	})

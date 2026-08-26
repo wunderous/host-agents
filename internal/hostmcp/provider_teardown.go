@@ -31,12 +31,7 @@ func (s *Server) handleProviderTeardown(args map[string]any) (*mcp.CallToolResul
 		return tools.ErrorResult(sessionErr), nil
 	}
 	defer session.Close()
-	s.providerMu.RLock()
-	adapter := s.providerGenerationAdapters[session.GenerationID()]
-	if adapter == nil {
-		adapter = s.providerAdapters[providerID]
-	}
-	s.providerMu.RUnlock()
+	adapter := s.providerGenerationAdapter(providerID, session.GenerationID())
 	if adapter == nil {
 		return tools.ErrorResult(fmt.Errorf("provider %q is not connected", providerID)), nil
 	}
@@ -122,12 +117,7 @@ func (s *Server) completeProviderTeardown(metadata map[string]any) error {
 		session.Close()
 		return fmt.Errorf("provider teardown generation %q is no longer active", generationID)
 	}
-	s.providerMu.RLock()
-	adapter := s.providerGenerationAdapters[session.GenerationID()]
-	if adapter == nil {
-		adapter = s.providerAdapters[providerID]
-	}
-	s.providerMu.RUnlock()
+	adapter := s.providerGenerationAdapter(providerID, session.GenerationID())
 	if adapter == nil {
 		return fmt.Errorf("provider %q is not connected for teardown finalization", providerID)
 	}
@@ -148,6 +138,7 @@ func (s *Server) completeProviderTeardown(metadata map[string]any) error {
 		return fmt.Errorf("provider %q teardown finalization failed", providerID)
 	}
 	session.Close()
+	s.emitProviderLifecycleEvent(context.Background(), ProviderEventDraining, providerID, generationID, "teardown")
 	if err := s.providerLifecycle.Drain(context.Background(), generationID); err != nil {
 		return fmt.Errorf("drain provider generation: %w", err)
 	}
@@ -156,17 +147,16 @@ func (s *Server) completeProviderTeardown(metadata map[string]any) error {
 			return fmt.Errorf("persist stopped provider generation: %w", err)
 		}
 	}
+	// Disposing the generation's fibers closes the adapter the mount owns;
+	// there is no second close authority here.
+	if err := s.unmountProviderGeneration(providerID, generationID); err != nil {
+		return fmt.Errorf("close provider adapter: %w", err)
+	}
 	s.providerMu.Lock()
-	delete(s.providerAdapters, providerID)
-	delete(s.providerGenerationAdapters, generationID)
 	delete(s.providerValidation, providerID)
 	s.providerMu.Unlock()
 	s.retireProviderCapabilities(providerID, generationID)
-	if adapter != nil {
-		if err := adapter.Close(); err != nil {
-			return fmt.Errorf("close provider adapter: %w", err)
-		}
-	}
+	s.emitProviderLifecycleEvent(context.Background(), ProviderEventStopped, providerID, generationID, "teardown")
 	if s.state != nil {
 		if err := s.state.RemoveActiveCapabilitiesForProvider(providerID); err != nil {
 			return fmt.Errorf("clear active provider capabilities: %w", err)

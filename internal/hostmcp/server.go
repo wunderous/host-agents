@@ -51,14 +51,10 @@ type Server struct {
 	capabilities               map[string]hostcapability.Capability
 	providerContext            *cordis.Context
 	providerLifecycle          *cordis.ProviderLifecycleManager
-	providerAdapters           map[string]*provideradapter.Adapter
-	providerGenerationAdapters map[string]*provideradapter.Adapter
 	providerMu                 sync.RWMutex
 	providerValidation         map[string]string
 	providerCandidates         map[string]*provideradapter.Adapter
 	providerCandidateManifests map[string]providercontract.InstallManifest
-	providerPreviousAdapters   map[string]*provideradapter.Adapter
-	providerPreviousValidation map[string]string
 	providerManifests          map[string]providercontract.InstallManifest
 	registeredToolNames        map[string]bool
 }
@@ -148,16 +144,18 @@ func NewServer(opts Options) (*Server, error) {
 		capabilities:               make(map[string]hostcapability.Capability),
 		providerContext:            cordis.NewContext(),
 		providerLifecycle:          cordis.NewProviderLifecycleManager(cordis.DrainPolicy{}),
-		providerAdapters:           make(map[string]*provideradapter.Adapter),
-		providerGenerationAdapters: make(map[string]*provideradapter.Adapter),
 		providerValidation:         make(map[string]string),
 		providerCandidates:         make(map[string]*provideradapter.Adapter),
 		providerCandidateManifests: make(map[string]providercontract.InstallManifest),
-		providerPreviousAdapters:   make(map[string]*provideradapter.Adapter),
-		providerPreviousValidation: make(map[string]string),
 		providerManifests:          make(map[string]providercontract.InstallManifest),
 		registeredToolNames:        make(map[string]bool),
 		planCancels:                make(map[string]context.CancelFunc),
+	}
+	// The lifecycle vocabulary is declared before anything can restore or
+	// mount a provider, so every emission and every listener registration is
+	// checked against a known event from the first transition onward.
+	if err := defineProviderEvents(hs.providerContext); err != nil {
+		return nil, err
 	}
 	if opts.Standalone || strings.TrimSpace(opts.StateDir) != "" {
 		store, err := state.Open(opts.StateDir)
@@ -206,28 +204,20 @@ func (s *Server) Close() error {
 	store := s.state
 	s.state = nil
 	s.planMu.Unlock()
+	// Disposing the context closes every mounted generation's adapter through
+	// the fiber that owns it, in reverse mount order.
 	if s.providerContext != nil {
 		_ = s.providerContext.Dispose(context.Background())
 	}
 	s.providerMu.Lock()
-	adapters := s.providerAdapters
-	s.providerAdapters = make(map[string]*provideradapter.Adapter)
-	generationAdapters := s.providerGenerationAdapters
-	s.providerGenerationAdapters = make(map[string]*provideradapter.Adapter)
 	s.providerValidation = make(map[string]string)
-	uniqueAdapters := make(map[*provideradapter.Adapter]struct{}, len(adapters)+len(generationAdapters)+len(s.providerCandidates))
-	for _, adapter := range adapters {
-		uniqueAdapters[adapter] = struct{}{}
-	}
-	for _, adapter := range generationAdapters {
-		uniqueAdapters[adapter] = struct{}{}
-	}
+	// Candidates are not mounted until activation, so they have no fiber yet
+	// and are closed here.
+	uniqueAdapters := make(map[*provideradapter.Adapter]struct{}, len(s.providerCandidates))
 	for _, adapter := range s.providerCandidates {
 		uniqueAdapters[adapter] = struct{}{}
 	}
 	s.providerCandidates = make(map[string]*provideradapter.Adapter)
-	s.providerPreviousAdapters = make(map[string]*provideradapter.Adapter)
-	s.providerPreviousValidation = make(map[string]string)
 	s.providerManifests = make(map[string]providercontract.InstallManifest)
 	s.providerMu.Unlock()
 	for adapter := range uniqueAdapters {
@@ -393,31 +383,25 @@ func (s *Server) registerProviderServicesForGeneration(manifest providercontract
 				Idempotent:        operation.Idempotent,
 				SupportsReadiness: operation.SupportsReadiness,
 			}
+			serviceID := service.ID
 			providerCapability := hostcapability.NewProviderAdapter(descriptor, func(ctx context.Context, args hostcapability.RawArguments, _ tools.ExecutionBinding, _ hostcapability.ExecutionSink) (*mcp.CallToolResult, error) {
-				if descriptor.GenerationID != "" {
-					session, err := s.providerLifecycle.OpenSession(manifest.Provider.ID)
-					if err != nil || session.GenerationID() != descriptor.GenerationID {
-						if err == nil {
-							session.Close()
-						}
-						return tools.ErrorResult(fmt.Errorf("provider generation %q is no longer active", descriptor.GenerationID)), nil
+				// Every provider operation is affine to the generation that
+				// published it. The session is captured first and the mounted
+				// service is resolved through it, so a call can never check one
+				// generation and then execute against a newer adapter (C-08).
+				session, err := s.providerLifecycle.OpenSession(manifest.Provider.ID)
+				if err != nil || session.GenerationID() != descriptor.GenerationID {
+					if err == nil {
+						session.Close()
 					}
-					defer session.Close()
-					s.providerMu.RLock()
-					adapter := s.providerGenerationAdapters[session.GenerationID()]
-					s.providerMu.RUnlock()
-					if adapter == nil {
-						return tools.ErrorResult(fmt.Errorf("provider generation %q is not connected", descriptor.GenerationID)), nil
-					}
-					return adapter.CallSynchronousOnly(ctx, operation.ID, args)
+					return tools.ErrorResult(fmt.Errorf("provider generation %q is no longer active", descriptor.GenerationID)), nil
 				}
-				s.providerMu.RLock()
-				adapter := s.providerAdapters[manifest.Provider.ID]
-				s.providerMu.RUnlock()
-				if adapter == nil {
-					return tools.ErrorResult(fmt.Errorf("provider %q is not active", manifest.Provider.ID)), nil
+				defer session.Close()
+				value, ok := s.providerServiceValueFor(manifest.Provider.ID, serviceID, session.GenerationID())
+				if !ok || value.adapter == nil {
+					return tools.ErrorResult(fmt.Errorf("provider generation %q is not connected", descriptor.GenerationID)), nil
 				}
-				return adapter.CallSynchronousOnly(ctx, operation.ID, args)
+				return value.adapter.CallSynchronousOnly(ctx, operation.ID, args)
 			})
 			providerCapabilities = append(providerCapabilities, providerCapability)
 			providerDescriptors = append(providerDescriptors, descriptor)

@@ -81,9 +81,17 @@ func TestProviderTeardownFinalizationFailureLeavesGenerationRetryable(t *testing
 	if _, _, err := manager.Activate(generation.ID); err != nil {
 		t.Fatalf("activate: %v", err)
 	}
-	server.providerMu.Lock()
-	server.providerAdapters[providerID] = adapter
-	server.providerMu.Unlock()
+	// Mount the generation the way the lifecycle does. Seeding an adapter map
+	// directly would not exercise the fiber that teardown actually disposes.
+	teardownManifest := providercontract.InstallManifest{
+		Provider: providercontract.ProviderRef{ID: providerID, Version: descriptor.Version},
+		Services: []providercontract.ServiceDefinition{{
+			ID: "opute.capability.teardown-test", CapabilityID: "opute.capability.teardown-test.v1", Version: 1,
+		}},
+	}
+	if err := server.mountProviderGeneration(teardownManifest, generation.ID, adapter); err != nil {
+		t.Fatalf("mount provider generation: %v", err)
+	}
 
 	metadata := map[string]any{
 		"providerId":             providerID,
@@ -96,10 +104,7 @@ func TestProviderTeardownFinalizationFailureLeavesGenerationRetryable(t *testing
 	if _, ok := manager.Active(providerID); !ok {
 		t.Fatal("provider generation was retired after finalization failure")
 	}
-	server.providerMu.RLock()
-	_, connected := server.providerAdapters[providerID]
-	server.providerMu.RUnlock()
-	if !connected {
+	if server.providerGenerationAdapter(providerID, generation.ID) == nil {
 		t.Fatal("provider adapter was removed after finalization failure")
 	}
 
@@ -113,10 +118,7 @@ func TestProviderTeardownFinalizationFailureLeavesGenerationRetryable(t *testing
 	if !ok || stopped.State != cordis.GenerationStopped {
 		t.Fatalf("generation after successful retry = %#v, found=%v", stopped, ok)
 	}
-	server.providerMu.RLock()
-	_, connected = server.providerAdapters[providerID]
-	server.providerMu.RUnlock()
-	if connected {
+	if server.providerGenerationAdapter(providerID, generation.ID) != nil {
 		t.Fatal("provider adapter remained connected after successful retry")
 	}
 	if calls := finalizeCalls.Load(); calls != 2 {

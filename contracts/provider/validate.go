@@ -74,6 +74,13 @@ func ValidateInstallManifest(manifest InstallManifest, expected ProviderRef) err
 }
 
 func validateServices(services []ServiceDefinition) error {
+	// A provider is composed of its services: each one is mounted as a plugin
+	// and is what owns the connection to the provider process. A manifest with
+	// no services would install and activate while owning nothing, leaving its
+	// adapter open, unreachable, and disposable by nobody.
+	if len(services) == 0 {
+		return fmt.Errorf("provider manifest must declare at least one service")
+	}
 	seenServices := make(map[string]bool, len(services))
 	seenOperations := make(map[string]bool)
 	for _, service := range services {

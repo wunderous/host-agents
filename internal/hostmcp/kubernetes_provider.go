@@ -77,7 +77,7 @@ func (e *kubernetesProviderExecutor) activeProvider() (string, *cordis.Generatio
 		if err != nil {
 			continue
 		}
-		adapter := e.server.providerGenerationAdapters[session.GenerationID()]
+		adapter := e.server.providerGenerationAdapter(providerID, session.GenerationID())
 		if adapter != nil {
 			candidates = append(candidates, struct {
 				id      string
