@@ -32,6 +32,9 @@ func TestLegacyAdapterOwnsCompatibilitySchemaValidation(t *testing.T) {
 	if _, err := value.Invoke(context.Background(), RawArguments{"name": "one"}, tools.ExecutionBinding{SchemaVersion: tools.ExecutionBindingSchemaVersion}, nil); err != nil {
 		t.Fatalf("valid input rejected: %v", err)
 	}
+	if _, err := value.Invoke(context.Background(), RawArguments{"vmName": "one"}, tools.ExecutionBinding{SchemaVersion: tools.ExecutionBindingSchemaVersion}, nil); err != nil {
+		t.Fatalf("product vmName alias rejected: %v", err)
+	}
 	if _, err := value.Invoke(context.Background(), RawArguments{}, tools.ExecutionBinding{SchemaVersion: tools.ExecutionBindingSchemaVersion}, nil); err == nil {
 		t.Fatal("missing required input accepted")
 	}
@@ -41,6 +44,31 @@ func TestLegacyAdapterOwnsCompatibilitySchemaValidation(t *testing.T) {
 	}
 	if _, err := value.ValidateResult(context.Background(), &mcp.CallToolResult{StructuredContent: map[string]any{"wrong": true}}); err == nil {
 		t.Fatal("malformed structured output accepted")
+	}
+}
+
+func TestLegacyAdapterDoesNotAliasVmNameWhenNameIsASiblingRequiredField(t *testing.T) {
+	definition := tools.CapabilityDescriptor{
+		OperationID: "test.secret",
+		Name:        "put_k8s_secret",
+		Version:     1,
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []any{"vmName", "name", "data"},
+			"properties": map[string]any{
+				"vmName": map[string]any{"type": "string"},
+				"name":   map[string]any{"type": "string"},
+				"data":   map[string]any{"type": "object"},
+			},
+		},
+		OutputSchema: map[string]any{"type": "object"},
+		Effect:       "write", Provider: "test", Implementation: "test-v1",
+	}
+	value := NewLegacyAdapter(definition, func(context.Context, RawArguments, tools.ExecutionBinding, ExecutionSink) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{StructuredContent: map[string]any{}}, nil
+	})
+	if _, err := value.Invoke(context.Background(), RawArguments{"vmName": "guest-1", "data": map[string]any{"k": "v"}}, tools.ExecutionBinding{SchemaVersion: tools.ExecutionBindingSchemaVersion}, nil); err == nil {
+		t.Fatal("missing secret name accepted via vmName alias")
 	}
 }
 

@@ -3583,6 +3583,10 @@
           "type": "string",
           "description": "Instance name to create"
         },
+        "vmName": {
+          "type": "string",
+          "description": "Alias for name (product/control-plane field)"
+        },
         "image": {
           "type": "string",
           "description": "Optional Incus image alias or remote image reference"

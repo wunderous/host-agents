@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/plan"
@@ -62,7 +63,7 @@ func NewLegacyAdapter(
 		// modules. Keep their old declarative schema gate local to this
 		// compatibility wrapper; the orchestrator never calls ValidateJSON.
 		validateArgs: func(_ context.Context, args RawArguments) error {
-			return plan.ValidateJSON(definition.InputSchema, map[string]any(args))
+			return plan.ValidateJSON(definition.InputSchema, argumentsForSchemaValidation(definition.InputSchema, args))
 		},
 		validate: func(_ context.Context, result *mcp.CallToolResult) (CapabilityObservation, error) {
 			if result != nil && !result.IsError {
@@ -122,4 +123,55 @@ func NewProviderAdapter(
 		}
 		return PassThroughObservation(definition, result)
 	})
+}
+
+// argumentsForSchemaValidation copies the product/control-plane `vmName`
+// alias onto `name` when the capability schema requires an instance `name`
+// and does not also require `vmName` as a distinct field (for example
+// Kubernetes Secret `name`). Dispatch already accepts either spelling;
+// this keeps the legacy JSON-schema gate aligned with that contract.
+func argumentsForSchemaValidation(schema map[string]any, args RawArguments) map[string]any {
+	cloned := cloneRawArguments(args)
+	if !schemaRequires(schema, "name") || schemaRequires(schema, "vmName") {
+		return cloned
+	}
+	if name, _ := cloned["name"].(string); strings.TrimSpace(name) != "" {
+		return cloned
+	}
+	if vmName, ok := cloned["vmName"].(string); ok && strings.TrimSpace(vmName) != "" {
+		cloned["name"] = vmName
+	}
+	return cloned
+}
+
+func schemaRequires(schema map[string]any, field string) bool {
+	if schema == nil {
+		return false
+	}
+	switch values := schema["required"].(type) {
+	case []string:
+		for _, item := range values {
+			if item == field {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range values {
+			if text, ok := item.(string); ok && text == field {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func cloneRawArguments(args RawArguments) map[string]any {
+	if args == nil {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(args))
+	for key, value := range args {
+		out[key] = value
+	}
+	return out
 }
