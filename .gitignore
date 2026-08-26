@@ -9,3 +9,6 @@ tmp/e2e-debug.log
 .DS_Store
 __pycache__/
 *.py[cod]
+
+# In-tree provider plugin builds
+plugins/**/opute-provider-*
