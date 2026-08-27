@@ -44,7 +44,7 @@ func TestValidateRejectsUnknownProfileValues(t *testing.T) {
 
 	t.Setenv("OPUTE_AGENT_MODE", "standalone")
 	t.Setenv("OPUTE_TRANSPORT", "websocket")
-	if err := (Config{RemoteAgentID: "test-host-agent"}).Validate(); err == nil {
+	if err := (Config{RemoteAgentID: "test-host-agent", HostMCPPort: 3014}).Validate(); err == nil {
 		t.Fatal("expected invalid transport to fail")
 	} else if !strings.Contains(err.Error(), "Streamable HTTP") {
 		t.Fatalf("transport diagnostic = %q, want Streamable HTTP guidance", err)
@@ -55,7 +55,7 @@ func TestValidateRejectsStandalonePlatformSettings(t *testing.T) {
 	t.Setenv("OPUTE_REMOTE_AGENT_ID", "test-host-agent")
 	t.Setenv("OPUTE_AGENT_MODE", "standalone")
 	t.Setenv("OPUTE_MCP_URL", "https://mcp.example/mcp")
-	if err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent"}).Validate(); err == nil {
+	if err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent", HostMCPPort: 3014}).Validate(); err == nil {
 		t.Fatal("expected standalone platform URL to fail")
 	}
 }
@@ -65,7 +65,7 @@ func TestValidateAcceptsStandaloneHTTPWithoutPlatformSettings(t *testing.T) {
 	t.Setenv("OPUTE_AGENT_MODE", "standalone")
 	t.Setenv("OPUTE_MCP_URL", "")
 	t.Setenv("MCP_AUTH_TOKEN", "")
-	if err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent"}).Validate(); err != nil {
+	if err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent", HostMCPPort: 3014}).Validate(); err != nil {
 		t.Fatalf("expected valid standalone profile: %v", err)
 	}
 }
@@ -74,7 +74,7 @@ func TestValidateRejectsStandaloneStdio(t *testing.T) {
 	t.Setenv("OPUTE_REMOTE_AGENT_ID", "test-host-agent")
 	t.Setenv("OPUTE_AGENT_MODE", "standalone")
 	t.Setenv("OPUTE_TRANSPORT", "stdio")
-	err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent"}).Validate()
+	err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent", HostMCPPort: 3014}).Validate()
 	if err == nil {
 		t.Fatal("expected standalone stdio transport to fail")
 	}
@@ -87,7 +87,7 @@ func TestValidateRejectsPlatformStdio(t *testing.T) {
 	t.Setenv("OPUTE_REMOTE_AGENT_ID", "test-host-agent")
 	t.Setenv("OPUTE_AGENT_MODE", "platform")
 	t.Setenv("OPUTE_TRANSPORT", "stdio")
-	err := (Config{AgentMode: "platform", RemoteAgentID: "test-host-agent"}).Validate()
+	err := (Config{AgentMode: "platform", RemoteAgentID: "test-host-agent", HostMCPPort: 3004}).Validate()
 	if err == nil {
 		t.Fatal("expected platform stdio transport to fail")
 	}
@@ -96,12 +96,25 @@ func TestValidateRejectsPlatformStdio(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsStandaloneMCPAuthToken(t *testing.T) {
+func TestValidateAcceptsStandaloneHostBootstrapToken(t *testing.T) {
 	t.Setenv("OPUTE_REMOTE_AGENT_ID", "test-host-agent")
 	t.Setenv("OPUTE_AGENT_MODE", "standalone")
-	t.Setenv("MCP_AUTH_TOKEN", "platform-token")
-	if err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent"}).Validate(); err == nil {
-		t.Fatal("expected standalone platform auth token to fail")
+	t.Setenv("MCP_AUTH_TOKEN", "host-bootstrap")
+	t.Setenv("OPUTE_MCP_URL", "")
+	t.Setenv("OPUTE_MCP_HEALTH_URL", "")
+	if err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent", HostMCPPort: 3014, MCPAuthToken: "host-bootstrap"}).Validate(); err != nil {
+		t.Fatalf("expected standalone host bootstrap token to pass: %v", err)
+	}
+}
+
+func TestValidateRejectsStandaloneProductToken(t *testing.T) {
+	t.Setenv("OPUTE_REMOTE_AGENT_ID", "test-host-agent")
+	t.Setenv("OPUTE_AGENT_MODE", "standalone")
+	t.Setenv("MCP_AUTH_TOKEN", "opha_platform")
+	t.Setenv("OPUTE_MCP_URL", "")
+	t.Setenv("OPUTE_MCP_HEALTH_URL", "")
+	if err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent", HostMCPPort: 3014, MCPAuthToken: "opha_platform"}).Validate(); err == nil {
+		t.Fatal("expected product token to fail")
 	}
 }
 
@@ -126,17 +139,14 @@ func TestLoadPlatformDefaultsPort3004(t *testing.T) {
 	}
 }
 
-func TestLoadNormalizesQuotedPlatformURLs(t *testing.T) {
+func TestLoadDoesNotDefaultPhoneHomeURLs(t *testing.T) {
 	t.Setenv("OPUTE_AGENT_MODE", "platform")
-	t.Setenv("OPUTE_MCP_URL", "https://mcp.example/mcp")
-	t.Setenv("OPUTE_HOST_WS_URL", "wss://mcp.example")
-	t.Setenv("OPUTE_MCP_HEALTH_URL", "'https://mcp.example/health'")
+	t.Setenv("OPUTE_MCP_URL", "")
+	t.Setenv("OPUTE_HOST_WS_URL", "")
+	t.Setenv("OPUTE_MCP_HEALTH_URL", "")
 	cfg := Load()
-	if cfg.MCPHealthURL != "https://mcp.example/health" {
-		t.Fatalf("health URL = %q", cfg.MCPHealthURL)
-	}
-	if cfg.HostWSURL != "wss://mcp.example" {
-		t.Fatalf("websocket URL = %q", cfg.HostWSURL)
+	if cfg.HostMCPPort != 3004 {
+		t.Fatalf("platform default port = %d, want 3004", cfg.HostMCPPort)
 	}
 }
 
@@ -172,12 +182,12 @@ func TestValidateRejectsDirectHttpPortZero(t *testing.T) {
 	}
 }
 
-func TestValidateAllowsReverseTunnelPortZero(t *testing.T) {
+func TestValidateRejectsReverseTunnel(t *testing.T) {
 	t.Setenv("OPUTE_REMOTE_AGENT_ID", "test-host-agent")
 	t.Setenv("OPUTE_AGENT_MODE", "platform")
 	t.Setenv("OPUTE_REVERSE_TUNNEL", "true")
-	t.Setenv("HOST_MCP_PORT", "0")
-	if err := Load().Validate(); err != nil {
-		t.Fatalf("expected reverse-tunnel port zero to pass: %v", err)
+	t.Setenv("HOST_MCP_PORT", "3004")
+	if err := Load().Validate(); err == nil {
+		t.Fatal("expected reverse-tunnel to fail")
 	}
 }

@@ -29,7 +29,7 @@ func TestIncusCatalogMatchesExportMinusOmitted(t *testing.T) {
 		"configure_local_llm_runtime": true, "stop_local_llm_runtime": true,
 		"remove_local_llm_model": true, "ensure_local_llm_relay": true,
 		"remove_local_llm_relay": true, "ensure_local_llm_k3s_proxy": true,
-		"remove_local_llm_k3s_proxy": true, "remove_local_llm_cloudflared_tunnel": true,
+		"remove_local_llm_k3s_proxy": true,
 	}
 	for _, tool := range exported {
 		if localLLM[tool.Name] || tools.ProviderOwnedToolNames[tool.Name] || tools.IsOmittedToolName(tool.Name) || tools.IncusOmittedToolNames[tool.Name] || tools.CatalogExcludedToolNames[tool.Name] {

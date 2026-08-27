@@ -41,4 +41,5 @@ Opute skill `permanent-agentic-invariants` and update the owning decision.
 
 - Full catalog and workflow: [`docs/cordis-development-guide.md`](../../../docs/cordis-development-guide.md)
 - Identity / runtime-kind / E2E evidence: `host-agent-boundaries`
-- ADR: `docs/adr/0002-provider-extension-architecture.md`
+- ADR 0002: `docs/adr/0002-provider-extension-architecture.md`
+- ADR 0009: `docs/adr/0009-tool-contract-conformance-and-catalog-authority.md`

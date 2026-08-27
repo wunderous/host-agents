@@ -10,6 +10,7 @@ import (
 func TestValidateModernExtensionRequestRequiresMatchingMetadataAndHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/mcp", nil)
 	req.Header.Set("MCP-Protocol-Version", modernMCPVersion)
+	req.Header.Set("Mcp-Method", "server/discover")
 	raw := []byte(`{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"test","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}`)
 	if err := validateModernExtensionRequest(req, "server/discover", raw); err != nil {
 		t.Fatalf("valid modern request rejected: %v", err)
@@ -22,6 +23,7 @@ func TestValidateModernExtensionRequestRequiresMatchingMetadataAndHeader(t *test
 
 	unsupported := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/mcp", nil)
 	unsupported.Header.Set("MCP-Protocol-Version", "1900-01-01")
+	unsupported.Header.Set("Mcp-Method", "server/discover")
 	unsupportedRaw := []byte(`{"_meta":{"io.modelcontextprotocol/protocolVersion":"1900-01-01","io.modelcontextprotocol/clientInfo":{},"io.modelcontextprotocol/clientCapabilities":{}}}`)
 	err := validateModernExtensionRequest(unsupported, "server/discover", unsupportedRaw)
 	protocolErr, ok := err.(*protocolRequestError)

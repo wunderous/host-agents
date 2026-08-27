@@ -174,6 +174,13 @@ func (s *HostOperationsService) TenantID() string {
 	return s.tenantID
 }
 
+func (s *HostOperationsService) effectiveTenantID() string {
+	if s == nil || strings.TrimSpace(s.tenantID) == "" {
+		return "local"
+	}
+	return strings.TrimSpace(s.tenantID)
+}
+
 func resolveResetCheckpointPath(explicitPath, relayConfigDir string) string {
 	if path := strings.TrimSpace(explicitPath); path != "" {
 		return path

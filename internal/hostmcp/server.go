@@ -868,85 +868,16 @@ func (s *Server) CloseHostStream(operationID string) {
 
 func (s *Server) registerTools() {
 	snapshot := s.CatalogSnapshot()
-	if s.standalone {
-		s.registerStandaloneTools(snapshot)
-		return
-	}
-	allDefs, err := tools.LoadAllToolDefinitions("all")
-	if err != nil {
-		allDefs = s.toolDefs
-	}
-	allDefs = tools.CanonicalizeToolDefinitions(allDefs)
-	internalDefs, ierr := tools.LoadCatalogExcludedDispatchToolDefinitions()
-	if ierr == nil {
-		allDefs = append(allDefs, internalDefs...)
-	}
-	registered := map[string]bool{}
-	for _, def := range allDefs {
-		if tools.IsOmittedToolName(def.Name) {
-			continue
-		}
-		if registered[def.Name] {
-			continue
-		}
-		registered[def.Name] = true
-		s.addRegisteredTool(def, snapshot)
+	for _, descriptor := range snapshot.Tools {
+		s.ensureLegacyCapabilityForDescriptor(descriptor)
+		s.addRegisteredCapability(descriptor)
 	}
 }
 
-func (s *Server) registerStandaloneTools(snapshot tools.CapabilityCatalogSnapshot) {
-	defs := tools.StandaloneToolDefinitions()
-	defs = tools.CanonicalizeToolDefinitions(defs)
-	all, err := tools.LoadAllToolDefinitions("all")
-	if err == nil {
-		for _, def := range all {
-			if tools.StandaloneToolNames[def.Name] {
-				defs = append(defs, def)
-			}
-		}
-		defs = tools.CanonicalizeToolDefinitions(defs)
-	}
-	seen := map[string]bool{}
-	for _, def := range defs {
-		if seen[def.Name] {
-			continue
-		}
-		seen[def.Name] = true
-		s.addRegisteredTool(def, snapshot)
-	}
-}
-
-func (s *Server) addRegisteredTool(def tools.ToolDefinition, snapshot tools.CapabilityCatalogSnapshot) {
-	s.ensureLegacyCapability(def)
-	tool := &mcp.Tool{
-		Name:        def.Name,
-		Description: def.Description,
-		Meta:        tools.CapabilityMeta(def, snapshot),
-	}
-	if def.InputSchema != nil {
-		tool.InputSchema = def.InputSchema
-	}
-	if def.OutputSchema != nil {
-		tool.OutputSchema = def.OutputSchema
-	}
-	name := def.Name
-	s.mcpServer.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return s.handleToolCall(ctx, req, name)
-	})
-	s.mu.Lock()
-	if s.registeredToolNames == nil {
-		s.registeredToolNames = make(map[string]bool)
-	}
-	s.registeredToolNames[name] = true
-	s.mu.Unlock()
-}
-
-func (s *Server) ensureLegacyCapability(def tools.ToolDefinition) {
+func (s *Server) ensureLegacyCapabilityForDescriptor(descriptor tools.CapabilityDescriptor) {
 	if s == nil {
 		return
 	}
-	descriptor := tools.CapabilityDescriptorFromDefinition(s.providerID, def)
-	descriptor.Implementation = "host-agent:" + s.providerID
 	s.catalogMu.Lock()
 	defer s.catalogMu.Unlock()
 	if _, exists := s.capabilities[descriptor.OperationID]; exists {
@@ -1006,17 +937,6 @@ func (s *Server) refreshMCPTools() {
 		s.mcpServer.RemoveTools(names...)
 	}
 	s.registerTools()
-	s.mu.Lock()
-	staticNames := make(map[string]bool, len(s.registeredToolNames))
-	for name := range s.registeredToolNames {
-		staticNames[name] = true
-	}
-	s.mu.Unlock()
-	for _, descriptor := range s.CatalogSnapshot().Tools {
-		if !staticNames[descriptor.Name] {
-			s.addRegisteredCapability(descriptor)
-		}
-	}
 }
 
 func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, name string) (*mcp.CallToolResult, error) {
@@ -1399,7 +1319,6 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 			"supportedVersions": []string{"2026-07-28"},
 			"capabilities": map[string]any{
 				"tools":      map[string]any{},
-				"resources":  map[string]any{"listChanged": true},
 				"extensions": map[string]any{"io.modelcontextprotocol/tasks": map[string]any{}},
 			},
 			"_meta": map[string]any{"io.modelcontextprotocol/serverInfo": map[string]any{"name": "host-agent", "version": version.Version}},
@@ -1455,18 +1374,8 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		}
 		s.persistTask(updated)
 		return map[string]any{"resultType": "complete"}, nil
-	case "resources/list":
-		// Task enumeration is intentionally not exposed. A caller must already
-		// possess an unguessable task ID to read its status or logs.
-		return map[string]any{"resultType": "complete", "resources": []map[string]any{}}, nil
-	case "resources/read":
-		var p struct {
-			URI string `json:"uri"`
-		}
-		if err := json.Unmarshal(params, &p); err != nil {
-			return nil, err
-		}
-		return s.readTaskResource(p.URI)
+	case "resources/list", "resources/read":
+		return nil, &jsonrpc.Error{Code: jsonrpc.CodeMethodNotFound, Message: "Method not found: " + method}
 	default:
 		if method == "tasks/list" {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeMethodNotFound, Message: "Method not found: tasks/list"}

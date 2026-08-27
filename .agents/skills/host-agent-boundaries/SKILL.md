@@ -48,9 +48,9 @@ arguments, paired structured result, complete terminal SSE, and zero SSE
 errors. Health, HTTP 200, assistant prose, or a successful Host Agent
 `tools/call` alone is not proof of chat closure.
 
-Keep CPC bearer, Host Agent tunnel bearer (`opha_*`), and public MCP user
+Keep CPC bearer, Host Agent host-issued tokens (`oha_*`), and public MCP user
 session (`opsess_*`) distinct. Do not forward public credentials to the local
-listener.
+listener. Product `opha_*` tokens must not open host `/mcp`.
 
 ## Additional resources
 

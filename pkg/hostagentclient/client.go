@@ -1,6 +1,3 @@
-// Package hostagentclient is the public, provider-neutral client boundary for
-// Host Agent consumers such as the TUI. It deliberately exposes MCP calls
-// and projections without importing any Host Agent internal package.
 package hostagentclient
 
 import (
@@ -12,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 )
 
 type CapabilityDescriptor struct {
@@ -34,9 +32,6 @@ type CatalogSnapshot struct {
 	Tools      []CapabilityDescriptor `json:"tools"`
 }
 
-// Find returns the authoritative descriptor for an operation in this
-// catalog. Consumers must use this descriptor before constructing a typed
-// command; operation names are not a substitute for the current catalog.
 func (s CatalogSnapshot) Find(name string) (CapabilityDescriptor, bool) {
 	name = strings.TrimSpace(name)
 	for _, tool := range s.Tools {
@@ -47,8 +42,6 @@ func (s CatalogSnapshot) Find(name string) (CapabilityDescriptor, bool) {
 	return CapabilityDescriptor{}, false
 }
 
-// OperationSnapshot is the neutral durable-operation projection used by
-// clients when reconnecting after a lost transport response.
 type OperationSnapshot struct {
 	ID            string         `json:"operationId"`
 	Status        string         `json:"status"`
@@ -58,11 +51,8 @@ type OperationSnapshot struct {
 }
 
 type Client struct {
-	mu          sync.RWMutex
-	endpoint    string
-	token       string
-	session     *mcp.ClientSession
-	reconnectFn func(context.Context) (*mcp.ClientSession, error)
+	mu     sync.RWMutex
+	client mcphttp.Client
 }
 
 func Connect(ctx context.Context, endpoint, token string) (*Client, error) {
@@ -70,91 +60,57 @@ func Connect(ctx context.Context, endpoint, token string) (*Client, error) {
 	if endpoint == "" {
 		endpoint = "http://127.0.0.1:3014/mcp"
 	}
-	connect := func(ctx context.Context) (*mcp.ClientSession, error) {
-		transport := &mcp.StreamableClientTransport{
-			Endpoint: endpoint,
-			HTTPClient: &http.Client{Transport: authTransport{base: http.DefaultTransport,
-				token: token}},
-			MaxRetries:           2,
-			DisableStandaloneSSE: true,
-		}
-		return mcp.NewClient(&mcp.Implementation{Name: "opute-host-agent-client", Version: "0.1.0"}, nil).Connect(ctx, transport, nil)
-	}
-	session, err := connect(ctx)
-	if err != nil {
+	client := &Client{client: mcphttp.Client{
+		Endpoint:   endpoint,
+		Token:      token,
+		Name:       "opute-host-agent-client",
+		Version:    "0.1.0",
+		HTTPClient: &http.Client{Transport: authTransport{base: http.DefaultTransport, token: token}},
+	}}
+	if _, err := client.client.Call(ctx, "server/discover", "", map[string]any{}); err != nil {
 		return nil, fmt.Errorf("connect host agent: %w", err)
 	}
-	return &Client{endpoint: endpoint, token: token, session: session, reconnectFn: connect}, nil
+	return client, nil
 }
 
-// ConnectWithTransport connects a client to an already-created MCP transport.
-// It is used by in-process callers such as the CLI while preserving the same
-// public, provider-neutral client boundary as the HTTP path.
-func ConnectWithTransport(ctx context.Context, transport mcp.Transport) (*Client, error) {
-	if transport == nil {
-		return nil, fmt.Errorf("MCP transport is required")
-	}
-	session, err := mcp.NewClient(&mcp.Implementation{Name: "opute-host-agent-client", Version: "0.1.0"}, nil).Connect(ctx, transport, nil)
-	if err != nil {
-		return nil, fmt.Errorf("connect host agent: %w", err)
-	}
-	return &Client{session: session}, nil
-}
-
-func (c *Client) Close() error {
-	if c == nil {
-		return nil
-	}
-	c.mu.Lock()
-	session := c.session
-	c.session = nil
-	c.mu.Unlock()
-	if session != nil {
-		return session.Close()
-	}
-	return nil
-}
+func (c *Client) Close() error { return nil }
 
 func (c *Client) Reconnect(ctx context.Context) error {
-	if c == nil || c.reconnectFn == nil {
+	if c == nil {
 		return fmt.Errorf("client is not reconnectable")
 	}
-	session, err := c.reconnectFn(ctx)
-	if err != nil {
-		return fmt.Errorf("reconnect host agent: %w", err)
-	}
-	c.mu.Lock()
-	old := c.session
-	c.session = session
-	c.mu.Unlock()
-	if old != nil {
-		_ = old.Close()
-	}
-	return nil
+	_, err := c.client.Call(ctx, "server/discover", "", map[string]any{})
+	return err
 }
 
 func (c *Client) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
-	session, err := c.sessionForCall()
+	listed, err := c.client.Call(ctx, "tools/list", "", map[string]any{})
 	if err != nil {
 		return nil, err
 	}
-	result, err := session.ListTools(ctx, nil)
-	if err != nil {
-		return nil, err
+	raw, _ := listed["tools"].([]any)
+	tools := make([]*mcp.Tool, 0, len(raw))
+	for _, item := range raw {
+		encoded, err := json.Marshal(item)
+		if err != nil {
+			return nil, err
+		}
+		var tool mcp.Tool
+		if err := json.Unmarshal(encoded, &tool); err != nil {
+			return nil, err
+		}
+		tools = append(tools, &tool)
 	}
-	return result.Tools, nil
+	return tools, nil
 }
 
 func (c *Client) Call(ctx context.Context, name string, arguments map[string]any) (*mcp.CallToolResult, error) {
-	session, err := c.sessionForCall()
-	if err != nil {
-		return nil, err
+	if c == nil {
+		return nil, fmt.Errorf("host agent client is nil")
 	}
-	return session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: arguments})
+	return c.client.CallTool(ctx, name, arguments)
 }
 
-// OperationStatus reads durable state only. It is intentionally separate from
-// Call so reconnect logic cannot accidentally replay the original mutation.
 func (c *Client) OperationStatus(ctx context.Context, operationID string) (*mcp.CallToolResult, error) {
 	operationID = strings.TrimSpace(operationID)
 	if operationID == "" {
@@ -191,19 +147,6 @@ func (c *Client) Catalog(ctx context.Context) (CatalogSnapshot, error) {
 		return CatalogSnapshot{}, fmt.Errorf("host agent returned an empty catalog revision")
 	}
 	return snapshot, nil
-}
-
-func (c *Client) sessionForCall() (*mcp.ClientSession, error) {
-	if c == nil {
-		return nil, fmt.Errorf("host agent client is nil")
-	}
-	c.mu.RLock()
-	session := c.session
-	c.mu.RUnlock()
-	if session == nil {
-		return nil, fmt.Errorf("host agent client is disconnected")
-	}
-	return session, nil
 }
 
 type authTransport struct {

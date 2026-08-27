@@ -59,7 +59,7 @@ command. It does not infer operations from prose or require an LLM.
 The following are verified Streamable HTTP MCP client examples for VS Code,
 Claude Desktop, and Cursor (gate: `opute/scripts/validate-standalone-mcp-client.ts`
 → `tmp/bootstrap-m1/summary.json`). They are not named-product certifications beyond
-that initialize/`tools/list`/read-only tool canary.
+that `server/discover` / `tools/list` / read-only tool canary.
 
 Claude Desktop and Cursor use this equivalent `mcpServers` entry:
 
@@ -91,7 +91,7 @@ binary inside WSL and point the Windows MCP client at the forwarded HTTP URL.
 A WSL environment file can be supplied with the launcher's `--env-file`
 argument when starting the agent.
 
-The exact safe first run is: `initialize` → `tools/list` →
+The exact safe first run is: `server/discover` → `tools/list` →
 `check_local_prerequisites` → `get_local_status` → `list_vms` (VM inventory).
 The stable MVP claim covers generic Streamable HTTP behavior, Incus inspection,
 and VM lifecycle; K3s, PostgreSQL/SQL, and Cloudflare Tunnel tools are
@@ -168,7 +168,7 @@ export RELEASE_TAG=v0.1.1          # optional; defaults to v0.1.1
 bash scripts/verify-release-install.sh
 ```
 
-Downloads the release artifact, verifies its checksum, installs to a temp path, starts the agent, checks `/health`, MCP `initialize` / `tools/list`, and confirms unauthenticated `/mcp` returns **401**.
+Downloads the release artifact, verifies its checksum, installs to a temp path, starts the agent, checks `/health`, MCP `server/discover` / `tools/list`, and confirms unauthenticated `/mcp` returns **401**.
 
 ## Run (HTTP mode — Phase 1 local testing)
 
@@ -187,12 +187,13 @@ Call MCP with a Bearer token:
 ```bash
 curl -H "Authorization: Bearer dev-token" \
   -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"client","version":"1.0.0"}}}' \
+  -H "MCP-Protocol-Version: 2026-07-28" \
+  -H "Mcp-Method: tools/list" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"client","version":"1.0.0"},"io.modelcontextprotocol/clientCapabilities":{}}}}' \
   http://127.0.0.1:3004/mcp
 ```
 
-`/health` is always open. `/mcp` requires `Authorization: Bearer <token>` when any of these env vars are set: `MCP_AUTH_TOKEN`, `OPUTE_REMOTE_AGENT_AUTH_TOKEN`, or `OPUTE_CPC_TOKEN`. Omit all of them only for local dev without auth.
+`/health` is always open. `/mcp` requires a host-issued bootstrap token (`MCP_AUTH_TOKEN` / `oha_*`). Product tokens (`opha_*`, `opsess_*`, `opit_*`) are rejected.
 
 ## VS Code / external MCP configuration
 

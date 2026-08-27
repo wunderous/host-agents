@@ -305,6 +305,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"run_host_command":                 true,
 		"set_host_service_state":           true,
 		"inspect_host_service":             true,
+		"list_host_services":                true,
 		"ensure_host_service_supervisor":   true,
 		"ensure_host_file":                 true,
 		"remove_host_file":                 true,
@@ -707,6 +708,55 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Description:  "Negotiate the bounded assistant-session.v1 contract and bind the client to the current capability revision.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"sessionId", "supportedContractVersions"}, "properties": map[string]any{"sessionId": map[string]any{"type": "string", "minLength": 1}, "tenantId": map[string]any{"type": "string", "minLength": 1}, "supportedContractVersions": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}}, "catalogRevision": map[string]any{"type": "string"}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "sessionId", "catalogRevision", "tenantId"}},
+	}, ToolDefinition{
+		Name:        "list_host_services",
+		Title:       "List Host Services",
+		Description: "List systemd services on the host and return their canonical tenant-scoped resource URIs.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"scope": map[string]any{
+					"type":        "string",
+					"enum":        []string{"user", "system"},
+					"description": "Systemd unit scope: user (default) or system",
+				},
+			},
+		},
+		OutputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"services", "total"},
+			"properties": map[string]any{
+				"services": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type":     "object",
+						"required": []string{"uri", "serviceName", "scope", "status", "active", "enabled"},
+						"properties": map[string]any{
+							"uri": map[string]any{
+								"type":              "string",
+								resourceTypeKeyword: "host-service",
+								"description":       "Canonical Host Agent resource URI for host service.",
+							},
+							"serviceName": map[string]any{"type": "string"},
+							"scope":       map[string]any{"type": "string"},
+							"status":      map[string]any{"type": "string"},
+							"active":      map[string]any{"type": "boolean"},
+							"enabled":     map[string]any{"type": "boolean"},
+						},
+					},
+				},
+				"total": map[string]any{"type": "integer"},
+			},
+		},
+		Meta: map[string]any{
+			"effect": "read",
+			"produces": []map[string]any{
+				{
+					"resourceType": "host-service",
+					"sourcePath":   "services[].uri",
+				},
+			},
+		},
 	})
 	// Keep the embedded JSON catalogs authoritative where a definition already
 	// exists, while allowing the Go catalog to fill newly implemented generic
@@ -816,7 +866,6 @@ func appendLocalLLMDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"remove_local_llm_k3s_proxy": {"type": "object", "required": []string{"vmName"}, "properties": map[string]any{
 			"namespace": map[string]any{"type": "string"},
 		}},
-		"remove_local_llm_cloudflared_tunnel": {"type": "object", "required": []string{"bindingId"}, "properties": map[string]any{}},
 	}
 	for name, schema := range inputs {
 		if !seen[name] {

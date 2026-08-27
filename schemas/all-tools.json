@@ -1005,62 +1005,6 @@
     }
   },
   {
-    "name": "ensure_cloudflared_tunnel",
-    "title": "Ensure Cloudflared Tunnel",
-    "description": "Start or ensure a cloudflared tunnel for a host exposure binding",
-    "_meta": {
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "tunnel",
-          "required": true
-        }
-      ]
-    },
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "hostname": {
-          "type": "string"
-        },
-        "localTarget": {
-          "type": "string"
-        },
-        "runToken": {
-          "type": "string"
-        },
-        "connector": {
-          "type": "string",
-          "const": "host"
-        },
-        "allowedLocalPorts": {
-          "type": "array",
-          "items": {
-            "type": "integer"
-          }
-        },
-        "native": {
-          "type": "boolean",
-          "default": false
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "localTarget",
-        "connector",
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "additionalProperties": true
-    }
-  },
-  {
     "name": "ensure_docker",
     "title": "Ensure Docker daemon",
     "description": "Verify Docker Desktop daemon is running on Windows hosts (does not install Docker Desktop)",

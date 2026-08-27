@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 )
 
 func TestClientUsesPublicMCPBoundaryAndReconnects(t *testing.T) {
@@ -32,7 +33,7 @@ func TestClientUsesPublicMCPBoundaryAndReconnects(t *testing.T) {
 		}
 		return &mcp.CallToolResult{StructuredContent: map[string]any{"name": "demo", "status": "running"}}, nil
 	})
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	handler := mcphttp.WrapProviderHandler(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}), map[string]any{"name": "fake-host", "version": "1.0.0"})
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
 

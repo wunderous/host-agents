@@ -32,7 +32,7 @@ Point your MCP client at the printed URL (default port **3014**):
 
 stdio MCP transport is not supported.
 
-The exact first-run flow is `initialize` → `tools/list` →
+The exact first-run flow is `server/discover` → `tools/list` →
 `check_local_prerequisites` → `get_local_status` → `list_vms` (VM inventory).
 
 ## Commands

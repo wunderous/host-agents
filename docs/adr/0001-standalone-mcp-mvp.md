@@ -37,7 +37,7 @@ The public package name is `@opute/host-agent`, published from the public
 `wunderous/host-agents` repository through GitHub Actions. The Go module,
 release artifacts, and npm metadata use the same owner and release version.
 
-The exact first-run flow is `initialize` → `tools/list` →
+The exact first-run flow is `server/discover` → `tools/list` →
 `check_local_prerequisites` → `get_local_status` → `list_vms` (VM inventory).
 Native host execution is Linux-only; Windows uses WSL. VM inspection and the
 Incus VM lifecycle are stable MVP features; K3s, PostgreSQL/SQL, and Cloudflare

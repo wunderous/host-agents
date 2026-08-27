@@ -26,14 +26,9 @@ type Config struct {
 	StandaloneInstanceID             string
 	HostMCPPort                      int
 	HostMCPBindHost                  string
-	IsReverseTunnel                  bool
-	HostWSURL                        string
-	MCPURL                           string
-	MCPHealthURL                     string
 	RemoteAgentID                    string
-	RemoteAgentAuthToken             string
 	MCPAuthToken                     string
-	BridgeToken                      string
+	OputeClientSecret                string
 	ProviderID                       string
 	OnboardingToken                  string
 	OnboardingSessionID              string
@@ -46,6 +41,9 @@ type Config struct {
 	HostResourceMinMemoryBytes       int64
 	HostResourceMinDiskBytes         int64
 	HostResourceDiskPaths            []string
+	// AllowLegacyHandshake enables backwards-compatible support for standard MCP clients
+	// (e.g. Codex, Cursor IDE) that send initialize/notifications/initialized handshakes.
+	AllowLegacyHandshake bool
 }
 
 func Load() Config {
@@ -87,21 +85,11 @@ func Load() Config {
 	}
 	agentID := strings.TrimSpace(envValue("OPUTE_REMOTE_AGENT_ID"))
 	mcpAuth := strings.TrimSpace(envValue("MCP_AUTH_TOKEN"))
-	tunnelAuth := firstNonEmpty(
-		envValue("OPUTE_REMOTE_AGENT_AUTH_TOKEN"),
-		envValue("OPUTE_CPC_TOKEN"),
-		mcpAuth,
-	)
-	bindHost := envOr("HOST_MCP_BIND_HOST", "127.0.0.1")
-	wsURL := envOr("OPUTE_HOST_WS_URL", "ws://"+bindHost+":9091")
-	mcpURL := strings.TrimSpace(envValue("OPUTE_MCP_URL"))
-	if mcpURL == "" {
-		mcpURL = "http://127.0.0.1:9091/mcp"
+	defaultBindHost := "127.0.0.1"
+	if mode == "platform" {
+		defaultBindHost = "0.0.0.0"
 	}
-	healthURL := strings.TrimSpace(envValue("OPUTE_MCP_HEALTH_URL"))
-	if healthURL == "" {
-		healthURL = "http://127.0.0.1:" + envOr("AGENT_PORT", "9091") + "/health"
-	}
+	bindHost := envOr("HOST_MCP_BIND_HOST", defaultBindHost)
 	return Config{
 		AgentMode:                        mode,
 		TenantID:                         tenantID,
@@ -117,14 +105,9 @@ func Load() Config {
 		StandaloneInstanceID:             strings.TrimSpace(envValue("OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID")),
 		HostMCPPort:                      port,
 		HostMCPBindHost:                  bindHost,
-		IsReverseTunnel:                  os.Getenv("OPUTE_REVERSE_TUNNEL") == "true",
-		HostWSURL:                        wsURL,
-		MCPURL:                           mcpURL,
-		MCPHealthURL:                     healthURL,
 		RemoteAgentID:                    agentID,
-		RemoteAgentAuthToken:             tunnelAuth,
 		MCPAuthToken:                     mcpAuth,
-		BridgeToken:                      mcpAuth,
+		OputeClientSecret:                strings.TrimSpace(envValue("OPUTE_HOST_OAUTH_CLIENT_SECRET")),
 		ProviderID:                       providerID,
 		OnboardingToken:                  strings.TrimSpace(envValue("OPUTE_ONBOARDING_TOKEN")),
 		OnboardingSessionID:              strings.TrimSpace(envValue("OPUTE_ONBOARDING_SESSION_ID")),
@@ -137,6 +120,7 @@ func Load() Config {
 		HostResourceMinMemoryBytes:       envInt64Or("OPUTE_HOST_MIN_AVAILABLE_MEMORY_BYTES", 0),
 		HostResourceMinDiskBytes:         envInt64Or("OPUTE_HOST_MIN_AVAILABLE_DISK_BYTES", 0),
 		HostResourceDiskPaths:            envPathsOr("OPUTE_HOST_RESOURCE_DISK_PATHS", []string{"/"}),
+		AllowLegacyHandshake:             os.Getenv("OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE") == "true",
 	}
 }
 
@@ -179,11 +163,12 @@ func (c Config) Validate() error {
 	if err := validateAgentID(c.RemoteAgentID); err != nil {
 		return err
 	}
-	if c.HostMCPPort < 0 {
-		return fmt.Errorf("HOST_MCP_PORT must be non-negative")
+	if c.HostMCPPort <= 0 {
+		return fmt.Errorf("HOST_MCP_PORT must be positive")
 	}
-	if !c.IsReverseTunnel && c.HostMCPPort == 0 && strings.TrimSpace(os.Getenv("HOST_MCP_PORT")) == "0" {
-		return fmt.Errorf("HOST_MCP_PORT must be positive for direct HTTP mode")
+	bindHost := strings.TrimSpace(c.HostMCPBindHost)
+	if bindHost == "" {
+		bindHost = "127.0.0.1"
 	}
 	rawTransport := strings.TrimSpace(os.Getenv("OPUTE_TRANSPORT"))
 	if rawTransport != "" && !strings.EqualFold(rawTransport, "http") {
@@ -197,18 +182,29 @@ func (c Config) Validate() error {
 	if providerValue != "" && !strings.EqualFold(providerValue, "incus") {
 		return fmt.Errorf("unsupported provider %q: only incus is supported", providerValue)
 	}
-	if mode == "standalone" {
-		if c.IsReverseTunnel {
-			return fmt.Errorf("standalone mode cannot use OPUTE_REVERSE_TUNNEL=true")
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("OPUTE_REVERSE_TUNNEL")), "true") {
+		return fmt.Errorf("OPUTE_REVERSE_TUNNEL is retired; the kernel always serves loopback POST /mcp")
+	}
+	for _, key := range []string{
+		"OPUTE_HOST_WS_URL", "OPUTE_CPC_TOKEN", "OPUTE_REMOTE_AGENT_AUTH_TOKEN",
+		"OPUTE_ONBOARDING_TOKEN", "OPUTE_ONBOARDING_SESSION_ID",
+	} {
+		if strings.TrimSpace(os.Getenv(key)) != "" {
+			return fmt.Errorf("%s is retired; enroll a host resource URL instead of phone-home credentials", key)
 		}
-		for _, key := range []string{
-			"OPUTE_MCP_URL", "OPUTE_MCP_HEALTH_URL", "OPUTE_HOST_WS_URL",
-			"OPUTE_ONBOARDING_TOKEN", "OPUTE_ONBOARDING_SESSION_ID",
-			"OPUTE_REMOTE_AGENT_AUTH_TOKEN", "OPUTE_CPC_TOKEN",
-			"MCP_AUTH_TOKEN",
-		} {
+	}
+	if mode == "standalone" {
+		for _, key := range []string{"OPUTE_MCP_URL", "OPUTE_MCP_HEALTH_URL"} {
 			if strings.TrimSpace(os.Getenv(key)) != "" {
 				return fmt.Errorf("standalone mode cannot use platform setting %s", key)
+			}
+		}
+	}
+	if token := strings.TrimSpace(c.MCPAuthToken); token != "" {
+		lower := strings.ToLower(token)
+		for _, prefix := range []string{"opha_", "opit_", "opsess_"} {
+			if strings.HasPrefix(lower, prefix) {
+				return fmt.Errorf("MCP_AUTH_TOKEN must be a host-issued bootstrap secret, not a product token")
 			}
 		}
 	}
@@ -343,8 +339,8 @@ func envPathsOr(key string, fallback []string) []string {
 
 // envValue accepts both ordinary systemd EnvironmentFile values and values
 // emitted by shell-quoting helpers. Some existing installations contain
-// literal surrounding quotes; keeping them makes URL health probes and
-// reverse-tunnel dialing fail before the agent can reconnect.
+// literal surrounding quotes; keeping them makes bind and token checks fail
+// closed before the agent starts a listener.
 func envValue(key string) string {
 	value := strings.TrimSpace(os.Getenv(key))
 	if len(value) >= 2 {
@@ -355,27 +351,6 @@ func envValue(key string) string {
 	return value
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if s := strings.TrimSpace(v); s != "" {
-			return s
-		}
-	}
-	return ""
-}
-
-func (c Config) AllowedAuthTokens() []string {
-	seen := map[string]struct{}{}
-	var out []string
-	for _, t := range []string{c.MCPAuthToken, c.BridgeToken, c.RemoteAgentAuthToken} {
-		if t == "" {
-			continue
-		}
-		if _, ok := seen[t]; ok {
-			continue
-		}
-		seen[t] = struct{}{}
-		out = append(out, t)
-	}
-	return out
+func (c Config) BootstrapToken() string {
+	return strings.TrimSpace(c.MCPAuthToken)
 }

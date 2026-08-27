@@ -38,6 +38,9 @@ Host Agent.
 
 | Skill | When to load |
 |-------|-------------|
+| **reflect** | Concluding non-trivial work, after debugging obscure bugs/quirks, or when leaving explanatory inline comments and elevating permanent invariants. |
+| **inline-context-discipline** | Reading/authoring code comments, handling edge cases, workarounds, or wire/protocol boundaries. |
+| **codex-wsl** | Configuring, diagnosing, or executing OpenAI Codex CLI in WSL or across the Windows-WSL boundary, Host Agent MCP integration, and headless execution. |
 | **cordis-go** | `internal/cordis`, `internal/cordis/mcp`, `internal/hostmcp`, provider generations, C-01–C-24 catalog. Normative guide: [`docs/cordis-development-guide.md`](docs/cordis-development-guide.md) |
 | **host-agent-boundaries** | Identity, runtime-kind (`vm:` vs `container:`), provider-neutral MCP, E2E evidence, relay ownership. ADRs 0006 and 0007 |
 | Sibling **opute/.agents/skills/host-agent** | Control-plane registration, heartbeat, dogfood recovery |
@@ -106,3 +109,4 @@ ownership.
 - Provider adapters are generation-bound. Durable evidence uses schema-driven
   redaction; unknown projections fail closed.
 - Boundary claims require wire, lifecycle, cleanup, and durable-state evidence.
+

@@ -66,7 +66,6 @@ cat > "$CONFIG_DIR/host-agent.env" <<EOF
 HOST_MCP_PORT=$PORT
 HOST_MCP_BIND_HOST=127.0.0.1
 MCP_AUTH_TOKEN=$TOKEN
-OPUTE_REVERSE_TUNNEL=false
 OPUTE_INFRA_PROVIDER_ID=incus
 OPUTE_REMOTE_AGENT_ID=release-verify-host
 EOF
@@ -94,28 +93,29 @@ echo "$HEALTH" | grep -q '"ok":true' || fail "health check: $HEALTH"
 pass "health endpoint: $HEALTH"
 
 echo
-echo "[6/7] Verifying MCP initialize + tools/list..."
-INIT_HEADERS=$(mktemp)
-INIT_BODY=$(mktemp)
-curl -sD "$INIT_HEADERS" -o "$INIT_BODY" -X POST "http://127.0.0.1:$PORT/mcp" \
+echo "[6/7] Verifying modern-only MCP server/discover + tools/list..."
+DISCOVER_BODY=$(mktemp)
+curl -sf -X POST "http://127.0.0.1:$PORT/mcp" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"release-verify","version":"1.0.0"}}}'
-
-grep -qi "mcp-session-id" "$INIT_HEADERS" || fail "missing mcp-session-id header"
-SESSION_ID=$(grep -i "mcp-session-id" "$INIT_HEADERS" | tr -d '\r' | awk '{print $2}')
-[ -n "$SESSION_ID" ] || fail "empty session id"
-grep -q "host-agent" "$INIT_BODY" || fail "initialize response missing server info: $(cat "$INIT_BODY")"
-pass "MCP initialize (session=$SESSION_ID)"
+  -H "MCP-Protocol-Version: 2026-07-28" \
+  -H "Mcp-Method: server/discover" \
+  -H "Origin: http://127.0.0.1:$PORT" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}' \
+  -o "$DISCOVER_BODY"
+grep -q "2026-07-28" "$DISCOVER_BODY" || fail "server/discover missing protocol version: $(cat "$DISCOVER_BODY")"
+pass "MCP server/discover"
 
 TOOLS_BODY=$(mktemp)
 curl -sf -X POST "http://127.0.0.1:$PORT/mcp" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "mcp-session-id: $SESSION_ID" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  -H "MCP-Protocol-Version: 2026-07-28" \
+  -H "Mcp-Method: tools/list" \
+  -H "Origin: http://127.0.0.1:$PORT" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}' \
   -o "$TOOLS_BODY"
 for tool in create_vm list_vms get_host_info; do
   grep -q "\"$tool\"" "$TOOLS_BODY" || fail "tools/list missing $tool"

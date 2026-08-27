@@ -10,8 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 )
 
 const requiredProtocolVersion = "2026-07-28"
@@ -26,8 +27,9 @@ type Options struct {
 type Adapter struct {
 	mu         sync.RWMutex
 	descriptor providercontract.PluginDescriptor
-	session    *mcp.ClientSession
-	tools      map[string]*mcp.Tool
+	client     mcphttp.Client
+	tools      map[string]bool
+	closed     bool
 }
 
 func Connect(ctx context.Context, descriptor providercontract.PluginDescriptor, options Options) (*Adapter, error) {
@@ -46,47 +48,32 @@ func Connect(ctx context.Context, descriptor providercontract.PluginDescriptor, 
 	if httpClient == nil {
 		httpClient = &http.Client{Transport: authTransport{base: http.DefaultTransport, token: options.BearerToken}}
 	}
-	transport := &mcp.StreamableClientTransport{
-		Endpoint:             descriptor.Server.Endpoint,
-		HTTPClient:           httpClient,
-		MaxRetries:           -1,
-		DisableStandaloneSSE: true,
+	client := mcphttp.Client{
+		Endpoint:   descriptor.Server.Endpoint,
+		Token:      options.BearerToken,
+		HTTPClient: httpClient,
+		Name:       clientName,
+		Version:    clientVersion,
 	}
-	session, err := mcp.NewClient(&mcp.Implementation{Name: clientName, Version: clientVersion}, nil).Connect(ctx, transport, nil)
+	discover, err := client.Call(ctx, "server/discover", "", map[string]any{})
 	if err != nil {
-		return nil, fmt.Errorf("connect provider MCP: %w", err)
+		return nil, fmt.Errorf("discover provider MCP: %w", err)
 	}
-	initialize := session.InitializeResult()
-	if initialize == nil || initialize.ProtocolVersion != requiredProtocolVersion {
-		_ = session.Close()
-		version := "unknown"
-		if initialize != nil {
-			version = initialize.ProtocolVersion
-		}
-		return nil, fmt.Errorf("provider MCP negotiated unsupported protocol %q; require %s", version, requiredProtocolVersion)
+	if !supportsModern(discover) {
+		return nil, fmt.Errorf("provider MCP negotiated unsupported protocol; require %s", requiredProtocolVersion)
 	}
-	list, err := session.ListTools(ctx, nil)
+	listed, err := client.Call(ctx, "tools/list", "", map[string]any{})
 	if err != nil {
-		_ = session.Close()
 		return nil, fmt.Errorf("list provider tools: %w", err)
 	}
-	byName := make(map[string]*mcp.Tool, len(list.Tools))
-	for _, tool := range list.Tools {
-		if tool == nil || strings.TrimSpace(tool.Name) == "" {
-			_ = session.Close()
-			return nil, fmt.Errorf("provider returned an invalid tool definition")
-		}
-		if _, exists := byName[tool.Name]; exists {
-			_ = session.Close()
-			return nil, fmt.Errorf("provider returned duplicate tool %q", tool.Name)
-		}
-		byName[tool.Name] = tool
+	tools, err := toolNames(listed)
+	if err != nil {
+		return nil, err
 	}
-	if _, ok := byName["opute.provider.get_install_manifest"]; !ok {
-		_ = session.Close()
+	if _, ok := tools["opute.provider.get_install_manifest"]; !ok {
 		return nil, fmt.Errorf("provider does not expose opute.provider.get_install_manifest")
 	}
-	return &Adapter{descriptor: descriptor, session: session, tools: byName}, nil
+	return &Adapter{descriptor: descriptor, client: client, tools: tools}, nil
 }
 
 func (a *Adapter) Descriptor() providercontract.PluginDescriptor { return a.descriptor }
@@ -99,29 +86,25 @@ func (a *Adapter) ToolNames() []string {
 	return result
 }
 
-func (a *Adapter) Call(ctx context.Context, operation string, arguments map[string]any) (*mcp.CallToolResult, error) {
+func (a *Adapter) Call(ctx context.Context, operation string, arguments map[string]any) (*sdkmcp.CallToolResult, error) {
 	if a == nil {
 		return nil, fmt.Errorf("provider adapter is closed")
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	if a.session == nil {
+	if a.closed {
 		return nil, fmt.Errorf("provider adapter is closed")
 	}
 	if _, ok := a.tools[operation]; !ok {
 		return nil, fmt.Errorf("provider operation %q is not registered", operation)
 	}
-	result, err := a.session.CallTool(ctx, &mcp.CallToolParams{Name: operation, Arguments: arguments})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return a.client.CallTool(ctx, operation, arguments)
 }
 
 // CallSynchronousOnly is the explicit provider task contract used until a
 // Host Agent task bridge owns downstream task creation, polling, and
 // cancellation. MCP discovery alone must not make a provider task portable.
-func (a *Adapter) CallSynchronousOnly(ctx context.Context, operation string, arguments map[string]any) (*mcp.CallToolResult, error) {
+func (a *Adapter) CallSynchronousOnly(ctx context.Context, operation string, arguments map[string]any) (*sdkmcp.CallToolResult, error) {
 	result, err := a.Call(ctx, operation, arguments)
 	if err != nil || result == nil {
 		return result, err
@@ -163,12 +146,35 @@ func (a *Adapter) Close() error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.session == nil {
-		return nil
+	a.closed = true
+	return nil
+}
+
+func supportsModern(discover map[string]any) bool {
+	versions, _ := discover["supportedVersions"].([]any)
+	for _, version := range versions {
+		if version == requiredProtocolVersion {
+			return true
+		}
 	}
-	err := a.session.Close()
-	a.session = nil
-	return err
+	return false
+}
+
+func toolNames(listed map[string]any) (map[string]bool, error) {
+	raw, _ := listed["tools"].([]any)
+	byName := make(map[string]bool, len(raw))
+	for _, item := range raw {
+		tool, _ := item.(map[string]any)
+		name, _ := tool["name"].(string)
+		if strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("provider returned an invalid tool definition")
+		}
+		if byName[name] {
+			return nil, fmt.Errorf("provider returned duplicate tool %q", name)
+		}
+		byName[name] = true
+	}
+	return byName, nil
 }
 
 type authTransport struct {

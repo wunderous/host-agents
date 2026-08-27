@@ -62,10 +62,9 @@ container and never imports Host Agent internals.
 
 Validation performed on 2026-08-24 from the WSL checkout:
 
-- Launched the provider MCP on a disposable local port and completed both the
-  legacy `initialize` exchange using `2025-11-25` and the negotiated
-  `server/discover`, `tools/list`, and `tools/call` exchange using
-  `2026-07-28`. `tools/list` returned 17 provider tools, including both
+- Launched the provider MCP on a disposable local port and completed the
+  modern-only `server/discover`, `tools/list`, and `tools/call` exchange using
+  `2026-07-28`. Dual-era `initialize` is not part of Host Agent validation. `tools/list` returned 17 provider tools, including both
   dynamic operations and migration aliases. The validation call returned the
   raw `container:tenant-a:edge` binding and no secret.
 - Launched the current Host Agent in isolated platform mode, provisioned the
@@ -118,7 +117,7 @@ Validation performed on 2026-08-24 from the WSL checkout:
   owner-only mode (`0600`). Values remain process inputs only.
 - Built and exercised the standalone `com.opute.k3s` provider (manifest
   version `1.0.1`) with real MCP
-  `initialize`, negotiated `server/discover`, `tools/list`, and `tools/call`
+  `server/discover`, `tools/list`, and `tools/call`
   exchanges. Host Agent installation and activation then exposed the dynamic
   Kubernetes operations without adding a Cloudflare or direct-kubectl route.
 - Through Host Agent MCP, `list_kubernetes_clusters` discovered

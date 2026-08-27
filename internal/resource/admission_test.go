@@ -21,7 +21,7 @@ func TestClassifyTool(t *testing.T) {
 		// its bounded readiness contract. It is a normal host operation, not an
 		// exclusive resource-heavy workload, so unrelated normal work cannot
 		// starve public serving convergence.
-		{"ensure_cloudflared_tunnel", ClassNormal},
+		{"run_host_command", ClassNormal},
 		{"apply_manifest", ClassNormal},
 	} {
 		if got := ClassifyTool(test.tool); got != test.class {
@@ -64,7 +64,7 @@ func TestServingReconciliationCanCoexistWithNormalWork(t *testing.T) {
 	}
 	defer first()
 
-	second, err := c.Acquire(context.Background(), "ensure_cloudflared_tunnel")
+	second, err := c.Acquire(context.Background(), "run_host_command")
 	if err != nil {
 		t.Fatalf("serving reconciliation should not wait behind one normal operation: %v", err)
 	}

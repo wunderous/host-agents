@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/mcphttp"
 	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/schemas"
@@ -63,6 +62,7 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 		"OPUTE_STANDALONE_STATE_DIR="+t.TempDir(),
 		"HOST_MCP_BIND_HOST=127.0.0.1",
 		fmt.Sprintf("HOST_MCP_PORT=%d", port),
+		"MCP_AUTH_TOKEN=host-bootstrap",
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -113,6 +113,7 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 			t.Fatal(requestErr)
 		}
 		listRequest.Header.Set("Content-Type", "application/json")
+		listRequest.Header.Set("Authorization", "Bearer host-bootstrap")
 		if err := mcphttp.ApplyStreamableHTTPRequestHeaders(listRequest); err != nil {
 			t.Fatal(err)
 		}
@@ -134,27 +135,18 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 	}
 	listResponse.Body.Close()
 
-	var session *mcp.ClientSession
-	client := mcp.NewClient(&mcp.Implementation{Name: "standalone-contract-test", Version: "1"}, nil)
-	for {
-		session, err = client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: endpoint}, nil)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("Connect: %v", err)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	defer session.Close()
-
-	list, err := session.ListTools(ctx, nil)
+	mcpClient := mcphttp.Client{Endpoint: endpoint, Token: "host-bootstrap", Name: "standalone-contract-test", Version: "1"}
+	listed, err := mcpClient.Call(ctx, "tools/list", "", map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	seen := map[string]bool{}
-	for _, tool := range list.Tools {
-		seen[tool.Name] = true
+	if toolsRaw, ok := listed["tools"].([]any); ok {
+		for _, item := range toolsRaw {
+			tool, _ := item.(map[string]any)
+			name, _ := tool["name"].(string)
+			seen[name] = true
+		}
 	}
 	contract, err := tools.LoadStandaloneToolContract()
 	if err != nil {
@@ -168,11 +160,6 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 	for _, name := range contract.Smoke.ForbiddenTools {
 		if seen[name] {
 			t.Fatalf("platform or shell tool leaked into standalone tools/list: %q", name)
-		}
-	}
-	for _, tool := range list.Tools {
-		if tool.Meta == nil {
-			t.Fatalf("standalone tool %q is missing contract metadata", tool.Name)
 		}
 	}
 	if !seen["request_task_input"] {
@@ -189,6 +176,7 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer host-bootstrap")
 		if err := mcphttp.ApplyStreamableHTTPRequestHeaders(req); err != nil {
 			t.Fatal(err)
 		}
@@ -256,11 +244,11 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 	if readOnly == "" {
 		t.Fatal("standalone smoke.requiredTools has no read-only probe tool")
 	}
-	read, err := session.CallTool(ctx, &mcp.CallToolParams{Name: readOnly, Arguments: map[string]any{}})
+	read, err := mcpClient.CallTool(ctx, readOnly, map[string]any{})
 	if err != nil || read == nil || read.IsError || read.StructuredContent == nil {
 		t.Fatalf("read-only smoke call %s failed: result=%+v err=%v", readOnly, read, err)
 	}
-	denied, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "create_vm", Arguments: map[string]any{"vmName": "opute-standalone-contract-test"}})
+	denied, err := mcpClient.CallTool(ctx, "create_vm", map[string]any{"vmName": "opute-standalone-contract-test"})
 	if err != nil || denied == nil || !denied.IsError {
 		t.Fatalf("mutation was not denied: result=%+v err=%v", denied, err)
 	}

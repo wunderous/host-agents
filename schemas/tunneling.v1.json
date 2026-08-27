@@ -11,6 +11,7 @@
     "bindingId": {"type": "string"},
     "targetUri": {"type": "string", "pattern": "^(host|cluster|container):[a-z][a-z0-9-]{0,31}:.+$"},
     "hostname": {"type": "string"},
+    "hostnames": {"type": "array", "items": {"type": "string"}},
     "probe": {"type": "object"},
     "deleted": {"type": "boolean"},
     "error": {"type": "string"},

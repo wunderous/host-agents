@@ -6,8 +6,8 @@ import (
 )
 
 func TestHostServingReconciliationUsesTaskContract(t *testing.T) {
-	if !TaskAwareTools["ensure_cloudflared_tunnel"] {
-		t.Fatal("ensure_cloudflared_tunnel must use the MCP task contract")
+	if !TaskAwareTools["run_host_command"] {
+		t.Fatal("run_host_command must use the MCP task contract")
 	}
 }
 

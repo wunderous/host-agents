@@ -8,7 +8,16 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 )
+
+func providerTestServer(t *testing.T, server *mcp.Server, name string) *httptest.Server {
+	t.Helper()
+	handler := mcphttp.WrapProviderHandler(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}), map[string]any{"name": name, "version": "1"})
+	httpServer := httptest.NewServer(handler)
+	t.Cleanup(httpServer.Close)
+	return httpServer
+}
 
 func TestConnectDiscoversToolsAndValidatesManifest(t *testing.T) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "spoofable-name", Version: "0.0.1"}, nil)
@@ -22,9 +31,7 @@ func TestConnectDiscoversToolsAndValidatesManifest(t *testing.T) {
 			Validation: providercontract.ValidationRef{Capability: "opute.capability.example.v1", Operation: "validate"},
 		}}, nil
 	})
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
-	httpServer := httptest.NewServer(handler)
-	defer httpServer.Close()
+	httpServer := providerTestServer(t, server, "spoofable-name")
 
 	descriptor := providercontract.PluginDescriptor{
 		Schema:   providercontract.PluginDescriptorVersion,
@@ -51,9 +58,7 @@ func TestConnectRejectsProviderWithoutManifestTool(t *testing.T) {
 	server.AddTool(&mcp.Tool{Name: "other", InputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return &mcp.CallToolResult{}, nil
 	})
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
-	httpServer := httptest.NewServer(handler)
-	defer httpServer.Close()
+	httpServer := providerTestServer(t, server, "spoofable-name")
 	descriptor := providercontract.PluginDescriptor{Schema: providercontract.PluginDescriptorVersion, PluginID: "com.opute.example", Version: "1.0.0", Capabilities: []providercontract.CapabilityRef{{ID: "opute.capability.example.v1", Version: 1}}, Server: providercontract.ServerDescriptor{Transport: "streamable_http", Endpoint: httpServer.URL}}
 	if _, err := Connect(context.Background(), descriptor, Options{}); err == nil {
 		t.Fatal("provider without manifest tool was accepted")
@@ -75,9 +80,7 @@ func TestCallSynchronousOnlyRejectsProviderTaskResult(t *testing.T) {
 	server.AddTool(&mcp.Tool{Name: "validate", InputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return &mcp.CallToolResult{StructuredContent: map[string]any{"resultType": "task", "taskId": "downstream-task"}}, nil
 	})
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
-	httpServer := httptest.NewServer(handler)
-	defer httpServer.Close()
+	httpServer := providerTestServer(t, server, "spoofable-name")
 	adapter, err := Connect(context.Background(), providercontract.PluginDescriptor{
 		Schema: providercontract.PluginDescriptorVersion, PluginID: "com.opute.example", Version: "1.0.0",
 		Capabilities: []providercontract.CapabilityRef{{ID: "opute.capability.example.v1", Version: 1}},

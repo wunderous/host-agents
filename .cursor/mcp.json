@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "host-agent": {
+      "url": "http://127.0.0.1:3004/mcp",
+      "headers": {
+        "Authorization": "Bearer oha_host-zephyrus-ef47fbbf"
+      }
+    }
+  }
+}

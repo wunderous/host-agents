@@ -17,14 +17,14 @@ func TestModernRequestEnvelopeMatchesFixture(t *testing.T) {
 }
 
 func TestApplyMcpRouteHostUsesEnvRouteHost(t *testing.T) {
-	t.Setenv("OPUTE_MCP_ROUTE_HOST", "mcp.opute.io")
+	t.Setenv("OPUTE_MCP_ROUTE_HOST", "mcp.example.test")
 	t.Setenv("OPUTE_MCP_URL", "http://10.0.100.129/mcp")
 	req := httptest.NewRequest(http.MethodPost, "http://10.0.100.129/mcp", nil)
 	ApplyMcpRouteHost(req)
-	if req.Host != "mcp.opute.io" {
+	if req.Host != "mcp.example.test" {
 		t.Fatalf("req.Host = %q", req.Host)
 	}
-	if got := req.Header.Get("Host"); got != "mcp.opute.io" {
+	if got := req.Header.Get("Host"); got != "mcp.example.test" {
 		t.Fatalf("Host header = %q", got)
 	}
 }

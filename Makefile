@@ -23,7 +23,7 @@ npm-test:
 	cd npm/local-host-agent && npm test
 
 standalone-smoke: build
-	OPUTE_AGENT_MODE=standalone OPUTE_INFRA_PROVIDER_ID=incus OPUTE_STANDALONE_STATE_DIR="$$(mktemp -d)" $(DIST)/$(BINARY) --check
+	OPUTE_REMOTE_AGENT_ID=test-host-agent OPUTE_AGENT_MODE=standalone OPUTE_INFRA_PROVIDER_ID=incus OPUTE_STANDALONE_STATE_DIR="$$(mktemp -d)" $(DIST)/$(BINARY) --check
 
 standalone-http-smoke: build-agent
 	OPUTE_STANDALONE_BINARY=$(CURDIR)/$(DIST)/$(BINARY) go test ./test/standalone -count=1

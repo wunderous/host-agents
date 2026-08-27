@@ -63,16 +63,19 @@ async function rpc(url, state, method, params = undefined) {
   const headers = {
     Accept: 'application/json, text/event-stream',
     'Content-Type': 'application/json',
-    'Mcp-Protocol-Version': state.protocolVersion,
+    'MCP-Protocol-Version': '2026-07-28',
+    'Mcp-Method': method,
+    Origin: new URL(url).origin,
   }
-  if (state.sessionId) headers['Mcp-Session-Id'] = state.sessionId
-  const body = { jsonrpc: '2.0', method }
-  if (!method.startsWith('notifications/')) body.id = state.nextId++
-  if (params !== undefined) body.params = params
+  if (state.token) headers.Authorization = `Bearer ${state.token}`
+  if (method === 'tools/call' && params?.name) headers['Mcp-Name'] = params.name
+  const body = { jsonrpc: '2.0', method, id: state.nextId++ }
+  body.params = {
+    ...(params || {}),
+    _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' },
+  }
   const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
   assert.equal(response.ok, true, `${method} HTTP ${response.status}`)
-  const sessionId = response.headers.get('Mcp-Session-Id')
-  if (sessionId) state.sessionId = sessionId
   const text = await response.text()
   if (!text.trim()) return {}
   const result = JSON.parse(text)
@@ -139,6 +142,7 @@ test('published npm launcher black-box canary', { skip: process.env.RUN_PUBLISHE
     OPUTE_STANDALONE_STATE_DIR: path.join(root, 'state'),
     HOST_MCP_BIND_HOST: '127.0.0.1',
     HOST_MCP_PORT: String(port),
+    MCP_AUTH_TOKEN: 'host-bootstrap',
   })
   const health = `http://127.0.0.1:${port}/health`
   const mcp = `http://127.0.0.1:${port}/mcp`
@@ -146,15 +150,7 @@ test('published npm launcher black-box canary', { skip: process.env.RUN_PUBLISHE
     const start = await runLauncher(npm, version, cache, npmrc, env, 'start', '--background')
     assert.equal(start.stdout.trim(), `${mcp}`)
     await waitHealth(health)
-    const state = { nextId: 1, sessionId: null, protocolVersion: '2024-11-05' }
-    const initialize = await rpc(mcp, state, 'initialize', {
-      protocolVersion: state.protocolVersion,
-      capabilities: {},
-      clientInfo: { name: 'published-npm-canary', version: '1' },
-    })
-    assert.equal(initialize.serverInfo.name, 'host-agent')
-    assert.equal(initialize.serverInfo.version, version)
-    await rpc(mcp, state, 'notifications/initialized')
+    const state = { nextId: 1, token: 'host-bootstrap' }
     const listed = await rpc(mcp, state, 'tools/list')
     const names = new Set(listed.tools.map(tool => tool.name))
     const { requiredTools, forbiddenTools } = loadSmokeContract()
@@ -175,15 +171,7 @@ test('published npm launcher black-box canary', { skip: process.env.RUN_PUBLISHE
     const mutationStart = await runLauncher(npm, version, cache, npmrc, mutationEnv, 'start', '--background')
     assert.equal(mutationStart.stdout.trim(), `${mcp}`)
     await waitHealth(health)
-    const mutationState = { nextId: 1, sessionId: null, protocolVersion: '2024-11-05' }
-    const mutationInitialize = await rpc(mcp, mutationState, 'initialize', {
-      protocolVersion: mutationState.protocolVersion,
-      capabilities: {},
-      clientInfo: { name: 'published-npm-lifecycle-canary', version: '1' },
-    })
-    assert.equal(mutationInitialize.serverInfo.name, 'host-agent')
-    await rpc(mcp, mutationState, 'notifications/initialized')
-
+    const mutationState = { nextId: 1, token: 'host-bootstrap' }
     const vmName = `opute-published-npm-e2e-${Date.now()}`
     let created = false
     try {

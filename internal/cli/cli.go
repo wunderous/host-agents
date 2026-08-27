@@ -14,8 +14,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/app"
 	"github.com/wunderous/host-agents/internal/config"
+	"github.com/wunderous/host-agents/internal/hostmcp"
 	"github.com/wunderous/host-agents/internal/version"
-	"github.com/wunderous/host-agents/pkg/hostagentclient"
 )
 
 // Run executes the server-only command surface. The deterministic TUI is a
@@ -151,17 +151,7 @@ func runRecipe(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		return err
 	}
 	defer runtime.Close()
-	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	serverSession, err := runtime.Host().MCP().Connect(ctx, serverTransport, nil)
-	if err != nil {
-		return fmt.Errorf("connect in-process MCP server: %w", err)
-	}
-	defer serverSession.Close()
-	client, err := hostagentclient.ConnectWithTransport(ctx, clientTransport)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	client := hostToolCaller{host: runtime.Host()}
 	result, err := client.Call(ctx, toolName, arguments)
 	if err != nil {
 		return err
@@ -270,17 +260,7 @@ func runProvider(ctx context.Context, args []string, stdout, stderr io.Writer) e
 		return err
 	}
 	defer runtime.Close()
-	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	serverSession, err := runtime.Host().MCP().Connect(ctx, serverTransport, nil)
-	if err != nil {
-		return fmt.Errorf("connect in-process MCP server: %w", err)
-	}
-	defer serverSession.Close()
-	client, err := hostagentclient.ConnectWithTransport(ctx, clientTransport)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	client := hostToolCaller{host: runtime.Host()}
 	result, err := client.Call(ctx, toolName, arguments)
 	if err != nil {
 		return err
@@ -324,7 +304,7 @@ func runProvider(ctx context.Context, args []string, stdout, stderr io.Writer) e
 	return err
 }
 
-func waitForRecipeRun(ctx context.Context, client *hostagentclient.Client, runID, statusTool string) (*mcp.CallToolResult, error) {
+func waitForRecipeRun(ctx context.Context, client toolCaller, runID, statusTool string) (*mcp.CallToolResult, error) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -486,6 +466,21 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  opute-host-agent provider install --source ./plugin.yaml --activate")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Standalone mode never requires Opute Platform.")
+}
+
+type toolCaller interface {
+	Call(ctx context.Context, name string, arguments map[string]any) (*mcp.CallToolResult, error)
+}
+
+type hostToolCaller struct {
+	host *hostmcp.Server
+}
+
+func (c hostToolCaller) Call(ctx context.Context, name string, arguments map[string]any) (*mcp.CallToolResult, error) {
+	if c.host == nil {
+		return nil, fmt.Errorf("host runtime is not configured")
+	}
+	return c.host.DispatchTool(ctx, name, arguments, nil)
 }
 
 func setenv(key, value string) {

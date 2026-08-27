@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
 type InspectHostServiceArgs struct {
@@ -55,3 +56,71 @@ func (s *HostOperationsService) InspectHostService(args InspectHostServiceArgs, 
 		"exitCode":      result.ExitCode,
 	}, nil
 }
+
+// ListHostServices returns a list of systemd services and registers their canonical URIs.
+func (s *HostOperationsService) ListHostServices(scope string) (map[string]any, error) {
+	scope = strings.ToLower(strings.TrimSpace(scope))
+	if scope == "" {
+		scope = "user"
+	}
+	if scope != "user" && scope != "system" {
+		return nil, fmt.Errorf("scope must be user or system")
+	}
+	commandPrefix := []string{provider.DefaultSystemctlPath}
+	if scope == "user" {
+		commandPrefix = append(commandPrefix, "--user")
+	}
+	command := append(append([]string{}, commandPrefix...), "list-units", "--type=service", "--all", "--no-pager", "--plain", "--no-legend")
+	result, err := s.hostCommandRunner(command, nil, 15*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("list host services: %w", err)
+	}
+	lines := strings.Split(result.Stdout, "\n")
+	services := make([]map[string]any, 0, len(lines))
+	tenantID := s.effectiveTenantID()
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		unitName := fields[0]
+		if !strings.HasSuffix(unitName, ".service") {
+			continue
+		}
+		serviceName := strings.TrimSuffix(unitName, ".service")
+		activeState := fields[2]
+		subState := fields[3]
+		status := activeState
+		if subState != "" && subState != activeState {
+			status = activeState + "/" + subState
+		}
+		active := activeState == "active"
+		uri, uriErr := resourceid.HostServiceURI(tenantID, scope+"/"+serviceName)
+		if uriErr != nil {
+			continue
+		}
+		if s.resourceRegistry != nil {
+			_ = s.RegisterResource(uri.String(), map[string]any{
+				"serviceName": serviceName,
+				"scope":       scope,
+			})
+		}
+		services = append(services, map[string]any{
+			"uri":         uri.String(),
+			"serviceName": serviceName,
+			"scope":       scope,
+			"status":      status,
+			"active":      active,
+			"enabled":     true,
+		})
+	}
+	return map[string]any{
+		"services": services,
+		"total":    len(services),
+	}, nil
+}
+

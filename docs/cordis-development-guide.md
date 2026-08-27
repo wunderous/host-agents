@@ -187,10 +187,9 @@ and the repository's MCP compliance tests.
 
 At minimum, a provider adapter must:
 
-- use Streamable HTTP and negotiate the required protocol revision;
-- use the 2026-07-28 `server/discover` capability discovery exchange; retain
-  `initialize` only where an explicitly supported legacy/dual-era client
-  requires it;
+- use Streamable HTTP and pin protocol revision `2026-07-28`;
+- use the 2026-07-28 `server/discover` capability discovery exchange;
+- never send or serve MCP `initialize` on the Host Agent resource;
 - use `tools/list` and `tools/call` according to the negotiated contract;
 - preserve structured content, typed errors, cancellation, and task state;
 - keep request/response correlation and terminal stream events intact; and
@@ -414,7 +413,7 @@ process is insufficient. A Cordis/MCP milestone is green only when the
 evidence includes all applicable items:
 
 - real published Host Agent composition and entry path;
-- MCP `initialize`, negotiated revision, `tools/list`, and `tools/call`;
+- MCP `server/discover`, `tools/list`, and `tools/call`;
 - complete Streamable HTTP response/stream termination;
 - the actual LLM request when an agentic path is under test;
 - raw model tool-call arguments and the owning tool's structured result/error;
@@ -445,3 +444,4 @@ or a deterministic orchestrator heuristic.
 - [DeepSeek Harness MCP client](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.md)
 - [MCP 2026-07-28 specification](https://modelcontextprotocol.io/specification/2026-07-28)
 - [Host Agent provider architecture ADR](adr/0002-provider-extension-architecture.md)
+- [Tool contract conformance and capability authority ADR](adr/0009-tool-contract-conformance-and-catalog-authority.md)

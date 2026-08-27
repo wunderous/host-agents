@@ -2,7 +2,6 @@
   "accept": "application/json, text/event-stream",
   "mcpPath": "/mcp",
   "healthPath": "/health",
-  "sessionHeader": "Mcp-Session-Id",
   "protocolVersionHeader": "MCP-Protocol-Version",
   "methodHeader": "Mcp-Method",
   "nameHeader": "Mcp-Name",

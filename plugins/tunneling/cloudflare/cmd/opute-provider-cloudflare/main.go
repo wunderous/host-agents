@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/pkg/hostagentclient"
 )
@@ -28,7 +29,10 @@ func main() {
 	addManifestTool(server, manifest)
 	addCloudflareOperations(server)
 	addTeardownTool(server)
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true})
+	handler := mcphttp.WrapProviderHandler(
+		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true}),
+		map[string]any{"name": "opute-provider-cloudflare", "version": "1.0.0"},
+	)
 	log.Printf("Opute Cloudflare provider listening on :%s/mcp", port)
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)
@@ -88,7 +92,7 @@ func validationSchema() map[string]any {
 	return map[string]any{"type": "object", "required": []string{"bindings"}, "properties": map[string]any{"bindings": map[string]any{"type": "array"}, "placement": map[string]any{"type": "string", "enum": []string{"host", "kubernetes", "container"}}}}
 }
 func tunnelSchema() map[string]any {
-	return map[string]any{"type": "object", "required": []string{"bindingId", "localTarget"}, "properties": map[string]any{"bindingId": map[string]any{"type": "string", "minLength": 1}, "hostname": map[string]any{"type": "string"}, "localTarget": map[string]any{"type": "string"}, "runToken": map[string]any{"type": "string"}, "connector": map[string]any{"type": "string"}, "placement": map[string]any{"type": "string", "enum": []string{"host", "container", "kubernetes"}}, "targetUri": map[string]any{"type": "string"}, "artifactUri": map[string]any{"type": "string"}, "artifactSha256": map[string]any{"type": "string"}, "artifactPath": map[string]any{"type": "string"}, "serviceName": map[string]any{"type": "string"}, "serviceFile": map[string]any{"type": "string"}}}
+	return map[string]any{"type": "object", "required": []string{"bindingId", "localTarget"}, "properties": map[string]any{"bindingId": map[string]any{"type": "string", "minLength": 1}, "hostname": map[string]any{"type": "string"}, "hostnames": map[string]any{"type": "array", "items": map[string]any{"type": "string", "minLength": 1}}, "localTarget": map[string]any{"type": "string"}, "runToken": map[string]any{"type": "string"}, "connector": map[string]any{"type": "string"}, "placement": map[string]any{"type": "string", "enum": []string{"host", "container", "kubernetes"}}, "targetUri": map[string]any{"type": "string"}, "artifactUri": map[string]any{"type": "string"}, "artifactSha256": map[string]any{"type": "string"}, "artifactPath": map[string]any{"type": "string"}, "serviceName": map[string]any{"type": "string"}, "serviceFile": map[string]any{"type": "string"}}}
 }
 func connectorSchema() map[string]any {
 	return map[string]any{"type": "object", "required": []string{"token", "namespace"}, "properties": map[string]any{"token": map[string]any{"type": "string", "minLength": 1}, "namespace": map[string]any{"type": "string", "minLength": 1}, "name": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "replicas": map[string]any{"type": "integer", "minimum": 1}, "targetUri": map[string]any{"type": "string"}, "placement": map[string]any{"type": "string", "enum": []string{"kubernetes", "container"}}, "artifactUri": map[string]any{"type": "string"}, "artifactSha256": map[string]any{"type": "string"}, "localTargets": map[string]any{"type": "array"}}}
@@ -220,7 +224,7 @@ func ensureTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 	if err != nil {
 		return nil, err
 	}
-	return structured(map[string]any{"contractVersion": tunnelingCapability, "ready": true, "bindingId": stringInput(args, "bindingId", ""), "placement": placement, "hostname": stringInput(args, "hostname", "")})
+	return structured(map[string]any{"contractVersion": tunnelingCapability, "ready": true, "bindingId": stringInput(args, "bindingId", ""), "placement": placement, "hostname": stringInput(args, "hostname", ""), "hostnames": hostnamesFromArgs(args)})
 }
 
 func reconcileHostTunnel(ctx context.Context, client *hostagentclient.Client, args map[string]any) error {
@@ -354,7 +358,80 @@ func probeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 	if err != nil {
 		return nil, err
 	}
-	return structured(map[string]any{"contractVersion": tunnelingCapability, "ready": !result.IsError, "bindingId": stringInput(args, "bindingId", ""), "placement": firstNonEmpty(stringInput(args, "placement", ""), "host"), "probe": result.StructuredContent})
+	hostnames := hostnamesFromArgs(args)
+	probes := []any{result.StructuredContent}
+	ready := !result.IsError
+	for _, hostname := range hostnames {
+		publicURL := "https://" + hostname + "/mcp"
+		listed, listErr := authenticatedPublicToolsList(ctx, publicURL)
+		if listErr != nil {
+			ready = false
+			probes = append(probes, map[string]any{"endpoint": publicURL, "ready": false, "error": listErr.Error()})
+			continue
+		}
+		probes = append(probes, listed)
+	}
+	return structured(map[string]any{
+		"contractVersion": tunnelingCapability,
+		"ready":           ready,
+		"bindingId":       stringInput(args, "bindingId", ""),
+		"placement":       firstNonEmpty(stringInput(args, "placement", ""), "host"),
+		"hostname":        stringInput(args, "hostname", ""),
+		"hostnames":       hostnames,
+		"probe":           probes,
+	})
+}
+
+func authenticatedPublicToolsList(ctx context.Context, resourceURL string) (map[string]any, error) {
+	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(resourceURL, "/mcp")+"/oauth/token", strings.NewReader("grant_type=client_credentials&client_id=opute-mcp-host&resource="+url.QueryEscape(resourceURL)))
+	if err != nil {
+		return nil, err
+	}
+	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	tokenRes, err := http.DefaultClient.Do(tokenReq)
+	if err != nil {
+		return nil, err
+	}
+	defer tokenRes.Body.Close()
+	if tokenRes.StatusCode >= 300 {
+		return nil, fmt.Errorf("public token mint failed: %s", tokenRes.Status)
+	}
+	var tokenBody struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(tokenRes.Body).Decode(&tokenBody); err != nil || tokenBody.AccessToken == "" {
+		return nil, fmt.Errorf("public token mint missing access_token")
+	}
+	body := `{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"cloudflare-tunnel-probe","version":"1.0.0"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
+	listReq, err := http.NewRequestWithContext(ctx, http.MethodPost, resourceURL, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	listReq.Header.Set("Authorization", "Bearer "+tokenBody.AccessToken)
+	listReq.Header.Set("Content-Type", "application/json")
+	listReq.Header.Set("MCP-Protocol-Version", "2026-07-28")
+	listReq.Header.Set("Mcp-Method", "tools/list")
+	listRes, err := http.DefaultClient.Do(listReq)
+	if err != nil {
+		return nil, err
+	}
+	defer listRes.Body.Close()
+	if listRes.StatusCode >= 300 {
+		return nil, fmt.Errorf("public tools/list failed: %s", listRes.Status)
+	}
+	var rpc struct {
+		Result map[string]any `json:"result"`
+		Error  *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(listRes.Body).Decode(&rpc); err != nil {
+		return nil, err
+	}
+	if rpc.Error != nil {
+		return nil, fmt.Errorf("public tools/list: %s", rpc.Error.Message)
+	}
+	return map[string]any{"endpoint": resourceURL, "ready": true, "tools": rpc.Result["tools"]}, nil
 }
 
 func removeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -538,7 +615,11 @@ func placementInput(args map[string]any) (string, error) {
 }
 
 func validateLocalTarget(raw, connector string) error {
-	target, err := url.ParseRequestURI(strings.TrimSpace(raw))
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "host-agent-mcp" {
+		trimmed = "http://127.0.0.1:3004/mcp"
+	}
+	target, err := url.ParseRequestURI(trimmed)
 	if err != nil || target.Host == "" || (target.Scheme != "http" && target.Scheme != "https") || strings.ContainsAny(raw, "\r\n\x00") {
 		return fmt.Errorf("localTarget must be an HTTP(S) URL")
 	}
@@ -564,6 +645,23 @@ func cloneMap(args map[string]any) map[string]any {
 	}
 	return clone
 }
+func hostnamesFromArgs(args map[string]any) []string {
+	hostnames := stringSliceInput(args, "hostnames")
+	if hostname := stringInput(args, "hostname", ""); hostname != "" {
+		found := false
+		for _, existing := range hostnames {
+			if existing == hostname {
+				found = true
+				break
+			}
+		}
+		if !found {
+			hostnames = append(hostnames, hostname)
+		}
+	}
+	return hostnames
+}
+
 func stringInput(inputs map[string]any, name, fallback string) string {
 	if value, ok := inputs[name].(string); ok && strings.TrimSpace(value) != "" {
 		return strings.TrimSpace(value)

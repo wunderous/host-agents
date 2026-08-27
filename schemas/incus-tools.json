@@ -6070,6 +6070,78 @@
     }
   },
   {
+    "name": "list_host_services",
+    "title": "List host services",
+    "description": "List systemd services on the host and return their canonical tenant-scoped resource URIs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "services",
+        "total"
+      ],
+      "properties": {
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "uri",
+              "serviceName",
+              "scope",
+              "status",
+              "active",
+              "enabled"
+            ],
+            "properties": {
+              "uri": {
+                "type": "string",
+                "x-opute-resource-type": "host-service"
+              },
+              "serviceName": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "active": {
+                "type": "boolean"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "total": {
+          "type": "number"
+        }
+      }
+    },
+    "_meta": {
+      "produces": [
+        {
+          "resourceType": "host-service",
+          "sourcePath": "services[].uri"
+        }
+      ]
+    }
+  },
+  {
     "name": "run_host_command",
     "title": "Run bounded host command",
     "description": "Run a caller-declared bounded host command for a generic serving or infrastructure assignment.",

@@ -19,6 +19,7 @@ import (
 	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
 	provideradapter "github.com/wunderous/host-agents/internal/cordis/mcp"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 )
 
 type boundaryProvider struct {
@@ -81,9 +82,9 @@ func newBoundaryProvider(t *testing.T, generation string) *boundaryProvider {
 			}
 		})
 	}
-	provider.httpServer = httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+	provider.httpServer = httptest.NewServer(mcphttp.WrapProviderHandler(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return provider.server
-	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true}))
+	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true}), map[string]any{"name": "boundary-provider", "version": "1"}))
 	t.Cleanup(provider.httpServer.Close)
 	return provider
 }

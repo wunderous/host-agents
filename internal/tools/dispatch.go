@@ -835,6 +835,13 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, "Host service status inspected."), nil
 
+	case "list_host_services":
+		out, err := svc.ListHostServices(stringField(args, "scope"))
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+
 	case "ensure_host_service_supervisor":
 		out, err := svc.EnsureHostServiceSupervisor(ops.EnsureHostServiceSupervisorArgs{Scope: stringField(args, "scope")}, onData)
 		if err != nil {

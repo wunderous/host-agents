@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 	"github.com/wunderous/host-agents/internal/state"
 	"github.com/wunderous/host-agents/internal/tools"
 )
@@ -96,17 +96,16 @@ func TestStandaloneHTTPIsolationAndShutdown(t *testing.T) {
 		"HOST_MCP_BIND_HOST=127.0.0.1",
 		fmt.Sprintf("HOST_MCP_PORT=%d", port),
 		fmt.Sprintf("AGENT_PORT=%d", trapPort),
+		"MCP_AUTH_TOKEN=host-bootstrap",
 	)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 
-	client := mcp.NewClient(&mcp.Implementation{Name: "standalone-isolation-test", Version: "1"}, nil)
-	endpoint := fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
+	mcpClient := mcphttp.Client{Endpoint: fmt.Sprintf("http://127.0.0.1:%d/mcp", port), Token: "host-bootstrap", Name: "standalone-isolation-test", Version: "1"}
 	deadline := time.Now().Add(15 * time.Second)
-	var session *mcp.ClientSession
 	for {
-		session, err = client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: endpoint}, nil)
+		_, err = mcpClient.Call(ctx, "server/discover", "", map[string]any{})
 		if err == nil {
 			break
 		}
@@ -133,16 +132,13 @@ func TestStandaloneHTTPIsolationAndShutdown(t *testing.T) {
 		t.Fatal("standalone smoke contract has no read-only required tools")
 	}
 	for _, name := range readOnlySmoke {
-		result, callErr := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
+		result, callErr := mcpClient.CallTool(ctx, name, map[string]any{})
 		if callErr != nil || result == nil {
 			t.Fatalf("read-only call %s did not produce an MCP response: result=%+v err=%v", name, result, callErr)
 		}
 		if result.IsError && name == "check_local_prerequisites" {
 			t.Fatalf("prerequisite check returned an unexpected MCP error: %+v", result)
 		}
-	}
-	if err := session.Close(); err != nil {
-		t.Fatal(err)
 	}
 	if err := cmd.Process.Signal(os.Interrupt); err != nil {
 		t.Fatal(err)

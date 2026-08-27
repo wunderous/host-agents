@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,27 +15,34 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/wunderous/host-agents/internal/authz"
 	"github.com/wunderous/host-agents/internal/hostmcp"
 )
 
-// HTTPServer serves /health and /mcp for direct HTTP MCP mode.
+// HTTPServer serves /health and /mcp for Streamable HTTP MCP 2026-07-28.
 type HTTPServer struct {
-	host       *hostmcp.Server
-	mcpHandler *mcp.StreamableHTTPHandler
-	tokens     []string
-	instanceID string
-	logger     *slog.Logger
-	httpServer *http.Server
-	mu         sync.Mutex
+	host                 *hostmcp.Server
+	mcpHandler           *mcp.StreamableHTTPHandler
+	authz                *authz.Service
+	instanceID           string
+	agentID              string
+	healthObserver       func() map[string]any
+	logger               *slog.Logger
+	httpServer           *http.Server
+	allowLegacyHandshake bool
+	mu                   sync.Mutex
 }
 
 type HTTPOptions struct {
-	HostServer *hostmcp.Server
-	BindHost   string
-	Port       int
-	AuthTokens []string
-	InstanceID string
-	Logger     *slog.Logger
+	HostServer           *hostmcp.Server
+	BindHost             string
+	Port                 int
+	Authz                *authz.Service
+	InstanceID           string
+	AgentID              string
+	HealthObserver       func() map[string]any
+	Logger               *slog.Logger
+	AllowLegacyHandshake bool
 }
 
 const modernMCPVersion = "2026-07-28"
@@ -53,10 +61,13 @@ func NewHTTPServer(opts HTTPOptions) *HTTPServer {
 		logger = slog.Default()
 	}
 	h := &HTTPServer{
-		host:       opts.HostServer,
-		tokens:     opts.AuthTokens,
-		instanceID: opts.InstanceID,
-		logger:     logger,
+		host:                 opts.HostServer,
+		authz:                opts.Authz,
+		instanceID:           opts.InstanceID,
+		agentID:              opts.AgentID,
+		healthObserver:       opts.HealthObserver,
+		logger:               logger,
+		allowLegacyHandshake: opts.AllowLegacyHandshake,
 	}
 	h.mcpHandler = mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return opts.HostServer.MCP()
@@ -64,6 +75,9 @@ func NewHTTPServer(opts HTTPOptions) *HTTPServer {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.handleHealth)
 	mux.HandleFunc("/mcp", h.handleMCP)
+	if opts.Authz != nil {
+		opts.Authz.RegisterHTTP(mux)
+	}
 	h.httpServer = &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", opts.BindHost, opts.Port),
 		Handler: mux,
@@ -96,20 +110,50 @@ func (h *HTTPServer) Shutdown(ctx context.Context) error {
 
 func (h *HTTPServer) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	payload := map[string]any{"ok": true, "isReverseTunnel": false}
+	payload := map[string]any{"ok": true}
 	if h.instanceID != "" {
 		payload["instanceId"] = h.instanceID
+	}
+	if h.agentID != "" {
+		payload["agentId"] = h.agentID
+	}
+	if h.healthObserver != nil {
+		if extra := h.healthObserver(); extra != nil {
+			payload["capacity"] = extra
+		}
 	}
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodOptions {
+	switch r.Method {
+	case http.MethodOptions:
 		w.WriteHeader(http.StatusNoContent)
 		return
+	case http.MethodGet, http.MethodDelete:
+		w.Header().Set("Allow", "POST, OPTIONS")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	case http.MethodPost:
+	default:
+		w.Header().Set("Allow", "POST, OPTIONS")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-	if !h.authorize(r) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !authz.OriginAllowed(r) {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
+	decision := h.authorize(r)
+	if !decision.Allowed {
+		if decision.WWWAuth != "" {
+			w.Header().Set("WWW-Authenticate", decision.WWWAuth)
+		}
+		status := decision.Status
+		if status == 0 {
+			status = http.StatusUnauthorized
+		}
+		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	body, err := io.ReadAll(r.Body)
@@ -118,7 +162,7 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(body) == 0 {
-		h.mcpHandler.ServeHTTP(w, r)
+		http.Error(w, "empty body", http.StatusBadRequest)
 		return
 	}
 	var envelope struct {
@@ -127,14 +171,29 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		ID     any             `json:"id"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		h.mcpHandler.ServeHTTP(w, r)
+		http.Error(w, "invalid json-rpc", http.StatusBadRequest)
 		return
 	}
-	if envelope.Method == "server/discover" || strings.HasPrefix(envelope.Method, "tasks/") || envelope.Method == "resources/list" || envelope.Method == "resources/read" {
-		if err := validateModernExtensionRequest(r, envelope.Method, envelope.Params); err != nil {
+	// When legacy handshake is permitted, allow initialize / notifications/initialized
+	// so standard MCP clients (e.g., Codex, Cursor IDE) can connect over HTTP.
+	if isRetiredHandshake(envelope.Method) && !h.allowLegacyHandshake {
+		writeJSONRPCProtocolError(w, envelope.ID, &protocolRequestError{
+			code:    -32601,
+			message: "Method not found: " + envelope.Method,
+			data:    map[string]any{"supported": []string{modernMCPVersion}},
+		})
+		return
+	}
+	// Strict modern MCP validation (checking Mcp-Method headers and protocol metadata) is enforced
+	// only for requests explicitly negotiating modern MCP (or when legacy handshake mode is disabled).
+	// Standard clients often pass arbitrary _meta (e.g., progressToken) without modern MCP headers.
+	if !h.allowLegacyHandshake || (!isRetiredHandshake(envelope.Method) && isModernMCPRequest(r, envelope.Params)) {
+		if err := validateModernMCPRequest(r, envelope.Method, envelope.Params); err != nil {
 			writeJSONRPCProtocolError(w, envelope.ID, err)
 			return
 		}
+	}
+	if envelope.Method == "server/discover" || strings.HasPrefix(envelope.Method, "tasks/") || strings.HasPrefix(envelope.Method, "resources/") {
 		result, err := h.host.HandleExtensionMethod(envelope.Method, envelope.Params)
 		if err != nil {
 			writeJSONRPCError(w, envelope.ID, err)
@@ -151,12 +210,46 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 	h.mcpHandler.ServeHTTP(w, r)
 }
 
-// serveToolCall adapts the Go SDK's CallToolResult representation to the
-// 2026-07-28 Tasks extension wire shape. The SDK exposes task creation through
-// structuredContent, while the extension requires Result & Task at the JSON-
-// RPC result root. Keep the adaptation at the HTTP boundary so in-process
-// capability execution remains typed and ordinary synchronous tool results
-// retain their standard representation.
+func isRetiredHandshake(method string) bool {
+	switch method {
+	case "initialize", "notifications/initialized":
+		return true
+	default:
+		return false
+	}
+}
+
+// isModernMCPRequest checks if a JSON-RPC request explicitly targets the modern 2026-07-28 protocol.
+// Standard MCP clients routinely send generic _meta fields (such as progress tokens or empty dictionaries).
+// Only requests containing the explicit "io.modelcontextprotocol/protocolVersion" key inside _meta are
+// subject to strict modern header and metadata verification.
+func isModernMCPRequest(r *http.Request, raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var params map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return false
+	}
+	metaRaw, ok := params["_meta"]
+	if !ok {
+		return false
+	}
+	var meta map[string]json.RawMessage
+	if err := json.Unmarshal(metaRaw, &meta); err != nil {
+		return false
+	}
+	_, ok = meta["io.modelcontextprotocol/protocolVersion"]
+	return ok
+}
+
+func (h *HTTPServer) authorize(r *http.Request) authz.Decision {
+	if h.authz == nil {
+		return authz.Decision{Status: http.StatusUnauthorized}
+	}
+	return h.authz.Authorize(r)
+}
+
 func (h *HTTPServer) serveToolCall(w http.ResponseWriter, r *http.Request) {
 	recorder := httptest.NewRecorder()
 	h.mcpHandler.ServeHTTP(recorder, r)
@@ -197,40 +290,50 @@ func normalizeTaskCreationResponse(body []byte) []byte {
 	return normalized
 }
 
-// validateModernExtensionRequest mirrors the SDK's modern HTTP invariants for
-// the extension methods handled by this transport before they reach the SDK.
-// Every 2026-07-28 request carries the protocol version in both locations;
-// custom extension routing must not create a weaker path around that rule.
-func validateModernExtensionRequest(r *http.Request, method string, raw json.RawMessage) error {
-	headerVersion := strings.TrimSpace(r.Header.Get("MCP-Protocol-Version"))
+func validateModernMCPRequest(r *http.Request, method string, raw json.RawMessage) error {
+	headerVersion := decodeRFC2047(strings.TrimSpace(r.Header.Get("MCP-Protocol-Version")))
+	headerMethod := decodeRFC2047(strings.TrimSpace(r.Header.Get("Mcp-Method")))
+	headerName := decodeRFC2047(strings.TrimSpace(r.Header.Get("Mcp-Name")))
 	var params map[string]json.RawMessage
 	if len(raw) == 0 || string(raw) == "null" || json.Unmarshal(raw, &params) != nil {
-		return &protocolRequestError{code: -32020, message: "MCP request params._meta is required"}
+		return &protocolRequestError{code: -32020, message: "HeaderMismatch"}
 	}
 	metaRaw, ok := params["_meta"]
 	if !ok {
-		return &protocolRequestError{code: -32020, message: "MCP request params._meta is required"}
+		return &protocolRequestError{code: -32020, message: "HeaderMismatch"}
 	}
 	var meta map[string]json.RawMessage
 	if json.Unmarshal(metaRaw, &meta) != nil {
-		return &protocolRequestError{code: -32020, message: "MCP request params._meta must be an object"}
+		return &protocolRequestError{code: -32020, message: "HeaderMismatch"}
 	}
 	var requestedVersion string
 	if versionRaw, ok := meta["io.modelcontextprotocol/protocolVersion"]; ok {
 		_ = json.Unmarshal(versionRaw, &requestedVersion)
 	}
 	if requestedVersion == "" {
-		return &protocolRequestError{code: -32020, message: "MCP request _meta protocol version is required"}
+		return &protocolRequestError{code: -32020, message: "HeaderMismatch"}
 	}
 	if requestedVersion != modernMCPVersion || (headerVersion != "" && headerVersion != modernMCPVersion) {
 		return &protocolRequestError{code: -32022, message: "Unsupported protocol version", data: map[string]any{"supported": []string{modernMCPVersion}, "requested": requestedVersion}}
 	}
 	if headerVersion == "" || headerVersion != requestedVersion {
-		return &protocolRequestError{code: -32020, message: "MCP-Protocol-Version header must match params._meta protocolVersion"}
+		return &protocolRequestError{code: -32020, message: "HeaderMismatch"}
+	}
+	if headerMethod == "" || headerMethod != method {
+		return &protocolRequestError{code: -32020, message: "HeaderMismatch"}
 	}
 	for _, key := range []string{"io.modelcontextprotocol/clientInfo", "io.modelcontextprotocol/clientCapabilities"} {
 		if _, ok := meta[key]; !ok {
-			return &protocolRequestError{code: -32020, message: "MCP request _meta is missing " + key}
+			return &protocolRequestError{code: -32020, message: "HeaderMismatch"}
+		}
+	}
+	if method == "tools/call" {
+		var name string
+		if nameRaw, ok := params["name"]; ok {
+			_ = json.Unmarshal(nameRaw, &name)
+		}
+		if headerName == "" || headerName != name {
+			return &protocolRequestError{code: -32020, message: "HeaderMismatch"}
 		}
 	}
 	if strings.HasPrefix(method, "tasks/") {
@@ -250,29 +353,88 @@ func validateModernExtensionRequest(r *http.Request, method string, raw json.Raw
 			if taskRaw, ok := params["taskId"]; !ok || json.Unmarshal(taskRaw, &taskID) != nil || strings.TrimSpace(taskID) == "" {
 				return &protocolRequestError{code: -32602, message: method + " requires params.taskId"}
 			}
-			if name := strings.TrimSpace(r.Header.Get("Mcp-Name")); name == "" || name != taskID {
-				return &protocolRequestError{code: -32020, message: "Mcp-Name header must match params.taskId"}
+			if headerName == "" || headerName != taskID {
+				return &protocolRequestError{code: -32020, message: "HeaderMismatch"}
 			}
 		}
 	}
 	return nil
 }
 
-func (h *HTTPServer) authorize(r *http.Request) bool {
-	if len(h.tokens) == 0 {
-		return true
+func validateModernExtensionRequest(r *http.Request, method string, raw json.RawMessage) error {
+	return validateModernMCPRequest(r, method, raw)
+}
+
+func decodeRFC2047(value string) string {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "=?") || !strings.HasSuffix(value, "?=") {
+		return value
 	}
-	auth := r.Header.Get("Authorization")
-	if !strings.HasPrefix(auth, "Bearer ") {
-		return false
+	parts := strings.Split(value, "?")
+	if len(parts) != 5 {
+		return value
 	}
-	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-	for _, allowed := range h.tokens {
-		if token == allowed {
-			return true
+	charset, encoding, payload := strings.ToLower(parts[1]), strings.ToLower(parts[2]), parts[3]
+	if charset != "utf-8" && charset != "us-ascii" {
+		return value
+	}
+	switch encoding {
+	case "b":
+		decoded, err := base64.StdEncoding.DecodeString(payload)
+		if err != nil {
+			return value
+		}
+		return string(decoded)
+	case "q":
+		decoded, err := decodeQuotedPrintable(payload)
+		if err != nil {
+			return value
+		}
+		return decoded
+	default:
+		return value
+	}
+}
+
+func decodeQuotedPrintable(value string) (string, error) {
+	var out []byte
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '_':
+			out = append(out, ' ')
+		case '=':
+			if i+2 >= len(value) {
+				return "", fmt.Errorf("truncated quoted-printable")
+			}
+			decoded, err := hexByte(value[i+1 : i+3])
+			if err != nil {
+				return "", err
+			}
+			out = append(out, decoded)
+			i += 2
+		default:
+			out = append(out, value[i])
 		}
 	}
-	return false
+	return string(out), nil
+}
+
+func hexByte(value string) (byte, error) {
+	var n byte
+	for _, ch := range []byte(value) {
+		n <<= 4
+		switch {
+		case ch >= '0' && ch <= '9':
+			n |= ch - '0'
+		case ch >= 'a' && ch <= 'f':
+			n |= ch - 'a' + 10
+		case ch >= 'A' && ch <= 'F':
+			n |= ch - 'A' + 10
+		default:
+			return 0, fmt.Errorf("invalid hex")
+		}
+	}
+	return n, nil
 }
 
 func writeJSONRPCResult(w http.ResponseWriter, id any, result any) {
@@ -286,15 +448,18 @@ func writeJSONRPCResult(w http.ResponseWriter, id any, result any) {
 
 func writeJSONRPCError(w http.ResponseWriter, id any, err error) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 	code := -32603
 	message := err.Error()
+	status := http.StatusOK
 	var data any
 	var protocolErr *protocolRequestError
 	if errors.As(err, &protocolErr) {
 		code = protocolErr.code
 		message = protocolErr.message
 		data = protocolErr.data
+		if code == -32601 {
+			status = http.StatusNotFound
+		}
 	}
 	var rpcErr *jsonrpc.Error
 	if errors.As(err, &rpcErr) {
@@ -302,6 +467,9 @@ func writeJSONRPCError(w http.ResponseWriter, id any, err error) {
 		message = rpcErr.Message
 		if len(rpcErr.Data) > 0 {
 			_ = json.Unmarshal(rpcErr.Data, &data)
+		}
+		if code == -32601 {
+			status = http.StatusNotFound
 		}
 	}
 	errorBody := map[string]any{
@@ -311,6 +479,7 @@ func writeJSONRPCError(w http.ResponseWriter, id any, err error) {
 	if data != nil {
 		errorBody["data"] = data
 	}
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      id,
@@ -320,11 +489,15 @@ func writeJSONRPCError(w http.ResponseWriter, id any, err error) {
 
 func writeJSONRPCProtocolError(w http.ResponseWriter, id any, err error) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
 	protocolErr, ok := err.(*protocolRequestError)
 	if !ok {
 		protocolErr = &protocolRequestError{code: -32603, message: err.Error()}
 	}
+	status := http.StatusBadRequest
+	if protocolErr.code == -32601 {
+		status = http.StatusNotFound
+	}
+	w.WriteHeader(status)
 	errorPayload := map[string]any{"code": protocolErr.code, "message": protocolErr.message}
 	if protocolErr.data != nil {
 		errorPayload["data"] = protocolErr.data

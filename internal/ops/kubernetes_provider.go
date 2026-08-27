@@ -69,7 +69,7 @@ func (s *HostOperationsService) kubernetesTargetURI(providerInstanceName string)
 	if providerInstanceName == "" {
 		return "", fmt.Errorf("Kubernetes provider instance name is required")
 	}
-	uri, err := resourceid.ClusterURI(s.tenantID, providerInstanceName)
+	uri, err := resourceid.ClusterURI(s.effectiveTenantID(), providerInstanceName)
 	if err != nil {
 		return "", err
 	}
@@ -155,7 +155,7 @@ func (s *HostOperationsService) ListKubernetesClusters(source string) (ClusterLi
 			if strings.TrimSpace(cluster.Name) == "" {
 				continue
 			}
-			uri, uriErr := resourceid.ClusterURI(s.tenantID, cluster.Name)
+			uri, uriErr := resourceid.ClusterURI(s.effectiveTenantID(), cluster.Name)
 			if uriErr != nil {
 				return ClusterListResult{}, uriErr
 			}

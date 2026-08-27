@@ -8,9 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/wunderous/host-agents/internal/authz"
 	"github.com/wunderous/host-agents/internal/hostmcp"
 	"github.com/wunderous/host-agents/internal/mcphttp"
 	"github.com/wunderous/host-agents/internal/ops"
@@ -43,11 +42,28 @@ func newTestServerMode(t *testing.T, standalone bool) *hostmcp.Server {
 	return hs
 }
 
+func startAuthenticatedMCP(t *testing.T, hs *hostmcp.Server, token string) *httptest.Server {
+	t.Helper()
+	authorizer, err := authz.Open(authz.Options{StateDir: t.TempDir(), BootstrapToken: token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = authorizer.Close() })
+	httpSrv := transport.NewHTTPServer(transport.HTTPOptions{
+		HostServer: hs,
+		BindHost:   "127.0.0.1",
+		Port:       0,
+		Authz:      authorizer,
+	})
+	ts := httptest.NewServer(httpSrv.Handler())
+	t.Cleanup(ts.Close)
+	return ts
+}
+
 func TestMCPInputRequiredTaskRoundTripOverHTTP(t *testing.T) {
 	hs := newTestServerMode(t, true)
-	httpSrv := transport.NewHTTPServer(transport.HTTPOptions{HostServer: hs, BindHost: "127.0.0.1", Port: 0})
-	ts := httptest.NewServer(httpSrv.Handler())
-	defer ts.Close()
+	const token = "host-bootstrap"
+	ts := startAuthenticatedMCP(t, hs, token)
 	meta, err := mcphttp.ModernRequestEnvelope("compliance")
 	if err != nil {
 		t.Fatal(err)
@@ -63,6 +79,7 @@ func TestMCPInputRequiredTaskRoundTripOverHTTP(t *testing.T) {
 			t.Fatal(err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
 		if err := mcphttp.ApplyStreamableHTTPRequestHeaders(req); err != nil {
 			t.Fatal(err)
 		}
@@ -125,32 +142,15 @@ func TestMCPInputRequiredTaskRoundTripOverHTTP(t *testing.T) {
 	}
 }
 
-func TestMCPInitializeAndGetHostInfo(t *testing.T) {
+func TestMCPDiscoverAndGetHostInfo(t *testing.T) {
 	hs := newTestServer(t)
-	httpSrv := transport.NewHTTPServer(transport.HTTPOptions{
-		HostServer: hs,
-		BindHost:   "127.0.0.1",
-		Port:       0,
-	})
-	ts := httptest.NewServer(httpSrv.Handler())
-	defer ts.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	client := mcp.NewClient(&mcp.Implementation{Name: "compliance-test", Version: "v1"}, nil)
-	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint: ts.URL + "/mcp",
-	}, nil)
-	if err != nil {
-		t.Fatalf("Connect: %v", err)
+	const token = "host-bootstrap"
+	ts := startAuthenticatedMCP(t, hs, token)
+	client := mcphttp.Client{Endpoint: ts.URL + "/mcp", Token: token, Name: "compliance-test", Version: "v1"}
+	if _, err := client.Call(context.Background(), "server/discover", "", map[string]any{}); err != nil {
+		t.Fatalf("discover: %v", err)
 	}
-	defer session.Close()
-
-	res, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      "get_host_info",
-		Arguments: map[string]any{},
-	})
+	res, err := client.CallTool(context.Background(), "get_host_info", map[string]any{})
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)
 	}
@@ -164,14 +164,8 @@ func TestMCPInitializeAndGetHostInfo(t *testing.T) {
 
 func TestMCPAuthProtectsMCPButNotHealth(t *testing.T) {
 	hs := newTestServer(t)
-	httpSrv := transport.NewHTTPServer(transport.HTTPOptions{
-		HostServer: hs,
-		BindHost:   "127.0.0.1",
-		Port:       0,
-		AuthTokens: []string{"test-token"},
-	})
-	ts := httptest.NewServer(httpSrv.Handler())
-	defer ts.Close()
+	const token = "test-token"
+	ts := startAuthenticatedMCP(t, hs, token)
 
 	health, err := http.Get(ts.URL + "/health")
 	if err != nil {
@@ -203,6 +197,7 @@ func TestMCPAuthProtectsMCPButNotHealth(t *testing.T) {
 		req.Header.Set("Accept", "application/json, text/event-stream")
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", "server/discover")
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
@@ -262,17 +257,9 @@ func TestMCPTasksGetServesInlineToolResult(t *testing.T) {
 	}
 }
 
-func TestMCPResourcesList(t *testing.T) {
+func TestMCPResourcesListIsNotAdvertised(t *testing.T) {
 	hs := newTestServer(t)
-	result, err := hs.HandleExtensionMethod("resources/list", nil)
-	if err != nil {
-		t.Fatalf("resources/list: %v", err)
-	}
-	m, ok := result.(map[string]any)
-	if !ok {
-		t.Fatalf("unexpected result type %T", result)
-	}
-	if _, ok := m["resources"]; !ok {
-		t.Fatalf("missing resources key: %+v", m)
+	if _, err := hs.HandleExtensionMethod("resources/list", nil); err == nil {
+		t.Fatal("resources/list must not be advertised on a modern-only server")
 	}
 }
