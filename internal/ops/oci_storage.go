@@ -20,8 +20,8 @@ const (
 	minOciStorageBudgetBytes       int64 = 1 << 30
 )
 
-// ConfigureOciStorageArgs is retained for compatibility with the original
-// policy tool. Runtime is optional and defaults to auto (currently Podman).
+// ConfigureOciStorageArgs persists the OCI image storage budget. Runtime is
+// optional and defaults to auto (currently Podman).
 type ConfigureOciStorageArgs struct {
 	Runtime       string `json:"runtime,omitempty"`
 	MaxBytes      *int64 `json:"maxBytes,omitempty"`
@@ -45,10 +45,6 @@ type ociStoragePolicy struct {
 	MaxBytes      int64  `json:"maxBytes"`
 	MinAgeSeconds int64  `json:"minAgeSeconds"`
 }
-
-// podmanImage remains as a compatibility alias for focused tests and callers
-// that were written against the original internal pruning helper.
-type podmanImage = containerImage
 
 func defaultOciStoragePolicy() ociStoragePolicy {
 	return ociStoragePolicy{MinAgeSeconds: defaultOciStorageMinAgeSeconds}
@@ -327,7 +323,7 @@ func (s *HostOperationsService) cleanupContainerStorageLocked(ctx context.Contex
 	return result, nil
 }
 
-// ConfigureOciStorage persists the compatibility policy and optionally runs
+// ConfigureOciStorage persists the storage policy and optionally runs
 // the same safe cleanup operation used by the explicit cleanup tool.
 func (s *HostOperationsService) ConfigureOciStorage(ctx context.Context, args ConfigureOciStorageArgs, onData func(string)) (map[string]any, error) {
 	if ctx == nil {
@@ -399,8 +395,8 @@ func (s *HostOperationsService) enforceOciStoragePolicy(ctx context.Context, bui
 	return s.cleanupContainerStorageLocked(ctx, adapter, policy, &policy.MaxBytes, false, onData)
 }
 
-func selectOciPruneCandidates(images []podmanImage, cutoff int64) []podmanImage {
-	candidates := make([]podmanImage, 0, len(images))
+func selectOciPruneCandidates(images []containerImage, cutoff int64) []containerImage {
+	candidates := make([]containerImage, 0, len(images))
 	for _, image := range images {
 		if strings.TrimSpace(image.ID) == "" || image.Containers != 0 || image.Created <= 0 || image.Created >= cutoff {
 			continue

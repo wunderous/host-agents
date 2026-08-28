@@ -199,6 +199,21 @@ Do not add stdio, legacy HTTP+SSE, invented task-result methods, or silent
 compatibility fallbacks to make a test pass. If compatibility is required, it
 needs a separately approved migration decision and an explicit contract.
 
+### Enrollment and bind scope
+
+The Host Agent is a resource server, not a phone-home client. Opute creates the
+onboarding session and canonical `OPUTE_REMOTE_AGENT_ID`, the generated
+installer writes the host-issued `MCP_AUTH_TOKEN`, and Platform later
+reconciles the enrolled resource by probing `/health` and authenticated
+`server/discover` / `tools/list`. Standalone mode defaults to loopback
+`127.0.0.1:3014`; platform mode defaults to `0.0.0.0:3004` so co-hosted
+Platform/MCP pods can cross the host bridge. Network policy, local-host
+authorization, and the host-issued token remain required. The Go process must
+not reintroduce reverse-tunnel, HWP, or CPC self-registration as a liveness
+mechanism; address rewriting for an in-cluster caller belongs to the Opute
+dispatcher and resolves the runtime Linux gateway without persisting a bridge
+IP.
+
 MCP `serverInfo`, tool descriptions, annotations, and tool names are not
 identity or authorization. Trust comes from the descriptor, endpoint policy,
 artifact/revision evidence, and validated provider manifest.
@@ -445,3 +460,4 @@ or a deterministic orchestrator heuristic.
 - [MCP 2026-07-28 specification](https://modelcontextprotocol.io/specification/2026-07-28)
 - [Host Agent provider architecture ADR](adr/0002-provider-extension-architecture.md)
 - [Tool contract conformance and capability authority ADR](adr/0009-tool-contract-conformance-and-catalog-authority.md)
+- [Storage quota enforceability admission ADR](adr/0010-storage-quota-enforceability-admission.md)

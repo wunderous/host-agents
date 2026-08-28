@@ -85,6 +85,9 @@ func Load() Config {
 	}
 	agentID := strings.TrimSpace(envValue("OPUTE_REMOTE_AGENT_ID"))
 	mcpAuth := strings.TrimSpace(envValue("MCP_AUTH_TOKEN"))
+	// Standalone stays loopback-only. Platform mode is intentionally reachable
+	// on the host bridge because Platform/MCP pods cannot address host loopback;
+	// the Host Agent authz layer still gates the authenticated MCP resource.
 	defaultBindHost := "127.0.0.1"
 	if mode == "platform" {
 		defaultBindHost = "0.0.0.0"
@@ -183,7 +186,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("unsupported provider %q: only incus is supported", providerValue)
 	}
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("OPUTE_REVERSE_TUNNEL")), "true") {
-		return fmt.Errorf("OPUTE_REVERSE_TUNNEL is retired; the kernel always serves loopback POST /mcp")
+		return fmt.Errorf("OPUTE_REVERSE_TUNNEL is retired; the kernel serves mode-scoped Streamable HTTP POST /mcp")
 	}
 	for _, key := range []string{
 		"OPUTE_HOST_WS_URL", "OPUTE_CPC_TOKEN", "OPUTE_REMOTE_AGENT_AUTH_TOKEN",
@@ -197,14 +200,6 @@ func (c Config) Validate() error {
 		for _, key := range []string{"OPUTE_MCP_URL", "OPUTE_MCP_HEALTH_URL"} {
 			if strings.TrimSpace(os.Getenv(key)) != "" {
 				return fmt.Errorf("standalone mode cannot use platform setting %s", key)
-			}
-		}
-	}
-	if token := strings.TrimSpace(c.MCPAuthToken); token != "" {
-		lower := strings.ToLower(token)
-		for _, prefix := range []string{"opha_", "opit_", "opsess_"} {
-			if strings.HasPrefix(lower, prefix) {
-				return fmt.Errorf("MCP_AUTH_TOKEN must be a host-issued bootstrap secret, not a product token")
 			}
 		}
 	}

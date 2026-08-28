@@ -123,4 +123,3 @@ func (s *HostOperationsService) ListHostServices(scope string) (map[string]any, 
 		"total":    len(services),
 	}, nil
 }
-

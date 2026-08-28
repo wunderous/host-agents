@@ -164,7 +164,7 @@
   {
     "name": "configure_agent_connection",
     "title": "Configure generic agent connection",
-    "description": "Write caller-supplied agent connection environment and optionally restart the declared service.",
+    "description": "Atomically write and remove caller-supplied agent connection environment values, then optionally restart the declared service.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -178,6 +178,12 @@
         "environment": {
           "type": "object",
           "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "remove": {
+          "type": "array",
+          "items": {
             "type": "string"
           }
         },
@@ -962,6 +968,24 @@
           "resourceType": "container",
           "required": true
         }
+      ]
+    }
+  },
+  {
+    "name": "detect_host_platform",
+    "title": "Detect host platform",
+    "description": "Detect the operating system and CPU identity of the host running this agent, distinguishing native Windows, macOS, WSL1/WSL2, and native Linux, and reporting the CPU architecture and family including Apple M-series silicon.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "contractVersion",
+        "os",
+        "kind",
+        "cpu"
       ]
     }
   },

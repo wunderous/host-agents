@@ -52,9 +52,18 @@ func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, 
 	if image == "" {
 		image = "images:ubuntu/24.04"
 	}
-	disk := strings.TrimSpace(args.Disk)
+	requestedDisk := strings.TrimSpace(args.Disk)
+	disk := requestedDisk
 	if disk == "" {
-		disk = "20GiB"
+		disk = defaultIncusContainerRootDisk
+	}
+	quota, quotaErr := s.admitRootDiskQuota(disk, requestedDisk != "")
+	if quotaErr != nil {
+		return ContainerStatusResult{}, quotaErr
+	}
+	disk = quota.Size
+	if disk == "" && onData != nil {
+		onData(fmt.Sprintf("Provisioning %q without a root disk quota: %s", name, quota.Reason))
 	}
 	nesting := true
 	if args.Nesting != nil {

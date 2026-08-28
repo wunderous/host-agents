@@ -93,11 +93,8 @@ func (s *Service) Authorize(r *http.Request) Decision {
 	if token == "" {
 		return Decision{Status: http.StatusUnauthorized, WWWAuth: s.wwwAuthenticate(r)}
 	}
-	if IsProductPassthroughToken(token) {
-		return Decision{Status: http.StatusUnauthorized, WWWAuth: s.wwwAuthenticate(r)}
-	}
 	if s.bootstrapToken != "" && constantEquals(token, s.bootstrapToken) {
-		if !IsLoopbackHost(r.Host) {
+		if !IsLocalHostAddress(r.Host) {
 			return Decision{Status: http.StatusForbidden, Insufficient: true, WWWAuth: s.wwwAuthenticate(r)}
 		}
 		return Decision{Allowed: true, Status: http.StatusOK}

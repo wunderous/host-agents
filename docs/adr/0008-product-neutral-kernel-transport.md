@@ -21,9 +21,12 @@ are refactored. This process does not keep dual-era compatibility layers.
 
 ## Decision
 
-The kernel always serves loopback `POST /mcp` (default bind `127.0.0.1`).
-Authorization lives in this process: OAuth 2.1 resource server plus co-located
-authorization server. Opute discovers a host by an enrolled resource URL plus
+The kernel always serves one stateless `POST /mcp` resource with an in-process
+OAuth 2.1 resource server plus co-located authorization server. Standalone mode
+defaults to loopback `127.0.0.1:3014`. Platform mode defaults to
+`0.0.0.0:3004` so a co-hosted Platform/MCP pod can reach the host across
+the Linux bridge; network policy and Host Agent authorization still gate every
+request. Opute discovers a host by an enrolled resource URL plus
 `OPUTE_REMOTE_AGENT_ID`; the agent does not register itself. Public names are
 caller-supplied `tunneling.v1` data, not product hostnames.
 
@@ -55,7 +58,7 @@ First-party Host Agent is a modern-only MCP `2026-07-28` server.
 | T-1 | Process always serves `/mcp`. No reverse-tunnel loop, no HWP worker, no CPC heartbeat client. |
 | T-2 | Single Streamable HTTP MCP endpoint. |
 | T-3 | Spec transport headers and `HeaderMismatch` `-32020`. |
-| T-4 | Bind loopback by default; reject implicit `0.0.0.0`. |
+| T-4 | Bind loopback by default in standalone mode; platform mode uses an explicit local bridge bind so co-hosted Platform/MCP pods can reach the host. |
 | T-5 | WAN exposure is a tunneling capability, not a kernel transport. |
 | T-6 | HWP is not a client transport. Retiring reverse-tunnel without retiring HWP is incomplete. |
 | P-1 | Core dispatch is default-unknown for vendor names. |
@@ -64,7 +67,7 @@ First-party Host Agent is a modern-only MCP `2026-07-28` server.
 | P-4 | Tunnel activation evidence is authenticated public `tools/list`, not HTTP 200. |
 | A-1 | Host Agent is the resource server; co-located AS is this process. |
 | A-2 | RFC 9728 PRM `authorization_servers` points at this AS, never Opute. |
-| A-3 | Reject `opsess_*`, `opha_*`, `opit_*`, and CPC bearers. No token passthrough. |
+| A-3 | Host Agent does not validate Platform sessions or product token formats. It accepts only its configured bootstrap token or an OAuth access token issued for this resource. |
 | A-4 | RFC 7009 revoke; next `tools/list` fails for that grant. |
 | A-5 | RFC 8707 audience is the canonical URI of **this** request. |
 | A-6 | Bootstrap env token is first admin only; it is a host-issued secret, not a product session. |
@@ -72,7 +75,7 @@ First-party Host Agent is a modern-only MCP `2026-07-28` server.
 | I-cli | First-party canaries are modern-only `2026-07-28`. |
 | I-dns | DNS is only for zones the caller actually operates. |
 | L-2 / L-3 | Two-phase teardown remains; leftovers are a failure. |
-| C-enroll | Opute discovers a host by enrolled resource URL + `OPUTE_REMOTE_AGENT_ID`. |
+| C-enroll | Opute discovers a host by enrolled resource URL + `OPUTE_REMOTE_AGENT_ID`; in-cluster clients resolve loopback host endpoints through the runtime default gateway rather than a persisted address heuristic. |
 | S-1 | Stateless `POST /mcp` only; GET/DELETE 405; no `Mcp-Session-Id`. |
 | S-2 | Origin allowlist; invalid Origin → 403. |
 | S-3 | `MCP-Protocol-Version` + `Mcp-Method` + `Mcp-Name` match body or `HeaderMismatch` `-32020`. |

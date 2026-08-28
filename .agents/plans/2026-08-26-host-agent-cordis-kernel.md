@@ -85,7 +85,7 @@ Layout after this: `cmd/` mounts `cordis.Context`; `internal/cordis` kernel; `in
 ### ha-k3 — transport edge
 
 - Origin present+invalid → 403 on `POST /mcp` in [`internal/transport/http.go`](../../internal/transport/http.go). Kernel never sees headers.
-- MCP 2026-07-28 only: no `initialize`, no `Mcp-Session-Id`, `MCP-Protocol-Version`, tasks SSE. Bind `127.0.0.1`. `MCP_AUTH_TOKEN`.
+- MCP 2026-07-28 only: **no `initialize` by default** (the compatibility gate is bounded by [ADR 0011](../../docs/adr/0011-legacy-handshake-compatibility-gate.md); the unqualified claim was false — `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE` has always admitted it), no `Mcp-Session-Id`, `MCP-Protocol-Version`, tasks SSE. Bind `127.0.0.1`. `MCP_AUTH_TOKEN`.
 - Kill initialize/session language in [`npm/local-host-agent/README.md`](../../npm/local-host-agent/README.md) as part of this edge (console plan also rewrites client docs).
 
 ### ha-k4 — ADR 0002 + Granite trio

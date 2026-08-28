@@ -305,3 +305,15 @@ func TestCanonicalKubernetesOperationsRequireClusterURIs(t *testing.T) {
 		}
 	}
 }
+
+func TestHostToolDefinitionsAlwaysExposeOutputSchemas(t *testing.T) {
+	definitions, err := HostToolDefinitionsForProvider("incus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, definition := range definitions {
+		if definition.OutputSchema == nil {
+			t.Fatalf("tool %q has no output schema", definition.Name)
+		}
+	}
+}

@@ -244,7 +244,7 @@ func validNativeRedirect(uri string) bool {
 	if parsed.Scheme == "https" {
 		return true
 	}
-	if parsed.Scheme == "http" && IsLoopbackHost(parsed.Host) {
+	if parsed.Scheme == "http" && IsLocalHostAddress(parsed.Host) {
 		return true
 	}
 	return false

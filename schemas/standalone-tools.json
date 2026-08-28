@@ -82,6 +82,11 @@
       "support": "experimental"
     },
     {
+      "name": "detect_host_platform",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
       "name": "probe_http_endpoint",
       "classification": "read_only",
       "support": "experimental"

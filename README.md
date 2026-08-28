@@ -109,7 +109,8 @@ is Linux-only; Windows users must run the server inside WSL.
 | **1** | Linux / WSL | Incus | `bun scripts/validate-go-host-agent-phase1.ts` |
 | **3** | Linux / WSL + dev stack | Incus | `bun scripts/validate-go-host-agent-phase3.ts` |
 
-Phase 1 validates the agent in **isolation** (direct HTTP MCP). Phase 3 wires into dev-orchestrator, reverse tunnel, and onboarding.
+Phase 1 validates the agent in **isolation** (direct HTTP MCP). Phase 3 wires the
+agent into the co-hosted Opute dev stack and onboarding flow over direct HTTP.
 
 ## Build
 
@@ -193,7 +194,10 @@ curl -H "Authorization: Bearer dev-token" \
   http://127.0.0.1:3004/mcp
 ```
 
-`/health` is always open. `/mcp` requires a host-issued bootstrap token (`MCP_AUTH_TOKEN` / `oha_*`). Product tokens (`opha_*`, `opsess_*`, `opit_*`) are rejected.
+`/health` is always open. `/mcp` requires a configured Host Agent bootstrap token
+or an OAuth access token for this resource. Invalid, expired, or incorrectly
+audienced tokens are rejected; the Host Agent does not interpret product token
+formats or validate Platform sessions.
 
 ## VS Code / external MCP configuration
 
@@ -245,8 +249,8 @@ Then run `bun scripts/validate-go-host-agent-phase3.ts` from Linux/WSL. Default 
 
 Remote hosts are onboarded through the Opute platform UI (**Connect Remote Host**). The generated install script:
 
-1. Downloads the binary from the **platform** artifact URL (session + `opit_*` install token) — not directly from GitHub releases
-2. Writes `host-agent.env` with CPC bearer, per-host `opha_*` token, MCP/WS URLs, and `OPUTE_REVERSE_TUNNEL=true`
+1. Downloads the binary from the **platform** artifact URL using the authorized onboarding session — not directly from GitHub releases
+2. Writes `host-agent.env` with the host-issued `MCP_AUTH_TOKEN`, canonical host identity, and provider identity
 3. Starts `opute-host-agent.service` (or user-level equivalent)
 
 GitHub releases are for CI distribution and manual smoke testing. Production credentials are issued by the platform during onboarding.

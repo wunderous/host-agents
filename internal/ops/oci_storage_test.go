@@ -57,14 +57,14 @@ func TestOciStoragePolicyPersistsAtomically(t *testing.T) {
 
 func TestSelectOciPruneCandidates(t *testing.T) {
 	cutoff := int64(1000)
-	got := selectOciPruneCandidates([]podmanImage{
+	got := selectOciPruneCandidates([]containerImage{
 		{ID: "young", Created: 1200},
 		{ID: "old-2", Created: 700},
 		{ID: "active", Created: 600, Containers: 1},
 		{ID: "old-1", Created: 500},
 		{ID: "missing-time", Created: 0},
 	}, cutoff)
-	want := []podmanImage{{ID: "old-1", Created: 500}, {ID: "old-2", Created: 700}}
+	want := []containerImage{{ID: "old-1", Created: 500}, {ID: "old-2", Created: 700}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("candidates = %#v, want %#v", got, want)
 	}

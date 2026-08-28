@@ -367,9 +367,18 @@ func (s *HostOperationsService) provisionVM(args ProvisionVMArgs, onData func(st
 	if memory == "" {
 		memory = defaultIncusVMMemory
 	}
-	disk := strings.TrimSpace(args.Disk)
+	requestedDisk := strings.TrimSpace(args.Disk)
+	disk := requestedDisk
 	if disk == "" {
-		disk = "10GiB"
+		disk = defaultIncusVMRootDisk
+	}
+	quota, err := s.admitRootDiskQuota(disk, requestedDisk != "")
+	if err != nil {
+		return VMStatusResult{}, err
+	}
+	disk = quota.Size
+	if disk == "" && onData != nil {
+		onData(fmt.Sprintf("Provisioning %q without a root disk quota: %s", vmName, quota.Reason))
 	}
 
 	instanceType := normalizeProvisionInstanceType(args.InstanceType)
@@ -379,7 +388,7 @@ func (s *HostOperationsService) provisionVM(args ProvisionVMArgs, onData func(st
 		}
 	}
 	if instanceType == "virtual-machine" {
-		if err := s.launchVM(vmName, image, cpus, memory, disk, onData, provisionVMTimeout); err != nil {
+		if err := s.launchIncusVMViaAPI(vmName, image, cpus, memory, disk, onData, provisionVMTimeout); err != nil {
 			return VMStatusResult{}, err
 		}
 		if image == "" {
@@ -565,10 +574,6 @@ func (s *HostOperationsService) DeleteVM(args VMScopedArgs, onData func(string))
 		out["uri"] = uri
 	}
 	return out, nil
-}
-
-func (s *HostOperationsService) launchVM(vmName, image string, cpus int, memory, disk string, onData func(string), timeout time.Duration) error {
-	return s.launchIncusVMViaAPI(vmName, image, cpus, memory, disk, onData, timeout)
 }
 
 func (s *HostOperationsService) stopVMArgs(vmName string) []string {
@@ -911,8 +916,8 @@ func restartServiceCommand(serviceName string) []string {
 	// user units through the user manager they actually belong to.
 	if strings.HasPrefix(serviceName, "opute-") {
 		// --no-block is essential when the target is this very host-agent
-		// service: waiting for systemd to finish stopping the process closes the
-		// reverse-tunnel request before the MCP operation can receive a result.
+		// service: waiting for systemd to stop this process would close the MCP
+		// operation before the caller can receive its result.
 		return []string{provider.DefaultSystemctlPath, "--user", "--no-block", "restart", serviceName}
 	}
 	return []string{provider.DefaultSystemctlPath, "restart", serviceName}

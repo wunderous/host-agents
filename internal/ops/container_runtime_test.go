@@ -46,7 +46,7 @@ func TestParseFutureRuntimeJSONFormats(t *testing.T) {
 }
 
 func TestSelectOciPruneCandidatesProtectsAgeAndContainers(t *testing.T) {
-	candidates := selectOciPruneCandidates([]podmanImage{
+	candidates := selectOciPruneCandidates([]containerImage{
 		{ID: "old-unused", Created: 10, Containers: 0, Size: 100},
 		{ID: "old-referenced", Created: 10, Containers: 1, Size: 100},
 		{ID: "new-unused", Created: 90, Containers: 0, Size: 100},

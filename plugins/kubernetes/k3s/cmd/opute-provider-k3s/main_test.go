@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
 )
@@ -39,6 +43,37 @@ func TestK3sManifestDeclaresNeutralCapabilityAndOperations(t *testing.T) {
 			t.Fatalf("missing provider operation %q", operation)
 		}
 	}
+}
+
+func TestK3sHTTPHandlerAdvertisesModernProviderProtocol(t *testing.T) {
+	server := newTestServer()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest("POST", "http://provider.test/mcp", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+
+	newHTTPHandler(server).ServeHTTP(recorder, request)
+	if recorder.Code != 200 {
+		t.Fatalf("server/discover status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Result struct {
+			SupportedVersions []string `json:"supportedVersions"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode server/discover response: %v", err)
+	}
+	if len(response.Result.SupportedVersions) != 1 || response.Result.SupportedVersions[0] != "2026-07-28" {
+		t.Fatalf("supported versions = %#v", response.Result.SupportedVersions)
+	}
+}
+
+func newTestServer() *mcp.Server {
+	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-k3s", Version: "1.0.0"}, nil)
+	addManifestTool(server, k3sManifest())
+	addOperations(server)
+	return server
 }
 
 func TestK3sTargetOperationsDeclareCanonicalClusterBinding(t *testing.T) {

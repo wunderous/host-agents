@@ -19,6 +19,20 @@ func TestValidateProducedResourcesAcceptsTypedTenantLocalOutput(t *testing.T) {
 	}
 }
 
+func TestMaterializeBoundResourceOutputsAttachesCanonicalIdentity(t *testing.T) {
+	descriptor := tools.CapabilityDescriptor{
+		OperationID: "get_k8s_resource",
+		Produces:    []tools.ResourceBinding{{SourcePath: "uri", ResourceType: "cluster"}},
+	}
+	structured := map[string]any{"yaml": "apiVersion: apps/v1"}
+	got := materializeBoundResourceOutputs(descriptor, structured, tools.ExecutionBinding{
+		Resources: []tools.BoundResource{{ResourceType: "cluster", URI: "cluster:local:opute-clean-k3s"}},
+	})
+	if got.(map[string]any)["uri"] != "cluster:local:opute-clean-k3s" {
+		t.Fatalf("materialized uri = %#v", got.(map[string]any)["uri"])
+	}
+}
+
 func TestValidateProducedResourcesRejectsMismatchedKindAndTenant(t *testing.T) {
 	descriptor := tools.CapabilityDescriptor{
 		OperationID: "list_vms",

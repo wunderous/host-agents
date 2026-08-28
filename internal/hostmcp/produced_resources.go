@@ -10,6 +10,42 @@ import (
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
+// materializeBoundResourceOutputs completes provider-neutral result shapes
+// with the canonical identity already admitted for the invocation. Providers
+// may return only their native payload (for example Kubernetes YAML); the
+// Host Agent owns the stable resource identity and must attach it before the
+// result schema and produced-resource checks run.
+func materializeBoundResourceOutputs(
+	descriptor tools.CapabilityDescriptor,
+	structured any,
+	binding tools.ExecutionBinding,
+) any {
+	object, ok := structured.(map[string]any)
+	if !ok {
+		if structured == nil {
+			object = map[string]any{}
+		} else {
+			encoded, err := json.Marshal(structured)
+			if err != nil || json.Unmarshal(encoded, &object) != nil {
+				return structured
+			}
+		}
+	}
+	for _, produced := range descriptor.Produces {
+		existingURI, hasURI := object["uri"].(string)
+		if strings.TrimSpace(produced.SourcePath) != "uri" || (hasURI && strings.TrimSpace(existingURI) != "") {
+			continue
+		}
+		for _, resource := range binding.Resources {
+			if resource.ResourceType == produced.ResourceType && strings.TrimSpace(resource.URI) != "" {
+				object["uri"] = resource.URI
+				break
+			}
+		}
+	}
+	return object
+}
+
 // validateProducedResources is the execution-side counterpart to catalog
 // binding validation. A schema can prove that a field exists, but only the
 // returned value can prove that it is a canonical, tenant-local identity of

@@ -17,11 +17,11 @@ The Host Agent must connect using trusted local descriptors. Verify each
 provider with MCP `initialize`, `tools/list`, and a typed `tools/call` before
 installing or activating a generation.
 
-In a reverse-tunnel deployment, `OPUTE_HOST_AGENT_ENDPOINT` must point to the
-authorized Host Agent MCP endpoint for the owning instance. A health-only
-reverse-tunnel listener is not a provider callback endpoint. Inject
-credentials at process launch; never place them in a recipe, plan, or provider
-result.
+`OPUTE_HOST_AGENT_ENDPOINT` must point to the authorized Host Agent MCP
+endpoint for the owning instance. The Host Agent is a stateless Streamable HTTP
+resource server; it does not phone home or expose a reverse-tunnel callback
+listener. Inject credentials at process launch; never place them in a recipe,
+plan, or provider result.
 
 ## Target requirements
 

@@ -107,14 +107,14 @@ func TestValidateAcceptsStandaloneHostBootstrapToken(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsStandaloneProductToken(t *testing.T) {
+func TestValidateAcceptsAnyConfiguredStandaloneBootstrapSecret(t *testing.T) {
 	t.Setenv("OPUTE_REMOTE_AGENT_ID", "test-host-agent")
 	t.Setenv("OPUTE_AGENT_MODE", "standalone")
-	t.Setenv("MCP_AUTH_TOKEN", "opha_platform")
+	t.Setenv("MCP_AUTH_TOKEN", "product-shaped-but-opaque")
 	t.Setenv("OPUTE_MCP_URL", "")
 	t.Setenv("OPUTE_MCP_HEALTH_URL", "")
-	if err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent", HostMCPPort: 3014, MCPAuthToken: "opha_platform"}).Validate(); err == nil {
-		t.Fatal("expected product token to fail")
+	if err := (Config{AgentMode: "standalone", RemoteAgentID: "test-host-agent", HostMCPPort: 3014, MCPAuthToken: "product-shaped-but-opaque"}).Validate(); err != nil {
+		t.Fatalf("expected opaque bootstrap secret to pass: %v", err)
 	}
 }
 
@@ -136,6 +136,24 @@ func TestLoadPlatformDefaultsPort3004(t *testing.T) {
 	cfg := Load()
 	if cfg.HostMCPPort != 3004 {
 		t.Fatalf("platform default port = %d, want 3004", cfg.HostMCPPort)
+	}
+}
+
+func TestLoadPlatformDefaultsBridgeReachableBind(t *testing.T) {
+	t.Setenv("OPUTE_AGENT_MODE", "platform")
+	t.Setenv("HOST_MCP_BIND_HOST", "")
+	cfg := Load()
+	if cfg.HostMCPBindHost != "0.0.0.0" {
+		t.Fatalf("platform default bind host = %q, want 0.0.0.0", cfg.HostMCPBindHost)
+	}
+}
+
+func TestLoadStandaloneDefaultsLoopbackBind(t *testing.T) {
+	t.Setenv("OPUTE_AGENT_MODE", "standalone")
+	t.Setenv("HOST_MCP_BIND_HOST", "")
+	cfg := Load()
+	if cfg.HostMCPBindHost != "127.0.0.1" {
+		t.Fatalf("standalone default bind host = %q, want 127.0.0.1", cfg.HostMCPBindHost)
 	}
 }
 

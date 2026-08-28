@@ -18,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
+	"github.com/wunderous/host-agents/internal/mcphttp"
 )
 
 const (
@@ -31,11 +32,18 @@ func main() {
 	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-k3s", Version: "1.0.0"}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}}})
 	addManifestTool(server, manifest)
 	addOperations(server)
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true})
+	handler := newHTTPHandler(server)
 	log.Printf("Opute K3s provider listening on :%s/mcp", port)
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func newHTTPHandler(server *mcp.Server) http.Handler {
+	return mcphttp.WrapProviderHandler(
+		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true}),
+		map[string]any{"name": "opute-provider-k3s", "version": "1.0.0"},
+	)
 }
 
 func k3sManifest() providercontract.InstallManifest {

@@ -12,6 +12,7 @@ import (
 type ConfigureAgentConnectionArgs struct {
 	EnvFile     string            `json:"envFile"`
 	Environment map[string]string `json:"environment"`
+	Remove      []string          `json:"remove,omitempty"`
 	ServiceName string            `json:"serviceName,omitempty"`
 	Restart     *bool             `json:"restart,omitempty"`
 	Scope       string            `json:"scope,omitempty"`
@@ -24,7 +25,7 @@ func (s *HostOperationsService) ConfigureAgentConnection(args ConfigureAgentConn
 	if len(args.Environment) == 0 {
 		return nil, errors.New("environment is required")
 	}
-	if err := upsertEnvFile(args.EnvFile, args.Environment); err != nil {
+	if err := upsertEnvFile(args.EnvFile, args.Environment, args.Remove); err != nil {
 		return nil, err
 	}
 	restart := args.Restart != nil && *args.Restart

@@ -322,6 +322,27 @@ func TestPostgreSQLServiceSQLScriptKeepsPasswordOffCommandLine(t *testing.T) {
 	}
 }
 
+func TestKubectlShellScriptArgumentKeepsProviderArgumentsSingleLine(t *testing.T) {
+	script := "set -eu\nprintf '%s' 'SELECT 1'\n"
+	argument := kubectlShellScriptArgument(script)
+	if strings.ContainsAny(argument, "\r\n") {
+		t.Fatalf("encoded kubectl shell argument contains a line break: %q", argument)
+	}
+	const prefix = "eval \"$(printf '%s' '"
+	const suffix = "' | base64 -d)\""
+	if !strings.HasPrefix(argument, prefix) || !strings.HasSuffix(argument, suffix) {
+		t.Fatalf("unexpected encoded shell argument: %q", argument)
+	}
+	encoded := strings.TrimSuffix(strings.TrimPrefix(argument, prefix), suffix)
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("encoded shell argument is not base64: %v", err)
+	}
+	if string(decoded) != script {
+		t.Fatalf("decoded shell script = %q, want %q", decoded, script)
+	}
+}
+
 func TestPostgreSQLServiceResultDoesNotContainCredentials(t *testing.T) {
 	relay := PostgreSQLServiceRelayArgs{
 		SessionID: "session-1", ListenHost: "127.0.0.1",

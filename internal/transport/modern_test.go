@@ -71,9 +71,9 @@ func TestMCPRejectsInitializeAndLegacyVersions(t *testing.T) {
 		t.Fatalf("initialize body = %s, want method not found", body)
 	}
 
-	status, body = postMCP(t, ts.URL+"/mcp", "opha_product", "", "server/discover", "", map[string]any{"_meta": mustMeta()})
+	status, body = postMCP(t, ts.URL+"/mcp", "invalid-token", "", "server/discover", "", map[string]any{"_meta": mustMeta()})
 	if status != http.StatusUnauthorized {
-		t.Fatalf("opha_ token status = %d body=%s", status, body)
+		t.Fatalf("invalid token status = %d body=%s", status, body)
 	}
 
 	status, body = postMCP(t, ts.URL+"/mcp", "host-bootstrap", "", "server/discover", "", map[string]any{"_meta": mustMeta()})
@@ -303,4 +303,73 @@ func postMCP(t *testing.T, url, token, origin, method, name string, params map[s
 	defer res.Body.Close()
 	payload, _ := io.ReadAll(res.Body)
 	return res.StatusCode, string(payload)
+}
+
+// TestLegacyHandshakeDoesNotBypassModernSurface pins the narrowing recorded in
+// ADR 0011.
+//
+// `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE` used to skip modern-MCP validation for any
+// request whose params omitted `_meta["io.modelcontextprotocol/protocolVersion"]`,
+// on every method. A client could therefore reach `tasks/*` -- which has its own
+// capability negotiation -- and `server/discover` with no `Mcp-Method` header and
+// no protocol version, simply by not asking to be validated. The flag is named
+// for the handshake; its effect was to disable the transport contract.
+//
+// The compatibility surface is now enumerated. These two methods are 2026-07-28
+// additions that no pre-2026 client can need, so they stay validated even when
+// the legacy flag is on. TestMCPAllowsLegacyHandshakeWhenOptedIn covers the
+// other half: initialize and tools/list still work for Codex/Cursor.
+func TestLegacyHandshakeDoesNotBypassModernSurface(t *testing.T) {
+	hs := newTransportTestServer(t)
+	authorizer := testAuthorizer(t, "host-bootstrap")
+	httpSrv := NewHTTPServer(HTTPOptions{
+		HostServer:           hs,
+		BindHost:             "127.0.0.1",
+		Port:                 0,
+		Authz:                authorizer,
+		AllowLegacyHandshake: true,
+	})
+	ts := httptest.NewServer(httpSrv.Handler())
+	defer ts.Close()
+
+	for _, tc := range []struct {
+		method string
+		params map[string]any
+	}{
+		{method: "server/discover", params: map[string]any{}},
+		{method: "tasks/get", params: map[string]any{"taskId": "task-1"}},
+		// A progressToken in _meta is the shape the old comment called out as
+		// "arbitrary _meta"; it must not read as a modern negotiation either.
+		{method: "tasks/list", params: map[string]any{"_meta": map[string]any{"progressToken": 1}}},
+	} {
+		t.Run(tc.method, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      1,
+				"method":  tc.method,
+				"params":  tc.params,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(string(body)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			req.Header.Set("Authorization", "Bearer host-bootstrap")
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			payload, _ := io.ReadAll(res.Body)
+			// -32020 HeaderMismatch is what validateModernMCPRequest returns for a
+			// request carrying neither the headers nor the _meta protocol version.
+			if !strings.Contains(string(payload), "-32020") {
+				t.Fatalf("%s in legacy mode = %s, want -32020 HeaderMismatch: the legacy bypass must not cover the 2026-07-28 surface", tc.method, string(payload))
+			}
+		})
+	}
 }

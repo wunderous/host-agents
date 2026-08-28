@@ -900,6 +900,24 @@
     }
   },
   {
+    "name": "detect_host_platform",
+    "title": "Detect host platform",
+    "description": "Detect the operating system and CPU identity of the host running this agent, distinguishing native Windows, macOS, WSL1/WSL2, and native Linux, and reporting the CPU architecture and family including Apple M-series silicon.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "contractVersion",
+        "os",
+        "kind",
+        "cpu"
+      ]
+    }
+  },
+  {
     "name": "diagnose_bridge",
     "title": "Diagnose Bridge",
     "description": "Probes the local bridge control plane (port 9092) and check its health",

@@ -43,7 +43,7 @@ Host Agent.
 | **codex-wsl** | Configuring, diagnosing, or executing OpenAI Codex CLI in WSL or across the Windows-WSL boundary, Host Agent MCP integration, and headless execution. |
 | **cordis-go** | `internal/cordis`, `internal/cordis/mcp`, `internal/hostmcp`, provider generations, C-01–C-24 catalog. Normative guide: [`docs/cordis-development-guide.md`](docs/cordis-development-guide.md) |
 | **host-agent-boundaries** | Identity, runtime-kind (`vm:` vs `container:`), provider-neutral MCP, E2E evidence, relay ownership. ADRs 0006 and 0007 |
-| Sibling **opute/.agents/skills/host-agent** | Control-plane registration, heartbeat, dogfood recovery |
+| Sibling **opute/.agents/skills/host-agent** | Control-plane enrollment, HTTP liveness/reconciliation, dogfood recovery |
 | Sibling **opute/.agents/skills/agent-work-coordination** | Beads ledger — native Windows is authoritative |
 | Sibling **opute/.agents/skills/shared-runtime-leases** | Shared WSL/Incus/dev-stack/production-roll ownership |
 | Sibling **opute/.agents/skills/permanent-agentic-invariants** | Capture or supersede durable invariants |
@@ -109,4 +109,3 @@ ownership.
 - Provider adapters are generation-bound. Durable evidence uses schema-driven
   redaction; unknown projections fail closed.
 - Boundary claims require wire, lifecycle, cleanup, and durable-state evidence.
-

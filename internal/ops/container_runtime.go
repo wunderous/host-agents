@@ -184,27 +184,18 @@ func (r containerStorageReport) toMap() map[string]any {
 		}
 		categories[name] = entry
 	}
-	images := r.Categories["images"]
-	remainingOverLimitBytes := int64(0)
-	if r.Policy.MaxBytes > 0 {
-		remainingOverLimitBytes = maxInt64(0, images.Bytes-r.Policy.MaxBytes)
-	}
 	return map[string]any{
-		"runtime":          r.Runtime,
-		"executable":       r.Executable,
-		"storagePath":      r.StoragePath,
-		"storageDriver":    r.StorageDriver,
-		"accounting":       "runtime-reported",
-		"categories":       categories,
-		"totalBytes":       r.TotalBytes,
-		"reclaimableBytes": r.ReclaimableBytes,
-		// Compatibility fields retained for configure_oci_storage consumers.
-		"imageBytes":              images.Bytes,
-		"imageReclaimableBytes":   images.ReclaimableBytes,
-		"remainingOverLimitBytes": remainingOverLimitBytes,
-		"unsupportedCategories":   r.UnsupportedCategories,
-		"warnings":                r.Warnings,
-		"policy":                  map[string]any{"maxBytes": r.Policy.MaxBytes, "minAgeSeconds": r.Policy.MinAgeSeconds},
+		"runtime":               r.Runtime,
+		"executable":            r.Executable,
+		"storagePath":           r.StoragePath,
+		"storageDriver":         r.StorageDriver,
+		"accounting":            "runtime-reported",
+		"categories":            categories,
+		"totalBytes":            r.TotalBytes,
+		"reclaimableBytes":      r.ReclaimableBytes,
+		"unsupportedCategories": r.UnsupportedCategories,
+		"warnings":              r.Warnings,
+		"policy":                map[string]any{"maxBytes": r.Policy.MaxBytes, "minAgeSeconds": r.Policy.MinAgeSeconds},
 	}
 }
 

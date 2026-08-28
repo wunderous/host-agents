@@ -11,8 +11,17 @@ import (
 // upsertEnvFile persists caller-owned environment values without exposing
 // their contents in the operation result. It is shared by generic connection
 // configuration and keeps host-agent policy independent of any consumer.
-func upsertEnvFile(path string, assignments map[string]string) error {
+// Removals are applied atomically with assignments so a connection migration
+// cannot leave retired credentials or transport settings behind.
+func upsertEnvFile(path string, assignments map[string]string, removals []string) error {
 	values := map[string]string{}
+	removed := map[string]bool{}
+	for _, key := range removals {
+		key = strings.TrimSpace(key)
+		if key != "" {
+			removed[key] = true
+		}
+	}
 	var comments []string
 	var keyOrder []string
 	if raw, err := os.ReadFile(path); err == nil {
@@ -28,6 +37,9 @@ func upsertEnvFile(path string, assignments map[string]string) error {
 			key, value, ok := strings.Cut(trimmed, "=")
 			key = strings.TrimSpace(key)
 			if !ok || key == "" {
+				continue
+			}
+			if removed[key] {
 				continue
 			}
 			if _, exists := values[key]; !exists {

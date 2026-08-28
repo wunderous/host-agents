@@ -21,7 +21,10 @@ func CanonicalMCPResource(r *http.Request) string {
 	return scheme + "://" + host + "/mcp"
 }
 
-func IsLoopbackHost(host string) bool {
+// IsLocalHostAddress recognizes loopback and addresses assigned to this host.
+// Platform mode may receive authenticated requests through the host bridge,
+// so a loopback-only check would reject the bootstrap grant at that boundary.
+func IsLocalHostAddress(host string) bool {
 	hostname := host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		hostname = h
@@ -51,7 +54,7 @@ func OriginAllowed(r *http.Request) bool {
 	if origin == "" {
 		return true
 	}
-	if IsLoopbackHost(r.Host) {
+	if IsLocalHostAddress(r.Host) {
 		return originIsLoopback(origin)
 	}
 	return originMatchesRequestHost(origin, r.Host, requestScheme(r))

@@ -111,7 +111,7 @@ func ClassifyTool(tool string) Class {
 		name == "register_host_agent" || name == "get_host_health" || name == "cancel_operation" ||
 		name == "get_host_info" || name == "get_local_status" || name == "list_vms" ||
 		name == "list_clusters" || name == "list_agents" || name == "get_agent" ||
-		name == "inspect_container_storage" ||
+		name == "inspect_container_storage" || name == "detect_host_platform" ||
 		strings.HasPrefix(name, "get_") || strings.HasPrefix(name, "list_") ||
 		strings.HasPrefix(name, "check_") {
 		return ClassControl

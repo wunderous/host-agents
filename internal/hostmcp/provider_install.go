@@ -318,35 +318,52 @@ func (s *Server) restoreProviderGenerations() error {
 		}
 	}
 	for _, record := range records {
-		if record.Status != string(cordis.GenerationActive) || record.DescriptorJSON == "" || record.ManifestJSON == "" {
+		if record.Status != string(cordis.GenerationActive) || record.DescriptorJSON == "" {
 			continue
 		}
 		var descriptor providercontract.PluginDescriptor
 		if err := json.Unmarshal([]byte(record.DescriptorJSON), &descriptor); err != nil {
-			continue
-		}
-		var manifest providercontract.InstallManifest
-		if err := json.Unmarshal([]byte(record.ManifestJSON), &manifest); err != nil {
+			s.logProviderRestoreSkip(record, "descriptor_decode", err)
 			continue
 		}
 		if err := providercontract.ValidateDescriptor(descriptor); err != nil {
+			s.logProviderRestoreSkip(record, "descriptor_validate", err)
 			continue
 		}
-		if err := providercontract.ValidateInstallManifest(manifest, providercontract.ProviderRef{ID: descriptor.PluginID, Version: descriptor.Version}); err != nil {
+		if descriptor.PluginID != record.ProviderID || descriptor.Version != record.ProviderVersion {
+			s.logProviderRestoreSkip(record, "descriptor_identity", fmt.Errorf("descriptor provider %s@%s does not match durable generation %s@%s", descriptor.PluginID, descriptor.Version, record.ProviderID, record.ProviderVersion))
 			continue
 		}
-		manifestHash, err := hashProviderValue(manifest)
-		if err != nil || manifestHash != record.ManifestHash {
+		if descriptor.Server.Endpoint != record.Endpoint {
+			s.logProviderRestoreSkip(record, "descriptor_endpoint", fmt.Errorf("descriptor endpoint %q does not match durable endpoint %q", descriptor.Server.Endpoint, record.Endpoint))
 			continue
 		}
 		adapter, err := provideradapter.Connect(context.Background(), descriptor, provideradapter.Options{})
 		if err != nil {
 			// The durable generation remains active and retryable; the provider
 			// may be started after the Host Agent during a supervisor restart.
+			s.logProviderRestoreSkip(record, "provider_connect", err)
+			continue
+		}
+		// The persisted manifest is a restart cache, not the authority for a
+		// live provider's current contract. Re-fetching it after the trusted
+		// descriptor reconnects the generation across additive schema changes
+		// while InstallManifest still validates provider identity and shape.
+		manifest, err := adapter.InstallManifest(context.Background())
+		if err != nil {
+			_ = adapter.Close()
+			s.logProviderRestoreSkip(record, "manifest_fetch", err)
+			continue
+		}
+		manifestHash, err := hashProviderValue(manifest)
+		if err != nil {
+			_ = adapter.Close()
+			s.logProviderRestoreSkip(record, "manifest_hash", err)
 			continue
 		}
 		if err := s.mountProviderGeneration(manifest, record.GenerationID, adapter); err != nil {
 			_ = adapter.Close()
+			s.logProviderRestoreSkip(record, "provider_mount", err)
 			continue
 		}
 		s.providerMu.Lock()
@@ -360,6 +377,31 @@ func (s *Server) restoreProviderGenerations() error {
 			delete(s.providerValidation, record.ProviderID)
 			delete(s.providerManifests, record.ProviderID)
 			s.providerMu.Unlock()
+			s.logProviderRestoreSkip(record, "service_register", err)
+			continue
+		}
+		catalogRevision := s.CatalogSnapshot().Revision
+		if _, err := s.providerLifecycle.Refresh(record.GenerationID, manifestHash, catalogRevision); err != nil {
+			_ = s.unmountProviderGeneration(record.ProviderID, record.GenerationID)
+			s.providerMu.Lock()
+			delete(s.providerValidation, record.ProviderID)
+			delete(s.providerManifests, record.ProviderID)
+			s.providerMu.Unlock()
+			s.logProviderRestoreSkip(record, "generation_refresh", err)
+			continue
+		}
+		generation, ok := s.providerLifecycle.Get(record.GenerationID)
+		if !ok {
+			s.logProviderRestoreSkip(record, "generation_lookup", fmt.Errorf("restored generation disappeared"))
+			continue
+		}
+		if err := s.persistProviderGeneration(generation); err != nil {
+			_ = s.unmountProviderGeneration(record.ProviderID, record.GenerationID)
+			s.providerMu.Lock()
+			delete(s.providerValidation, record.ProviderID)
+			delete(s.providerManifests, record.ProviderID)
+			s.providerMu.Unlock()
+			s.logProviderRestoreSkip(record, "generation_persist", err)
 		}
 	}
 	return nil

@@ -109,7 +109,7 @@ func boundaryManifest(generation string) providercontract.InstallManifest {
 		Provider: providercontract.ProviderRef{ID: "com.opute.boundary", Version: generation},
 		Provides: []providercontract.CapabilityRef{{ID: capabilitycontract.Kubernetes, Version: 1}},
 		Services: []providercontract.ServiceDefinition{{
-			ID: "opute.capability.boundary", Version: 1,
+			ID: "opute.capability.boundary", CapabilityID: capabilitycontract.Kubernetes, Version: 1,
 			Operations: []providercontract.Operation{
 				operation("opute.capability.boundary.probe", map[string]any{"type": "object"}),
 				operation("opute.capability.boundary.secret", writeOnlySecret),

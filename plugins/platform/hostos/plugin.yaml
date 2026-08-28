@@ -1,0 +1,11 @@
+schema: opute-provider-plugin.v1
+pluginId: com.opute.hostos
+version: 1.0.0
+capabilities:
+  - id: opute.capability.host-platform.v1
+    version: 1
+server:
+  transport: streamable_http
+  endpoint: http://127.0.0.1:4321/mcp
+  executable: opute-provider-hostos
+  args: [serve]

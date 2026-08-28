@@ -228,6 +228,13 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 		}
 		return structuredResult(out, ""), nil
 
+	case "detect_host_platform":
+		out, err := svc.DetectHostPlatform()
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, fmt.Sprintf("Host platform detected: %s on %s.", out.Kind, out.CPU.Architecture)), nil
+
 	case "probe_http_endpoint":
 		out, err := svc.ProbeHTTPEndpoint(ctx, ops.ProbeHTTPEndpointArgs{Endpoint: stringField(args, "endpoint")})
 		if err != nil {
@@ -893,7 +900,15 @@ func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, a
 				}
 			}
 		}
-		out, err := svc.ConfigureAgentConnection(ops.ConfigureAgentConnectionArgs{EnvFile: stringField(args, "envFile"), Environment: env, ServiceName: stringField(args, "serviceName"), Restart: optionalBoolField(args, "restart"), Scope: stringField(args, "scope")}, onData)
+		remove := []string{}
+		if raw, ok := args["remove"].([]any); ok {
+			for _, value := range raw {
+				if key, ok := value.(string); ok {
+					remove = append(remove, key)
+				}
+			}
+		}
+		out, err := svc.ConfigureAgentConnection(ops.ConfigureAgentConnectionArgs{EnvFile: stringField(args, "envFile"), Environment: env, Remove: remove, ServiceName: stringField(args, "serviceName"), Restart: optionalBoolField(args, "restart"), Scope: stringField(args, "scope")}, onData)
 		if err != nil {
 			return nil, err
 		}

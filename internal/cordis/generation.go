@@ -102,6 +102,28 @@ func (m *ProviderLifecycleManager) Get(id string) (ProviderGeneration, bool) {
 	return *generation, true
 }
 
+// Refresh records the current provider declaration after a live reconnect.
+// The manifest hash and catalog revision are durable projections of the
+// connected generation, not inputs that can prevent recovery when the
+// provider's declaration evolves between process lifetimes.
+func (m *ProviderLifecycleManager) Refresh(id, manifestHash, catalogRevision string) (ProviderGeneration, error) {
+	if m == nil || strings.TrimSpace(id) == "" || strings.TrimSpace(manifestHash) == "" || strings.TrimSpace(catalogRevision) == "" {
+		return ProviderGeneration{}, fmt.Errorf("provider generation, manifest hash, and catalog revision are required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	generation, ok := m.generations[id]
+	if !ok {
+		return ProviderGeneration{}, fmt.Errorf("provider generation %q not found", id)
+	}
+	if generation.State != GenerationActive {
+		return ProviderGeneration{}, fmt.Errorf("provider generation %q is %s, expected active", id, generation.State)
+	}
+	generation.ManifestHash = manifestHash
+	generation.CatalogRevision = catalogRevision
+	return *generation, nil
+}
+
 func NewProviderLifecycleManager(policy DrainPolicy) *ProviderLifecycleManager {
 	if policy.Timeout <= 0 {
 		policy.Timeout = 30 * time.Second

@@ -18,8 +18,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # fetch-depth: 0 -- .golangci.yml's new-from-rev baseline needs history.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -32,6 +35,16 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      # Ratcheted lint. .golangci.yml pins a baseline rev so today's 50
+      # pre-existing issues are reported but do not fail; anything NEW does.
+      # See .agents/plans/2026-08-27-modular-cordis-architecture.md S7.5.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.13.1
+          # new-from-rev needs history to diff against the baseline commit.
+          args: --timeout=5m
 
       - name: Test
         run: go test ./...

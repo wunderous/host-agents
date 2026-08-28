@@ -184,10 +184,25 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	// Strict modern MCP validation (checking Mcp-Method headers and protocol metadata) is enforced
-	// only for requests explicitly negotiating modern MCP (or when legacy handshake mode is disabled).
-	// Standard clients often pass arbitrary _meta (e.g., progressToken) without modern MCP headers.
-	if !h.allowLegacyHandshake || (!isRetiredHandshake(envelope.Method) && isModernMCPRequest(r, envelope.Params)) {
+	// Strict modern MCP validation is the default. It is skipped only for a
+	// request that satisfies ALL THREE of the conditions below -- see ADR 0011.
+	//
+	// This used to read `!h.allowLegacyHandshake || (!isRetiredHandshake(m) &&
+	// isModernMCPRequest(...))`, which skipped validation for ANY method whose
+	// params omitted `_meta["io.modelcontextprotocol/protocolVersion"]`. That
+	// made conformance client-elective across the whole surface: a `tasks/get`
+	// could reach the handler with no Mcp-Method header and no protocol version
+	// simply by not asking to be checked. The flag is named for the handshake
+	// but was disabling the transport contract.
+	//
+	// The bypass is now enumerated (`isLegacyCompatibleMethod`) rather than
+	// implied. `server/discover` and `tasks/*` are 2026-07-28 additions that no
+	// pre-2026 client can need, so they are validated even in legacy mode.
+	skipModernValidation := h.allowLegacyHandshake &&
+		isLegacyCompatibleMethod(envelope.Method) &&
+		// A legacy client cannot negotiate; one that does is held to the contract.
+		(isRetiredHandshake(envelope.Method) || !isModernMCPRequest(r, envelope.Params))
+	if !skipModernValidation {
 		if err := validateModernMCPRequest(r, envelope.Method, envelope.Params); err != nil {
 			writeJSONRPCProtocolError(w, envelope.ID, err)
 			return
@@ -208,6 +223,37 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.mcpHandler.ServeHTTP(w, r)
+}
+
+// legacyCompatibleMethods is the pre-2026-07-28 MCP client surface: the methods
+// a client such as Codex or Cursor IDE speaks before it can be expected to send
+// `Mcp-Method` / `MCP-Protocol-Version` headers or the modern `_meta` keys.
+//
+// It is an allowlist on purpose. Adding an entry widens the set of requests that
+// may skip contract validation, so each one needs a reason recorded in ADR 0011
+// -- which is the property the previous `isModernMCPRequest`-only check did not
+// have. Notably absent, and validated even in legacy mode:
+//
+//   - `server/discover` -- introduced by 2026-07-28.
+//   - `tasks/*`         -- the tasks extension, which carries its own client
+//     capability negotiation that the old bypass skipped wholesale.
+var legacyCompatibleMethods = map[string]struct{}{
+	"initialize":                {},
+	"notifications/initialized": {},
+	"notifications/cancelled":   {},
+	"ping":                      {},
+	"tools/list":                {},
+	"tools/call":                {},
+	"resources/list":            {},
+	"resources/read":            {},
+	"resources/templates/list":  {},
+	"prompts/list":              {},
+	"prompts/get":               {},
+}
+
+func isLegacyCompatibleMethod(method string) bool {
+	_, ok := legacyCompatibleMethods[method]
+	return ok
 }
 
 func isRetiredHandshake(method string) bool {

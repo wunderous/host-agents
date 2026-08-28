@@ -123,11 +123,16 @@ func LoadAllToolDefinitions(providerID string) ([]ToolDefinition, error) {
 // CanonicalizeToolDefinitions materializes only bindings explicitly declared
 // by a schema or its metadata. It deliberately does not rewrite legacy names,
 // inject URI fields, or consult operation names: a resource contract must be
-// owned by the definition that declares it.
+// owned by the definition that declares it. Every wire tool also receives an
+// object output schema when an older definition omitted one; MCP clients must
+// never receive an explicit null outputSchema.
 func CanonicalizeToolDefinitions(defs []ToolDefinition) []ToolDefinition {
 	out := make([]ToolDefinition, 0, len(defs))
 	for _, original := range defs {
 		def := original
+		if def.OutputSchema == nil {
+			def.OutputSchema = map[string]any{"type": "object"}
+		}
 		materializeSchemaBindings(&def)
 		out = append(out, def)
 	}
@@ -302,10 +307,11 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"build_and_push_oci_image":         true,
 		"stage_build_context":              true,
 		"ensure_host_tool":                 true,
+		"detect_host_platform":             true,
 		"run_host_command":                 true,
 		"set_host_service_state":           true,
 		"inspect_host_service":             true,
-		"list_host_services":                true,
+		"list_host_services":               true,
 		"ensure_host_service_supervisor":   true,
 		"ensure_host_file":                 true,
 		"remove_host_file":                 true,
@@ -364,7 +370,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}, ToolDefinition{
 		Name: "release_postgresql_service_relay", Title: "Release PostgreSQL service relay", Description: "Release one caller-owned PostgreSQL service relay without changing the underlying service or databases. The relay capability is required and is never returned in results.", InputSchema: map[string]any{"type": "object", "required": []string{"sessionId", "relayToken"}, "properties": map[string]any{"sessionId": map[string]any{"type": "string", "minLength": 1}, "relayToken": map[string]any{"type": "string", "minLength": 32}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
-		Name: "configure_agent_connection", Title: "Configure generic agent connection", Description: "Write caller-supplied agent connection environment and optionally restart the declared service. Values are redacted from results.", InputSchema: map[string]any{"type": "object", "required": []string{"envFile", "environment"}, "properties": map[string]any{"envFile": map[string]any{"type": "string"}, "environment": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "serviceName": map[string]any{"type": "string"}, "restart": map[string]any{"type": "boolean"}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}}}}, OutputSchema: map[string]any{"type": "object"},
+		Name: "configure_agent_connection", Title: "Configure generic agent connection", Description: "Atomically write and remove caller-supplied agent connection environment values, then optionally restart the declared service. Values are redacted from results.", InputSchema: map[string]any{"type": "object", "required": []string{"envFile", "environment"}, "properties": map[string]any{"envFile": map[string]any{"type": "string"}, "environment": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "remove": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "serviceName": map[string]any{"type": "string"}, "restart": map[string]any{"type": "boolean"}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name: "discover_service_ingress", Title: "Discover service ingress", Description: "Resolve caller-declared service ingress endpoints on an explicit Kubernetes target. No product hostnames or ports are inferred.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "endpoints"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "endpoints": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object"}}, "ingressNamespace": map[string]any{"type": "string"}, "ingressService": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
@@ -557,6 +563,31 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"tool": map[string]any{"type": "string", "enum": []string{"bun", "gcc", "g++", "go", "podman", "buildah", "buildkitd", "cloudflared", "helm", "cmake", "ninja", "nvcc"}},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"tool", "path", "available"}},
+	}, ToolDefinition{
+		Name:        "detect_host_platform",
+		Title:       "Detect host platform",
+		Description: "Detect the operating system and CPU identity of the host running this agent, distinguishing native Windows, macOS, WSL1/WSL2, and native Linux, and reporting the CPU architecture and family including Apple M-series silicon.",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "os", "kind", "cpu"}, "properties": map[string]any{
+			"contractVersion":     map[string]any{"type": "string", "const": "host-platform.v1"},
+			"os":                  map[string]any{"type": "string", "enum": []string{"linux", "macos", "windows"}},
+			"kind":                map[string]any{"type": "string", "enum": []string{"linux", "macos", "windows-native", "wsl1", "wsl2"}},
+			"kernel":              map[string]any{"type": "string"},
+			"kernelVersion":       map[string]any{"type": "string"},
+			"distribution":        map[string]any{"type": "string"},
+			"distributionVersion": map[string]any{"type": "string"},
+			"wsl":                 map[string]any{"type": "object", "required": []string{"version", "interop"}, "properties": map[string]any{"version": map[string]any{"type": "integer"}, "distro": map[string]any{"type": "string"}, "interop": map[string]any{"type": "boolean"}}},
+			"cpu": map[string]any{"type": "object", "required": []string{"architecture", "family"}, "properties": map[string]any{
+				"architecture": map[string]any{"type": "string"},
+				"family":       map[string]any{"type": "string", "enum": []string{"x86-64", "x86", "arm64", "arm", "apple-silicon", "unknown"}},
+				"vendor":       map[string]any{"type": "string"},
+				"model":        map[string]any{"type": "string"},
+				"series":       map[string]any{"type": "string"},
+				"variant":      map[string]any{"type": "string"},
+				"logicalCores": map[string]any{"type": "integer"},
+			}},
+			"evidence": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		}},
 	}, ToolDefinition{
 		Name:        "apply_manifest",
 		Title:       "Apply Kubernetes manifest",

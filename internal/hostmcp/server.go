@@ -31,6 +31,7 @@ import (
 // Server is the host agent MCP server.
 type Server struct {
 	mcpServer                  *mcp.Server
+	logger                     *slog.Logger
 	ops                        *ops.HostOperationsService
 	tasks                      *tasks.Registry
 	console                    *console.Runtime
@@ -57,6 +58,14 @@ type Server struct {
 	providerCandidateManifests map[string]providercontract.InstallManifest
 	providerManifests          map[string]providercontract.InstallManifest
 	registeredToolNames        map[string]bool
+}
+
+func (s *Server) logProviderRestoreSkip(record state.ProviderGenerationRecord, stage string, err error) {
+	logger := slog.Default()
+	if s != nil && s.logger != nil {
+		logger = s.logger
+	}
+	logger.Warn("provider generation restore skipped", "provider_id", record.ProviderID, "generation_id", record.GenerationID, "stage", stage, "error", err)
 }
 
 // CapabilityImplementation is a trusted, already-installed host adapter. It
@@ -131,6 +140,7 @@ func NewServer(opts Options) (*Server, error) {
 	})
 	hs := &Server{
 		mcpServer:                  srv,
+		logger:                     opts.Logger,
 		ops:                        opts.Ops,
 		tasks:                      tasks.NewRegistry(),
 		console:                    console.NewRuntime(opts.Ops.NewVMInteractiveCommand),
@@ -466,16 +476,16 @@ func providerBindings(bindings []providercontract.ResourceBinding) []tools.Resou
 	return converted
 }
 
-// DispatchTool is the single execution boundary for MCP, task, and HWP
-// callers. Keeping admission here prevents one transport from bypassing the
+// DispatchTool is the single execution boundary for MCP, task, and internal
+// host-worker callers. Keeping admission here prevents one transport from bypassing the
 // host-wide policy when two agent instances share WSL/Incus resources.
 func (s *Server) DispatchTool(ctx context.Context, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
 	rawArgs := cloneArguments(args)
 	// MCP HTTP calls enter through handleToolCall, which intercepts lifecycle
-	// tools before the generic capability adapter. Reverse-tunnel/HWP calls
-	// enter here instead, so keep the same neutral lifecycle boundary for both
+	// tools before the generic capability adapter. Internal host-worker calls
+	// enter here directly, so keep the same neutral lifecycle boundary for both
 	// transports. Without this branch a platform-connected agent advertises
-	// provider lifecycle tools but routes them into the legacy tools dispatcher,
+	// provider lifecycle tools but routes them into the generic tools dispatcher,
 	// where they correctly fail as unknown built-ins.
 	switch name {
 	case "validate_host_plan":
@@ -674,11 +684,18 @@ func (s *Server) dispatchRegisteredOrBuiltIn(ctx context.Context, name string, a
 	if capabilityValue == nil {
 		return nil, fmt.Errorf("capability %q is not registered", name)
 	}
+	binding = s.completeProducedResourceBinding(capabilityValue.Definition(), args, binding)
 	result, err := capabilityValue.Invoke(ctx, hostcapability.RawArguments(args), binding, onData)
 	if err != nil {
 		observation := s.normalizeCapabilityObservation(capabilityValue, hostcapability.CapabilityObservation{Status: "invoke_error"}, binding.CatalogRevision)
 		s.recordCapabilityInvocation(capabilityValue, args, binding, nil, observation, err)
 		return tools.ErrorResult(err), nil
+	}
+	if result != nil && !result.IsError {
+		// Materialize declared resource identity before adapter validation. Provider
+		// adapters may return an empty structured result while the execution
+		// binding still carries the canonical resource selected at admission.
+		result.StructuredContent = materializeBoundResourceOutputs(capabilityValue.Definition(), result.StructuredContent, binding)
 	}
 	observation, validationErr := capabilityValue.ValidateResult(ctx, result)
 	if validationErr != nil {
@@ -688,16 +705,53 @@ func (s *Server) dispatchRegisteredOrBuiltIn(ctx context.Context, name string, a
 		s.recordCapabilityInvocation(capabilityValue, args, binding, errorResult, observation, typedErr)
 		return errorResult, nil
 	}
-	if err := validateProducedResources(capabilityValue.Definition(), result.StructuredContent, s.ops.TenantID()); err != nil {
-		observation := s.normalizeCapabilityObservation(capabilityValue, hostcapability.CapabilityObservation{Status: "invalid_result"}, binding.CatalogRevision)
-		typedErr := tools.NewCapabilityError("capability", "invalid_resource_output", err)
-		errorResult := tools.ErrorResult(typedErr)
-		s.recordCapabilityInvocation(capabilityValue, args, binding, errorResult, observation, typedErr)
-		return errorResult, nil
+	if result != nil && !result.IsError {
+		if err := validateProducedResources(capabilityValue.Definition(), result.StructuredContent, s.ops.TenantID()); err != nil {
+			observation := s.normalizeCapabilityObservation(capabilityValue, hostcapability.CapabilityObservation{Status: "invalid_result"}, binding.CatalogRevision)
+			typedErr := tools.NewCapabilityError("capability", "invalid_resource_output", err)
+			errorResult := tools.ErrorResult(typedErr)
+			s.recordCapabilityInvocation(capabilityValue, args, binding, errorResult, observation, typedErr)
+			return errorResult, nil
+		}
 	}
 	observation = s.normalizeCapabilityObservation(capabilityValue, observation, binding.CatalogRevision)
 	s.recordCapabilityInvocation(capabilityValue, args, binding, result, observation, nil)
 	return result, nil
+}
+
+// completeProducedResourceBinding preserves the typed identity contract when
+// a native/provider capability declares a URI result but omits the matching
+// input binding from an older descriptor. The URI is accepted only after the
+// same tenant-checked resolver used by normal admission succeeds; no raw
+// argument is copied into provider coordinates or execution state.
+func (s *Server) completeProducedResourceBinding(
+	descriptor tools.CapabilityDescriptor,
+	args map[string]any,
+	binding tools.ExecutionBinding,
+) tools.ExecutionBinding {
+	for _, produced := range descriptor.Produces {
+		if strings.TrimSpace(produced.SourcePath) != "uri" {
+			continue
+		}
+		for _, resource := range binding.Resources {
+			if resource.ResourceType == produced.ResourceType && strings.TrimSpace(resource.URI) != "" {
+				return binding
+			}
+		}
+		candidate, ok := args["uri"].(string)
+		if !ok || strings.TrimSpace(candidate) == "" || s == nil || s.ops == nil {
+			continue
+		}
+		resolved, err := s.ops.ResolveResource(candidate, produced.ResourceType)
+		if err != nil {
+			continue
+		}
+		binding.Resources = append(binding.Resources, tools.BoundResource{
+			Argument: "uri", ResourceType: resolved.ResourceType, TenantID: resolved.TenantID,
+			ResourceID: resolved.ResourceID, URI: resolved.URI.String(), Coordinates: resolved.Values,
+		})
+	}
+	return binding
 }
 
 func (s *Server) normalizeCapabilityObservation(value hostcapability.Capability, observation hostcapability.CapabilityObservation, catalogRevision string) hostcapability.CapabilityObservation {

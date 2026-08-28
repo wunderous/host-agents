@@ -536,6 +536,18 @@ PGPASSFILE="$pgpass" psql -h %s -p %d -U %s -d %s -v ON_ERROR_STOP=1 -Atqc %s
 `, shellEscape(serviceHost), postgresqlServicePort, shellEscape(username), shellEscape(database), shellEscape(sql))
 }
 
+// Kubernetes provider exec arguments are single-line transport values. Keep
+// the SQL helper's multiline shell script inside the Host Agent boundary and
+// materialize it as a bounded base64 payload for the provider's shell, rather
+// than weakening the provider's argument validation for one caller.
+func kubectlShellScriptArgument(script string) string {
+	encoded := base64.StdEncoding.EncodeToString([]byte(script))
+	// Decode into the current shell with eval so the script retains the
+	// kubectl exec stdin stream for its ephemeral pgpass file. Piping the
+	// decoded script into a nested sh would consume that same stream.
+	return "eval \"$(printf '%s' '" + encoded + "' | base64 -d)\""
+}
+
 func (s *HostOperationsService) runPostgreSQLServiceSQL(ctx context.Context, spec postgresqlServiceSpec, credentials postgresqlServiceSecret, pod, database, sql string) (string, error) {
 	serviceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
 	script := postgresqlServiceSQLScript(
@@ -545,7 +557,7 @@ func (s *HostOperationsService) runPostgreSQLServiceSQL(ctx context.Context, spe
 		fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database)),
 	)
 	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
-	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", script}
+	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", kubectlShellScriptArgument(script)}
 	return s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "query PostgreSQL service through read/write service", 60*time.Second)
 }
 
@@ -554,7 +566,7 @@ func (s *HostOperationsService) ensurePostgreSQLServiceDatabase(ctx context.Cont
 	checkSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database))
 	script := postgresqlServiceSQLScript(serviceHost, credentials.Username, "postgres", checkSQL)
 	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
-	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", script}
+	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", kubectlShellScriptArgument(script)}
 	result, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "check PostgreSQL service database", 60*time.Second)
 	if err != nil {
 		return err

@@ -1,0 +1,80 @@
+# golangci-lint configuration for the Opute Host Agent.
+#
+# This repo had no lint configuration. internal/ops reached 18,569 lines in one
+# package and HostOperationsService reached 239 methods with nothing observing
+# either, which is the growth this file exists to notice.
+#
+# Two roles:
+#   1. Correctness linters, on by default below.
+#   2. The package-boundary rules from the modular-cordis-architecture plan
+#      (.agents/plans/2026-08-27-modular-cordis-architecture.md, S4.3). Those
+#      rules become compile errors once the internal/ops partition (W7) lands;
+#      depguard states them declaratively and catches the transitive case the
+#      compiler misses -- domain/a -> hostruntime -> domain/b.
+#
+# The depguard rules below are commented out because the packages they name do
+# not exist yet. Enable each one in the commit that creates its package; that is
+# W1's standing instruction, not a follow-up.
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+# Ratchet, not a cliff. A first lint config on 33k previously unlinted lines
+# finds 50 pre-existing issues; failing on all of them would mean either a
+# 50-fix commit bolted onto unrelated work, or a config nobody turns on.
+# new-from-rev makes today's tree the baseline: existing issues are reported
+# but do not fail, and anything NEW does. Lower the baseline by fixing issues,
+# never by moving the rev forward to hide them.
+issues:
+  new-from-rev: 5945ba78231e9ce44f9deb92d2fedde68d346430
+  # Report pre-existing issues too, so the backlog stays visible.
+  whole-files: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    # depguard is intentionally NOT enabled yet: it errors out when no rule
+    # carries a non-empty allow/deny list, and the packages its rules name do
+    # not exist until W7. Enable it together with the first real rule below.
+
+  # Package-boundary rules (S4.3), enabled as their packages appear.
+  # depguard rejects an empty rule set, so both the linter and this settings
+  # block stay commented until W3/W7 give them something real to guard:
+  #
+  # settings:
+  #   depguard:
+  #     rules:
+  #       no-mcp-in-domains:            # W3
+  #         list-mode: lax
+  #         files: ["**/internal/domain/**"]
+  #         deny:
+  #           - pkg: "github.com/wunderous/host-agents/internal/transport"
+  #             desc: "C-02: MCP terminates at internal/cordis/mcp."
+  #           - pkg: "github.com/wunderous/host-agents/internal/mcpserver"
+  #             desc: "C-02: domains register handlers, not MCP."
+  #       no-cross-domain-incus:        # W7, one block per domain
+  #         list-mode: lax
+  #         files: ["**/internal/domain/incus/**"]
+  #         deny:
+  #           - pkg: "github.com/wunderous/host-agents/internal/domain/llm"
+  #             desc: "S4.3 rule 1: cross-domain access is an injected cordis.ServiceKey."
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
