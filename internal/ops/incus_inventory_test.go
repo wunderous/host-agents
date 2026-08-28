@@ -3,6 +3,8 @@ package ops
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/wunderous/host-agents/internal/contract/vminfo"
 )
 
 func TestBuildVMInfoFromIncusListItemMapsResources(t *testing.T) {
@@ -89,7 +91,7 @@ func TestBuildVMInfoFromIncusListItemOmitsAgentReadyOnFastPath(t *testing.T) {
 }
 
 func TestNormalizeClusterIpv4PrefersRoutableAddress(t *testing.T) {
-	got := normalizeClusterIpv4([]string{"10.42.0.10", "10.123.133.201"})
+	got := vminfo.NormalizeClusterIPv4([]string{"10.42.0.10", "10.123.133.201"})
 	if len(got) != 2 || got[0] != "10.123.133.201" {
 		t.Fatalf("ipv4 order = %#v", got)
 	}

@@ -1,10 +1,11 @@
-package ops
+package cluster
 
 import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,22 @@ const (
 	clusterAgentInstallTimeout          = 10 * time.Minute
 	clusterAgentServiceWait             = 3 * time.Minute
 )
+
+type InstallClusterAgentArgs struct {
+	VMName      string `json:"vmName,omitempty"`
+	ClusterID   string `json:"clusterId"`
+	ClusterName string `json:"clusterName"`
+	AgentID     string `json:"agentId"`
+	BridgeToken string `json:"bridgeToken"`
+	BridgeURL   string `json:"bridgeUrl,omitempty"`
+	BridgePort  int    `json:"bridgePort,omitempty"`
+	APIEndpoint string `json:"apiEndpoint,omitempty"`
+	ProviderID  string `json:"providerId,omitempty"`
+	ResourceID  string `json:"resourceId,omitempty"`
+	Source      string `json:"source,omitempty"`
+}
+
+const clusterAgentServiceName = "opute-cluster-agent"
 
 type clusterAgentArch string
 
@@ -121,6 +138,16 @@ func wrapHostPrivilegedShellBody(body string) string {
 	}, "\n")
 }
 
+func resolveBridgeURLFromEnv() string {
+	for _, key := range []string{"OPUTE_PLATFORM_PUBLIC_URL", "OPUTE_PLATFORM_URL"} {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return strings.TrimRight(v, "/")
+		}
+	}
+	port := hostruntime.EnvOr("PLATFORM_MCP_PORT", "9093")
+	return fmt.Sprintf("http://127.0.0.1:%s", port)
+}
+
 func defaultBridgePort() int {
 	if v := strings.TrimSpace(hostruntime.EnvOr("PLATFORM_MCP_PORT", "")); v != "" {
 		if port, err := strconv.Atoi(v); err == nil && port > 0 {
@@ -154,15 +181,15 @@ func isLoopbackBridgeURL(bridgeURL string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func (s *HostOperationsService) probeBridgeHealthFromGuest(vmName, baseURL string, onData func(string)) bool {
+func (s *Service) probeBridgeHealthFromGuest(vmName, baseURL string, onData func(string)) bool {
 	healthURL := strings.TrimRight(baseURL, "/") + "/health"
 	script := fmt.Sprintf("curl -sf -o /dev/null %s", textutil.ShellQuote(healthURL))
-	res, err := s.runVMExec(vmName, []string{"bash", "-lc", script}, onData, 15*time.Second)
+	res, err := s.deps.RunVMExec(vmName, []string{"bash", "-lc", script}, onData, 15*time.Second)
 	return err == nil && res.ExitCode == 0
 }
 
-func (s *HostOperationsService) readVMDefaultGateway(vmName string, onData func(string)) string {
-	res, err := s.runVMExec(vmName, []string{"bash", "-lc", "ip route show default | awk '{print $3; exit}'"}, onData, 15*time.Second)
+func (s *Service) readVMDefaultGateway(vmName string, onData func(string)) string {
+	res, err := s.deps.RunVMExec(vmName, []string{"bash", "-lc", "ip route show default | awk '{print $3; exit}'"}, onData, 15*time.Second)
 	if err != nil || res.ExitCode != 0 {
 		return ""
 	}
@@ -173,7 +200,7 @@ func (s *HostOperationsService) readVMDefaultGateway(vmName string, onData func(
 	return gateway
 }
 
-func (s *HostOperationsService) resolveBridgeEndpointForVM(
+func (s *Service) resolveBridgeEndpointForVM(
 	vmName string,
 	bridgeURL string,
 	bridgePort int,
@@ -217,7 +244,7 @@ func (s *HostOperationsService) resolveBridgeEndpointForVM(
 		strings.TrimSpace(hostruntime.EnvOr("OPUTE_PLATFORM_GUEST_HOST", "")),
 	} {
 		if host == "host.lan" {
-			res, err := s.runVMExec(vmName, []string{"getent", "hosts", "host.lan"}, onData, 10*time.Second)
+			res, err := s.deps.RunVMExec(vmName, []string{"getent", "hosts", "host.lan"}, onData, 10*time.Second)
 			if err == nil && res.ExitCode == 0 {
 				fields := strings.Fields(strings.TrimSpace(res.Stdout))
 				if len(fields) > 0 {
@@ -246,18 +273,18 @@ func (s *HostOperationsService) resolveBridgeEndpointForVM(
 	)
 }
 
-func (s *HostOperationsService) readVMMachineArch(vmName string, onData func(string)) (clusterAgentArch, error) {
-	res, err := s.runVMExec(vmName, []string{"uname", "-m"}, onData, 30*time.Second)
+func (s *Service) readVMMachineArch(vmName string, onData func(string)) (clusterAgentArch, error) {
+	res, err := s.deps.RunVMExec(vmName, []string{"uname", "-m"}, onData, 30*time.Second)
 	if err != nil {
 		return "", err
 	}
 	if res.ExitCode != 0 {
-		return "", fmt.Errorf("uname -m failed in %s: %s", vmName, firstNonEmpty(res.Stderr, res.Stdout, "unknown error"))
+		return "", fmt.Errorf("uname -m failed in %s: %s", vmName, textutil.FirstNonEmpty(res.Stderr, res.Stdout, "unknown error"))
 	}
 	return normalizeClusterAgentArch(res.Stdout), nil
 }
 
-func (s *HostOperationsService) InstallClusterAgent(args InstallClusterAgentArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) InstallClusterAgent(args InstallClusterAgentArgs, onData func(string)) (map[string]any, error) {
 	if strings.TrimSpace(args.ClusterID) == "" {
 		return nil, fmt.Errorf("clusterId is required")
 	}
@@ -290,9 +317,9 @@ func (s *HostOperationsService) InstallClusterAgent(args InstallClusterAgentArgs
 			return nil, fmt.Errorf("bridgeUrl is required for host-native cluster agent install")
 		}
 
-		archResult, archErr := s.RunAgentShellWithTimeout("uname -m", 30*time.Second, onData)
+		archResult, archErr := s.deps.RunAgentShellWithTimeout("uname -m", 30*time.Second, onData)
 		if archErr != nil || archResult.ExitCode != 0 {
-			return nil, fmt.Errorf("failed to read host architecture: %s", firstNonEmpty(errString(archErr, ""), archResult.Stderr, archResult.Stdout))
+			return nil, fmt.Errorf("failed to read host architecture: %s", textutil.FirstNonEmpty(textutil.ErrString(archErr, ""), archResult.Stderr, archResult.Stdout))
 		}
 		arch := normalizeClusterAgentArch(archResult.Stdout)
 		trimmedBridgeURL := strings.TrimRight(bridgeURL, "/")
@@ -313,14 +340,14 @@ func (s *HostOperationsService) InstallClusterAgent(args InstallClusterAgentArgs
 		}
 
 		installScript := renderHostNativeClusterAgentInstallScript(trimmedBridgeURL, arch, configJSON)
-		installResult, installErr := s.RunAgentShellWithTimeout(installScript, clusterAgentInstallTimeout, onData)
+		installResult, installErr := s.deps.RunAgentShellWithTimeout(installScript, clusterAgentInstallTimeout, onData)
 		if installErr != nil {
 			return nil, installErr
 		}
 		if installResult.ExitCode != 0 {
-			return nil, fmt.Errorf("%s", firstNonEmpty(installResult.Stderr, installResult.Stdout, "host cluster agent install failed"))
+			return nil, fmt.Errorf("%s", textutil.FirstNonEmpty(installResult.Stderr, installResult.Stdout, "host cluster agent install failed"))
 		}
-		if err := s.host().WaitForSystemdActive(clusterAgentServiceName, onData, clusterAgentServiceWait); err != nil {
+		if err := s.deps.WaitForSystemdActive(clusterAgentServiceName, onData, clusterAgentServiceWait); err != nil {
 			return nil, err
 		}
 		return map[string]any{
@@ -336,7 +363,7 @@ func (s *HostOperationsService) InstallClusterAgent(args InstallClusterAgentArgs
 		return nil, fmt.Errorf("vmName is required for VM-based cluster agent install")
 	}
 
-	if err := s.waitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {
+	if err := s.deps.WaitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {
 		return nil, err
 	}
 
@@ -384,15 +411,15 @@ func (s *HostOperationsService) InstallClusterAgent(args InstallClusterAgentArgs
 	}
 
 	installScript := renderClusterAgentInstallScript(resolvedBridgeURL, arch, configJSON)
-	res, err := s.runVMExec(vmName, []string{"bash", "-lc", installScript}, onData, clusterAgentInstallTimeout)
+	res, err := s.deps.RunVMExec(vmName, []string{"bash", "-lc", installScript}, onData, clusterAgentInstallTimeout)
 	if err != nil {
 		return nil, err
 	}
 	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "cluster agent install failed in VM"))
+		return nil, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "cluster agent install failed in VM"))
 	}
 
-	if err := s.waitForVMServiceActive(vmName, clusterAgentServiceName, onData, clusterAgentServiceWait); err != nil {
+	if err := s.deps.WaitForVMServiceActive(vmName, clusterAgentServiceName, onData, clusterAgentServiceWait); err != nil {
 		return nil, err
 	}
 

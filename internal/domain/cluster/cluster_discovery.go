@@ -1,11 +1,14 @@
-package ops
+package cluster
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
+
 	"github.com/wunderous/host-agents/internal/contract/clusterinfo"
+	"github.com/wunderous/host-agents/internal/contract/vminfo"
 	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
@@ -19,8 +22,8 @@ type (
 	ClusterDetail     = clusterinfo.ClusterDetail
 )
 
-func (s *HostOperationsService) ListClusters(fast bool) (ClusterListResult, error) {
-	result, err := s.ListKubernetesClusters("")
+func (s *Service) ListClusters(fast bool) (ClusterListResult, error) {
+	result, err := s.deps.ListKubernetesClusters("")
 	if err != nil {
 		return ClusterListResult{}, err
 	}
@@ -36,23 +39,23 @@ func (s *HostOperationsService) ListClusters(fast bool) (ClusterListResult, erro
 	return result, nil
 }
 
-func (s *HostOperationsService) GetClusterDetails(vmName string, fast bool) (ClusterDetail, error) {
-	vm, err := s.GetVMInfo(vmName, fast)
+func (s *Service) GetClusterDetails(vmName string, fast bool) (ClusterDetail, error) {
+	vm, err := s.deps.GetVMInfo(vmName, fast)
 	if err != nil {
 		return ClusterDetail{}, err
 	}
 	return s.buildClusterDetailFromVM(vm, fast, false)
 }
 
-func (s *HostOperationsService) GetClusterRuntimeDetails(vmName string) (ClusterDetail, error) {
-	vm, err := s.GetVMInfo(vmName, false)
+func (s *Service) GetClusterRuntimeDetails(vmName string) (ClusterDetail, error) {
+	vm, err := s.deps.GetVMInfo(vmName, false)
 	if err != nil {
 		return ClusterDetail{}, err
 	}
 	return s.buildClusterDetailFromVM(vm, false, true)
 }
 
-func (s *HostOperationsService) buildClusterDetailFromVM(vm VMInfo, fast bool, runtime bool) (ClusterDetail, error) {
+func (s *Service) buildClusterDetailFromVM(vm vminfo.VMInfo, fast bool, runtime bool) (ClusterDetail, error) {
 	detail := buildBaseClusterDetail(vm)
 	if uri, err := resourceid.ClusterURI(s.shared.TenantID, vm.Name); err == nil {
 		detail.URI = uri.String()
@@ -61,7 +64,7 @@ func (s *HostOperationsService) buildClusterDetailFromVM(vm VMInfo, fast bool, r
 			if instanceType == "virtual-machine" {
 				instanceType = "vm"
 			}
-			_ = s.RegisterResource(detail.URI, map[string]any{
+			_ = s.shared.RegisterResource(detail.URI, map[string]any{
 				"providerInstanceName": vm.Name,
 				"vmName":               vm.Name,
 				"displayName":          vm.Name,
@@ -79,8 +82,8 @@ func (s *HostOperationsService) buildClusterDetailFromVM(vm VMInfo, fast bool, r
 	return detail, nil
 }
 
-func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
-	ipv4 := normalizeClusterIpv4(vm.IPv4)
+func buildBaseClusterDetail(vm vminfo.VMInfo) ClusterDetail {
+	ipv4 := vminfo.NormalizeClusterIPv4(vm.IPv4)
 	status := "Unknown"
 	if strings.EqualFold(vm.Status, "running") {
 		status = "Running"
@@ -121,11 +124,11 @@ func buildBaseClusterDetail(vm VMInfo) ClusterDetail {
 	return detail
 }
 
-func (s *HostOperationsService) enrichClusterDetailRuntimeByURI(targetURI string, detail ClusterDetail) (ClusterDetail, error) {
+func (s *Service) enrichClusterDetailRuntimeByURI(targetURI string, detail ClusterDetail) (ClusterDetail, error) {
 	if strings.TrimSpace(targetURI) == "" {
 		return detail, fmt.Errorf("canonical cluster URI is required for runtime discovery")
 	}
-	out, delegated, err := s.executeKubernetesProvider(KubernetesGetClusterInfoOperation, targetURI, nil)
+	out, delegated, err := s.deps.ExecuteKubernetesProvider(capabilitycontract.KubernetesGetClusterInfoOperation, targetURI, nil)
 	if !delegated {
 		return detail, fmt.Errorf("Kubernetes provider is required for runtime discovery")
 	}
@@ -195,7 +198,7 @@ func parseClusterNodes(output, fallbackName string) []ClusterNode {
 }
 
 func buildClusterAPIEndpoint(ipv4 []string) string {
-	normalized := normalizeClusterIpv4(ipv4)
+	normalized := vminfo.NormalizeClusterIPv4(ipv4)
 	if len(normalized) == 0 {
 		return "—"
 	}

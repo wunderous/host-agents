@@ -1,4 +1,4 @@
-package ops
+package cluster
 
 import (
 	"fmt"
@@ -69,23 +69,23 @@ func readGuestBridgeListenHost() string {
 // resolveCpcContainerBridgeIPv4 returns the Incus bridge IPv4 for a CPC system container
 // (e.g. opute-clean-k3s @ 10.0.100.131). QEMU guests reach platform hostPort on that IP,
 // not the host gateway at 10.0.100.1 where the guest-bridge relay may be unreachable.
-func (s *HostOperationsService) resolveCpcContainerBridgeIPv4() string {
+func (s *Service) resolveCpcContainerBridgeIPv4() string {
 	containerName := discoverCpcContainerName()
 	if containerName == "" {
 		return ""
 	}
-	instanceType, err := s.readIncusInstanceType(containerName)
+	instanceType, err := s.deps.ReadIncusInstanceType(containerName)
 	if err != nil || !strings.EqualFold(instanceType, "container") {
 		return ""
 	}
-	info, err := s.GetVMInfo(containerName, true)
+	ip, err := s.deps.BridgeIP(containerName)
 	if err != nil {
 		return ""
 	}
-	return firstBridgeIPv4(info.IPv4)
+	return ip
 }
 
-func (s *HostOperationsService) resolveGuestBridgeListenHost() string {
+func (s *Service) resolveGuestBridgeListenHost() string {
 	if host := strings.TrimSpace(os.Getenv("OPUTE_PLATFORM_GUEST_HOST")); host != "" {
 		return host
 	}
@@ -104,13 +104,13 @@ func discoverCpcContainerName() string {
 	return ""
 }
 
-func (s *HostOperationsService) ensureCpcContainerGuestBridgeProxy(containerName, listenHost string, port int, onData func(string)) error {
+func (s *Service) ensureCpcContainerGuestBridgeProxy(containerName, listenHost string, port int, onData func(string)) error {
 	containerName = strings.TrimSpace(containerName)
 	listenHost = strings.TrimSpace(listenHost)
 	if containerName == "" || listenHost == "" || port <= 0 {
 		return fmt.Errorf("invalid CPC guest bridge proxy target")
 	}
-	instanceType, err := s.readIncusInstanceType(containerName)
+	instanceType, err := s.deps.ReadIncusInstanceType(containerName)
 	if err != nil {
 		return err
 	}
@@ -122,12 +122,12 @@ func (s *HostOperationsService) ensureCpcContainerGuestBridgeProxy(containerName
 	if onData != nil {
 		onData(fmt.Sprintf("ensuring CPC guest bridge proxy on %s (%s:%d -> 127.0.0.1:%d)", containerName, listenHost, port, port))
 	}
-	return s.ensureIncusDevice(containerName, deviceName, []string{
+	return s.deps.EnsureIncusDevice(containerName, deviceName, []string{
 		"config", "device", "add", containerName, deviceName, "proxy", proxy,
 	})
 }
 
-func (s *HostOperationsService) ensureGuestBridgeReachability(bridgeURL string, bridgePort int, onData func(string)) error {
+func (s *Service) ensureGuestBridgeReachability(bridgeURL string, bridgePort int, onData func(string)) error {
 	port := bridgePort
 	if port <= 0 {
 		port = defaultBridgePort()
@@ -170,7 +170,7 @@ func (s *HostOperationsService) ensureGuestBridgeReachability(bridgeURL string, 
 	return s.ensureGuestBridgeRelay(listenHost, port, onData)
 }
 
-func (s *HostOperationsService) ensureGuestBridgeRelay(listenHost string, port int, onData func(string)) error {
+func (s *Service) ensureGuestBridgeRelay(listenHost string, port int, onData func(string)) error {
 	listenHost = strings.TrimSpace(listenHost)
 	if listenHost == "" || port <= 0 {
 		return fmt.Errorf("invalid guest bridge relay listen address")
@@ -192,4 +192,12 @@ func (s *HostOperationsService) ensureGuestBridgeRelay(listenHost string, port i
 		return nil
 	}
 	return err
+}
+
+// StopGuestBridgeRelays tears down every guest bridge forwarder. Callers use it
+// when the backing stack is going away.
+func (s *Service) StopGuestBridgeRelays() {
+	if s.guestBridgeRelay != nil {
+		s.guestBridgeRelay.StopAll()
+	}
 }

@@ -1,9 +1,13 @@
-package ops
+package cluster
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/wunderous/host-agents/internal/contract/vminfo"
+)
 
 func TestBuildBaseClusterDetailDoesNotInventRuntimeMetrics(t *testing.T) {
-	detail := buildBaseClusterDetail(VMInfo{
+	detail := buildBaseClusterDetail(vminfo.VMInfo{
 		Name:       "opute-dev-cnpg",
 		Status:     "Stopped",
 		ProviderID: "incus",

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -224,12 +223,12 @@ func (s *HostOperationsService) mapIncusListItem(item incusListItem, fast bool) 
 	}
 	if fast && len(info.IPv4) == 0 && status == "running" {
 		if ips, err := s.readIncusInstanceIPv4(item.Name); err == nil {
-			info.IPv4 = normalizeClusterIpv4(ips)
+			info.IPv4 = vminfo.NormalizeClusterIPv4(ips)
 		}
 	}
 	if !fast {
 		if ips, err := s.readIncusInstanceIPv4(item.Name); err == nil {
-			info.IPv4 = normalizeClusterIpv4(ips)
+			info.IPv4 = vminfo.NormalizeClusterIPv4(ips)
 		}
 		if info.CPUs == nil && agentReady != nil && *agentReady {
 			if cpus, err := s.readGuestCpuCount(item.Name); err == nil && cpus > 0 {
@@ -253,7 +252,7 @@ func buildVMInfoFromIncusListItem(item incusListItem, agentReady *bool) VMInfo {
 		Type:       mapIncusInstanceType(item.Type),
 		Status:     mapIncusStatus(item.Status),
 		State:      map[string]any{"incusStatus": item.Status},
-		IPv4:       normalizeClusterIpv4(extractIPv4FromState(item.State)),
+		IPv4:       vminfo.NormalizeClusterIPv4(extractIPv4FromState(item.State)),
 		Release:    extractIncusRelease(item),
 		ProviderID: "incus",
 		Memory:     memory,
@@ -505,46 +504,6 @@ func mapIncusStatus(status string) string {
 	default:
 		return strings.ToLower(strings.TrimSpace(status))
 	}
-}
-
-func getIpPreferenceScore(ip string) int {
-	normalized := strings.TrimSpace(strings.ToLower(ip))
-	switch normalized {
-	case "127.0.0.1", "::1", "localhost":
-		return 100
-	default:
-		if strings.HasPrefix(normalized, "10.42.") || strings.HasPrefix(normalized, "10.43.") || strings.HasPrefix(normalized, "fd42:") {
-			return 80
-		}
-		if strings.HasPrefix(normalized, "10.") || strings.HasPrefix(normalized, "192.168.") || strings.HasPrefix(normalized, "172.") {
-			return 40
-		}
-		return 0
-	}
-}
-
-func normalizeClusterIpv4(ips []string) []string {
-	if len(ips) == 0 {
-		return []string{}
-	}
-	seen := make(map[string]bool, len(ips))
-	unique := make([]string, 0, len(ips))
-	for _, ip := range ips {
-		trimmed := strings.TrimSpace(ip)
-		if trimmed == "" || seen[trimmed] {
-			continue
-		}
-		seen[trimmed] = true
-		unique = append(unique, trimmed)
-	}
-	sort.Slice(unique, func(i, j int) bool {
-		scoreDiff := getIpPreferenceScore(unique[i]) - getIpPreferenceScore(unique[j])
-		if scoreDiff != 0 {
-			return scoreDiff < 0
-		}
-		return unique[i] < unique[j]
-	})
-	return unique
 }
 
 func extractIPv4FromState(state map[string]any) []string {

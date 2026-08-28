@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wunderous/host-agents/internal/contract/vminfo"
+	"github.com/wunderous/host-agents/internal/domain/cluster"
 	"github.com/wunderous/host-agents/internal/domain/kubernetes"
 	"github.com/wunderous/host-agents/internal/domain/llm"
 	"github.com/wunderous/host-agents/internal/domain/oci"
@@ -20,15 +21,13 @@ import (
 	hostexec "github.com/wunderous/host-agents/internal/exec"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resourceid"
-	"github.com/wunderous/host-agents/internal/tcprelay"
 	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 const (
-	provisionVMTimeout      = 10 * time.Minute
-	clusterAgentServiceName = "opute-cluster-agent"
-	sqlConnectorMaxPerHost  = 32
-	sqlConnectorIdleDrain   = 120 * time.Second
+	provisionVMTimeout     = 10 * time.Minute
+	sqlConnectorMaxPerHost = 32
+	sqlConnectorIdleDrain  = 120 * time.Second
 )
 
 var clusterScopedK8sResources = map[string]bool{
@@ -52,7 +51,10 @@ type HostOperationsService struct {
 	ociSvc  *oci.Service
 	ociOnce sync.Once
 
-	guestBridgeRelay *tcprelay.Manager
+	// cluster is the cluster domain, built lazily -- see cluster_delegate.go. It
+	// owns the guest bridge relay listener, so it is one instance per service.
+	clusterSvc  *cluster.Service
+	clusterOnce sync.Once
 	// llm is the llm domain, built lazily -- see llm_delegate.go. It owns live
 	// relay listeners, so it is one instance per service.
 	llmSvc    *llm.Service
@@ -125,7 +127,6 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		resetCheckpointPath:    resolveResetCheckpointPath(opts.ResetCheckpointPath, opts.RelayConfigDir),
 		ociStoragePolicyPath:   strings.TrimSpace(opts.OciStoragePolicyPath),
 		sqliteDatabaseRoot:     strings.TrimSpace(opts.SQLiteDatabaseRoot),
-		guestBridgeRelay:       tcprelay.New(),
 		relayDirs:              [2]string{opts.RelayConfigDir, opts.SharedHostResourceLockDir},
 		postgresRelayConfigDir: postgresRelayConfigDir,
 	}
@@ -218,24 +219,6 @@ func (s *HostOperationsService) runVMExecWithStdinContext(ctx context.Context, v
 
 type VMListResult struct {
 	VMs []VMInfo `json:"vms"`
-}
-
-type VMInfo struct {
-	URI        string         `json:"uri"`
-	Kind       string         `json:"kind"`
-	Name       string         `json:"name"`
-	Type       string         `json:"type,omitempty"`
-	Status     string         `json:"status"`
-	State      map[string]any `json:"state"`
-	IPv4       []string       `json:"ipv4"`
-	Release    string         `json:"release"`
-	ProviderID string         `json:"providerId"`
-	CPUs       *int           `json:"cpus,omitempty"`
-	Memory     string         `json:"memory,omitempty"`
-	Disk       string         `json:"disk,omitempty"`
-	AgentReady *bool          `json:"agentReady,omitempty"`
-	// HostId is the owning host agent identity (durable execution owner).
-	HostId string `json:"hostId,omitempty"`
 }
 
 // --- VM lifecycle ---
@@ -720,22 +703,6 @@ func (s *HostOperationsService) getKubernetesList(vmName, resource, namespace st
 	return map[string]any{"items": items}, nil
 }
 
-// --- Cluster agent ---
-
-type InstallClusterAgentArgs struct {
-	VMName      string `json:"vmName,omitempty"`
-	ClusterID   string `json:"clusterId"`
-	ClusterName string `json:"clusterName"`
-	AgentID     string `json:"agentId"`
-	BridgeToken string `json:"bridgeToken"`
-	BridgeURL   string `json:"bridgeUrl,omitempty"`
-	BridgePort  int    `json:"bridgePort,omitempty"`
-	APIEndpoint string `json:"apiEndpoint,omitempty"`
-	ProviderID  string `json:"providerId,omitempty"`
-	ResourceID  string `json:"resourceId,omitempty"`
-	Source      string `json:"source,omitempty"`
-}
-
 // --- Host services / prerequisites ---
 
 // --- Bridge diagnostics ---
@@ -763,16 +730,6 @@ var (
 	errString     = textutil.ErrString
 )
 
-func resolveBridgeURLFromEnv() string {
-	for _, key := range []string{"OPUTE_PLATFORM_PUBLIC_URL", "OPUTE_PLATFORM_URL"} {
-		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-			return strings.TrimRight(v, "/")
-		}
-	}
-	port := hostruntime.EnvOr("PLATFORM_MCP_PORT", "9093")
-	return fmt.Sprintf("http://127.0.0.1:%s", port)
-}
-
 func k8sAge(creationTimestamp string) string {
 	if creationTimestamp == "" {
 		return "unknown"
@@ -792,3 +749,7 @@ func k8sAge(creationTimestamp string) string {
 	}
 	return fmt.Sprintf("%dd", hours/24)
 }
+
+// VMInfo lives in the vminfo contract package: incus produces it and cluster
+// and host read it. The alias keeps the dispatch layer unchanged.
+type VMInfo = vminfo.VMInfo
