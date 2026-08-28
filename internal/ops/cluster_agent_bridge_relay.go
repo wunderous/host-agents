@@ -153,7 +153,7 @@ func (s *HostOperationsService) ensureGuestBridgeReachability(bridgeURL string, 
 			return fmt.Errorf("guest bridge relay is not configured")
 		}
 		sessionID := fmt.Sprintf("guest-bridge:%s:%d->%s:%d", listenHost, port, targetHost, targetPort)
-		_, err := s.guestBridgeRelay.startRelay(sessionID, listenHost, port, targetHost, targetPort)
+		_, err := s.guestBridgeRelay.Start(sessionID, listenHost, port, targetHost, targetPort)
 		if err == nil {
 			if onData != nil {
 				onData(fmt.Sprintf("guest bridge relay listening on %s:%d -> %s:%d", listenHost, port, targetHost, targetPort))
@@ -180,7 +180,7 @@ func (s *HostOperationsService) ensureGuestBridgeRelay(listenHost string, port i
 	}
 
 	sessionID := fmt.Sprintf("guest-bridge:%s:%d", listenHost, port)
-	_, err := s.guestBridgeRelay.startRelay(sessionID, listenHost, port, "127.0.0.1", port)
+	_, err := s.guestBridgeRelay.Start(sessionID, listenHost, port, "127.0.0.1", port)
 	if err == nil {
 		if onData != nil {
 			onData(fmt.Sprintf("guest bridge relay listening on %s:%d -> 127.0.0.1:%d", listenHost, port, port))

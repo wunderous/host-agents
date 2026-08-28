@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/tcprelay"
 )
 
 func TestTCPRelayManagerTracksConcurrentConnections(t *testing.T) {
@@ -39,8 +41,8 @@ func TestTCPRelayManagerTracksConcurrentConnections(t *testing.T) {
 		}
 	}()
 
-	manager := newTCPRelayManager()
-	session, err := manager.startRelay(
+	manager := tcprelay.New()
+	session, err := manager.Start(
 		"concurrent-test",
 		"127.0.0.1",
 		0,
@@ -57,24 +59,24 @@ func TestTCPRelayManagerTracksConcurrentConnections(t *testing.T) {
 	const clientCount = 24
 	clients := make([]net.Conn, 0, clientCount)
 	for i := 0; i < clientCount; i++ {
-		client, dialErr := net.Dial("tcp", net.JoinHostPort(session.listenHost, strconv.Itoa(session.listenPort)))
+		client, dialErr := net.Dial("tcp", net.JoinHostPort(session.ListenHost, strconv.Itoa(session.ListenPort)))
 		if dialErr != nil {
-			manager.stopRelay(session.sessionID)
+			manager.Stop(session.SessionID)
 			t.Fatal(dialErr)
 		}
 		clients = append(clients, client)
 		if _, writeErr := client.Write([]byte("ping")); writeErr != nil {
-			manager.stopRelay(session.sessionID)
+			manager.Stop(session.SessionID)
 			t.Fatal(writeErr)
 		}
 		response := make([]byte, 4)
 		if _, readErr := io.ReadFull(client, response); readErr != nil {
-			manager.stopRelay(session.sessionID)
+			manager.Stop(session.SessionID)
 			t.Fatal(readErr)
 		}
 	}
 
-	manager.stopRelay(session.sessionID)
+	manager.Stop(session.SessionID)
 	for _, client := range clients {
 		_ = client.Close()
 	}

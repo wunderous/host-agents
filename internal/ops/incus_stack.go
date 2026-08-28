@@ -279,7 +279,7 @@ func (s *HostOperationsService) ResetIncusStack(ctx context.Context, args ResetI
 	// Stop in-process relays before deleting their target guests. This is
 	// revocation, not a best-effort cleanup after a destructive operation.
 	if s.guestBridgeRelay != nil {
-		s.guestBridgeRelay.stopAll()
+		s.guestBridgeRelay.StopAll()
 	}
 	if s.llmSvc != nil {
 		s.llm().StopRelays()

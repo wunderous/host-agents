@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +19,7 @@ import (
 	hostexec "github.com/wunderous/host-agents/internal/exec"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resourceid"
+	"github.com/wunderous/host-agents/internal/tcprelay"
 	"github.com/wunderous/host-agents/internal/textutil"
 )
 
@@ -53,7 +52,7 @@ type HostOperationsService struct {
 	ociOnce sync.Once
 
 	sqlSupervisor    *sqlConnectorSupervisor
-	guestBridgeRelay *tcpRelayManager
+	guestBridgeRelay *tcprelay.Manager
 	// llm is the llm domain, built lazily -- see llm_delegate.go. It owns live
 	// relay listeners, so it is one instance per service.
 	llmSvc                 *llm.Service
@@ -123,7 +122,7 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		ociStoragePolicyPath:   strings.TrimSpace(opts.OciStoragePolicyPath),
 		sqliteDatabaseRoot:     strings.TrimSpace(opts.SQLiteDatabaseRoot),
 		sqlSupervisor:          newSQLConnectorSupervisor(),
-		guestBridgeRelay:       newTCPRelayManager(),
+		guestBridgeRelay:       tcprelay.New(),
 		relayDirs:              [2]string{opts.RelayConfigDir, opts.SharedHostResourceLockDir},
 		postgresqlServiceRelay: newPersistentPostgreSQLServiceRelayManagerAt(postgresRelayConfigDir),
 	}
@@ -828,183 +827,8 @@ func k8sAge(creationTimestamp string) string {
 
 // --- TCP relay + SQL connector supervisor ---
 
-type tcpRelayManager struct {
-	mu            sync.Mutex
-	sessions      map[string]*relaySession
-	portToSession map[int]string
-}
-
-type relaySession struct {
-	sessionID  string
-	listenHost string
-	listenPort int
-	targetHost string
-	targetPort int
-	listener   net.Listener
-	activeMu   *sync.Mutex
-	active     map[net.Conn]struct{}
-}
-
-func (s *relaySession) track(conn net.Conn) {
-	s.activeMu.Lock()
-	s.active[conn] = struct{}{}
-	s.activeMu.Unlock()
-}
-
-func (s *relaySession) untrack(conn net.Conn) {
-	s.activeMu.Lock()
-	delete(s.active, conn)
-	s.activeMu.Unlock()
-}
-
-func (s *relaySession) activeConnections() []net.Conn {
-	s.activeMu.Lock()
-	defer s.activeMu.Unlock()
-	connections := make([]net.Conn, 0, len(s.active))
-	for conn := range s.active {
-		connections = append(connections, conn)
-	}
-	return connections
-}
-
-func newTCPRelayManager() *tcpRelayManager {
-	return &tcpRelayManager{
-		sessions:      make(map[string]*relaySession),
-		portToSession: make(map[int]string),
-	}
-}
-
-func (m *tcpRelayManager) startRelay(sessionID, listenHost string, listenPort int, targetHost string, targetPort int) (relaySession, error) {
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" {
-		return relaySession{}, errors.New("sessionId is required")
-	}
-	targetHost = strings.TrimSpace(targetHost)
-	if targetHost == "" {
-		return relaySession{}, errors.New("targetHost is required")
-	}
-	if listenHost == "" {
-		listenHost = "0.0.0.0"
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, exists := m.sessions[sessionID]; exists {
-		return relaySession{}, fmt.Errorf("TCP relay session '%s' is already active", sessionID)
-	}
-	if listenPort != 0 {
-		if sid, inUse := m.portToSession[listenPort]; inUse {
-			return relaySession{}, fmt.Errorf("TCP relay listen port %d is already in use by %s", listenPort, sid)
-		}
-	}
-
-	var lc net.ListenConfig
-	addr := fmt.Sprintf("%s:%d", listenHost, listenPort)
-	ln, err := lc.Listen(context.Background(), "tcp", addr)
-	if err != nil {
-		return relaySession{}, err
-	}
-	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
-	if !ok {
-		ln.Close()
-		return relaySession{}, errors.New("TCP relay failed to bind listener")
-	}
-
-	session := &relaySession{
-		sessionID:  sessionID,
-		listenHost: tcpAddr.IP.String(),
-		listenPort: tcpAddr.Port,
-		targetHost: targetHost,
-		targetPort: targetPort,
-		listener:   ln,
-		activeMu:   &sync.Mutex{},
-		active:     make(map[net.Conn]struct{}),
-	}
-	m.sessions[sessionID] = session
-	m.portToSession[session.listenPort] = sessionID
-
-	go m.acceptLoop(session)
-	return *session, nil
-}
-
-func (m *tcpRelayManager) acceptLoop(session *relaySession) {
-	for {
-		client, err := session.listener.Accept()
-		if err != nil {
-			return
-		}
-		go m.pipe(session, client)
-	}
-}
-
-func (m *tcpRelayManager) pipe(session *relaySession, client net.Conn) {
-	upstream, err := net.Dial("tcp", net.JoinHostPort(session.targetHost, strconv.Itoa(session.targetPort)))
-	if err != nil {
-		client.Close()
-		return
-	}
-	session.track(client)
-	session.track(upstream)
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(upstream, client)
-		closeWrite(upstream)
-	}()
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(client, upstream)
-		closeWrite(client)
-	}()
-	go func() {
-		wg.Wait()
-		upstream.Close()
-		client.Close()
-		session.untrack(client)
-		session.untrack(upstream)
-	}()
-}
-
-func closeWrite(conn net.Conn) {
-	if tcp, ok := conn.(*net.TCPConn); ok {
-		_ = tcp.CloseWrite()
-	}
-}
-
-func (m *tcpRelayManager) stopRelay(sessionID string) bool {
-	m.mu.Lock()
-	session, ok := m.sessions[sessionID]
-	if !ok {
-		m.mu.Unlock()
-		return false
-	}
-	delete(m.sessions, sessionID)
-	delete(m.portToSession, session.listenPort)
-	m.mu.Unlock()
-
-	for _, conn := range session.activeConnections() {
-		conn.Close()
-	}
-	session.listener.Close()
-	return true
-}
-
-func (m *tcpRelayManager) stopAll() {
-	m.mu.Lock()
-	ids := make([]string, 0, len(m.sessions))
-	for id := range m.sessions {
-		ids = append(ids, id)
-	}
-	m.mu.Unlock()
-	for _, id := range ids {
-		m.stopRelay(id)
-	}
-}
-
 type sqlConnectorSupervisor struct {
-	relay    *tcpRelayManager
+	relay    *tcprelay.Manager
 	mu       sync.Mutex
 	sessions map[string]*sqlConnectorSession
 }
@@ -1022,7 +846,7 @@ type sqlConnectorSession struct {
 
 func newSQLConnectorSupervisor() *sqlConnectorSupervisor {
 	return &sqlConnectorSupervisor{
-		relay:    newTCPRelayManager(),
+		relay:    tcprelay.New(),
 		sessions: make(map[string]*sqlConnectorSession),
 	}
 }
@@ -1062,7 +886,7 @@ func (s *sqlConnectorSupervisor) ensureConnector(args EnsureSQLConnectorArgs) (S
 	s.mu.Unlock()
 
 	sessionID := s.sessionIDForDatabase(databaseID)
-	relay, err := s.relay.startRelay(sessionID, args.ListenHost, args.ListenPort, args.TargetHost, args.TargetPort)
+	relay, err := s.relay.Start(sessionID, args.ListenHost, args.ListenPort, args.TargetHost, args.TargetPort)
 	if err != nil {
 		return SQLConnectorResult{}, err
 	}
@@ -1071,10 +895,10 @@ func (s *sqlConnectorSupervisor) ensureConnector(args EnsureSQLConnectorArgs) (S
 	s.sessions[databaseID] = &sqlConnectorSession{
 		databaseID: databaseID,
 		sessionID:  sessionID,
-		listenHost: relay.listenHost,
-		listenPort: relay.listenPort,
-		targetHost: relay.targetHost,
-		targetPort: relay.targetPort,
+		listenHost: relay.ListenHost,
+		listenPort: relay.ListenPort,
+		targetHost: relay.TargetHost,
+		targetPort: relay.TargetPort,
 		refCount:   1,
 	}
 	s.mu.Unlock()
@@ -1082,8 +906,8 @@ func (s *sqlConnectorSupervisor) ensureConnector(args EnsureSQLConnectorArgs) (S
 	return SQLConnectorResult{
 		DatabaseID: databaseID,
 		SessionID:  sessionID,
-		ListenHost: relay.listenHost,
-		ListenPort: relay.listenPort,
+		ListenHost: relay.ListenHost,
+		ListenPort: relay.ListenPort,
 		PathMode:   "host_tcp_relay",
 		RefCount:   1,
 	}, nil
@@ -1158,7 +982,7 @@ func (s *sqlConnectorSupervisor) drainSession(databaseID string) {
 	}
 	sessionID := session.sessionID
 	s.mu.Unlock()
-	s.relay.stopRelay(sessionID)
+	s.relay.Stop(sessionID)
 }
 
 func (s *sqlConnectorSupervisor) stopAll() error {
@@ -1172,6 +996,6 @@ func (s *sqlConnectorSupervisor) stopAll() error {
 	for _, id := range ids {
 		s.drainSession(id)
 	}
-	s.relay.stopAll()
+	s.relay.StopAll()
 	return nil
 }
