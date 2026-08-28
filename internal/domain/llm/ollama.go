@@ -1,4 +1,4 @@
-package ops
+package llm
 
 import (
 	"context"
@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 const (
@@ -101,7 +103,7 @@ func defaultOllamaRuntimeConfig() OllamaRuntimeConfig {
 	}
 	return OllamaRuntimeConfig{
 		Port:            port,
-		ModelRef:        firstNonEmpty(strings.TrimSpace(os.Getenv("OPUTE_OLLAMA_MODEL")), defaultOllamaModel),
+		ModelRef:        textutil.FirstNonEmpty(strings.TrimSpace(os.Getenv("OPUTE_OLLAMA_MODEL")), defaultOllamaModel),
 		BinaryPath:      binaryPath,
 		ModelsDirectory: strings.TrimSpace(os.Getenv("OLLAMA_MODELS")),
 		ContextSize:     ollamaContextSizeFromEnvironment(),
@@ -261,7 +263,7 @@ func renderOllamaSystemdUnit(cfg OllamaRuntimeConfig) (string, error) {
 	return strings.Join(lines, "\n") + "\n", nil
 }
 
-func (s *HostOperationsService) ensureOllamaRuntime(ctx context.Context, cfg OllamaRuntimeConfig) error {
+func (s *Service) ensureOllamaRuntime(ctx context.Context, cfg OllamaRuntimeConfig) error {
 	if runtime.GOOS != "linux" {
 		return fmt.Errorf("Ollama host runtime requires Linux or WSL2")
 	}
@@ -386,7 +388,7 @@ func waitForOllamaAPI(ctx context.Context, port int) error {
 	return fmt.Errorf("wait for shared Ollama API: %w", lastErr)
 }
 
-func (s *HostOperationsService) CheckOllamaPrerequisites() (*LocalLLMPrerequisitesResult, error) {
+func (s *Service) CheckOllamaPrerequisites() (*LocalLLMPrerequisitesResult, error) {
 	cfg := loadOllamaRuntimeConfig()
 	result := &LocalLLMPrerequisitesResult{
 		Supported:             runtime.GOOS == "linux",
@@ -399,7 +401,7 @@ func (s *HostOperationsService) CheckOllamaPrerequisites() (*LocalLLMPrerequisit
 		OllamaNumParallel:     ollamaNumParallel,
 		OllamaMaxLoadedModels: ollamaMaxLoadedModels,
 	}
-	if _, err := s.hostCommandRunner([]string{"systemctl", "--user", "show-environment"}, nil, 10*time.Second); err == nil {
+	if _, err := s.shared.HostCommandRunner([]string{"systemctl", "--user", "show-environment"}, nil, 10*time.Second); err == nil {
 		result.SystemdUserAvailable = true
 	}
 	if cfg.BinaryPath != "" {
@@ -407,7 +409,7 @@ func (s *HostOperationsService) CheckOllamaPrerequisites() (*LocalLLMPrerequisit
 			result.OllamaBinaryPresent = true
 		}
 	}
-	if res, err := s.hostCommandRunner([]string{"systemctl", "--user", "is-active", ollamaServiceName}, nil, 5*time.Second); err == nil {
+	if res, err := s.shared.HostCommandRunner([]string{"systemctl", "--user", "is-active", ollamaServiceName}, nil, 5*time.Second); err == nil {
 		result.OllamaServiceActive = strings.TrimSpace(res.Stdout) == "active"
 	}
 	// The runtime may be healthy under a provider-owned unit rather than the
@@ -436,7 +438,7 @@ func (s *HostOperationsService) CheckOllamaPrerequisites() (*LocalLLMPrerequisit
 	return result, nil
 }
 
-func (s *HostOperationsService) InstallOllamaModel(ctx context.Context, args InstallOllamaModelArgs) (*LocalLLMProbeResult, error) {
+func (s *Service) InstallOllamaModel(ctx context.Context, args InstallOllamaModelArgs) (*LocalLLMProbeResult, error) {
 	cfg := loadOllamaRuntimeConfig()
 	modelRef := strings.TrimSpace(args.ModelRef)
 	if !ollamaModelRefPattern.MatchString(modelRef) {
@@ -457,7 +459,7 @@ func (s *HostOperationsService) InstallOllamaModel(ctx context.Context, args Ins
 	if cfg.BinaryPath == "" {
 		return nil, fmt.Errorf("ollama binary is not installed")
 	}
-	if _, err := s.hostCommandRunnerContext(ctx, []string{cfg.BinaryPath, "pull", modelRef}, nil, 45*time.Minute); err != nil {
+	if _, err := s.shared.HostCommandRunnerContext(ctx, []string{cfg.BinaryPath, "pull", modelRef}, nil, 45*time.Minute); err != nil {
 		return nil, fmt.Errorf("pull Ollama model %q: %w", modelRef, err)
 	}
 	effectiveModelRef := modelRef
@@ -507,7 +509,7 @@ func warmOllamaModel(ctx context.Context, cfg OllamaRuntimeConfig, modelRef stri
 	}, nil)
 }
 
-func (s *HostOperationsService) StartOllamaRuntime(ctx context.Context) (*LocalLLMProbeResult, error) {
+func (s *Service) StartOllamaRuntime(ctx context.Context) (*LocalLLMProbeResult, error) {
 	cfg := loadOllamaRuntimeConfig()
 	if err := s.ensureOllamaRuntime(ctx, cfg); err != nil {
 		return nil, err
@@ -518,7 +520,7 @@ func (s *HostOperationsService) StartOllamaRuntime(ctx context.Context) (*LocalL
 // StopOllamaRuntime intentionally does not stop the shared service. A local
 // or public Platform instance must not take the host-wide runtime away from
 // another instance that is using it.
-func (s *HostOperationsService) StopOllamaRuntime(context.Context) error { return nil }
+func (s *Service) StopOllamaRuntime(context.Context) error { return nil }
 
 func ollamaModelContextAlias(modelRef string, contextSize int) string {
 	digest := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(modelRef))))
@@ -586,7 +588,7 @@ func ollamaAPIRequest(ctx context.Context, client *http.Client, root string, met
 	return json.NewDecoder(response.Body).Decode(destination)
 }
 
-func (s *HostOperationsService) readOllamaModelContext(ctx context.Context, cfg OllamaRuntimeConfig, modelRef string) (OllamaModelContextResult, error) {
+func (s *Service) readOllamaModelContext(ctx context.Context, cfg OllamaRuntimeConfig, modelRef string) (OllamaModelContextResult, error) {
 	modelRef = strings.TrimSpace(modelRef)
 	if !ollamaModelRefPattern.MatchString(modelRef) {
 		return OllamaModelContextResult{}, fmt.Errorf("invalid Ollama model reference")
@@ -644,7 +646,7 @@ func (s *HostOperationsService) readOllamaModelContext(ctx context.Context, cfg 
 
 // GetOllamaModelContext reads one model's persisted/effective context without
 // probing readiness, residency, or the OpenAI-compatible surface.
-func (s *HostOperationsService) GetOllamaModelContext(ctx context.Context, modelRef string) (*OllamaModelContextResult, error) {
+func (s *Service) GetOllamaModelContext(ctx context.Context, modelRef string) (*OllamaModelContextResult, error) {
 	cfg := loadOllamaRuntimeConfig()
 	if strings.TrimSpace(modelRef) == "" {
 		modelRef = cfg.ModelRef
@@ -660,7 +662,7 @@ func (s *HostOperationsService) GetOllamaModelContext(ctx context.Context, model
 // the host-owned runtime configuration. Ollama stores persistent parameters on
 // a model definition, so the implementation creates a deterministic managed
 // model reference and all callers can continue using the original reference.
-func (s *HostOperationsService) ConfigureOllamaModelContext(ctx context.Context, args ConfigureOllamaModelContextArgs) (*OllamaModelContextResult, error) {
+func (s *Service) ConfigureOllamaModelContext(ctx context.Context, args ConfigureOllamaModelContextArgs) (*OllamaModelContextResult, error) {
 	cfg := loadOllamaRuntimeConfig()
 	modelRef := strings.TrimSpace(args.ModelRef)
 	if !ollamaModelRefPattern.MatchString(modelRef) {
@@ -720,7 +722,7 @@ func (s *HostOperationsService) ConfigureOllamaModelContext(ctx context.Context,
 	return result, nil
 }
 
-func (s *HostOperationsService) ProbeOllama(ctx context.Context, args ProbeOllamaArgs) (*LocalLLMProbeResult, error) {
+func (s *Service) ProbeOllama(ctx context.Context, args ProbeOllamaArgs) (*LocalLLMProbeResult, error) {
 	cfg := loadOllamaRuntimeConfig()
 	if strings.TrimSpace(args.ModelRef) != "" {
 		cfg.ModelRef = strings.TrimSpace(args.ModelRef)

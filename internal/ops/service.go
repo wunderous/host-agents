@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/wunderous/host-agents/internal/domain/kubernetes"
+	"github.com/wunderous/host-agents/internal/domain/llm"
 	hostexec "github.com/wunderous/host-agents/internal/exec"
 	"github.com/wunderous/host-agents/internal/heartbeat"
 	"github.com/wunderous/host-agents/internal/hostruntime"
@@ -85,9 +86,13 @@ type HostOperationsService struct {
 	sqliteDatabaseRoot   string
 	ociStorageMu         sync.Mutex
 
-	sqlSupervisor          *sqlConnectorSupervisor
-	guestBridgeRelay       *tcpRelayManager
-	localLLMRelay          *localLLMRelayManager
+	sqlSupervisor    *sqlConnectorSupervisor
+	guestBridgeRelay *tcpRelayManager
+	// llm is the llm domain, built lazily -- see llm_delegate.go. It owns live
+	// relay listeners, so it is one instance per service.
+	llmSvc                 *llm.Service
+	llmOnce                sync.Once
+	relayDirs              [2]string
 	postgresqlServiceRelay *postgresqlServiceRelayManager
 	// container command seams keep runtime adapter tests independent of an
 	// installed host runtime. They are intentionally scoped to this service.
@@ -153,7 +158,7 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		sqliteDatabaseRoot:     strings.TrimSpace(opts.SQLiteDatabaseRoot),
 		sqlSupervisor:          newSQLConnectorSupervisor(),
 		guestBridgeRelay:       newTCPRelayManager(),
-		localLLMRelay:          newPersistentLocalLLMRelayManagerAtWithLock(opts.RelayConfigDir, opts.SharedHostResourceLockDir),
+		relayDirs:              [2]string{opts.RelayConfigDir, opts.SharedHostResourceLockDir},
 		postgresqlServiceRelay: newPersistentPostgreSQLServiceRelayManagerAt(postgresRelayConfigDir),
 	}
 }

@@ -1,4 +1,4 @@
-package ops
+package llm
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 func TestRenderOllamaSystemdUnitUsesSharedConcurrencyPolicy(t *testing.T) {
@@ -105,7 +107,7 @@ func TestConfigureOllamaModelContextPersistsGenericModelMapping(t *testing.T) {
 	}
 	t.Setenv("OPUTE_OLLAMA_PORT", strconv.Itoa(port))
 
-	service := &HostOperationsService{}
+	service := testService()
 	first, err := service.ConfigureOllamaModelContext(t.Context(), ConfigureOllamaModelContextArgs{
 		ModelRef:    "arbitrary/provider-model:latest",
 		ContextSize: 32768,
@@ -163,7 +165,7 @@ func TestConfigureOllamaModelContextPersistsGenericModelMapping(t *testing.T) {
 }
 
 func TestConfigureOllamaModelContextRejectsAbove32K(t *testing.T) {
-	_, err := (&HostOperationsService{}).ConfigureOllamaModelContext(t.Context(), ConfigureOllamaModelContextArgs{
+	_, err := (testService()).ConfigureOllamaModelContext(t.Context(), ConfigureOllamaModelContextArgs{
 		ModelRef:    "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M",
 		ContextSize: 65536,
 	})
@@ -199,7 +201,7 @@ func TestGetOllamaModelContextFallsBackToRunningContextLength(t *testing.T) {
 	}
 	t.Setenv("OPUTE_OLLAMA_PORT", strconv.Itoa(port))
 
-	result, err := (&HostOperationsService{}).GetOllamaModelContext(t.Context(), "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M")
+	result, err := (testService()).GetOllamaModelContext(t.Context(), "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,4 +347,21 @@ func TestRetireOllamaUnitRacedByExternalOwner(t *testing.T) {
 			t.Fatal("expected error when disable fails")
 		}
 	})
+}
+
+// testService builds the domain with deps that fail loudly. Ollama model
+// context handling is local to this domain -- it never publishes anything into
+// a cluster -- so a call into any dep means the boundary moved.
+func testService() *Service {
+	return New(&hostruntime.Shared{}, Deps{
+		KubernetesTargetURI: func(string) (string, error) {
+			panic("ollama tests must not reach the kubernetes domain")
+		},
+		ApplyManifest: func(string, string, func(string)) (map[string]any, error) {
+			panic("ollama tests must not reach the kubernetes domain")
+		},
+		DeleteK8sResource: func(string, string, string, string, func(string)) (map[string]any, error) {
+			panic("ollama tests must not reach the kubernetes domain")
+		},
+	}, "", "")
 }

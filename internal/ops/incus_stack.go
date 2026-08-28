@@ -281,8 +281,8 @@ func (s *HostOperationsService) ResetIncusStack(ctx context.Context, args ResetI
 	if s.guestBridgeRelay != nil {
 		s.guestBridgeRelay.stopAll()
 	}
-	if s.localLLMRelay != nil {
-		s.localLLMRelay.stopAll()
+	if s.llmSvc != nil {
+		s.llm().StopRelays()
 	}
 	if s.postgresqlServiceRelay != nil {
 		s.postgresqlServiceRelay.stopAll()

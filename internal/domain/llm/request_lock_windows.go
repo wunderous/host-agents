@@ -1,6 +1,6 @@
 //go:build windows
 
-package ops
+package llm
 
 import "context"
 

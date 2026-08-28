@@ -1,4 +1,4 @@
-package ops
+package llm
 
 import (
 	"context"
@@ -398,15 +398,15 @@ func (m *localLLMRelayManager) restore() {
 	}
 }
 
-func (s *HostOperationsService) EnsureLocalLLMRelay(ctx context.Context, args LocalLLMRelayArgs) (map[string]any, error) {
-	return s.localLLMRelay.start(ctx, args)
+func (s *Service) EnsureLocalLLMRelay(ctx context.Context, args LocalLLMRelayArgs) (map[string]any, error) {
+	return s.relay.start(ctx, args)
 }
 
-func (s *HostOperationsService) RemoveLocalLLMRelay(id string) (map[string]any, error) {
-	return map[string]any{"sessionId": id, "removed": s.localLLMRelay.stop(strings.TrimSpace(id))}, nil
+func (s *Service) RemoveLocalLLMRelay(id string) (map[string]any, error) {
+	return map[string]any{"sessionId": id, "removed": s.relay.stop(strings.TrimSpace(id))}, nil
 }
 
-func (s *HostOperationsService) EnsureLocalLLMK3sProxy(args LocalLLMK3sProxyArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) EnsureLocalLLMK3sProxy(args LocalLLMK3sProxyArgs, onData func(string)) (map[string]any, error) {
 	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
 		return nil, fmt.Errorf("vmName is invalid")
@@ -415,17 +415,17 @@ func (s *HostOperationsService) EnsureLocalLLMK3sProxy(args LocalLLMK3sProxyArgs
 	if err != nil {
 		return nil, err
 	}
-	targetURI, err := s.kubernetesTargetURI(vmName)
+	targetURI, err := s.deps.KubernetesTargetURI(vmName)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.ApplyManifest(ApplyManifestArgs{URI: targetURI, Manifest: manifest}, onData); err != nil {
+	if _, err := s.deps.ApplyManifest(targetURI, manifest, onData); err != nil {
 		return nil, err
 	}
 	return map[string]any{"vmName": vmName, "nodePort": args.NodePort, "namespace": args.Namespace, "serviceName": args.ServiceName, "ready": true}, nil
 }
 
-func (s *HostOperationsService) RemoveLocalLLMK3sProxy(vmName, namespace string) (map[string]any, error) {
+func (s *Service) RemoveLocalLLMK3sProxy(vmName, namespace string) (map[string]any, error) {
 	vmName = strings.TrimSpace(vmName)
 	if !safeGatewayIdentifier.MatchString(vmName) {
 		return nil, fmt.Errorf("vmName is invalid")
@@ -438,11 +438,11 @@ func (s *HostOperationsService) RemoveLocalLLMK3sProxy(vmName, namespace string)
 	if !safeGatewayIdentifier.MatchString(strings.ToLower(namespace)) {
 		return nil, fmt.Errorf("namespace is invalid")
 	}
-	targetURI, err := s.kubernetesTargetURI(vmName)
+	targetURI, err := s.deps.KubernetesTargetURI(vmName)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.DeleteK8sResource(K8sResourceArgs{URI: targetURI, Kind: "namespace", ResourceName: namespace}, nil); err != nil {
+	if _, err := s.deps.DeleteK8sResource(targetURI, "namespace", namespace, "", nil); err != nil {
 		return nil, err
 	}
 	return map[string]any{"vmName": vmName, "namespace": namespace, "removed": true}, nil

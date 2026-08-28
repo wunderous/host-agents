@@ -1,4 +1,4 @@
-package ops
+package llm
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 // CheckLlamaServerPrerequisites is the production capability probe. It is
 // reports only the llama-server capability and never probes an alternate
 // serving runtime.
-func (s *HostOperationsService) CheckLlamaServerPrerequisites() (*LocalLLMPrerequisitesResult, error) {
+func (s *Service) CheckLlamaServerPrerequisites() (*LocalLLMPrerequisitesResult, error) {
 	cfg := loadLlamaServerConfig()
 	result := &LocalLLMPrerequisitesResult{
 		Supported:            runtime.GOOS == "linux",
@@ -22,7 +22,7 @@ func (s *HostOperationsService) CheckLlamaServerPrerequisites() (*LocalLLMPrereq
 		CPUCount:             runtime.NumCPU(),
 		ModelsDirectory:      filepath.Dir(cfg.ArtifactPath),
 	}
-	if _, err := s.hostCommandRunner([]string{"systemctl", "--user", "show-environment"}, nil, 10*time.Second); err == nil {
+	if _, err := s.shared.HostCommandRunner([]string{"systemctl", "--user", "show-environment"}, nil, 10*time.Second); err == nil {
 		result.SystemdUserAvailable = true
 	}
 	if _, err := os.Stat(cfg.BinaryPath); err == nil {
@@ -32,10 +32,10 @@ func (s *HostOperationsService) CheckLlamaServerPrerequisites() (*LocalLLMPrereq
 	result.LlamaServerBinarySource = cfg.BinarySource
 	result.LlamaServerBuildRevision = cfg.SourceRevision
 	result.LlamaServerBinarySHA256 = cfg.BinarySHA256
-	if res, err := s.hostCommandRunner([]string{"systemctl", "--user", "is-active", "opute-llama-server.service"}, nil, 5*time.Second); err == nil {
+	if res, err := s.shared.HostCommandRunner([]string{"systemctl", "--user", "is-active", "opute-llama-server.service"}, nil, 5*time.Second); err == nil {
 		result.LlamaServerServiceActive = strings.TrimSpace(res.Stdout) == "active"
 	}
-	if res, err := s.hostCommandRunner(append(nvidiaSmiCommand(), "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"), nil, 5*time.Second); err == nil && res.ExitCode == 0 {
+	if res, err := s.shared.HostCommandRunner(append(nvidiaSmiCommand(), "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"), nil, 5*time.Second); err == nil && res.ExitCode == 0 {
 		line := strings.TrimSpace(strings.Split(res.Stdout, "\n")[0])
 		parts := strings.Split(line, ",")
 		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
@@ -93,7 +93,7 @@ func (s *HostOperationsService) CheckLlamaServerPrerequisites() (*LocalLLMPrereq
 	return result, nil
 }
 
-func hostCommandAvailable(s *HostOperationsService, name string) bool {
-	result, err := s.hostCommandRunner([]string{"bash", "-lc", "command -v " + llamaShellQuote(name)}, nil, 5*time.Second)
+func hostCommandAvailable(s *Service, name string) bool {
+	result, err := s.shared.HostCommandRunner([]string{"bash", "-lc", "command -v " + llamaShellQuote(name)}, nil, 5*time.Second)
 	return err == nil && result.ExitCode == 0 && strings.TrimSpace(result.Stdout) != ""
 }

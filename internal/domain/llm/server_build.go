@@ -1,4 +1,4 @@
-package ops
+package llm
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 // BuildLlamaServerBinaryArgs describes the only supported production binary
@@ -66,7 +68,7 @@ func managedLlamaPath(home, requested, defaultPath string) (string, error) {
 // EnsureLlamaServerBinary downloads, verifies, builds, and verifies a CUDA
 // llama-server binary. All side effects remain inside host-agent-managed
 // directories and are observable through the MCP operation stream.
-func (s *HostOperationsService) EnsureLlamaServerBinary(ctx context.Context, args BuildLlamaServerBinaryArgs, onData func(string)) (*LlamaServerBinaryBuildResult, error) {
+func (s *Service) EnsureLlamaServerBinary(ctx context.Context, args BuildLlamaServerBinaryArgs, onData func(string)) (*LlamaServerBinaryBuildResult, error) {
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("CUDA llama-server builds require a Linux host")
 	}
@@ -106,7 +108,7 @@ func (s *HostOperationsService) EnsureLlamaServerBinary(ctx context.Context, arg
 	}
 	missingTools := make([]string, 0, 3)
 	for _, tool := range []string{"cmake", "ninja", "nvcc"} {
-		check, checkErr := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", "command -v " + llamaShellQuote(tool)}, nil, 5*time.Second)
+		check, checkErr := s.shared.HostCommandRunnerContext(ctx, []string{"bash", "-lc", "command -v " + llamaShellQuote(tool)}, nil, 5*time.Second)
 		if checkErr != nil || check.ExitCode != 0 || strings.TrimSpace(check.Stdout) == "" {
 			missingTools = append(missingTools, tool)
 		}
@@ -148,24 +150,24 @@ install -m 0755 %s/bin/llama-server %s
 		llamaShellQuote(buildRoot), llamaShellQuote(sourceRoot), llamaShellQuote(buildRoot), llamaShellQuote(sourceRoot), llamaShellQuote(buildRoot),
 		llamaShellQuote(archivePath), llamaShellQuote(sourceRoot), llamaShellQuote(sourceRoot), llamaShellQuote(buildRoot), archFlag,
 		llamaShellQuote(buildRoot), llamaShellQuote(buildRoot), llamaShellQuote(filepath.Dir(outputPath)), llamaShellQuote(buildRoot), llamaShellQuote(outputPath))
-	buildResult, buildErr := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", buildScript}, onData, 45*time.Minute)
+	buildResult, buildErr := s.shared.HostCommandRunnerContext(ctx, []string{"bash", "-lc", buildScript}, onData, 45*time.Minute)
 	if buildErr != nil {
 		return nil, fmt.Errorf("build CUDA llama-server: %w", buildErr)
 	}
 	if buildResult.ExitCode != 0 {
-		message := strings.TrimSpace(firstNonEmpty(buildResult.Stderr, buildResult.Stdout))
+		message := strings.TrimSpace(textutil.FirstNonEmpty(buildResult.Stderr, buildResult.Stdout))
 		if message == "" {
 			message = fmt.Sprintf("exit code %d", buildResult.ExitCode)
 		}
 		return nil, fmt.Errorf("build CUDA llama-server: %s", message)
 	}
 
-	versionResult, err := s.hostCommandRunnerContext(ctx, []string{outputPath, "--version"}, onData, 30*time.Second)
+	versionResult, err := s.shared.HostCommandRunnerContext(ctx, []string{outputPath, "--version"}, onData, 30*time.Second)
 	if err != nil || versionResult.ExitCode != 0 {
 		if err != nil {
 			return nil, fmt.Errorf("verify llama-server binary version: %w", err)
 		}
-		message := strings.TrimSpace(firstNonEmpty(versionResult.Stderr, versionResult.Stdout))
+		message := strings.TrimSpace(textutil.FirstNonEmpty(versionResult.Stderr, versionResult.Stdout))
 		if message == "" {
 			message = fmt.Sprintf("exit code %d", versionResult.ExitCode)
 		}
@@ -174,7 +176,7 @@ install -m 0755 %s/bin/llama-server %s
 	// llama.cpp has emitted a successful --version response on stderr in some
 	// builds. Treat either stream as the version output; exit status remains the
 	// authoritative failure signal above.
-	version := strings.TrimSpace(firstNonEmpty(versionResult.Stdout, versionResult.Stderr))
+	version := strings.TrimSpace(textutil.FirstNonEmpty(versionResult.Stdout, versionResult.Stderr))
 	if version == "" {
 		return nil, fmt.Errorf("llama-server binary returned an empty version")
 	}
@@ -211,8 +213,8 @@ install -m 0755 %s/bin/llama-server %s
 // CUDA capability bit. Build results and control-plane payloads are metadata;
 // the managed executable must itself contain CUDA linkage before it can be
 // used for production serving.
-func (s *HostOperationsService) verifyLlamaServerCudaLinkage(ctx context.Context, path string) (bool, error) {
-	linkResult, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", fmt.Sprintf("set -o pipefail; { ldd %s 2>/dev/null || true; strings %s 2>/dev/null || true; }", llamaShellQuote(path), llamaShellQuote(path))}, nil, 30*time.Second)
+func (s *Service) verifyLlamaServerCudaLinkage(ctx context.Context, path string) (bool, error) {
+	linkResult, err := s.shared.HostCommandRunnerContext(ctx, []string{"bash", "-lc", fmt.Sprintf("set -o pipefail; { ldd %s 2>/dev/null || true; strings %s 2>/dev/null || true; }", llamaShellQuote(path), llamaShellQuote(path))}, nil, 30*time.Second)
 	if err != nil {
 		return false, fmt.Errorf("inspect llama-server CUDA linkage: %w", err)
 	}

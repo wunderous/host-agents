@@ -1,4 +1,4 @@
-package ops
+package llm
 
 import (
 	"context"
@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 // LlamaServerConfig is the host-owned, durable serving manifest. The host
@@ -469,7 +471,7 @@ func llamaSystemdQuote(value string) string {
 	return `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
 }
 
-func (s *HostOperationsService) startLlamaServerRuntime(ctx context.Context, cfg LlamaServerConfig) error {
+func (s *Service) startLlamaServerRuntime(ctx context.Context, cfg LlamaServerConfig) error {
 	if err := validateLlamaServerConfig(cfg); err != nil {
 		return err
 	}
@@ -481,12 +483,12 @@ func (s *HostOperationsService) startLlamaServerRuntime(ctx context.Context, cfg
 	if err := s.StopLlamaServerRuntime(ctx); err != nil {
 		return fmt.Errorf("unload current llama-server generation model: %w", err)
 	}
-	gpuCheck, gpuErr := s.hostCommandRunnerContext(ctx, nvidiaSmiCommand(), nil, 10*time.Second)
+	gpuCheck, gpuErr := s.shared.HostCommandRunnerContext(ctx, nvidiaSmiCommand(), nil, 10*time.Second)
 	if gpuErr != nil || gpuCheck.ExitCode != 0 {
 		if gpuErr != nil {
 			return fmt.Errorf("llama-server GPU verification failed: %w", gpuErr)
 		}
-		return fmt.Errorf("llama-server GPU verification failed: %s", strings.TrimSpace(firstNonEmpty(gpuCheck.Stderr, gpuCheck.Stdout)))
+		return fmt.Errorf("llama-server GPU verification failed: %s", strings.TrimSpace(textutil.FirstNonEmpty(gpuCheck.Stderr, gpuCheck.Stdout)))
 	}
 	if err := saveLlamaServerConfig(cfg); err != nil {
 		return err
@@ -538,7 +540,7 @@ func (s *HostOperationsService) startLlamaServerRuntime(ctx context.Context, cfg
 // masking a failed llama-server start. Only listeners that are themselves
 // recognizable Opute local-LLM processes may be terminated; an unknown owner
 // is a hard failure that requires explicit operator investigation.
-func (s *HostOperationsService) releaseRecognizedLlamaPort(ctx context.Context, cfg LlamaServerConfig) (bool, error) {
+func (s *Service) releaseRecognizedLlamaPort(ctx context.Context, cfg LlamaServerConfig) (bool, error) {
 	command := fmt.Sprintf(`set -o pipefail
 ss -ltnp '( sport = :%d )' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u | while read -r pid; do
 	  [ -n "$pid" ] || continue
@@ -546,7 +548,7 @@ ss -ltnp '( sport = :%d )' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p'
 	  tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true
 	  printf '\n'
 done`, cfg.Port)
-	result, err := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", command}, nil, 10*time.Second)
+	result, err := s.shared.HostCommandRunnerContext(ctx, []string{"bash", "-lc", command}, nil, 10*time.Second)
 	if err != nil {
 		return false, fmt.Errorf("inspect llama-server port ownership: %w", err)
 	}
@@ -568,7 +570,7 @@ done`, cfg.Port)
 			return false, fmt.Errorf("llama-server port %d is occupied by an unowned process pid=%s cmd=%s", cfg.Port, pid, cmdline)
 		}
 		killCommand := fmt.Sprintf("kill -TERM %s 2>/dev/null || true", llamaShellQuote(pid))
-		if _, killErr := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", killCommand}, nil, 5*time.Second); killErr != nil {
+		if _, killErr := s.shared.HostCommandRunnerContext(ctx, []string{"bash", "-lc", killCommand}, nil, 5*time.Second); killErr != nil {
 			return false, fmt.Errorf("stop stale Opute local-LLM process pid=%s: %w", pid, killErr)
 		}
 		released = true
@@ -578,7 +580,7 @@ done`, cfg.Port)
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		check, checkErr := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", fmt.Sprintf("ss -ltn '( sport = :%d )' 2>/dev/null | tail -n +2", cfg.Port)}, nil, 5*time.Second)
+		check, checkErr := s.shared.HostCommandRunnerContext(ctx, []string{"bash", "-lc", fmt.Sprintf("ss -ltn '( sport = :%d )' 2>/dev/null | tail -n +2", cfg.Port)}, nil, 5*time.Second)
 		if checkErr == nil && strings.TrimSpace(check.Stdout) == "" {
 			return released, nil
 		}
@@ -591,7 +593,7 @@ done`, cfg.Port)
 	return false, fmt.Errorf("stale Opute local-LLM process still owns port %d after termination request", cfg.Port)
 }
 
-func (s *HostOperationsService) InstallLlamaServerModel(ctx context.Context, args InstallLlamaServerModelArgs) (*LocalLLMProbeResult, error) {
+func (s *Service) InstallLlamaServerModel(ctx context.Context, args InstallLlamaServerModelArgs) (*LocalLLMProbeResult, error) {
 	cfg := loadLlamaServerConfig()
 	cfg.ModelRef, cfg.ArtifactPath, cfg.ArtifactURI, cfg.ArtifactSHA256 = strings.TrimSpace(args.ModelRef), strings.TrimSpace(args.ArtifactPath), strings.TrimSpace(args.ArtifactURI), strings.TrimSpace(args.ArtifactSHA256)
 	cfg.BaseModel, cfg.Revision, cfg.TokenizerRevision = strings.TrimSpace(args.BaseModel), strings.TrimSpace(args.Revision), strings.TrimSpace(args.TokenizerRevision)
@@ -721,7 +723,7 @@ func (s *HostOperationsService) InstallLlamaServerModel(ctx context.Context, arg
 	return result, nil
 }
 
-func (s *HostOperationsService) StartLlamaServerRuntime(ctx context.Context) (*LocalLLMProbeResult, error) {
+func (s *Service) StartLlamaServerRuntime(ctx context.Context) (*LocalLLMProbeResult, error) {
 	cfg := loadLlamaServerConfig()
 	if err := s.startLlamaServerRuntime(ctx, cfg); err != nil {
 		return nil, err
@@ -736,7 +738,7 @@ func (s *HostOperationsService) StartLlamaServerRuntime(ctx context.Context) (*L
 	return result, nil
 }
 
-func (s *HostOperationsService) StopLlamaServerRuntime(ctx context.Context) error {
+func (s *Service) StopLlamaServerRuntime(ctx context.Context) error {
 	output, err := systemctlUser(ctx, "disable", "--now", "opute-llama-server.service").CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))
@@ -749,7 +751,7 @@ func (s *HostOperationsService) StopLlamaServerRuntime(ctx context.Context) erro
 	return nil
 }
 
-func (s *HostOperationsService) ProbeLlamaServer(ctx context.Context, args ProbeLlamaServerArgs) (*LocalLLMProbeResult, error) {
+func (s *Service) ProbeLlamaServer(ctx context.Context, args ProbeLlamaServerArgs) (*LocalLLMProbeResult, error) {
 	cfg := loadLlamaServerConfig()
 	if strings.TrimSpace(args.ModelRef) != "" {
 		cfg.ModelRef = strings.TrimSpace(args.ModelRef)
