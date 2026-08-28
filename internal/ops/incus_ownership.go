@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 const (
@@ -33,21 +35,9 @@ type IncusOwnershipMismatchError struct {
 	Remediation      string `json:"remediation"`
 }
 
-type SharedHostOwnershipError struct {
-	Code             string `json:"code"`
-	ExpectedInstance string `json:"expectedInstance"`
-	ActualInstance   string `json:"actualInstance"`
-	Operation        string `json:"operation"`
-	Remediation      string `json:"remediation"`
-}
-
-func (e *SharedHostOwnershipError) Error() string {
-	encoded, err := json.Marshal(e)
-	if err == nil {
-		return string(encoded)
-	}
-	return fmt.Sprintf("shared_host_ownership_required: %s must be performed by %s", e.Operation, e.ExpectedInstance)
-}
+// SharedHostOwnershipError is owned by hostruntime: shared-host ownership is
+// an identity concern, and both incus and host operations report it.
+type SharedHostOwnershipError = hostruntime.SharedHostOwnershipError
 
 func (e *IncusOwnershipMismatchError) Error() string {
 	if e == nil {
@@ -61,7 +51,7 @@ func (e *IncusOwnershipMismatchError) Error() string {
 }
 
 func (s *HostOperationsService) ownershipEnabled() bool {
-	return strings.TrimSpace(s.instanceID) != ""
+	return strings.TrimSpace(s.shared.InstanceID) != ""
 }
 
 func (s *HostOperationsService) readIncusOwner(vmName string) (string, error) {
@@ -80,14 +70,14 @@ func (s *HostOperationsService) readIncusOwner(vmName string) (string, error) {
 
 func (s *HostOperationsService) assertIncusOwnership(vmName, operation string) error {
 	vmName = strings.TrimSpace(vmName)
-	if vmName == "" || !s.ownershipEnabled() || s.ownershipMode != "enforce" {
+	if vmName == "" || !s.ownershipEnabled() || s.shared.OwnershipMode != "enforce" {
 		return nil
 	}
 	owner, err := s.readIncusOwner(vmName)
 	if err != nil {
 		return err
 	}
-	if owner == s.instanceID {
+	if owner == s.shared.InstanceID {
 		return nil
 	}
 	actual := owner
@@ -97,7 +87,7 @@ func (s *HostOperationsService) assertIncusOwnership(vmName, operation string) e
 	return &IncusOwnershipMismatchError{
 		Code:             "incus_ownership_mismatch",
 		VMName:           vmName,
-		ExpectedInstance: s.instanceID,
+		ExpectedInstance: s.shared.InstanceID,
 		ActualOwner:      actual,
 		Operation:        strings.TrimSpace(operation),
 		Remediation:      "Select the owning host agent or use the approved adoption workflow.",
@@ -105,30 +95,20 @@ func (s *HostOperationsService) assertIncusOwnership(vmName, operation string) e
 }
 
 func (s *HostOperationsService) ownedIncusItem(item incusListItem) bool {
-	if !s.ownershipEnabled() || s.ownershipMode != "enforce" {
+	if !s.ownershipEnabled() || s.shared.OwnershipMode != "enforce" {
 		return true
 	}
-	return pickIncusConfigValue(item, oputeIncusOwnerLabel) == s.instanceID
+	return pickIncusConfigValue(item, oputeIncusOwnerLabel) == s.shared.InstanceID
 }
 
 func (s *HostOperationsService) ownerConfigValue() string {
-	return strings.TrimSpace(s.instanceID)
+	return strings.TrimSpace(s.shared.InstanceID)
 }
 
 func (s *HostOperationsService) ownerAgentConfigValue() string {
-	return strings.TrimSpace(s.agentID)
+	return strings.TrimSpace(s.shared.AgentID)
 }
 
 func (s *HostOperationsService) requireSharedHostOwner(operation string) error {
-	expected := strings.TrimSpace(s.sharedHostOwnerInstance)
-	if expected == "" || strings.TrimSpace(s.instanceID) == expected {
-		return nil
-	}
-	return &SharedHostOwnershipError{
-		Code:             "shared_host_ownership_required",
-		ExpectedInstance: expected,
-		ActualInstance:   s.instanceID,
-		Operation:        strings.TrimSpace(operation),
-		Remediation:      "Select the shared-host owner instance or use the approved operator workflow.",
-	}
+	return s.shared.RequireSharedHostOwner(operation)
 }

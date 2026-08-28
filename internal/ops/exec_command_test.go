@@ -39,7 +39,7 @@ func TestRunInstanceCommandResolvesContainerURIWithoutVMFallback(t *testing.T) {
 	}
 	svc := NewHostOperationsService(Options{TenantID: "tenant-a", ResourceRegistry: registry})
 	var got []string
-	svc.commandRunnerFn = func(args []string, _ func(string), _ time.Duration) (hostexec.Result, error) {
+	svc.shared.CommandRunnerFn = func(args []string, _ func(string), _ time.Duration) (hostexec.Result, error) {
 		got = append([]string(nil), args...)
 		return hostexec.Result{ExitCode: 0, Stdout: "ready\n"}, nil
 	}

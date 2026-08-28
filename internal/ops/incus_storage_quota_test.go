@@ -99,7 +99,7 @@ func TestPoolEnforcesQuota(t *testing.T) {
 func stubQuotaService(t *testing.T, driver, source string) *HostOperationsService {
 	t.Helper()
 	service := &HostOperationsService{}
-	service.commandRunnerFn = func(args []string, _ func(string), _ time.Duration) (exec.Result, error) {
+	service.shared.CommandRunnerFn = func(args []string, _ func(string), _ time.Duration) (exec.Result, error) {
 		joined := strings.Join(args, " ")
 		switch {
 		case strings.Contains(joined, "/1.0/profiles/default"):

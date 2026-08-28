@@ -506,10 +506,7 @@ func (s *HostOperationsService) resolveContainerRuntime(ctx context.Context, req
 }
 
 func (s *HostOperationsService) containerLookPath(command string) (string, error) {
-	if s != nil && s.containerLookPathFn != nil {
-		return s.containerLookPathFn(command)
-	}
-	return lookPath(command)
+	return s.shared.ContainerLookPath(command)
 }
 
 func (s *HostOperationsService) runContainerCommand(ctx context.Context, command string, args ...string) ([]byte, error) {
@@ -526,10 +523,8 @@ func (s *HostOperationsService) runContainerStreamingCommand(ctx context.Context
 	return runStreamingCommand(execCommand(ctx, command, args...), onData)
 }
 
-// These variables keep command lookup/execution replaceable in focused unit
-// tests without changing the production adapter contract.
-var lookPath = func(command string) (string, error) { return execLookPath(command) }
-
+// These variables keep command execution replaceable in focused unit tests
+// without changing the production adapter contract.
 var runCommand = func(ctx context.Context, command string, args ...string) ([]byte, error) {
 	cmd := execCommand(ctx, command, args...)
 	output, err := cmd.CombinedOutput()

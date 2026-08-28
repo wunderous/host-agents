@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/wunderous/host-agents/internal/cordis"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
@@ -18,12 +19,10 @@ const (
 // ResourceRegistry is the narrow persistence boundary needed by resolution.
 // Keeping it as an interface lets provider operations use the same resolver
 // with standalone SQLite and test fakes without coupling them to SQL.
-type ResourceRegistry interface {
-	UpsertResource(record resourceid.Record) error
-	GetResource(uri string) (resourceid.Record, bool, error)
-	DeleteResource(uri string) error
-	ListResources(resourceType, tenantID string) ([]resourceid.Record, error)
-}
+// It lives in hostruntime: every domain persists what it creates, and the
+// interface names no domain type. This alias keeps the existing spelling for
+// the ops callers that have not moved yet.
+type ResourceRegistry = hostruntime.ResourceRegistry
 
 type ResourceRegistryService struct {
 	Registry ResourceRegistry
@@ -103,7 +102,7 @@ type Coordinates struct {
 
 func (s *HostOperationsService) SetResourceRegistry(registry ResourceRegistry) {
 	if s != nil {
-		s.resourceRegistry = registry
+		s.shared.ResourceRegistry = registry
 	}
 }
 
@@ -111,7 +110,7 @@ func (s *HostOperationsService) ResourceRegistry() ResourceRegistry {
 	if s == nil {
 		return nil
 	}
-	return s.resourceRegistry
+	return s.shared.ResourceRegistry
 }
 
 func (s *HostOperationsService) ResolveResource(uri, wantType string) (Coordinates, error) {
@@ -119,16 +118,16 @@ func (s *HostOperationsService) ResolveResource(uri, wantType string) (Coordinat
 	if err != nil {
 		return Coordinates{}, err
 	}
-	if tenant := strings.TrimSpace(s.tenantID); tenant != "" && parsed.TenantID != tenant {
+	if tenant := strings.TrimSpace(s.shared.TenantID); tenant != "" && parsed.TenantID != tenant {
 		return Coordinates{}, fmt.Errorf("%w: active tenant %q", resourceid.ErrForeignTenant, tenant)
 	}
 	if wantType != "" && parsed.ResourceType != wantType {
 		return Coordinates{}, fmt.Errorf("%w: expected %q, got %q", resourceid.ErrInvalidURI, wantType, parsed.ResourceType)
 	}
-	if s.resourceRegistry == nil {
+	if s.shared.ResourceRegistry == nil {
 		return Coordinates{}, errors.New("resource registry is not configured")
 	}
-	record, found, err := s.resourceRegistry.GetResource(parsed.String())
+	record, found, err := s.shared.ResourceRegistry.GetResource(parsed.String())
 	if err != nil {
 		return Coordinates{}, fmt.Errorf("resolve resource %s: %w", parsed, err)
 	}
@@ -153,7 +152,7 @@ func (s *HostOperationsService) ResolveResource(uri, wantType string) (Coordinat
 			if registerErr := s.RegisterResource(parsed.String(), coordinates); registerErr != nil {
 				return Coordinates{}, registerErr
 			}
-			record, found, err = s.resourceRegistry.GetResource(parsed.String())
+			record, found, err = s.shared.ResourceRegistry.GetResource(parsed.String())
 			if err != nil {
 				return Coordinates{}, err
 			}
@@ -178,7 +177,7 @@ func (s *HostOperationsService) ResolveResource(uri, wantType string) (Coordinat
 		}); registerErr != nil {
 			return Coordinates{}, registerErr
 		}
-		record, found, err = s.resourceRegistry.GetResource(parsed.String())
+		record, found, err = s.shared.ResourceRegistry.GetResource(parsed.String())
 		if err != nil {
 			return Coordinates{}, err
 		}
@@ -194,13 +193,13 @@ func (s *HostOperationsService) RegisterResource(uri string, coordinates map[str
 	if err != nil {
 		return err
 	}
-	if tenant := strings.TrimSpace(s.tenantID); tenant != "" && parsed.TenantID != tenant {
+	if tenant := strings.TrimSpace(s.shared.TenantID); tenant != "" && parsed.TenantID != tenant {
 		return fmt.Errorf("%w: active tenant %q", resourceid.ErrForeignTenant, tenant)
 	}
-	if s.resourceRegistry == nil {
+	if s.shared.ResourceRegistry == nil {
 		return errors.New("resource registry is not configured")
 	}
-	return s.resourceRegistry.UpsertResource(resourceid.Record{
+	return s.shared.ResourceRegistry.UpsertResource(resourceid.Record{
 		URI: parsed.String(), ResourceType: parsed.ResourceType, TenantID: parsed.TenantID,
 		ResourceID: parsed.ResourceID, Coordinates: coordinates, Status: "active",
 	})
@@ -211,20 +210,20 @@ func (s *HostOperationsService) DeregisterResource(uri string) error {
 	if err != nil {
 		return err
 	}
-	if tenant := strings.TrimSpace(s.tenantID); tenant != "" && parsed.TenantID != tenant {
+	if tenant := strings.TrimSpace(s.shared.TenantID); tenant != "" && parsed.TenantID != tenant {
 		return fmt.Errorf("%w: active tenant %q", resourceid.ErrForeignTenant, tenant)
 	}
-	if s.resourceRegistry == nil {
+	if s.shared.ResourceRegistry == nil {
 		return errors.New("resource registry is not configured")
 	}
-	return s.resourceRegistry.DeleteResource(parsed.String())
+	return s.shared.ResourceRegistry.DeleteResource(parsed.String())
 }
 
 func (s *HostOperationsService) ResourceURIForProviderName(providerName string) string {
-	if s == nil || s.resourceRegistry == nil {
+	if s == nil || s.shared.ResourceRegistry == nil {
 		return ""
 	}
-	records, err := s.resourceRegistry.ListResources("", s.tenantID)
+	records, err := s.shared.ResourceRegistry.ListResources("", s.shared.TenantID)
 	if err != nil {
 		return ""
 	}
@@ -246,12 +245,12 @@ func (s *HostOperationsService) AttachLocalLLMModelURIs(result *LocalLLMProbeRes
 	}
 	for index := range result.Models {
 		model := &result.Models[index]
-		uri, err := resourceid.ModelURI(s.tenantID, model.Name)
+		uri, err := resourceid.ModelURI(s.shared.TenantID, model.Name)
 		if err != nil {
 			continue
 		}
 		model.URI = uri.String()
-		if s.resourceRegistry != nil {
+		if s.shared.ResourceRegistry != nil {
 			_ = s.RegisterResource(model.URI, map[string]any{
 				"modelRef": model.Name,
 				"runtime":  result.Runtime,

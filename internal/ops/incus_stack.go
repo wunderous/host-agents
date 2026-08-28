@@ -54,7 +54,7 @@ func (s *HostOperationsService) readResetCheckpoint() (*resetIncusCheckpoint, er
 	if err := json.Unmarshal(data, &checkpoint); err != nil {
 		return nil, errors.New("incus reset checkpoint is invalid")
 	}
-	if checkpoint.Version != "incus-reset.v1" || checkpoint.InstanceID != s.instanceID {
+	if checkpoint.Version != "incus-reset.v1" || checkpoint.InstanceID != s.shared.InstanceID {
 		return nil, errors.New("incus reset checkpoint owner or version mismatch")
 	}
 	return &checkpoint, nil
@@ -65,7 +65,7 @@ func (s *HostOperationsService) writeResetCheckpoint(checkpoint resetIncusCheckp
 		return nil
 	}
 	checkpoint.Version = "incus-reset.v1"
-	checkpoint.InstanceID = s.instanceID
+	checkpoint.InstanceID = s.shared.InstanceID
 	checkpoint.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	data, err := json.MarshalIndent(checkpoint, "", "  ")
 	if err != nil {
@@ -192,10 +192,10 @@ func (s *HostOperationsService) validateResetIncusStack(args ResetIncusStackArgs
 	if !args.Reinstall {
 		return errors.New("reset_incus_stack requires reinstall=true")
 	}
-	if s.ownershipMode != "enforce" || !s.ownershipEnabled() {
+	if s.shared.OwnershipMode != "enforce" || !s.ownershipEnabled() {
 		return errors.New("reset_incus_stack requires enforced Incus ownership with a host-agent instance id")
 	}
-	if strings.TrimSpace(s.sharedHostOwnerInstance) == "" {
+	if strings.TrimSpace(s.shared.SharedHostOwnerInstance) == "" {
 		return errors.New("reset_incus_stack requires a configured shared host owner")
 	}
 	if err := s.requireSharedHostOwner("reset_incus_stack"); err != nil {
@@ -247,7 +247,7 @@ func (s *HostOperationsService) ResetIncusStack(ctx context.Context, args ResetI
 		// rather than broadening the target set.
 		inventory = append([]ResetIncusInventoryItem(nil), checkpoint.Targets...)
 	}
-	if err := validateResetInventoryOwnership(inventory, s.instanceID); err != nil {
+	if err := validateResetInventoryOwnership(inventory, s.shared.InstanceID); err != nil {
 		return nil, err
 	}
 	if checkpoint == nil {
@@ -267,7 +267,7 @@ func (s *HostOperationsService) ResetIncusStack(ctx context.Context, args ResetI
 		"dryRun":       args.DryRun,
 		"reinstall":    true,
 		"inventory":    inventory,
-		"owner":        s.instanceID,
+		"owner":        s.shared.InstanceID,
 		"resumable":    true,
 		"nextPhase":    "delete",
 		"evidenceMode": "redacted",
@@ -305,7 +305,7 @@ func (s *HostOperationsService) ResetIncusStack(ctx context.Context, args ResetI
 		if err := s.writeResetCheckpoint(*checkpoint); err != nil {
 			return nil, fmt.Errorf("write reset checkpoint before delete: %w", err)
 		}
-		deleteResult, runErr := s.runtime.RunProviderContext(ctx, []string{"delete", candidate.Name, "--force"}, onData, 5*time.Minute)
+		deleteResult, runErr := s.shared.Runtime.RunProviderContext(ctx, []string{"delete", candidate.Name, "--force"}, onData, 5*time.Minute)
 		if runErr != nil || deleteResult.ExitCode != 0 {
 			checkpoint.Phase = "interrupted"
 			_ = s.writeResetCheckpoint(*checkpoint)

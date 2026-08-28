@@ -8,13 +8,16 @@ import (
 	"time"
 
 	"github.com/wunderous/host-agents/internal/exec"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 func validResetService() *HostOperationsService {
 	return &HostOperationsService{
-		instanceID:              "agent-a",
-		ownershipMode:           "enforce",
-		sharedHostOwnerInstance: "agent-a",
+		shared: hostruntime.Shared{
+			InstanceID:              "agent-a",
+			OwnershipMode:           "enforce",
+			SharedHostOwnerInstance: "agent-a",
+		},
 	}
 }
 
@@ -95,7 +98,7 @@ func TestResetInventoryOwnershipRefusesForeignAndUnowned(t *testing.T) {
 
 func TestVerifyResetIncusStackProbesPoolBridgeProfile(t *testing.T) {
 	service := validResetService()
-	service.commandRunnerFn = func(args []string, onData func(string), timeout time.Duration) (exec.Result, error) {
+	service.shared.CommandRunnerFn = func(args []string, onData func(string), timeout time.Duration) (exec.Result, error) {
 		switch args[0] {
 		case "storage":
 			return exec.Result{Stdout: `[{"name":"default","driver":"dir"}]`}, nil
@@ -118,7 +121,7 @@ func TestVerifyResetIncusStackProbesPoolBridgeProfile(t *testing.T) {
 
 func TestVerifyResetIncusStackFailsClosedOnMissingInvariant(t *testing.T) {
 	service := validResetService()
-	service.commandRunnerFn = func(args []string, onData func(string), timeout time.Duration) (exec.Result, error) {
+	service.shared.CommandRunnerFn = func(args []string, onData func(string), timeout time.Duration) (exec.Result, error) {
 		switch args[0] {
 		case "storage":
 			return exec.Result{Stdout: `[{"name":"other","driver":"dir"}]`}, nil

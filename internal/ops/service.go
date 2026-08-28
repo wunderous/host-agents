@@ -73,34 +73,27 @@ type BridgeDiagnosticResult struct {
 
 // HostOperationsService implements host MCP operations against Incus on Linux.
 type HostOperationsService struct {
-	runtime                 *hostruntime.Runtime
-	tenantID                string
-	resourceRegistry        ResourceRegistry
-	toolsFn                 func(providerID string) []string
-	instanceID              string
-	agentID                 string
-	ownershipMode           string
-	sharedHostOwnerInstance string
-	resetCheckpointPath     string
-	ociStoragePolicyPath    string
-	sqliteDatabaseRoot      string
-	ociStorageMu            sync.Mutex
+	// shared carries the identity, configuration, and execution handles that
+	// every domain needs and none owns (plan sec. 9.2). Domain packages take a
+	// `*hostruntime.Shared` directly; this service delegates to it so the move
+	// can happen one domain at a time.
+	shared               hostruntime.Shared
+	toolsFn              func(providerID string) []string
+	resetCheckpointPath  string
+	ociStoragePolicyPath string
+	sqliteDatabaseRoot   string
+	ociStorageMu         sync.Mutex
 
 	sqlSupervisor          *sqlConnectorSupervisor
 	guestBridgeRelay       *tcpRelayManager
 	localLLMRelay          *localLLMRelayManager
 	postgresqlServiceRelay *postgresqlServiceRelayManager
-	resourceSnapshot       func() map[string]any
 	// kubectlRunner is an explicit test seam for the PostgreSQL service ordering
 	// and readiness contract. Production execution always delegates to the
 	// active Kubernetes hostruntime.
 	kubectlRunner func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error)
-	// commandRunnerFn is a test seam for provider command execution (Incus
-	// CLI). When nil, the real provider runtime is used.
-	commandRunnerFn func(args []string, onData func(string), timeout time.Duration) (hostexec.Result, error)
 	// container command seams keep runtime adapter tests independent of an
 	// installed host runtime. They are intentionally scoped to this service.
-	containerLookPathFn         func(string) (string, error)
 	containerCommandFn          func(context.Context, string, ...string) ([]byte, error)
 	containerStreamingCommandFn func(context.Context, string, []string, func(string)) error
 	kubernetesExecutor          KubernetesProviderExecutor
@@ -146,21 +139,23 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		registry = newInMemoryResourceRegistry()
 	}
 	return &HostOperationsService{
-		runtime:                 rt,
-		tenantID:                tenantID,
-		resourceRegistry:        registry,
-		toolsFn:                 toolsFn,
-		instanceID:              strings.TrimSpace(opts.InstanceID),
-		agentID:                 strings.TrimSpace(opts.AgentID),
-		ownershipMode:           ownershipMode,
-		sharedHostOwnerInstance: strings.TrimSpace(opts.SharedHostOwnerInstance),
-		resetCheckpointPath:     resolveResetCheckpointPath(opts.ResetCheckpointPath, opts.RelayConfigDir),
-		ociStoragePolicyPath:    strings.TrimSpace(opts.OciStoragePolicyPath),
-		sqliteDatabaseRoot:      strings.TrimSpace(opts.SQLiteDatabaseRoot),
-		sqlSupervisor:           newSQLConnectorSupervisor(),
-		guestBridgeRelay:        newTCPRelayManager(),
-		localLLMRelay:           newPersistentLocalLLMRelayManagerAtWithLock(opts.RelayConfigDir, opts.SharedHostResourceLockDir),
-		postgresqlServiceRelay:  newPersistentPostgreSQLServiceRelayManagerAt(postgresRelayConfigDir),
+		shared: hostruntime.Shared{
+			Runtime:                 rt,
+			TenantID:                tenantID,
+			ResourceRegistry:        registry,
+			InstanceID:              strings.TrimSpace(opts.InstanceID),
+			AgentID:                 strings.TrimSpace(opts.AgentID),
+			OwnershipMode:           ownershipMode,
+			SharedHostOwnerInstance: strings.TrimSpace(opts.SharedHostOwnerInstance),
+		},
+		toolsFn:                toolsFn,
+		resetCheckpointPath:    resolveResetCheckpointPath(opts.ResetCheckpointPath, opts.RelayConfigDir),
+		ociStoragePolicyPath:   strings.TrimSpace(opts.OciStoragePolicyPath),
+		sqliteDatabaseRoot:     strings.TrimSpace(opts.SQLiteDatabaseRoot),
+		sqlSupervisor:          newSQLConnectorSupervisor(),
+		guestBridgeRelay:       newTCPRelayManager(),
+		localLLMRelay:          newPersistentLocalLLMRelayManagerAtWithLock(opts.RelayConfigDir, opts.SharedHostResourceLockDir),
+		postgresqlServiceRelay: newPersistentPostgreSQLServiceRelayManagerAt(postgresRelayConfigDir),
 	}
 }
 
@@ -168,14 +163,14 @@ func (s *HostOperationsService) TenantID() string {
 	if s == nil {
 		return ""
 	}
-	return s.tenantID
+	return s.shared.TenantID
 }
 
 func (s *HostOperationsService) effectiveTenantID() string {
-	if s == nil || strings.TrimSpace(s.tenantID) == "" {
+	if s == nil {
 		return "local"
 	}
-	return strings.TrimSpace(s.tenantID)
+	return s.shared.EffectiveTenantID()
 }
 
 func resolveResetCheckpointPath(explicitPath, relayConfigDir string) string {
@@ -189,13 +184,13 @@ func resolveResetCheckpointPath(explicitPath, relayConfigDir string) string {
 }
 
 func (s *HostOperationsService) ReadProviderID() string {
-	return string(s.runtime.ReadProviderID())
+	return string(s.shared.Runtime.ReadProviderID())
 }
 
 // SetResourceSnapshot connects host-local admission telemetry to direct
 // diagnostics such as get_host_info and get_local_status.
 func (s *HostOperationsService) SetResourceSnapshot(snapshot func() map[string]any) {
-	s.resourceSnapshot = snapshot
+	s.shared.ResourceSnapshot = snapshot
 }
 
 func (s *HostOperationsService) DescribeHost() HostInfoResult {
@@ -204,25 +199,25 @@ func (s *HostOperationsService) DescribeHost() HostInfoResult {
 	result := HostInfoResult{
 		HostName:       host,
 		ProviderID:     pid,
-		LXCBinaryPath:  s.runtime.ProviderBinary(),
+		LXCBinaryPath:  s.shared.Runtime.ProviderBinary(),
 		SystemctlPath:  hostruntime.DefaultSystemctlPath,
 		SupportedTools: s.toolsFn(pid),
 	}
-	if uri, err := resourceid.HostURI(s.tenantID, firstNonEmpty(s.agentID, host)); err == nil {
+	if uri, err := resourceid.HostURI(s.shared.TenantID, firstNonEmpty(s.shared.AgentID, host)); err == nil {
 		result.URI = uri.String()
-		if s.resourceRegistry != nil {
-			_ = s.RegisterResource(result.URI, map[string]any{"agentId": s.agentID, "hostName": host})
+		if s.shared.ResourceRegistry != nil {
+			_ = s.RegisterResource(result.URI, map[string]any{"agentId": s.shared.AgentID, "hostName": host})
 		}
 	}
 	if capacity, err := s.VMInventoryCapacity(); err == nil {
 		result.Capacity = &capacity
 	}
 	result.System = heartbeat.ReadHostSystemMetadata()
-	if s.resourceSnapshot != nil {
+	if s.shared.ResourceSnapshot != nil {
 		if result.System == nil {
 			result.System = map[string]any{}
 		}
-		result.System["resourceAdmission"] = s.resourceSnapshot()
+		result.System["resourceAdmission"] = s.shared.ResourceSnapshot()
 	}
 	return result
 }
@@ -245,7 +240,7 @@ func (s *HostOperationsService) RunAgentShellWithTimeout(command string, timeout
 	if command == "" {
 		return hostexec.Result{}, errors.New("command is required")
 	}
-	return s.runtime.RunHost([]string{"bash", "-lc", command}, onData, timeout)
+	return s.shared.Runtime.RunHost([]string{"bash", "-lc", command}, onData, timeout)
 }
 
 // NewVMInteractiveCommand is the ownership-checked command factory for the
@@ -255,26 +250,23 @@ func (s *HostOperationsService) NewVMInteractiveCommand(vmName string) (*exec.Cm
 	if err := s.assertIncusOwnership(vmName, "console"); err != nil {
 		return nil, err
 	}
-	return s.runtime.NewVMInteractiveCommand(vmName)
+	return s.shared.Runtime.NewVMInteractiveCommand(vmName)
 }
 
 func (s *HostOperationsService) commandRunner(args []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
-	if s.commandRunnerFn != nil {
-		return s.commandRunnerFn(args, onData, timeout)
-	}
-	return s.runtime.RunProvider(args, onData, timeout)
+	return s.shared.CommandRunner(args, onData, timeout)
 }
 
 func (s *HostOperationsService) hostCommandRunner(command []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
-	return s.runtime.RunHost(command, onData, timeout)
+	return s.shared.HostCommandRunner(command, onData, timeout)
 }
 
 func (s *HostOperationsService) hostCommandRunnerContext(ctx context.Context, command []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
-	return s.runtime.RunHostContext(ctx, command, onData, timeout)
+	return s.shared.HostCommandRunnerContext(ctx, command, onData, timeout)
 }
 
 func (s *HostOperationsService) vmExecArgv(vmName string, guestArgv []string) []string {
-	return append([]string{"exec", vmName, "--"}, guestArgv...)
+	return s.shared.VMExecArgv(vmName, guestArgv)
 }
 
 func (s *HostOperationsService) runVMExec(vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
@@ -288,14 +280,14 @@ func (s *HostOperationsService) runVMExecContext(ctx context.Context, vmName str
 	if err := s.assertIncusOwnership(vmName, "exec"); err != nil {
 		return hostexec.Result{}, err
 	}
-	return s.runtime.RunVMExecContext(ctx, vmName, guestArgv, onData, timeout)
+	return s.shared.Runtime.RunVMExecContext(ctx, vmName, guestArgv, onData, timeout)
 }
 
 func (s *HostOperationsService) runVMExecWithStdinContext(ctx context.Context, vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error) {
 	if err := s.assertIncusOwnership(vmName, "exec"); err != nil {
 		return hostexec.Result{}, err
 	}
-	return s.runtime.RunVMExecWithStdinContext(ctx, vmName, guestArgv, input, onData, timeout)
+	return s.shared.Runtime.RunVMExecWithStdinContext(ctx, vmName, guestArgv, input, onData, timeout)
 }
 
 type VMListResult struct {
@@ -417,9 +409,9 @@ func (s *HostOperationsService) vmStatusResult(name, image, status, instanceType
 		resourceType = resourceid.TypeVM
 	}
 	result := VMStatusResult{VMName: name, Image: image, Status: status, InstanceType: instanceType}
-	if uri, err := resourceid.New(resourceType, s.tenantID, name); err == nil {
+	if uri, err := resourceid.New(resourceType, s.shared.TenantID, name); err == nil {
 		result.URI = uri.String()
-		if s.resourceRegistry != nil {
+		if s.shared.ResourceRegistry != nil {
 			_ = s.RegisterResource(result.URI, map[string]any{"providerInstanceName": name, "instanceType": instanceType})
 		}
 	}
@@ -672,9 +664,9 @@ func (s *HostOperationsService) ListServices(vmName, namespace string) ([]map[st
 			"name":      meta["name"].(string),
 			"namespace": meta["namespace"].(string),
 		}
-		if uri, err := resourceid.ServiceURI(s.tenantID, vmName+"/"+meta["namespace"].(string)+"/"+meta["name"].(string)); err == nil {
+		if uri, err := resourceid.ServiceURI(s.shared.TenantID, vmName+"/"+meta["namespace"].(string)+"/"+meta["name"].(string)); err == nil {
 			row["uri"] = uri.String()
-			if s.resourceRegistry != nil {
+			if s.shared.ResourceRegistry != nil {
 				_ = s.RegisterResource(uri.String(), map[string]any{
 					"providerInstanceName": vmName,
 					"namespace":            meta["namespace"].(string),
@@ -725,9 +717,9 @@ func (s *HostOperationsService) ListPods(vmName, namespace string) ([]map[string
 		}
 		if item.Metadata.UID != "" {
 			resourceID := vmName + "/" + item.Metadata.Namespace + "/" + item.Metadata.Name + "/" + item.Metadata.UID
-			if uri, uriErr := resourceid.PodURI(s.tenantID, resourceID); uriErr == nil {
+			if uri, uriErr := resourceid.PodURI(s.shared.TenantID, resourceID); uriErr == nil {
 				row["uri"] = uri.String()
-				if s.resourceRegistry != nil {
+				if s.shared.ResourceRegistry != nil {
 					_ = s.RegisterResource(uri.String(), map[string]any{
 						"providerInstanceName": vmName,
 						"namespace":            item.Metadata.Namespace,

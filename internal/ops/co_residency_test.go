@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 func TestIncusOwnershipMismatchErrorUsesStableShape(t *testing.T) {
@@ -30,7 +32,12 @@ func TestIncusOwnershipMismatchErrorUsesStableShape(t *testing.T) {
 }
 
 func TestSharedHostOwnershipRejectsNonOwnerMutation(t *testing.T) {
-	service := &HostOperationsService{instanceID: "local-dev", sharedHostOwnerInstance: "dogfood"}
+	service := &HostOperationsService{
+		shared: hostruntime.Shared{
+			InstanceID:              "local-dev",
+			SharedHostOwnerInstance: "dogfood",
+		},
+	}
 	err := service.requireSharedHostOwner("start_local_llm_runtime")
 	if err == nil || !strings.Contains(err.Error(), "shared_host_ownership_required") {
 		t.Fatalf("expected shared-host mismatch, got %v", err)
@@ -38,7 +45,12 @@ func TestSharedHostOwnershipRejectsNonOwnerMutation(t *testing.T) {
 }
 
 func TestSharedHostOwnershipBlocksHostServiceMutationBeforeCommand(t *testing.T) {
-	service := &HostOperationsService{instanceID: "local-dev", sharedHostOwnerInstance: "dogfood"}
+	service := &HostOperationsService{
+		shared: hostruntime.Shared{
+			InstanceID:              "local-dev",
+			SharedHostOwnerInstance: "dogfood",
+		},
+	}
 	if _, err := service.RestartHostService(RestartHostServiceArgs{ServiceName: "opute-host-agent"}, nil); err == nil || !strings.Contains(err.Error(), "shared_host_ownership_required") {
 		t.Fatalf("expected host-service mutation guard, got %v", err)
 	}

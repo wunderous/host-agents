@@ -446,7 +446,7 @@ func TestEnsurePostgreSQLServiceRelayCreatesHostForwardWhenTargetOmitted(t *test
 	service := &HostOperationsService{postgresqlServiceRelay: newPostgreSQLServiceRelayManager()}
 	deviceAdds := 0
 	existingDevice := ""
-	service.commandRunnerFn = func(args []string, onData func(string), timeout time.Duration) (exec.Result, error) {
+	service.shared.CommandRunnerFn = func(args []string, onData func(string), timeout time.Duration) (exec.Result, error) {
 		if args[0] == "config" && args[1] == "device" {
 			switch args[2] {
 			case "show":

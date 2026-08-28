@@ -42,8 +42,8 @@ func (s *HostOperationsService) CheckLocalPrerequisites() (*LocalPrerequisitesRe
 		checks["incus"] = firstNonEmpty(res.Stderr, res.Stdout, "incus check failed")
 	}
 	return &LocalPrerequisitesResult{
-		Provider:       string(s.runtime.ReadProviderID()),
-		ProviderBinary: s.runtime.ProviderBinary(),
+		Provider:       string(s.shared.Runtime.ReadProviderID()),
+		ProviderBinary: s.shared.Runtime.ProviderBinary(),
 		ProviderReady:  providerReady,
 		Commands:       commands,
 		Checks:         checks,
@@ -60,15 +60,15 @@ func (s *HostOperationsService) GetLocalStatus() (map[string]any, error) {
 		return nil, err
 	}
 	system := heartbeat.ReadHostSystemMetadata()
-	if s.resourceSnapshot != nil {
+	if s.shared.ResourceSnapshot != nil {
 		if system == nil {
 			system = map[string]any{}
 		}
-		system["resourceAdmission"] = s.resourceSnapshot()
+		system["resourceAdmission"] = s.shared.ResourceSnapshot()
 	}
 	return map[string]any{
-		"provider":       s.runtime.ReadProviderID(),
-		"providerBinary": s.runtime.ProviderBinary(),
+		"provider":       s.shared.Runtime.ReadProviderID(),
+		"providerBinary": s.shared.Runtime.ProviderBinary(),
 		"vmCount":        len(vms.VMs),
 		"vms":            vms.VMs,
 		"capacity":       capacity,

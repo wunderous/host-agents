@@ -36,7 +36,7 @@ func TestNormalizeProvisionInstanceType(t *testing.T) {
 func TestLaunchIncusContainerUsesDefaultResources(t *testing.T) {
 	var launchArgs []string
 	service := &HostOperationsService{}
-	service.commandRunnerFn = func(args []string, _ func(string), _ time.Duration) (exec.Result, error) {
+	service.shared.CommandRunnerFn = func(args []string, _ func(string), _ time.Duration) (exec.Result, error) {
 		if len(args) > 0 && args[0] == "launch" {
 			launchArgs = append([]string(nil), args...)
 		}

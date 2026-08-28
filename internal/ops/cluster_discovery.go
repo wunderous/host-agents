@@ -84,9 +84,9 @@ func (s *HostOperationsService) GetClusterRuntimeDetails(vmName string) (Cluster
 
 func (s *HostOperationsService) buildClusterDetailFromVM(vm VMInfo, fast bool, runtime bool) (ClusterDetail, error) {
 	detail := buildBaseClusterDetail(vm)
-	if uri, err := resourceid.ClusterURI(s.tenantID, vm.Name); err == nil {
+	if uri, err := resourceid.ClusterURI(s.shared.TenantID, vm.Name); err == nil {
 		detail.URI = uri.String()
-		if s.resourceRegistry != nil {
+		if s.shared.ResourceRegistry != nil {
 			instanceType := strings.TrimSpace(vm.Type)
 			if instanceType == "virtual-machine" {
 				instanceType = "vm"

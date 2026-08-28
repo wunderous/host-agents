@@ -131,9 +131,9 @@ func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, 
 
 func (s *HostOperationsService) containerStatusResult(name, image, status string) ContainerStatusResult {
 	result := ContainerStatusResult{ContainerName: name, Image: image, Status: status, InstanceType: "container"}
-	if uri, err := resourceid.ContainerURI(s.tenantID, name); err == nil {
+	if uri, err := resourceid.ContainerURI(s.shared.TenantID, name); err == nil {
 		result.URI = uri.String()
-		if s.resourceRegistry != nil {
+		if s.shared.ResourceRegistry != nil {
 			_ = s.RegisterResource(result.URI, map[string]any{
 				"providerInstanceName": name,
 				"displayName":          name,

@@ -103,7 +103,7 @@ func (s *HostOperationsService) ListHostServices(scope string) (map[string]any, 
 		if uriErr != nil {
 			continue
 		}
-		if s.resourceRegistry != nil {
+		if s.shared.ResourceRegistry != nil {
 			_ = s.RegisterResource(uri.String(), map[string]any{
 				"serviceName": serviceName,
 				"scope":       scope,

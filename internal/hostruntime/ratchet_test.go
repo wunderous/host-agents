@@ -16,7 +16,13 @@ import (
 // A ratchet, not a cliff. Raising this is allowed and sometimes correct -- the
 // W7 partition will raise it once when the shared members land -- but it is a
 // deliberate edit with a reason in the commit message, which is the whole point.
-const budgetLines = 260
+//
+// Raised 260 -> 320 by the W7 shared partition: shared.go adds `Shared` (the
+// ten identity/config/execution-handle fields), the seven helpers that cleared
+// all three rules, `ResourceRegistry`, and `SharedHostOwnershipError`. Note
+// what did NOT come with them -- `runVMExec` performs an incus ownership check,
+// so rule 3 makes it an operation and it stays in the incus domain.
+const budgetLines = 320
 
 func TestHostruntimeStaysWithinBudget(t *testing.T) {
 	entries, err := os.ReadDir(".")

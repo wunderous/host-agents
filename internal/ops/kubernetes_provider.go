@@ -167,7 +167,7 @@ func (s *HostOperationsService) ListKubernetesClusters(source string) (ClusterLi
 			if cluster.InstanceType != "vm" && cluster.InstanceType != "container" {
 				return ClusterListResult{}, fmt.Errorf("Kubernetes provider returned unsupported instance type for cluster %q", cluster.Name)
 			}
-			if s.resourceRegistry != nil {
+			if s.shared.ResourceRegistry != nil {
 				if registerErr := s.RegisterResource(cluster.URI, map[string]any{
 					"providerInstanceName": cluster.Name,
 					"displayName":          cluster.Name,

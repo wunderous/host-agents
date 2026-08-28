@@ -217,14 +217,14 @@ func (s *HostOperationsService) mapIncusListItem(item incusListItem, fast bool) 
 		agentReady = &ready
 	}
 	info := buildVMInfoFromIncusListItem(item, agentReady)
-	info.HostId = strings.TrimSpace(s.agentID)
+	info.HostId = strings.TrimSpace(s.shared.AgentID)
 	resourceType := resourceid.TypeContainer
 	if strings.EqualFold(mapIncusInstanceType(item.Type), "vm") {
 		resourceType = resourceid.TypeVM
 	}
-	if uri, uriErr := resourceid.New(resourceType, s.tenantID, item.Name); uriErr == nil {
+	if uri, uriErr := resourceid.New(resourceType, s.shared.TenantID, item.Name); uriErr == nil {
 		info.URI = uri.String()
-		if s.resourceRegistry != nil {
+		if s.shared.ResourceRegistry != nil {
 			_ = s.RegisterResource(info.URI, map[string]any{
 				"providerInstanceName": item.Name,
 				"displayName":          info.Name,
