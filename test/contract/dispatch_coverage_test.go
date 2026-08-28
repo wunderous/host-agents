@@ -1,13 +1,9 @@
 package contract_test
 
 import (
-	"os"
-	"path/filepath"
-	"regexp"
-	"runtime"
-	"strings"
 	"testing"
 
+	"github.com/wunderous/host-agents/internal/contract/toolname"
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
@@ -43,7 +39,7 @@ func TestVmResourceToolsHaveDispatchCoverage(t *testing.T) {
 	}
 	for _, name := range requiredVmResourceDispatch {
 		if !dispatched[name] {
-			t.Fatalf("VM resource tool %q has no dispatch case in internal/tools/dispatch.go", name)
+			t.Fatalf("VM resource tool %q is not registered in the dispatch registry", name)
 		}
 		if !catalog[name] {
 			t.Fatalf("VM resource tool %q missing from the tunnel catalog", name)
@@ -69,7 +65,7 @@ func TestPlatformPostgresAndResetToolsHaveDispatchCoverage(t *testing.T) {
 	}
 	for _, name := range requiredPlatformPostgresDispatch {
 		if !dispatched[name] {
-			t.Fatalf("platform/reset tool %q has no dispatch case in internal/tools/dispatch.go", name)
+			t.Fatalf("platform/reset tool %q is not registered in the dispatch registry", name)
 		}
 		if !catalog[name] {
 			t.Fatalf("platform/reset tool %q missing from the tunnel catalog", name)
@@ -125,7 +121,7 @@ func TestRequiredInventoryToolsHaveDispatchCase(t *testing.T) {
 			continue
 		}
 		if !dispatched[name] {
-			t.Fatalf("required inventory tool %q has no dispatch case in internal/tools/dispatch.go", name)
+			t.Fatalf("required inventory tool %q is not registered in the dispatch registry", name)
 		}
 	}
 }
@@ -146,7 +142,7 @@ func TestContainerStorageToolsHaveDispatchAndStandaloneCoverage(t *testing.T) {
 	}
 	for _, name := range []string{"inspect_container_storage", "cleanup_container_storage"} {
 		if !dispatched[name] {
-			t.Fatalf("container storage tool %q has no dispatch case", name)
+			t.Fatalf("container storage tool %q is not registered in the dispatch registry", name)
 		}
 		if !catalog[name] {
 			t.Fatalf("container storage tool %q missing from the Incus catalog", name)
@@ -183,33 +179,46 @@ var hostMCPBypassTools = map[string]bool{
 
 func loadDispatchToolNames(t *testing.T) map[string]bool {
 	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
+	// Enumerate the dispatch registry. This used to read internal/tools/dispatch.go
+	// as text and match `case "..."` labels; replacing the switch with a table
+	// would have left that matching nothing (plan §2.4). The registry is the
+	// same source of truth dispatch itself uses, so the two cannot diverge.
+	registered := tools.RegisteredToolNames()
+	if len(registered) == 0 {
+		t.Fatal("dispatch registry is empty")
 	}
-	dispatchPath := filepath.Join(filepath.Dir(thisFile), "..", "..", "internal", "tools", "dispatch.go")
-	raw, err := os.ReadFile(dispatchPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	matches := regexp.MustCompile(`case\s+((?:"[^"]+"\s*,?\s*)+):`).FindAllStringSubmatch(string(raw), -1)
-	names := make(map[string]bool)
-	for _, match := range matches {
-		if len(match) < 2 {
-			continue
-		}
-		for _, nameMatch := range regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(match[1], -1) {
-			if len(nameMatch) < 2 {
-				continue
-			}
-			name := strings.TrimSpace(nameMatch[1])
-			if name != "" {
-				names[name] = true
-			}
-		}
-	}
-	if len(names) == 0 {
-		t.Fatal("no dispatch cases found in dispatch.go")
+	names := make(map[string]bool, len(registered))
+	for _, name := range registered {
+		names[name] = true
 	}
 	return names
+}
+
+// TestDispatchRegistryMatchesToolNameContract is the partition assertion (W2).
+//
+// The registry's key set must equal internal/contract/toolname exactly. A name
+// in the contract with no handler is an unroutable capability; a handler under
+// a name not in the contract is unreachable. Once the eight domain packages
+// each register their own names, this is what catches a tool that lands in no
+// domain -- and registry.register's duplicate panic catches one that lands in two.
+func TestDispatchRegistryMatchesToolNameContract(t *testing.T) {
+	registered := make(map[string]bool)
+	for _, name := range tools.RegisteredToolNames() {
+		registered[name] = true
+	}
+	declared := make(map[string]bool)
+	for _, name := range toolname.All() {
+		declared[name] = true
+	}
+
+	for name := range declared {
+		if !registered[name] {
+			t.Errorf("tool %q is declared in contract/toolname but has no dispatch handler", name)
+		}
+	}
+	for name := range registered {
+		if !declared[name] {
+			t.Errorf("tool %q has a dispatch handler but is not declared in contract/toolname", name)
+		}
+	}
 }
