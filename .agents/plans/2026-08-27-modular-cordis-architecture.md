@@ -451,6 +451,33 @@ new seam rather than leaving it on the old handler.
 
 *Attaches to:* `ha-k3`.
 
+**Done 2026-08-28.** The checklist half landed with `ha-k3`'s rewrite; this is
+the seam half.
+
+`internal/transport` was one 555-line `http.go` mixing HTTP plumbing with the
+protocol contract, so "carry the coverage onto the new seam" had no seam to name.
+[`discover.go`](../../internal/transport/discover.go) is now that seam: the
+modern-only method set, the legacy bypass allowlist, `skipModernValidation`, and
+the `Mcp-Method` / `_meta` validators. `http.go` keeps routing, auth, and origin.
+The existing coverage in `modern_test.go` and `http_test.go` exercises these
+functions directly, so it moved with them rather than being left on the handler.
+
+**The split found a duplicated set.** The extension router read
+`method == "server/discover" || HasPrefix("tasks/") || HasPrefix("resources/")`,
+while `legacyCompatibleMethods`' comment separately asserted in prose that those
+same three are "notably absent" from the bypass. One set, stated twice: adding a
+fourth extension family to the router would have left the allowlist's reasoning
+silently stale — the parallel-table failure W8 removed elsewhere. Both now read
+`isModernOnlyMethod`, and `TestLegacyBypassNeverCoversModernOnlyMethods` asserts
+the disjointness the prose used to claim. Demonstrated RED by allowlisting
+`server/discover`.
+
+*Out of scope, and left so:* the rest of `ha-k3` — moving the edge onto the
+Cordis kernel's occupant seam — belongs to
+[the kernel plan](2026-08-26-host-agent-cordis-kernel.md) and its kitchen
+structure. What W3 asked for is the contract's coverage sitting on a named seam
+instead of inside a handler, and that is what landed.
+
 ### W4 — Resolve the legacy handshake gate
 
 Either record the contract (an ADR describing the gate, its clients, its
@@ -1097,8 +1124,8 @@ execute in; each milestone names the plan and section that owns it.
 |---|---|---|---|---|
 | **M0** | **Enforcement gate real and green** | both | this section | — **unblocked** |
 | **M1** | **Baselines and boundary lint** | both | Platform §5 Phase 0.5 · Host Agent §6 W1 | — **done** |
-| **M2** | **Transport contract + dispatch registry** | Host Agent | §6 W2, W3, W4 | — **W2, W4 done; W3 checklist done, seam coverage waits on the `ha-k3` split** |
-| M3 | Partition `internal/ops` | Host Agent | §6 W7 | D2, D3 |
+| ~~**M2**~~ | ~~Transport contract + dispatch registry~~ | Host Agent | §6 W2, W3, W4 | — **done 2026-08-28** |
+| ~~M3~~ | ~~Partition `internal/ops`~~ | Host Agent | §6 W7 | — **done 2026-08-27** |
 | ~~M4~~ | ~~Single capability registration~~ | Host Agent | §6 W8 | — **done 2026-08-28** |
 | M5 | Platform kernel | Platform | §5 Phase 1 | D3, **D6** |
 | M6 | Platform domain slices | Platform | §5 Phase 2 | D5 |
