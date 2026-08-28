@@ -576,14 +576,20 @@ none. W7 additionally:
 - **folds `internal/provider` (the VM runtime handle) into `hostruntime`**,
   which frees that name for plugin lifecycle per §9.1 — this must land in or
   before `ha-k1`, not here, if `ha-k1` re-anchors `handleProviderInstall` first;
-- **deletes `allowInsecureDownloads`** — the env var, the `Options` field, the
-  struct field, and the `config.go`/`app/runtime.go` plumbing. It is never read
-  (§9.2), and per-call `insecureRegistry` is the live mechanism;
-- **enables the `hostruntime-knows-no-domains` depguard rule** already written
-  into [`.golangci.yml`](../../.golangci.yml);
-- **adds the rule-2 consumer test** and the `hostruntime` size ratchet;
-- **creates the `hostruntime-membership` decision record**, anchored to the real
-  package rather than to this plan (§9.2).
+- ~~**deletes `allowInsecureDownloads`**~~ — **done**; no occurrence remains in
+  the repo. Per-call `insecureRegistry` is the live mechanism;
+- ~~**enables the `hostruntime-knows-no-domains` depguard rule**~~ — **done**,
+  alongside a `no-cross-domain-<name>` rule per domain, each proven RED;
+- ~~**adds the rule-2 consumer test** and the `hostruntime` size ratchet~~ —
+  **done**: `TestEveryExportedMemberHasTwoDomainConsumers` (proven RED on a
+  deliberate lone member) and `budgetLines`. The rule-2 test found three real
+  violations on its first run: `RequireLinux` had no consumer at all and is now
+  unexported, `DefaultIncusPath` had none outside the package and is now
+  unexported, and `DefaultSystemdRunPath` had only `host` and moved there;
+- ~~**creates the `hostruntime-membership` decision record**~~ — **done**,
+  anchored to `membership_test.go`, `ratchet_test.go`, and `shared.go`, with
+  `verify` running the hostruntime tests. Five existing records that anchored
+  into `internal/ops` were re-pointed to where their files now live.
 
 *Attaches to:* `ha-k4`, absorbing it.
 *Exit:* `internal/ops` does not exist; `go build ./...` green; W2 partition

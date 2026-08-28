@@ -13,9 +13,8 @@ import (
 )
 
 const (
-	DefaultIncusPath      = "incus"
-	DefaultSystemctlPath  = "/usr/bin/systemctl"
-	DefaultSystemdRunPath = "/usr/bin/systemd-run"
+	defaultIncusPath     = "incus"
+	DefaultSystemctlPath = "/usr/bin/systemctl"
 )
 
 // ID identifies the VM provider runtime.
@@ -23,8 +22,8 @@ type ID string
 
 const IDIncus ID = "incus"
 
-// RequireLinux returns an error when not running on Linux (native or WSL).
-func RequireLinux() error {
+// requireLinux returns an error when not running on Linux (native or WSL).
+func requireLinux() error {
 	if runtime.GOOS != "linux" {
 		return fmt.Errorf("opute-host-agent requires Linux (native or WSL); unsupported platform %q", runtime.GOOS)
 	}
@@ -52,7 +51,7 @@ func RequireSupportedPlatform(providerID ID) error {
 	if pid != IDIncus {
 		return fmt.Errorf("unsupported provider %q", pid)
 	}
-	return RequireLinux()
+	return requireLinux()
 }
 
 // ResolveConfig picks the provider CLI binary from environment and defaults.
@@ -86,7 +85,7 @@ func resolveIncusBinary() string {
 			return path
 		}
 	}
-	return DefaultIncusPath
+	return defaultIncusPath
 }
 
 func fileExists(path string) bool {

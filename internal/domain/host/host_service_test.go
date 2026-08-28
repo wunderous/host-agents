@@ -31,7 +31,7 @@ func TestRestartHostServiceRejectsUnsafeUnitNames(t *testing.T) {
 
 func TestServiceStateRestartUsesDetachedUserSystemdJob(t *testing.T) {
 	want := []string{
-		hostruntime.DefaultSystemdRunPath,
+		defaultSystemdRunPath,
 		"--user",
 		"--unit=host-service-state-bootstrap-service",
 		"--collect",

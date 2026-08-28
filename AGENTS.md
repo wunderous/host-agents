@@ -8,9 +8,15 @@ Always-on index for the Go Host Agent. Domain procedures live in
 - `cmd/opute-host-agent/` contains the single Go executable entry point.
 - `internal/app`, `internal/cli`, and `internal/hostmcp` own runtime startup,
   command modes, and MCP serving.
-- `internal/tools`, `internal/ops`, `internal/provider`, `internal/plan`, and
-  `internal/session` implement typed capabilities, execution, plans, and
-  durable session contracts.
+- `internal/domain/*` owns execution, one package per domain (`incus`, `host`,
+  `kubernetes`, `llm`, `oci`, `postgres`, `cluster`, `serving`). A domain never
+  imports another domain: cross-domain needs are declared as a `Deps` struct of
+  narrow seams stated in primitives, and a `no-cross-domain-<name>` depguard rule
+  enforces it. `internal/hostagent` is the composition root that builds them and
+  owns no operations; `internal/hostruntime` is the shared seam they all take,
+  bounded by the three-part membership rule its tests enforce.
+- `internal/tools`, `internal/provider`, `internal/plan`, and `internal/session`
+  implement typed capabilities, plans, and durable session contracts.
 - `schemas/` stores versioned capability contracts; `test/` contains contract,
   integration, standalone, and mode tests. The separate Bun TUI lives in the
   sibling Opute repository under `apps/opute-tui/`. `npm/local-host-agent/` is

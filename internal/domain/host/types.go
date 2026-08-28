@@ -14,6 +14,10 @@ import (
 	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
+// defaultSystemdRunPath is host-only: no other domain launches transient
+// units, so S9.2 rule 2 keeps it here rather than in hostruntime.
+const defaultSystemdRunPath = "/usr/bin/systemd-run"
+
 // HostInfoResult mirrors the TypeScript describeHost payload.
 type HostInfoResult struct {
 	URI            string                      `json:"uri"`
@@ -101,7 +105,7 @@ func serviceStateCommand(serviceName, state, scope string) []string {
 		// systemctl can enqueue the restart and return a truthful scheduled
 		// result before the current agent is stopped.
 		return []string{
-			hostruntime.DefaultSystemdRunPath,
+			defaultSystemdRunPath,
 			"--user",
 			"--unit=" + serviceStateUnit(serviceName),
 			"--collect",
