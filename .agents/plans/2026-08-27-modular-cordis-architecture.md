@@ -425,6 +425,22 @@ domain, or in two, is a red test rather than a silent gap.
 *Exit:* test demonstrated to fail when a required tool is removed from the
 registry.
 
+**Done 2026-08-28.** `internal/contract/toolname` (102 constants) and a registry
+in `internal/tools`; `runTool` is a lookup. Handlers are split into per-domain
+files, the domain taken from the `ops/*.go` file defining the service method each
+calls — so M3 is a file move, not a re-derivation. 34 handlers are parked in
+`dispatch_unassigned.go` rather than guessed: their methods still live on
+`ops/service.go` and `ops/standalone.go`, and that file is the M3 worklist.
+
+The switch declared **102** distinct labels, not 104 — `grep -c 'case "'` also
+counts nested switches inside case bodies. §4.2 and this section said 104.
+
+Three guarantees, each demonstrated to fail (C-20): a required tool dropped from
+the registry fails the coverage test; a tool registered by two domains panics at
+init; a handler with no contract name, or a name with no handler, fails the new
+parity test. Note that parity cannot catch a *rename* — both sides derive from
+the same constant — which is what the literal required-sets are for.
+
 ### W3 — Complete the transport contract in `ha-k3`
 
 Add `server/discover` and the `Mcp-Method` / `_meta` gating to the `ha-k3`
@@ -932,7 +948,7 @@ execute in; each milestone names the plan and section that owns it.
 |---|---|---|---|---|
 | **M0** | **Enforcement gate real and green** | both | this section | — **unblocked** |
 | **M1** | **Baselines and boundary lint** | both | Platform §5 Phase 0.5 · Host Agent §6 W1 | — **done** |
-| M2 | Transport contract + dispatch registry | Host Agent | §6 W2, W3, W4 | D1 |
+| **M2** | **Transport contract + dispatch registry** | Host Agent | §6 W2, W3, W4 | — **W2, W4 done; W3 checklist done, seam coverage waits on the `ha-k3` split** |
 | M3 | Partition `internal/ops` | Host Agent | §6 W7 | D2, D3 |
 | M4 | Single capability registration | Host Agent | §6 W8 | D4 |
 | M5 | Platform kernel | Platform | §5 Phase 1 | D3, **D6** |

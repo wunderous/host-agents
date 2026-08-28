@@ -86,6 +86,9 @@ Layout after this: `cmd/` mounts `cordis.Context`; `internal/cordis` kernel; `in
 
 - Origin present+invalid → 403 on `POST /mcp` in [`internal/transport/http.go`](../../internal/transport/http.go). Kernel never sees headers.
 - MCP 2026-07-28 only: **no `initialize` by default** (the compatibility gate is bounded by [ADR 0011](../../docs/adr/0011-legacy-handshake-compatibility-gate.md); the unqualified claim was false — `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE` has always admitted it), no `Mcp-Session-Id`, `MCP-Protocol-Version`, tasks SSE. Bind `127.0.0.1`. `MCP_AUTH_TOKEN`.
+- **`server/discover`** is part of this edge, not an extension afterthought. It is the 2026-07-28 capability-discovery method and was missing from this checklist entirely (modular plan §2.2); it lands in `internal/transport/discover.go` and stays validated even under the legacy gate.
+- **Modern-request gating** is the `Mcp-Method` header plus `_meta["io.modelcontextprotocol/protocolVersion"]` (`validateModernMCPRequest` / `isModernMCPRequest`). Preserve both through the split: the bypass is bounded to the enumerated `legacyCompatibleMethods` set, and `TestLegacyCompatibleMethodsAreServed` asserts every entry names a method this server actually answers.
+- Contract coverage lives in [`test/compliance/mcp_test.go`](../../test/compliance/mcp_test.go), [`internal/transport/modern_test.go`](../../internal/transport/modern_test.go) and [`internal/transport/http_test.go`](../../internal/transport/http_test.go). These already cover `server/discover` and the header gating against the current handler; the split must carry them onto the new seam rather than leave them testing the old one.
 - Kill initialize/session language in [`npm/local-host-agent/README.md`](../../npm/local-host-agent/README.md) as part of this edge (console plan also rewrites client docs).
 
 ### ha-k4 — ADR 0002 + Granite trio
@@ -116,9 +119,10 @@ Rewrite HA AGENTS, ADR 0002 notes, RFC 0001 (reclassify TUI as the sibling conso
 ## Validation (before console starts)
 
 - `NewServer` does not contain the lifecycle tool `switch`; `DispatchTool` and `handleToolCall` share one façade path
+- Dispatch is a registry, not a `switch`: `internal/tools.RegisteredToolNames()` equals `internal/contract/toolname.All()`, and no tool is registered twice (W2)
 - Import graph: `internal/cordis` has no MCP/recipe/ops-ollama imports; `internal/ops` does not own chat/embed/rerank after ha-k4
 - `go test ./...` + `gofmt`; Origin tests; role `reranker` accepted; DefaultOllamaModel is Granite 4.2 3B
-- Wire: protocol version, **zero** `initialize`
+- Wire: protocol version, and `initialize` served only behind `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE` ([ADR 0011](../../docs/adr/0011-legacy-handshake-compatibility-gate.md)) — not "zero `initialize`", which was never what the code did
 - Core MCP (catalog, host info, plans) works with LLM provider unmounted (C-11)
 - Go packages do not mention `ctx.llm` / `ctx.agents` / `ctx.sessions` / `ctx.tools` / `ctx.systemPrompt`
 
