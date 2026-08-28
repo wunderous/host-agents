@@ -11,7 +11,7 @@ import (
 //
 // §9.2's three membership rules bound what may ENTER hostruntime. This bounds
 // what accumulates: a slow drift of members that each individually pass the
-// rules is exactly how internal/ops grew, and no per-member rule catches it.
+// rules is exactly how the old internal/ops grew, and no per-member rule catches it.
 //
 // A ratchet, not a cliff. Raising this is allowed and sometimes correct -- the
 // W7 partition will raise it once when the shared members land -- but it is a
@@ -29,7 +29,7 @@ import (
 // incus whether an instance exists and therefore stayed behind.
 //
 // Raised 420 -> 470 for the in-memory ResourceRegistry, moved here from
-// internal/ops so a domain test can build a real Shared without importing the
+// the old internal/ops so a domain test can build a real Shared without importing the
 // package this work is dismantling.
 //
 // Raised 470 -> 540 for EnvOr and the registry half of ResolveResource. The

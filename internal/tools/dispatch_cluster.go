@@ -7,12 +7,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wunderous/host-agents/internal/contract/toolname"
-	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/domain/host"
+	"github.com/wunderous/host-agents/internal/hostagent"
 )
 
 func init() {
-	register(toolname.ListClusters, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.ListClusters(listClustersFastArg(args))
+	register(toolname.ListClusters, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Cluster().ListClusters(listClustersFastArg(args))
 		if err != nil {
 			return nil, err
 		}
@@ -21,13 +22,13 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetClusterDetails, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetClusterDetails, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		if vmName == "" {
 			return nil, fmt.Errorf("vmName is required")
 		}
 		fast, _ := args["fast"].(bool)
-		out, err := svc.GetClusterDetails(vmName, fast)
+		out, err := svc.Cluster().GetClusterDetails(vmName, fast)
 		if err != nil {
 			return nil, err
 		}
@@ -36,12 +37,12 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetClusterRuntimeDetails, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetClusterRuntimeDetails, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		if vmName == "" {
 			return nil, fmt.Errorf("vmName is required")
 		}
-		out, err := svc.GetClusterRuntimeDetails(vmName)
+		out, err := svc.Cluster().GetClusterRuntimeDetails(vmName)
 		if err != nil {
 			return nil, err
 		}
@@ -50,7 +51,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ConfigureAgentConnection, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ConfigureAgentConnection, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		env := map[string]string{}
 		if raw, ok := args["environment"].(map[string]any); ok {
 			for key, value := range raw {
@@ -67,7 +68,7 @@ func init() {
 				}
 			}
 		}
-		out, err := svc.ConfigureAgentConnection(ops.ConfigureAgentConnectionArgs{EnvFile: stringField(args, "envFile"), Environment: env, Remove: remove, ServiceName: stringField(args, "serviceName"), Restart: optionalBoolField(args, "restart"), Scope: stringField(args, "scope")}, onData)
+		out, err := svc.Host().ConfigureAgentConnection(host.ConfigureAgentConnectionArgs{EnvFile: stringField(args, "envFile"), Environment: env, Remove: remove, ServiceName: stringField(args, "serviceName"), Restart: optionalBoolField(args, "restart"), Scope: stringField(args, "scope")}, onData)
 		if err != nil {
 			return nil, err
 		}

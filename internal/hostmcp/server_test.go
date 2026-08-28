@@ -16,15 +16,15 @@ import (
 
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
+	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/hostruntime"
-	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
 func newStandaloneTestServer(t *testing.T, allowMutations bool) *Server {
 	t.Helper()
-	svc := ops.NewHostOperationsService(ops.Options{
+	svc := hostagent.New(hostagent.Options{
 		ProviderID: hostruntime.IDIncus,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)
@@ -471,7 +471,7 @@ func TestServerDynamicCapabilityRegistrationPublishesRevisionAndDispatchesTruste
 
 func TestDynamicTypedProducerAndConsumerComposeThroughMCPWithoutToolKnowledge(t *testing.T) {
 	server := newStandaloneTestServer(t, true)
-	if err := server.ops.RegisterResource("host:local:plugin-host", map[string]any{"displayName": "plugin-host"}); err != nil {
+	if err := server.agent.RegisterResource("host:local:plugin-host", map[string]any{"displayName": "plugin-host"}); err != nil {
 		t.Fatal(err)
 	}
 	producer := tools.CapabilityDescriptor{

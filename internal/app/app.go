@@ -50,7 +50,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		AgentID:              cfg.RemoteAgentID,
 		AllowLegacyHandshake: cfg.AllowLegacyHandshake,
 		HealthObserver: func() map[string]any {
-			capacity, err := runtime.svc.VMInventoryCapacity()
+			capacity, err := runtime.svc.Incus().VMInventoryCapacity()
 			if err != nil {
 				return nil
 			}

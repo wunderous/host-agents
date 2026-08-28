@@ -544,10 +544,23 @@ rule once, `hostruntime.Shared` exists, and nothing about domains two through
 eight re-opens the question. What one commit would still cost is a single
 unreviewable diff across 19k lines with no green state in between.
 
-Progress: **`serving` extracted 2026-08-28** (2 operations, 4 injected seams).
-It is the pattern for the rest -- a domain declares what it needs from other
+Progress: **complete 2026-08-28.** All eight domains extracted in cost order
+(`serving`, `kubernetes`, `llm`, `oci`, `host`, `postgres`, `cluster`, `incus`),
+then `internal/ops` deleted. Every domain declares what it needs from other
 domains as `Deps`, stated in primitives rather than in another domain's types,
-so no two domains ever import each other.
+so no two domains ever import each other; a `no-cross-domain-<name>` depguard
+rule enforces it per domain, each proven RED on a deliberate import.
+
+What replaced `internal/ops` is `internal/hostagent`, a composition root that
+owns no operations: it holds `hostruntime.Shared`, constructs each domain with
+that domain's declared seams, and hands the domains out. Callers reach an
+operation through its owner -- `s.Incus().StartVM`, `s.Kubernetes().ListPods`.
+It is 937 lines, against 19,088 for the package it replaced.
+
+Four contract packages absorbed types two domains speak and neither may own:
+`clusterinfo`, `vminfo` (which now also holds `VMInfo` and the cluster IPv4
+normalizer), `k8sname`, and `toolname`; `internal/tcprelay` absorbed the TCP
+forwarder that postgres and cluster both run.
 
 Sequenced **after** W1 (anchors already terminal) and **after** W2's partition
 assertion exists (so the cut is verifiable). `ha-k4`'s Ollama move is one of the

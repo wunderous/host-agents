@@ -7,8 +7,8 @@ import (
 
 	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
+	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/hostruntime"
-	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/state"
 	"github.com/wunderous/host-agents/internal/tools"
 )
@@ -57,7 +57,7 @@ func TestRestoreProviderGenerationRefreshesLiveManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	service := ops.NewHostOperationsService(ops.Options{
+	service := hostagent.New(hostagent.Options{
 		ProviderID: hostruntime.IDIncus,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)

@@ -83,14 +83,14 @@ func (s *Server) providerTeardownInputs(args map[string]any) map[string]any {
 		}
 	}
 	serviceName := recipeStringField(inputs, "serviceName")
-	if serviceName == "" || s.ops == nil {
+	if serviceName == "" || s.agent == nil {
 		return inputs
 	}
 	scope := recipeStringField(inputs, "scope")
 	if scope == "" {
 		scope = "user"
 	}
-	inputs["serviceUri"] = fmt.Sprintf("host-service:%s:%s/%s", s.ops.TenantID(), scope, serviceName)
+	inputs["serviceUri"] = fmt.Sprintf("host-service:%s:%s/%s", s.agent.TenantID(), scope, serviceName)
 	return inputs
 }
 

@@ -59,15 +59,17 @@ linters:
               desc: "C-02: MCP terminates at internal/cordis/mcp."
             - pkg: "github.com/wunderous/host-agents/internal/mcpserver"
               desc: "C-02: domains register handlers, not MCP."
-        no-ops-in-domains: # W7 -- the strangler only runs one way
+        # The compiler already rejects this as an import cycle, so this rule has
+        # never been observed RED. It stands as the stated boundary.
+        no-composition-root-in-domains: # W7 -- construction points one way
           list-mode: lax
           files: ["**/internal/domain/**"]
           deny:
-            - pkg: "github.com/wunderous/host-agents/internal/ops"
+            - pkg: "github.com/wunderous/host-agents/internal/hostagent"
               desc: >-
-                internal/ops delegates INTO domains and is deleted last. A
-                domain importing it would make the dependency mutual and strand
-                the extraction; take what you need as an injected Deps seam.
+                hostagent constructs domains; a domain importing it would make
+                the dependency mutual. Take what you need as an injected Deps
+                seam.
         no-cross-domain-serving: # W7, one block per domain
           list-mode: lax
           files: ["**/internal/domain/serving/**"]

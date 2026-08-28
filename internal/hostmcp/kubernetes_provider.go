@@ -9,7 +9,8 @@ import (
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
 	"github.com/wunderous/host-agents/internal/cordis"
 	provideradapter "github.com/wunderous/host-agents/internal/cordis/mcp"
-	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/domain/kubernetes"
+	"github.com/wunderous/host-agents/internal/hostagent"
 )
 
 // kubernetesProviderExecutor is the only bridge from public neutral
@@ -20,7 +21,7 @@ type kubernetesProviderExecutor struct {
 	server *Server
 }
 
-func (e *kubernetesProviderExecutor) Execute(ctx context.Context, operation string, request ops.KubernetesProviderRequest) (map[string]any, error) {
+func (e *kubernetesProviderExecutor) Execute(ctx context.Context, operation string, request kubernetes.KubernetesProviderRequest) (map[string]any, error) {
 	if e == nil || e.server == nil {
 		return nil, fmt.Errorf("Kubernetes provider executor is unavailable")
 	}
@@ -70,7 +71,7 @@ func (e *kubernetesProviderExecutor) activeProvider() (string, *cordis.Generatio
 		adapter *provideradapter.Adapter
 	}
 	for providerID, manifest := range e.server.providerManifests {
-		if !providesCapability(manifest.Provides, ops.KubernetesCapabilityID) {
+		if !providesCapability(manifest.Provides, hostagent.KubernetesCapabilityID) {
 			continue
 		}
 		session, err := e.server.providerLifecycle.OpenSession(providerID)

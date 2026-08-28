@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 
 	"github.com/wunderous/host-agents/internal/config"
+	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/hostmcp"
 	"github.com/wunderous/host-agents/internal/hostruntime"
-	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/internal/version"
@@ -22,7 +22,7 @@ type Runtime struct {
 	cfg       config.Config
 	logger    *slog.Logger
 	toolNames []string
-	svc       *ops.HostOperationsService
+	svc       *hostagent.Service
 	admission *resource.Coordinator
 	host      *hostmcp.Server
 }
@@ -53,13 +53,13 @@ func NewRuntime(logger *slog.Logger) (*Runtime, error) {
 	}, nil
 }
 
-func buildHostRuntime(cfg config.Config, logger *slog.Logger) ([]string, *ops.HostOperationsService, *resource.Coordinator, *hostmcp.Server, error) {
+func buildHostRuntime(cfg config.Config, logger *slog.Logger) ([]string, *hostagent.Service, *resource.Coordinator, *hostmcp.Server, error) {
 	toolNames, err := tools.HostToolNamesForProvider(cfg.ProviderID)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	svc := ops.NewHostOperationsService(ops.Options{
+	svc := hostagent.New(hostagent.Options{
 		ProviderID:                hostruntime.NormalizeProviderID(cfg.ProviderID),
 		TenantID:                  cfg.TenantID,
 		InstanceID:                cfg.InstanceID,

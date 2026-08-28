@@ -15,8 +15,8 @@ import (
 
 	hostcapability "github.com/wunderous/host-agents/internal/capability"
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
+	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/hostruntime"
-	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/tools"
 )
@@ -47,7 +47,7 @@ func (c *capturingCapability) ValidateResult(_ context.Context, result *mcp.Call
 
 func newBindingTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
-	svc := ops.NewHostOperationsService(ops.Options{
+	svc := hostagent.New(hostagent.Options{
 		ProviderID: hostruntime.IDIncus,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)
@@ -129,7 +129,7 @@ func TestProviderDispatchDoesNotHoldAdmissionWhileCallingProviderCallback(t *tes
 // and durable evidence records both separately.
 func TestDispatchPreservesRawArgumentsAndRecordsSeparateBinding(t *testing.T) {
 	server, stateDir := newBindingTestServer(t)
-	if err := server.ops.RegisterResource("vm:local:worker-01", map[string]any{
+	if err := server.agent.RegisterResource("vm:local:worker-01", map[string]any{
 		"providerInstanceName": "worker-01",
 		"displayName":          "worker-01",
 		"instanceType":         "vm",
@@ -206,7 +206,7 @@ func TestDispatchPreservesRawArgumentsAndRecordsSeparateBinding(t *testing.T) {
 // and canonical-resource admission at the single dispatch boundary.
 func TestDispatchFailsClosedOnForeignTenantWrongKindAndUnknownURIs(t *testing.T) {
 	server, _ := newBindingTestServer(t)
-	if err := server.ops.RegisterResource("vm:local:worker-01", map[string]any{"providerInstanceName": "worker-01"}); err != nil {
+	if err := server.agent.RegisterResource("vm:local:worker-01", map[string]any{"providerInstanceName": "worker-01"}); err != nil {
 		t.Fatalf("register resource: %v", err)
 	}
 	descriptor := bindingTestDescriptor("probe.binding.admission",
@@ -286,7 +286,7 @@ func TestCapabilityOwnedInvalidArgumentsSurfaceTypedOwnerError(t *testing.T) {
 
 func TestRequiredBindingUsesDeclaredArgumentAndRejectsMissingValues(t *testing.T) {
 	server, _ := newBindingTestServer(t)
-	if err := server.ops.RegisterResource("database:local:db-1", map[string]any{"providerInstanceName": "db-1"}); err != nil {
+	if err := server.agent.RegisterResource("database:local:db-1", map[string]any{"providerInstanceName": "db-1"}); err != nil {
 		t.Fatal(err)
 	}
 	descriptor := bindingTestDescriptor("probe.binding.database", tools.ResourceBinding{Argument: "databaseUri", ResourceType: "database", Required: true})

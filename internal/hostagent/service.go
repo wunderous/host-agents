@@ -1,12 +1,15 @@
-package ops
+// Package hostagent is the composition root. It owns no operations: it holds
+// the shared runtime seam, constructs each domain with the cross-domain seams
+// that domain declared, and hands the domains out. Callers reach an operation
+// through the domain that owns it -- s.Incus().StartVM, s.Kubernetes().ListPods
+// -- so adding an operation never touches this package.
+package hostagent
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"sync"
 
-	"github.com/wunderous/host-agents/internal/contract/vminfo"
 	"github.com/wunderous/host-agents/internal/domain/cluster"
 	"github.com/wunderous/host-agents/internal/domain/incus"
 	"github.com/wunderous/host-agents/internal/domain/kubernetes"
@@ -16,45 +19,41 @@ import (
 	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
-// HostOperationsService implements host MCP operations against Incus on Linux.
-type HostOperationsService struct {
+// Service is the composition root's handle. One per host agent process.
+type Service struct {
 	// shared carries the identity, configuration, and execution handles that
 	// every domain needs and none owns (plan sec. 9.2). Domain packages take a
-	// `*hostruntime.Shared` directly; this service delegates to it so the move
-	// can happen one domain at a time.
+	// `*hostruntime.Shared` directly; it is the one piece of state this package
+	// owns.
 	shared               hostruntime.Shared
 	toolsFn              func(providerID string) []string
 	resetCheckpointPath  string
 	ociStoragePolicyPath string
 	sqliteDatabaseRoot   string
 
-	// oci is the oci domain, built lazily -- see oci_delegate.go. It holds the
+	// oci is the oci domain, built lazily -- built in oci_domain.go. It holds the
 	// container storage policy lock, so it is one instance per service.
 	ociSvc  *oci.Service
 	ociOnce sync.Once
 
-	// cluster is the cluster domain, built lazily -- see cluster_delegate.go. It
+	// cluster is the cluster domain, built lazily -- built in cluster_domain.go. It
 	// owns the guest bridge relay listener, so it is one instance per service.
 	clusterSvc  *cluster.Service
 	clusterOnce sync.Once
-	// incus is the incus domain, built lazily -- see incus_delegate.go.
+	// incus is the incus domain, built lazily -- built in incus_domain.go.
 	incusSvc  *incus.Service
 	incusOnce sync.Once
-	// llm is the llm domain, built lazily -- see llm_delegate.go. It owns live
+	// llm is the llm domain, built lazily -- built in llm_domain.go. It owns live
 	// relay listeners, so it is one instance per service.
 	llmSvc    *llm.Service
 	llmOnce   sync.Once
 	relayDirs [2]string
-	// postgres is the postgres domain, built lazily -- see postgres_delegate.go.
+	// postgres is the postgres domain, built lazily -- built in postgres_domain.go.
 	// It owns live relay listeners, so it is one instance per service.
 	postgresSvc            *postgres.Service
 	postgresOnce           sync.Once
 	postgresRelayConfigDir string
-	// container command seams keep runtime adapter tests independent of an
-	// installed host runtime. They are intentionally scoped to this service.
-	containerCommandFn          func(context.Context, string, ...string) ([]byte, error)
-	containerStreamingCommandFn func(context.Context, string, []string, func(string)) error
-	// k8s is the kubernetes domain, built lazily -- see kubernetes_delegate.go.
+	// k8s is the kubernetes domain, built lazily -- built in kubernetes_domain.go.
 	k8s     *kubernetes.Service
 	k8sOnce sync.Once
 }
@@ -75,7 +74,7 @@ type Options struct {
 	ResourceRegistry          ResourceRegistry
 }
 
-func NewHostOperationsService(opts Options) *HostOperationsService {
+func New(opts Options) *Service {
 	cfg := hostruntime.ResolveConfig(opts.ProviderID)
 	rt := hostruntime.NewRuntime(cfg)
 	toolsFn := opts.ToolsForProvider
@@ -98,7 +97,7 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 	if registry == nil {
 		registry = hostruntime.NewInMemoryResourceRegistry()
 	}
-	return &HostOperationsService{
+	return &Service{
 		shared: hostruntime.Shared{
 			Runtime:                 rt,
 			TenantID:                tenantID,
@@ -117,18 +116,11 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 	}
 }
 
-func (s *HostOperationsService) TenantID() string {
+func (s *Service) TenantID() string {
 	if s == nil {
 		return ""
 	}
 	return s.shared.TenantID
-}
-
-func (s *HostOperationsService) effectiveTenantID() string {
-	if s == nil {
-		return "local"
-	}
-	return s.shared.EffectiveTenantID()
 }
 
 func resolveResetCheckpointPath(explicitPath, relayConfigDir string) string {
@@ -141,21 +133,12 @@ func resolveResetCheckpointPath(explicitPath, relayConfigDir string) string {
 	return ""
 }
 
-func (s *HostOperationsService) ReadProviderID() string {
+func (s *Service) ReadProviderID() string {
 	return string(s.shared.Runtime.ReadProviderID())
 }
 
 // SetResourceSnapshot connects host-local admission telemetry to direct
 // diagnostics such as get_host_info and get_local_status.
-func (s *HostOperationsService) SetResourceSnapshot(snapshot func() map[string]any) {
+func (s *Service) SetResourceSnapshot(snapshot func() map[string]any) {
 	s.shared.ResourceSnapshot = snapshot
 }
-
-// These forward to internal/textutil, which every domain shares. The local
-// spellings stay so the ~76 call sites in this package do not churn while it is
-// being dismantled.
-var ()
-
-// VMInfo lives in the vminfo contract package: incus produces it and cluster
-// and host read it. The alias keeps the dispatch layer unchanged.
-type VMInfo = vminfo.VMInfo

@@ -1,4 +1,4 @@
-package ops
+package hostagent
 
 import (
 	"errors"
@@ -27,7 +27,7 @@ func (m *memoryResourceRegistry) ListResources(resourceType, tenantID string) ([
 
 func TestResourceResolverEnforcesTenantAndRegistry(t *testing.T) {
 	registry := &memoryResourceRegistry{}
-	service := NewHostOperationsService(Options{TenantID: "tenant-a", ResourceRegistry: registry})
+	service := New(Options{TenantID: "tenant-a", ResourceRegistry: registry})
 	if err := service.RegisterResource("vm:tenant-a:worker-01", map[string]any{"providerInstanceName": "worker-01"}); err != nil {
 		t.Fatal(err)
 	}

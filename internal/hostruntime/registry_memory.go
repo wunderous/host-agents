@@ -9,7 +9,7 @@ import (
 // NewInMemoryResourceRegistry is the default registry: durable enough for a
 // single process, and the one every domain test uses. It lives beside the
 // interface it implements so a domain can build a real Shared without reaching
-// back into internal/ops.
+// back into a domain.
 func NewInMemoryResourceRegistry() ResourceRegistry {
 	return &inMemoryResourceRegistry{records: map[string]resourceid.Record{}}
 }

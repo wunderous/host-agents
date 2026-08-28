@@ -9,24 +9,27 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wunderous/host-agents/internal/contract/toolname"
-	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/domain/host"
+	"github.com/wunderous/host-agents/internal/domain/incus"
+	"github.com/wunderous/host-agents/internal/domain/postgres"
+	"github.com/wunderous/host-agents/internal/hostagent"
 )
 
 // These tools call methods still defined on ops/service.go and ops/standalone.go --
-// the god-file residue that M3's internal/ops partition exists to place. They are
+// the residue that M3's domain partition placed everything else out of. They are
 // parked here rather than guessed into a domain; each one moves to its domain's
 // dispatch.go as part of that partition.
 
 func init() {
-	register(toolname.GetHostInfo, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out := svc.DescribeHost()
+	register(toolname.GetHostInfo, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out := svc.Host().DescribeHost()
 		return structuredResult(out, ""), nil
 	})
 }
 
 func init() {
-	register(toolname.CheckLocalPrerequisites, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.CheckLocalPrerequisites()
+	register(toolname.CheckLocalPrerequisites, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Incus().CheckLocalPrerequisites()
 		if err != nil {
 			return nil, err
 		}
@@ -35,8 +38,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetLocalStatus, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.GetLocalStatus()
+	register(toolname.GetLocalStatus, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Incus().GetLocalStatus()
 		if err != nil {
 			return nil, err
 		}
@@ -45,7 +48,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ConfigureLocalLLMRuntime, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ConfigureLocalLLMRuntime, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		if localLLMRuntime(args) == "ollama" {
 			return nil, fmt.Errorf("the Ollama runtime configuration is host-wide and pinned to one process, two resident models, and one request at a time")
 		}
@@ -57,7 +60,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RemoveLocalLLMModel, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RemoveLocalLLMModel, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		if localLLMRuntime(args) == "ollama" {
 			return structuredResult(map[string]any{"removed": false, "purged": false, "shared": true, "reason": "Ollama model artifacts are shared host state; use the host Ollama lifecycle for explicit garbage collection"}, "shared Ollama model retained"), nil
 		}
@@ -69,7 +72,7 @@ func init() {
 }
 
 func init() {
-	h := func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	h := func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		command, _ := args["command"].(string)
 		command = strings.TrimSpace(command)
 		if command == "" {
@@ -82,7 +85,7 @@ func init() {
 		if timeoutMs > 2*60*60*1000 {
 			return nil, fmt.Errorf("timeoutMs exceeds the two-hour maximum")
 		}
-		res, err := svc.RunAgentShellWithTimeout(command, time.Duration(timeoutMs)*time.Millisecond, onData)
+		res, err := svc.Host().RunAgentShellWithTimeout(command, time.Duration(timeoutMs)*time.Millisecond, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -110,15 +113,15 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureSqlConnector, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		parsed := ops.EnsureSQLConnectorArgs{
+	register(toolname.EnsureSqlConnector, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		parsed := postgres.EnsureSQLConnectorArgs{
 			DatabaseID: stringField(args, "databaseId"),
 			TargetHost: stringField(args, "targetHost"),
 			TargetPort: intField(args, "targetPort"),
 			ListenPort: intField(args, "listenPort"),
 			ListenHost: stringField(args, "listenHost"),
 		}
-		out, err := svc.EnsureSQLConnector(parsed)
+		out, err := svc.Postgres().EnsureSQLConnector(parsed)
 		if err != nil {
 			return nil, err
 		}
@@ -128,9 +131,9 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetSqlConnectorStatus, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetSqlConnectorStatus, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		databaseID := stringField(args, "databaseId")
-		out, err := svc.GetSQLConnectorStatus(databaseID)
+		out, err := svc.Postgres().GetSQLConnectorStatus(databaseID)
 		if err != nil {
 			return nil, err
 		}
@@ -144,10 +147,10 @@ func init() {
 }
 
 func init() {
-	register(toolname.ReleaseSqlConnector, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ReleaseSqlConnector, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		databaseID := stringField(args, "databaseId")
 		force, _ := args["force"].(bool)
-		released, err := svc.ReleaseSQLConnector(databaseID, force)
+		released, err := svc.Postgres().ReleaseSQLConnector(databaseID, force)
 		if err != nil {
 			return nil, err
 		}
@@ -160,12 +163,12 @@ func init() {
 }
 
 func init() {
-	register(toolname.CreateVM, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.CreateVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		parsed := provisionArgs(args)
 		if strings.TrimSpace(parsed.InstanceType) == "" {
 			parsed.InstanceType = "virtual-machine"
 		}
-		out, err := svc.ProvisionVM(parsed, onData)
+		out, err := svc.Incus().ProvisionVM(parsed, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -174,9 +177,9 @@ func init() {
 }
 
 func init() {
-	register(toolname.ProvisionVM, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ProvisionVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		parsed := provisionArgs(args)
-		out, err := svc.ProvisionVM(parsed, onData)
+		out, err := svc.Incus().ProvisionVM(parsed, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -189,8 +192,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.StartVM, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.StartVM(ops.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
+	register(toolname.StartVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Incus().StartVM(incus.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -199,8 +202,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.StopVM, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.StopVM(ops.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
+	register(toolname.StopVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Incus().StopVM(incus.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -209,8 +212,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.RestartVM, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.RestartVM(ops.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
+	register(toolname.RestartVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Incus().RestartVM(incus.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -219,8 +222,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.UpdateVMResources, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.UpdateVMResources(ops.UpdateVMResourcesArgs{
+	register(toolname.UpdateVMResources, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Incus().UpdateVMResources(incus.UpdateVMResourcesArgs{
 			VMName: vmNameFromBinding(binding),
 			CPUs:   intField(args, "cpus"),
 			Memory: stringField(args, "memory"),
@@ -233,8 +236,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.DeleteVM, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.DeleteVM(ops.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
+	register(toolname.DeleteVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Incus().DeleteVM(incus.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -243,8 +246,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.InstallPostgreSQL, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.InstallPostgreSQL(ops.InstallPostgreSQLArgs{
+	register(toolname.InstallPostgreSQL, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Postgres().InstallPostgreSQL(postgres.InstallPostgreSQLArgs{
 			VMName:    vmNameFromBinding(binding),
 			Namespace: stringField(args, "namespace"),
 			Database:  stringField(args, "database"),
@@ -257,8 +260,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetPostgreSQLStatus, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.GetPostgreSQLStatus(vmNameFromBinding(binding), stringField(args, "namespace"))
+	register(toolname.GetPostgreSQLStatus, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Postgres().GetPostgreSQLStatus(vmNameFromBinding(binding), stringField(args, "namespace"))
 		if err != nil {
 			return nil, err
 		}
@@ -267,8 +270,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.DeletePostgreSQL, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.DeletePostgreSQL(vmNameFromBinding(binding), stringField(args, "namespace"), onData)
+	register(toolname.DeletePostgreSQL, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Postgres().DeletePostgreSQL(vmNameFromBinding(binding), stringField(args, "namespace"), onData)
 		if err != nil {
 			return nil, err
 		}
@@ -277,8 +280,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.RunSql, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.RunSQL(vmNameFromBinding(binding), stringField(args, "namespace"), stringField(args, "database"), stringField(args, "sql"))
+	register(toolname.RunSql, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Postgres().RunSQL(vmNameFromBinding(binding), stringField(args, "namespace"), stringField(args, "database"), stringField(args, "sql"))
 		if err != nil {
 			return nil, err
 		}
@@ -287,8 +290,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.RestartHostService, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.RestartHostService(ops.RestartHostServiceArgs{ServiceName: stringField(args, "serviceName")}, onData)
+	register(toolname.RestartHostService, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().RestartHostService(host.RestartHostServiceArgs{ServiceName: stringField(args, "serviceName")}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -297,8 +300,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.SetHostServiceState, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.SetHostServiceState(ops.SetHostServiceStateArgs{ServiceName: serviceNameFromBinding(args, binding), State: stringField(args, "state"), Scope: serviceScopeFromBinding(args, binding)}, onData)
+	register(toolname.SetHostServiceState, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().SetHostServiceState(host.SetHostServiceStateArgs{ServiceName: serviceNameFromBinding(args, binding), State: stringField(args, "state"), Scope: serviceScopeFromBinding(args, binding)}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -307,8 +310,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureHostServiceSupervisor, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.EnsureHostServiceSupervisor(ops.EnsureHostServiceSupervisorArgs{Scope: stringField(args, "scope")}, onData)
+	register(toolname.EnsureHostServiceSupervisor, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().EnsureHostServiceSupervisor(host.EnsureHostServiceSupervisorArgs{Scope: stringField(args, "scope")}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -317,27 +320,27 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureDocker, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureDocker, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		// EnsureDocker is an unsupported stub on Incus Linux hosts: it always errors,
 		// so the success path below was dead.
-		_, err := svc.EnsureDocker(onData)
+		_, err := svc.Host().EnsureDocker(onData)
 		return nil, err
 	})
 }
 
 func init() {
-	register(toolname.EnsureK3d, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureK3d, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		// EnsureK3d is an unsupported stub on Incus Linux hosts: it always errors,
 		// so the success path below was dead.
-		_, err := svc.EnsureK3d(onData)
+		_, err := svc.Host().EnsureK3d(onData)
 		return nil, err
 	})
 }
 
 func init() {
-	register(toolname.ListNamespaces, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListNamespaces, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
-		namespaces, err := svc.ListNamespaces(vmName)
+		namespaces, err := svc.Kubernetes().ListNamespaces(vmName)
 		if err != nil {
 			return nil, err
 		}
@@ -347,9 +350,9 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListStorageClasses, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListStorageClasses, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
-		storageClasses, err := svc.ListStorageClasses(vmName)
+		storageClasses, err := svc.Kubernetes().ListStorageClasses(vmName)
 		if err != nil {
 			return nil, err
 		}
@@ -359,9 +362,9 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListIngressClasses, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListIngressClasses, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
-		ingressClasses, err := svc.ListIngressClasses(vmName)
+		ingressClasses, err := svc.Kubernetes().ListIngressClasses(vmName)
 		if err != nil {
 			return nil, err
 		}
@@ -370,10 +373,10 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListPods, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListPods, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		namespace := stringField(args, "namespace")
-		pods, err := svc.ListPods(vmName, namespace)
+		pods, err := svc.Kubernetes().ListPods(vmName, namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -382,10 +385,10 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListServices, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListServices, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		namespace := stringField(args, "namespace")
-		services, err := svc.ListServices(vmName, namespace)
+		services, err := svc.Kubernetes().ListServices(vmName, namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -394,10 +397,10 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListDeployments, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListDeployments, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		namespace := stringField(args, "namespace")
-		deployments, err := svc.ListDeployments(vmName, namespace)
+		deployments, err := svc.Kubernetes().ListDeployments(vmName, namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -406,8 +409,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.DiagnoseBridge, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.DiagnoseBridge(ctx)
+	register(toolname.DiagnoseBridge, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().DiagnoseBridge(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -416,8 +419,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.RecoverBridge, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.RecoverBridge(ctx, onData)
+	register(toolname.RecoverBridge, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().RecoverBridge(ctx, onData)
 		if err != nil {
 			return nil, err
 		}

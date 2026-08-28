@@ -29,7 +29,7 @@ func (s *Server) handleOpenAssistantSession(args map[string]any) (*mcp.CallToolR
 	if requested, _ := args["catalogRevision"].(string); strings.TrimSpace(requested) != "" && requested != snapshot.Revision {
 		return tools.ErrorResult(fmt.Errorf("catalog revision mismatch: requested=%s current=%s", requested, snapshot.Revision)), nil
 	}
-	activeTenant := s.ops.TenantID()
+	activeTenant := s.agent.TenantID()
 	if requested, _ := args["tenantId"].(string); strings.TrimSpace(requested) != "" && requested != activeTenant {
 		return tools.ErrorResult(fmt.Errorf("tenant mismatch: requested=%s active=%s", requested, activeTenant)), nil
 	}

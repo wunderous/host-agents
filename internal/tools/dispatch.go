@@ -7,7 +7,12 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/domain/host"
+	"github.com/wunderous/host-agents/internal/domain/incus"
+	"github.com/wunderous/host-agents/internal/domain/kubernetes"
+	"github.com/wunderous/host-agents/internal/domain/postgres"
+	"github.com/wunderous/host-agents/internal/domain/serving"
+	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/resource"
 )
 
@@ -15,7 +20,7 @@ import (
 // an MCP CallToolResult. The argument map is the unchanged client/model input;
 // resolved provider coordinates arrive only through the typed execution
 // binding, never as synthetic argument fields.
-func DispatchTool(ctx context.Context, svc *ops.HostOperationsService, name string, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+func DispatchTool(ctx context.Context, svc *hostagent.Service, name string, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("tool name is required")
@@ -41,7 +46,7 @@ func listClustersFastArg(args map[string]any) bool {
 	return true
 }
 
-func runTool(ctx context.Context, svc *ops.HostOperationsService, name string, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+func runTool(ctx context.Context, svc *hostagent.Service, name string, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 	handler, ok := LookupTool(name)
 	if !ok {
 		if IsOmittedToolName(name) {
@@ -177,12 +182,12 @@ func stringField(args map[string]any, key string) string {
 	return strings.TrimSpace(v)
 }
 
-func postgresqlServiceRelayArgs(args map[string]any) *ops.PostgreSQLServiceRelayArgs {
+func postgresqlServiceRelayArgs(args map[string]any) *postgres.PostgreSQLServiceRelayArgs {
 	raw, ok := args["localRelay"].(map[string]any)
 	if !ok || raw == nil {
 		return nil
 	}
-	return &ops.PostgreSQLServiceRelayArgs{
+	return &postgres.PostgreSQLServiceRelayArgs{
 		SessionID:       stringField(raw, "sessionId"),
 		ListenHost:      stringField(raw, "listenHost"),
 		ListenPort:      intField(raw, "listenPort"),
@@ -195,8 +200,8 @@ func postgresqlServiceRelayArgs(args map[string]any) *ops.PostgreSQLServiceRelay
 	}
 }
 
-func postgresqlServiceArgs(args map[string]any, binding ExecutionBinding) ops.PostgreSQLServiceArgs {
-	return ops.PostgreSQLServiceArgs{
+func postgresqlServiceArgs(args map[string]any, binding ExecutionBinding) postgres.PostgreSQLServiceArgs {
+	return postgres.PostgreSQLServiceArgs{
 		VMName: vmNameFromBinding(binding), ClusterName: stringField(args, "clusterName"), Namespace: stringField(args, "namespace"),
 		Instances: intField(args, "instances"), StorageClass: stringField(args, "storageClass"), StorageSize: stringField(args, "storageSize"),
 		RetentionPolicy: stringField(args, "retentionPolicy"), RestartConsumers: optionalBoolField(args, "restartConsumers"),
@@ -218,12 +223,12 @@ func resolveLocalLLMModelArg(args map[string]any) (string, error) {
 		if localLLMRuntime(args) == "llama-cpp" {
 			return "qwen3.5-0.8b/base-llama", nil
 		}
-		return ops.DefaultOllamaModel, nil
+		return hostagent.DefaultOllamaModel, nil
 	case "lfm2-2.6b":
 		if localLLMRuntime(args) == "llama-cpp" {
 			return "", fmt.Errorf("model preset %q requires the ollama runtime", stringField(args, "modelPreset"))
 		}
-		return ops.DefaultOllamaModel, nil
+		return hostagent.DefaultOllamaModel, nil
 	case "lfm2.5-thinking":
 		if localLLMRuntime(args) == "llama-cpp" {
 			return "", fmt.Errorf("model preset %q requires the ollama runtime", stringField(args, "modelPreset"))
@@ -447,12 +452,12 @@ func optionalBoolField(args map[string]any, key string) *bool {
 	return &v
 }
 
-func provisionArgs(args map[string]any) ops.ProvisionVMArgs {
+func provisionArgs(args map[string]any) incus.ProvisionVMArgs {
 	vmName := stringField(args, "vmName")
 	if vmName == "" {
 		vmName = stringField(args, "name")
 	}
-	return ops.ProvisionVMArgs{
+	return incus.ProvisionVMArgs{
 		VMName:       vmName,
 		Image:        stringField(args, "image"),
 		CPUs:         intField(args, "cpus"),
@@ -462,8 +467,8 @@ func provisionArgs(args map[string]any) ops.ProvisionVMArgs {
 	}
 }
 
-func servingAssignmentArgs(args map[string]any) ops.ServingAssignmentArgs {
-	return ops.ServingAssignmentArgs{
+func servingAssignmentArgs(args map[string]any) serving.ServingAssignmentArgs {
+	return serving.ServingAssignmentArgs{
 		ContractVersion: stringField(args, "contractVersion"),
 		AssignmentID:    stringField(args, "assignmentId"),
 		Generation:      intField(args, "generation"),
@@ -496,7 +501,7 @@ func anySliceField(args map[string]any, name string) []any {
 	return nil
 }
 
-func execCommandArgs(args map[string]any, binding ExecutionBinding) ops.ExecCommandArgs {
+func execCommandArgs(args map[string]any, binding ExecutionBinding) host.ExecCommandArgs {
 	var argv []string
 	if raw, ok := args["args"].([]any); ok {
 		for _, item := range raw {
@@ -505,7 +510,7 @@ func execCommandArgs(args map[string]any, binding ExecutionBinding) ops.ExecComm
 			}
 		}
 	}
-	return ops.ExecCommandArgs{
+	return host.ExecCommandArgs{
 		VMName:    vmNameFromBinding(binding),
 		Command:   stringField(args, "command"),
 		Args:      argv,
@@ -513,7 +518,7 @@ func execCommandArgs(args map[string]any, binding ExecutionBinding) ops.ExecComm
 	}
 }
 
-func installHelmChartArgs(args map[string]any, binding ExecutionBinding) ops.InstallHelmChartArgs {
+func installHelmChartArgs(args map[string]any, binding ExecutionBinding) kubernetes.InstallHelmChartArgs {
 	releaseName := stringField(args, "releaseName")
 	if releaseName == "" {
 		releaseName = stringField(args, "chartName")
@@ -529,17 +534,17 @@ func installHelmChartArgs(args map[string]any, binding ExecutionBinding) ops.Ins
 	if namespace == "" {
 		namespace = "kube-system"
 	}
-	return ops.InstallHelmChartArgs{
+	return kubernetes.InstallHelmChartArgs{
 		VMName:      vmNameFromBinding(binding),
 		ReleaseName: releaseName,
 		ChartSource: chartSource,
 		Namespace:   namespace,
 		Repo:        stringField(args, "repo"),
-		Values:      ops.HelmValuesYAML(args["values"]),
+		Values:      hostagent.HelmValuesYAML(args["values"]),
 	}
 }
 
-func uninstallHelmChartArgs(args map[string]any, binding ExecutionBinding) ops.UninstallHelmChartArgs {
+func uninstallHelmChartArgs(args map[string]any, binding ExecutionBinding) kubernetes.UninstallHelmChartArgs {
 	releaseName := stringField(args, "releaseName")
 	if releaseName == "" {
 		releaseName = stringField(args, "chartName")
@@ -551,7 +556,7 @@ func uninstallHelmChartArgs(args map[string]any, binding ExecutionBinding) ops.U
 	if namespace == "" {
 		namespace = "kube-system"
 	}
-	return ops.UninstallHelmChartArgs{
+	return kubernetes.UninstallHelmChartArgs{
 		VMName:      vmNameFromBinding(binding),
 		ReleaseName: releaseName,
 		Namespace:   namespace,

@@ -1,4 +1,4 @@
-package ops
+package hostagent
 
 import (
 	"encoding/json"
@@ -32,7 +32,7 @@ func TestIncusOwnershipMismatchErrorUsesStableShape(t *testing.T) {
 }
 
 func TestSharedHostOwnershipRejectsNonOwnerMutation(t *testing.T) {
-	service := &HostOperationsService{
+	service := &Service{
 		shared: hostruntime.Shared{
 			InstanceID:              "local-dev",
 			SharedHostOwnerInstance: "dogfood",
@@ -45,13 +45,13 @@ func TestSharedHostOwnershipRejectsNonOwnerMutation(t *testing.T) {
 }
 
 func TestSharedHostOwnershipBlocksHostServiceMutationBeforeCommand(t *testing.T) {
-	service := &HostOperationsService{
+	service := &Service{
 		shared: hostruntime.Shared{
 			InstanceID:              "local-dev",
 			SharedHostOwnerInstance: "dogfood",
 		},
 	}
-	if _, err := service.RestartHostService(RestartHostServiceArgs{ServiceName: "opute-host-agent"}, nil); err == nil || !strings.Contains(err.Error(), "shared_host_ownership_required") {
+	if _, err := service.Host().RestartHostService(RestartHostServiceArgs{ServiceName: "opute-host-agent"}, nil); err == nil || !strings.Contains(err.Error(), "shared_host_ownership_required") {
 		t.Fatalf("expected host-service mutation guard, got %v", err)
 	}
 }

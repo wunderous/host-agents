@@ -19,7 +19,7 @@ import (
 	"github.com/wunderous/host-agents/internal/console"
 	"github.com/wunderous/host-agents/internal/cordis"
 	provideradapter "github.com/wunderous/host-agents/internal/cordis/mcp"
-	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/internal/state"
@@ -32,7 +32,7 @@ import (
 type Server struct {
 	mcpServer                  *mcp.Server
 	logger                     *slog.Logger
-	ops                        *ops.HostOperationsService
+	agent                      *hostagent.Service
 	tasks                      *tasks.Registry
 	console                    *console.Runtime
 	providerID                 string
@@ -75,7 +75,7 @@ type CapabilityImplementation func(context.Context, map[string]any) (*mcp.CallTo
 
 type Options struct {
 	ProviderID             string
-	Ops                    *ops.HostOperationsService
+	Ops                    *hostagent.Service
 	Logger                 *slog.Logger
 	Standalone             bool
 	AllowMutations         bool
@@ -88,7 +88,7 @@ type Options struct {
 
 func NewServer(opts Options) (*Server, error) {
 	if opts.Ops == nil {
-		return nil, fmt.Errorf("ops service is required")
+		return nil, fmt.Errorf("host agent service is required")
 	}
 	providerID := opts.ProviderID
 	if providerID == "" {
@@ -141,9 +141,9 @@ func NewServer(opts Options) (*Server, error) {
 	hs := &Server{
 		mcpServer:                  srv,
 		logger:                     opts.Logger,
-		ops:                        opts.Ops,
+		agent:                      opts.Ops,
 		tasks:                      tasks.NewRegistry(),
-		console:                    console.NewRuntime(opts.Ops.NewVMInteractiveCommand),
+		console:                    console.NewRuntime(opts.Ops.Incus().NewVMInteractiveCommand),
 		providerID:                 providerID,
 		standalone:                 opts.Standalone,
 		allowMutations:             opts.AllowMutations,
@@ -187,7 +187,7 @@ func NewServer(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("mount resource services: %w", err)
 	}
 	hs.registerTools()
-	opts.Ops.SetKubernetesProviderExecutor(&kubernetesProviderExecutor{server: hs})
+	opts.Ops.Kubernetes().SetKubernetesProviderExecutor(&kubernetesProviderExecutor{server: hs})
 	return hs, nil
 }
 
@@ -243,8 +243,8 @@ func (s *Server) MCP() *mcp.Server {
 	return s.mcpServer
 }
 
-func (s *Server) Ops() *ops.HostOperationsService {
-	return s.ops
+func (s *Server) Ops() *hostagent.Service {
+	return s.agent
 }
 
 // CatalogSnapshot returns the immutable capability snapshot used by MCP
@@ -590,7 +590,7 @@ func resolveExecutionBinding(server *Server, name string, args map[string]any) (
 		Admission:     "tenant-resource-registry",
 		Authorization: "admitted",
 	}
-	if server == nil || server.ops == nil {
+	if server == nil || server.agent == nil {
 		return binding, nil
 	}
 	// Declared descriptor bindings are authoritative for their argument. There
@@ -613,7 +613,7 @@ func resolveExecutionBinding(server *Server, name string, args map[string]any) (
 	binding.CatalogRevision = server.catalog.Revision
 	binding.GenerationID = descriptor.GenerationID
 	server.catalogMu.RUnlock()
-	binding.TenantID = server.ops.TenantID()
+	binding.TenantID = server.agent.TenantID()
 	arguments := make([]string, 0, len(bindingByArgument))
 	for argument := range bindingByArgument {
 		arguments = append(arguments, argument)
@@ -636,11 +636,11 @@ func resolveExecutionBinding(server *Server, name string, args map[string]any) (
 			}
 			continue
 		}
-		var coordinates ops.Coordinates
+		var coordinates hostagent.Coordinates
 		var lastErr error
 		resolved := false
 		for _, resourceBinding := range resourceBindings {
-			candidate, err := server.ops.ResolveResource(uri, resourceBinding.ResourceType)
+			candidate, err := server.agent.ResolveResource(uri, resourceBinding.ResourceType)
 			if err == nil {
 				coordinates = candidate
 				resolved = true
@@ -706,7 +706,7 @@ func (s *Server) dispatchRegisteredOrBuiltIn(ctx context.Context, name string, a
 		return errorResult, nil
 	}
 	if result != nil && !result.IsError {
-		if err := validateProducedResources(capabilityValue.Definition(), result.StructuredContent, s.ops.TenantID()); err != nil {
+		if err := validateProducedResources(capabilityValue.Definition(), result.StructuredContent, s.agent.TenantID()); err != nil {
 			observation := s.normalizeCapabilityObservation(capabilityValue, hostcapability.CapabilityObservation{Status: "invalid_result"}, binding.CatalogRevision)
 			typedErr := tools.NewCapabilityError("capability", "invalid_resource_output", err)
 			errorResult := tools.ErrorResult(typedErr)
@@ -739,10 +739,10 @@ func (s *Server) completeProducedResourceBinding(
 			}
 		}
 		candidate, ok := args["uri"].(string)
-		if !ok || strings.TrimSpace(candidate) == "" || s == nil || s.ops == nil {
+		if !ok || strings.TrimSpace(candidate) == "" || s == nil || s.agent == nil {
 			continue
 		}
-		resolved, err := s.ops.ResolveResource(candidate, produced.ResourceType)
+		resolved, err := s.agent.ResolveResource(candidate, produced.ResourceType)
 		if err != nil {
 			continue
 		}
@@ -938,7 +938,7 @@ func (s *Server) ensureLegacyCapabilityForDescriptor(descriptor tools.Capability
 		return
 	}
 	s.capabilities[descriptor.OperationID] = hostcapability.NewLegacyAdapter(descriptor, func(ctx context.Context, args hostcapability.RawArguments, binding tools.ExecutionBinding, sink hostcapability.ExecutionSink) (*mcp.CallToolResult, error) {
-		return tools.DispatchTool(ctx, s.ops, descriptor.OperationID, args, binding, sink)
+		return tools.DispatchTool(ctx, s.agent, descriptor.OperationID, args, binding, sink)
 	})
 }
 

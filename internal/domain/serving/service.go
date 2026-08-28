@@ -1,7 +1,7 @@
 // Package serving owns process and service assignment reconciliation and the
 // generic ingress discovery that reports where an assignment can be reached.
 //
-// It is the first domain extracted from internal/ops under plan sec. 7. What it
+// It was the first domain extracted under plan sec. 7. What it
 // needs from other domains it declares as Deps -- narrow function seams stated
 // in primitives, never in another domain's types. That is deliberate: a seam
 // spelled `BridgeIP(vmName) (string, error)` says what serving needs, while a

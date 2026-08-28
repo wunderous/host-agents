@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	"github.com/wunderous/host-agents/internal/authz"
+	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/hostmcp"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/mcphttp"
-	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
@@ -163,7 +163,7 @@ func TestAudienceBoundTokenRejectedOnSecondResource(t *testing.T) {
 
 func newTransportTestServer(t *testing.T) *hostmcp.Server {
 	t.Helper()
-	svc := ops.NewHostOperationsService(ops.Options{
+	svc := hostagent.New(hostagent.Options{
 		ProviderID: hostruntime.IDIncus,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)

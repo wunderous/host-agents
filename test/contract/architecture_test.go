@@ -13,7 +13,7 @@ import (
 func TestProviderAndClientBoundariesHaveNoConcreteCrossImports(t *testing.T) {
 	_, current, _, _ := runtime.Caller(0)
 	root := filepath.Clean(filepath.Join(filepath.Dir(current), "..", ".."))
-	core := []string{"cmd", "internal/cli", "internal/cordis", "internal/hostmcp", "internal/recipe", "internal/plan", "internal/catalog", "internal/state", "internal/ops"}
+	core := []string{"cmd", "internal/cli", "internal/cordis", "internal/hostmcp", "internal/recipe", "internal/plan", "internal/catalog", "internal/state", "internal/hostagent", "internal/domain"}
 	for _, relative := range core {
 		assertImportsExclude(t, filepath.Join(root, relative), map[string]bool{
 			"github.com/wunderous/host-agents/plugins/llm/ollama":           true,

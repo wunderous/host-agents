@@ -7,12 +7,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wunderous/host-agents/internal/contract/toolname"
-	"github.com/wunderous/host-agents/internal/ops"
+	"github.com/wunderous/host-agents/internal/domain/oci"
+	"github.com/wunderous/host-agents/internal/hostagent"
 )
 
 func init() {
-	register(toolname.InstallOCIRegistry, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.InstallOCIRegistry(ops.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Image: stringField(args, "image"), StorageSize: stringField(args, "storageSize"), StorageClass: stringField(args, "storageClass"), NodePort: intField(args, "nodePort")}, onData)
+	register(toolname.InstallOCIRegistry, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Oci().InstallOCIRegistry(oci.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Image: stringField(args, "image"), StorageSize: stringField(args, "storageSize"), StorageClass: stringField(args, "storageClass"), NodePort: intField(args, "nodePort")}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -21,8 +22,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetOCIRegistryStatus, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.GetOCIRegistryStatus(ops.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Name: stringField(args, "name")})
+	register(toolname.GetOCIRegistryStatus, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Oci().GetOCIRegistryStatus(oci.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Name: stringField(args, "name")})
 		if err != nil {
 			return nil, err
 		}
@@ -31,8 +32,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.DeleteOCIRegistry, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.DeleteOCIRegistry(ops.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace")}, onData)
+	register(toolname.DeleteOCIRegistry, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Oci().DeleteOCIRegistry(oci.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace")}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -41,8 +42,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureOCIBuilder, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.EnsureOciBuilder(ops.EnsureOciBuilderArgs{Builder: stringField(args, "builder")}, onData)
+	register(toolname.EnsureOCIBuilder, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Oci().EnsureOciBuilder(oci.EnsureOciBuilderArgs{Builder: stringField(args, "builder")}, onData)
 		if err != nil {
 			return nil, err
 		}
@@ -51,8 +52,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.ConfigureOCIStorage, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.ConfigureOciStorage(ctx, ops.ConfigureOciStorageArgs{
+	register(toolname.ConfigureOCIStorage, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Oci().ConfigureOciStorage(ctx, oci.ConfigureOciStorageArgs{
 			Runtime:       stringField(args, "runtime"),
 			MaxBytes:      optionalInt64Field(args, "maxBytes"),
 			MinAgeSeconds: optionalInt64Field(args, "minAgeSeconds"),
@@ -66,8 +67,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.InspectContainerStorage, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.InspectContainerStorage(ctx, ops.InspectContainerStorageArgs{
+	register(toolname.InspectContainerStorage, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Oci().InspectContainerStorage(ctx, oci.InspectContainerStorageArgs{
 			Runtime: stringField(args, "runtime"),
 		})
 		if err != nil {
@@ -78,8 +79,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.CleanupContainerStorage, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.CleanupContainerStorage(ctx, ops.CleanupContainerStorageArgs{
+	register(toolname.CleanupContainerStorage, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Oci().CleanupContainerStorage(ctx, oci.CleanupContainerStorageArgs{
 			Runtime:       stringField(args, "runtime"),
 			MaxBytes:      optionalInt64Field(args, "maxBytes"),
 			MinAgeSeconds: optionalInt64Field(args, "minAgeSeconds"),
@@ -93,8 +94,8 @@ func init() {
 }
 
 func init() {
-	register(toolname.BuildAndPushOCIImage, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.BuildAndPushOciImage(ctx, ops.BuildAndPushOciImageArgs{
+	register(toolname.BuildAndPushOCIImage, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Oci().BuildAndPushOciImage(ctx, oci.BuildAndPushOciImageArgs{
 			ContextDir:       stringField(args, "contextDir"),
 			Dockerfile:       stringField(args, "dockerfile"),
 			Image:            stringField(args, "image"),
@@ -111,7 +112,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.StageBuildContext, func(ctx context.Context, svc *ops.HostOperationsService, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.StageBuildContext, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		files := map[string]string{}
 		if raw, ok := args["files"].(map[string]any); ok {
 			for key, value := range raw {
@@ -120,7 +121,7 @@ func init() {
 				}
 			}
 		}
-		out, err := svc.StageBuildContext(ops.StageBuildContextArgs{
+		out, err := svc.Oci().StageBuildContext(oci.StageBuildContextArgs{
 			DestDir:      stringField(args, "destDir"),
 			Files:        files,
 			FileEncoding: stringField(args, "fileEncoding"),

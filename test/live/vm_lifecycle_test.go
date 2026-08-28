@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/hostmcp"
 	"github.com/wunderous/host-agents/internal/hostruntime"
-	"github.com/wunderous/host-agents/internal/ops"
 	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/internal/transport"
 )
@@ -33,7 +33,7 @@ func requireIncus(t *testing.T) {
 
 func newLiveServer(t *testing.T) (*hostmcp.Server, *httptest.Server) {
 	t.Helper()
-	svc := ops.NewHostOperationsService(ops.Options{
+	svc := hostagent.New(hostagent.Options{
 		ProviderID: hostruntime.IDIncus,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)

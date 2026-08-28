@@ -1,4 +1,4 @@
-package ops
+package hostagent
 
 import (
 	"fmt"
@@ -34,7 +34,7 @@ type ResourceRegistryService struct {
 func (s ResourceRegistryService) Key() cordis.ServiceKey { return ResourceRegistryServiceKey }
 
 type ResourceResolverService struct {
-	Resolver *HostOperationsService
+	Resolver *Service
 	TenantID string
 }
 
@@ -48,42 +48,42 @@ func (s ResourceResolverService) Key() cordis.ServiceKey { return ResourceResolv
 // operation under S9.2 rule 3.
 type Coordinates = hostruntime.Coordinates
 
-func (s *HostOperationsService) RegisterResource(uri string, coordinates map[string]any) error {
+func (s *Service) RegisterResource(uri string, coordinates map[string]any) error {
 	return s.shared.RegisterResource(uri, coordinates)
 }
 
-func (s *HostOperationsService) DeregisterResource(uri string) error {
+func (s *Service) DeregisterResource(uri string) error {
 	return s.shared.DeregisterResource(uri)
 }
 
-func (s *HostOperationsService) ResourceURIForProviderName(providerName string) string {
+func (s *Service) ResourceURIForProviderName(providerName string) string {
 	return s.shared.ResourceURIForProviderName(providerName)
 }
 
-func (s *HostOperationsService) SetResourceRegistry(registry ResourceRegistry) {
+func (s *Service) SetResourceRegistry(registry ResourceRegistry) {
 	if s != nil {
 		s.shared.ResourceRegistry = registry
 	}
 }
 
-func (s *HostOperationsService) ResourceRegistry() ResourceRegistry {
+func (s *Service) ResourceRegistry() ResourceRegistry {
 	if s == nil {
 		return nil
 	}
 	return s.shared.ResourceRegistry
 }
 
-func (s *HostOperationsService) ResolveResource(uri, wantType string) (Coordinates, error) {
+func (s *Service) ResolveResource(uri, wantType string) (Coordinates, error) {
 	return s.shared.ResolveResource(uri, wantType, s.adoptResource)
 }
 
 // adoptResource observes a resource the registry has never seen. Both branches
 // are deliberately ASKS, not assumptions: never turn a display name into
 // coordinates without a domain confirming the thing is really there.
-func (s *HostOperationsService) adoptResource(parsed resourceid.URI) (map[string]any, error) {
+func (s *Service) adoptResource(parsed resourceid.URI) (map[string]any, error) {
 	switch parsed.ResourceType {
 	case resourceid.TypeVM, resourceid.TypeContainer:
-		info, err := s.GetVMInfo(parsed.ResourceID, true)
+		info, err := s.Incus().GetVMInfo(parsed.ResourceID, true)
 		if err != nil || strings.TrimSpace(info.Name) == "" {
 			return nil, nil
 		}
@@ -104,7 +104,7 @@ func (s *HostOperationsService) adoptResource(parsed resourceid.URI) (map[string
 		if len(parts) != 2 || (parts[0] != "user" && parts[0] != "system") || strings.TrimSpace(parts[1]) == "" {
 			return nil, fmt.Errorf("host-service URI must use <scope>/<service-name>: %s", parsed)
 		}
-		observed, err := s.InspectHostService(InspectHostServiceArgs{ServiceName: parts[1], Scope: parts[0]}, nil)
+		observed, err := s.Host().InspectHostService(InspectHostServiceArgs{ServiceName: parts[1], Scope: parts[0]}, nil)
 		if err != nil {
 			return nil, fmt.Errorf("adopt host service %s: %w", parsed, err)
 		}
@@ -121,7 +121,7 @@ func (s *HostOperationsService) adoptResource(parsed resourceid.URI) (map[string
 // tenant-scoped identity boundary as Incus inventory. The model reference is
 // provider-native data stored in coordinates; it is never reconstructed from
 // a client-supplied display label during a later mutation.
-func (s *HostOperationsService) AttachLocalLLMModelURIs(result *LocalLLMProbeResult) {
+func (s *Service) AttachLocalLLMModelURIs(result *LocalLLMProbeResult) {
 	if s == nil || result == nil {
 		return
 	}
