@@ -1,4 +1,4 @@
-package ops
+package postgres
 
 import (
 	"bufio"
@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 type postgresqlServiceRelaySession struct {
@@ -475,7 +477,7 @@ func freeLoopbackPort() (int, error) {
 // in-cluster Service DNS. The device is idempotent: an existing device whose
 // connect target matches the current Service ClusterIP is reused so concurrent
 // relays keep working; only a stale target triggers a recreate.
-func (s *HostOperationsService) ensurePostgreSQLServiceHostForward(ctx context.Context, spec postgresqlServiceSpec) (int, error) {
+func (s *Service) ensurePostgreSQLServiceHostForward(ctx context.Context, spec postgresqlServiceSpec) (int, error) {
 	service, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "service", spec.ClusterName + "-rw", "-n", spec.Namespace}, "get PostgreSQL service read/write service")
 	if err != nil {
 		return 0, err
@@ -490,7 +492,7 @@ func (s *HostOperationsService) ensurePostgreSQLServiceHostForward(ctx context.C
 		// advertised generic dispatch path always supplies this value explicitly.
 		deviceName = "opute-platform-postgres-rw"
 	}
-	existing, showErr := s.commandRunner([]string{"config", "device", "show", spec.VMName}, nil, 30*time.Second)
+	existing, showErr := s.shared.CommandRunner([]string{"config", "device", "show", spec.VMName}, nil, 30*time.Second)
 	if showErr == nil && existing.ExitCode == 0 {
 		if strings.Contains(existing.Stdout, "connect: tcp:"+clusterIP+":"+strconv.Itoa(postgresqlServicePort)) {
 			if port := extractProxyDeviceListenPort(existing.Stdout); port > 0 {
@@ -498,18 +500,18 @@ func (s *HostOperationsService) ensurePostgreSQLServiceHostForward(ctx context.C
 			}
 		}
 	}
-	_, _ = s.commandRunner([]string{"config", "device", "remove", spec.VMName, deviceName}, nil, 2*time.Minute)
+	_, _ = s.shared.CommandRunner([]string{"config", "device", "remove", spec.VMName, deviceName}, nil, 2*time.Minute)
 	port, err := freeLoopbackPort()
 	if err != nil {
 		return 0, err
 	}
-	added, err := s.commandRunner([]string{
+	added, err := s.shared.CommandRunner([]string{
 		"config", "device", "add", spec.VMName, deviceName, "proxy",
 		fmt.Sprintf("listen=tcp:127.0.0.1:%d", port),
 		fmt.Sprintf("connect=tcp:%s:%d", clusterIP, postgresqlServicePort),
 	}, nil, 2*time.Minute)
 	if err != nil || added.ExitCode != 0 {
-		return 0, errors.New(firstNonEmpty(added.Stderr, added.Stdout, errString(err, "add PostgreSQL service loopback forward failed")))
+		return 0, errors.New(textutil.FirstNonEmpty(added.Stderr, added.Stdout, textutil.ErrString(err, "add PostgreSQL service loopback forward failed")))
 	}
 	return port, nil
 }
@@ -531,7 +533,7 @@ func extractProxyDeviceListenPort(output string) int {
 	return port
 }
 
-func (s *HostOperationsService) ensurePostgreSQLServiceRelay(ctx context.Context, spec postgresqlServiceSpec, args PostgreSQLServiceRelayArgs) (map[string]any, error) {
+func (s *Service) ensurePostgreSQLServiceRelay(ctx context.Context, spec postgresqlServiceSpec, args PostgreSQLServiceRelayArgs) (map[string]any, error) {
 	targetHost := strings.TrimSpace(args.TargetHost)
 	targetPort := args.TargetPort
 	if targetHost == "" {
@@ -555,12 +557,14 @@ func (s *HostOperationsService) ensurePostgreSQLServiceRelay(ctx context.Context
 	if targetHost == expectedServiceHost && targetPort != postgresqlServicePort {
 		return nil, fmt.Errorf("localRelay.targetPort must be %d when targeting the read/write Service", postgresqlServicePort)
 	}
-	return s.postgresqlServiceRelay.start(args, targetHost, targetPort)
+	return s.relay.start(args, targetHost, targetPort)
 }
 
-func (s *HostOperationsService) revokeAllPostgreSQLServiceRelays() {
-	if s.postgresqlServiceRelay != nil {
-		s.postgresqlServiceRelay.stopAll()
+// RevokeAllRelays tears down every live relay session. It is a revocation, not
+// a best-effort cleanup: callers use it when the backing stack is going away.
+func (s *Service) RevokeAllRelays() {
+	if s.relay != nil {
+		s.relay.stopAll()
 	}
 }
 
@@ -568,12 +572,12 @@ func (s *HostOperationsService) revokeAllPostgreSQLServiceRelays() {
 // without changing the underlying PostgreSQL service or its Kubernetes data.
 // The caller must present the relay capability it supplied when the session
 // was created; a session ID alone is not authority to revoke another owner.
-func (s *HostOperationsService) ReleasePostgreSQLServiceRelay(sessionID, relayToken string) (map[string]any, error) {
+func (s *Service) ReleasePostgreSQLServiceRelay(sessionID, relayToken string) (map[string]any, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return nil, errors.New("sessionId is required")
 	}
-	removed, err := s.postgresqlServiceRelay.stopOwned(sessionID, relayToken)
+	removed, err := s.relay.stopOwned(sessionID, relayToken)
 	if err != nil {
 		return nil, err
 	}

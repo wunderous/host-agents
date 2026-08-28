@@ -1,9 +1,6 @@
 package ops
 
 import (
-	"context"
-	"time"
-
 	"github.com/wunderous/host-agents/internal/domain/kubernetes"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 )
@@ -110,24 +107,12 @@ func (s *HostOperationsService) ListKubernetesClusters(source string) (ClusterLi
 	return s.kubernetes().ListKubernetesClusters(source)
 }
 
-// The remaining delegations are the kubectl seam the domains that have not moved
-// yet still reach for: cluster, llm, oci, and postgres all run kubectl against a
-// target. Each will take it as an injected Deps seam when it moves.
+// The remaining delegation is the kubectl seam the domains that have not moved
+// yet still reach for: cluster runs kubectl against a target, and will take it
+// as an injected Deps seam when it moves.
 
 func (s *HostOperationsService) runKubernetesKubectl(vmName string, kubectlArgs []string, label string) (string, error) {
 	return s.kubernetes().RunKubectl(vmName, kubectlArgs, label)
-}
-
-func (s *HostOperationsService) runKubernetesKubectlTimed(vmName string, kubectlArgs []string, label string, timeout time.Duration) (string, error) {
-	return s.kubernetes().RunKubectlTimed(vmName, kubectlArgs, label, timeout)
-}
-
-func (s *HostOperationsService) runKubernetesKubectlContext(ctx context.Context, vmName string, kubectlArgs []string, label string, timeout time.Duration) (string, error) {
-	return s.kubernetes().RunKubectlContext(ctx, vmName, kubectlArgs, label, timeout)
-}
-
-func (s *HostOperationsService) runKubernetesKubectlWithStdinContext(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
-	return s.kubernetes().RunKubectlWithStdinContext(ctx, vmName, kubectlArgs, input, label, timeout)
 }
 
 func (s *HostOperationsService) executeKubernetesProvider(operation, targetURI string, arguments map[string]any) (map[string]any, bool, error) {
@@ -137,9 +122,3 @@ func (s *HostOperationsService) executeKubernetesProvider(operation, targetURI s
 // HelmValuesYAML is a pure encoder with no service state; the dispatch layer
 // calls it directly.
 func HelmValuesYAML(raw any) string { return kubernetes.HelmValuesYAML(raw) }
-
-// setKubectlRunner installs the kubectl test seam used by the PostgreSQL
-// service ordering and readiness tests.
-func (s *HostOperationsService) setKubectlRunner(runner kubernetes.KubectlRunner) {
-	s.kubernetes().SetKubectlRunner(runner)
-}

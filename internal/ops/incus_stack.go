@@ -284,8 +284,8 @@ func (s *HostOperationsService) ResetIncusStack(ctx context.Context, args ResetI
 	if s.llmSvc != nil {
 		s.llm().StopRelays()
 	}
-	if s.postgresqlServiceRelay != nil {
-		s.postgresqlServiceRelay.stopAll()
+	if s.postgresSvc != nil {
+		s.postgres().RevokeAllRelays()
 	}
 	for _, candidate := range inventory {
 		if resetContainsString(checkpoint.Deleted, candidate.Name) {

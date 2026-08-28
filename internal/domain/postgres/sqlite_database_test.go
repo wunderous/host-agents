@@ -1,4 +1,4 @@
-package ops
+package postgres
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 func TestSQLiteDatabaseLifecycleIsolatesConsumers(t *testing.T) {
 	root := t.TempDir()
-	service := &HostOperationsService{sqliteDatabaseRoot: root}
+	service := &Service{sqliteDatabaseRoot: root}
 
 	first, err := service.EnsureSQLiteDatabase(context.Background(), SQLiteDatabaseArgs{ConsumerID: "service-a", DatabaseName: "platform"})
 	if err != nil {
@@ -58,7 +58,7 @@ func TestSQLiteDatabaseLifecycleIsolatesConsumers(t *testing.T) {
 }
 
 func TestSQLiteDatabaseRejectsPathTraversalAndUnconfirmedRemoval(t *testing.T) {
-	service := &HostOperationsService{sqliteDatabaseRoot: t.TempDir()}
+	service := &Service{sqliteDatabaseRoot: t.TempDir()}
 	for _, args := range []SQLiteDatabaseArgs{
 		{ConsumerID: "../escape", DatabaseName: "db"},
 		{ConsumerID: "service", DatabaseName: "../escape"},

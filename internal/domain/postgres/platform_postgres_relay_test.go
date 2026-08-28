@@ -1,4 +1,4 @@
-package ops
+package postgres
 
 import (
 	"context"
@@ -413,7 +413,7 @@ func TestPostgreSQLServiceRelayExpiryClosesActiveConnections(t *testing.T) {
 }
 
 func TestEnsurePostgreSQLServiceRelayRestrictsTargets(t *testing.T) {
-	service := &HostOperationsService{postgresqlServiceRelay: newPostgreSQLServiceRelayManager()}
+	service := validResetService()
 	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}, RelayDeviceName: "test-postgres-rw"})
 	if err != nil {
 		t.Fatal(err)
@@ -438,12 +438,12 @@ func TestEnsurePostgreSQLServiceRelayRestrictsTargets(t *testing.T) {
 		if _, err := service.ensurePostgreSQLServiceRelay(context.Background(), spec, args); err != nil {
 			t.Fatalf("expected relay target %s:%d to be accepted: %v", args.TargetHost, args.TargetPort, err)
 		}
-		service.revokeAllPostgreSQLServiceRelays()
+		service.RevokeAllRelays()
 	}
 }
 
 func TestEnsurePostgreSQLServiceRelayCreatesHostForwardWhenTargetOmitted(t *testing.T) {
-	service := &HostOperationsService{postgresqlServiceRelay: newPostgreSQLServiceRelayManager()}
+	service := validResetService()
 	deviceAdds := 0
 	existingDevice := ""
 	service.shared.CommandRunnerFn = func(args []string, onData func(string), timeout time.Duration) (exec.Result, error) {
@@ -496,7 +496,7 @@ func TestEnsurePostgreSQLServiceRelayCreatesHostForwardWhenTargetOmitted(t *test
 	if port, ok := first["targetPort"].(int); !ok || port <= 0 || port == postgresqlServicePort {
 		t.Fatalf("expected a positive non-default forward port in the descriptor: %#v", first)
 	}
-	service.revokeAllPostgreSQLServiceRelays()
+	service.RevokeAllRelays()
 
 	// A second relay for the same Service must reuse the existing forward
 	// device instead of recreating it, so concurrent consumers stay stable.
@@ -514,5 +514,5 @@ func TestEnsurePostgreSQLServiceRelayCreatesHostForwardWhenTargetOmitted(t *test
 	if first["targetPort"] != second["targetPort"] {
 		t.Fatalf("expected the same forward port to be reused: %v vs %v", first["targetPort"], second["targetPort"])
 	}
-	service.revokeAllPostgreSQLServiceRelays()
+	service.RevokeAllRelays()
 }

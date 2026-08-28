@@ -1,4 +1,4 @@
-package ops
+package postgres
 
 import (
 	"context"
@@ -32,7 +32,7 @@ type SQLiteDatabaseResult struct {
 	Created      bool   `json:"created"`
 }
 
-func (s *HostOperationsService) sqliteDatabasePath(args SQLiteDatabaseArgs) (string, error) {
+func (s *Service) sqliteDatabasePath(args SQLiteDatabaseArgs) (string, error) {
 	consumerID := strings.TrimSpace(args.ConsumerID)
 	databaseName := strings.TrimSpace(args.DatabaseName)
 	if !sqliteDatabaseNamePattern.MatchString(consumerID) {
@@ -57,7 +57,7 @@ func (s *HostOperationsService) sqliteDatabasePath(args SQLiteDatabaseArgs) (str
 	return path, nil
 }
 
-func (s *HostOperationsService) EnsureSQLiteDatabase(ctx context.Context, args SQLiteDatabaseArgs) (SQLiteDatabaseResult, error) {
+func (s *Service) EnsureSQLiteDatabase(ctx context.Context, args SQLiteDatabaseArgs) (SQLiteDatabaseResult, error) {
 	path, err := s.sqliteDatabasePath(args)
 	if err != nil {
 		return SQLiteDatabaseResult{}, err
@@ -84,7 +84,7 @@ func (s *HostOperationsService) EnsureSQLiteDatabase(ctx context.Context, args S
 	return SQLiteDatabaseResult{Provider: "sqlite", ConsumerID: strings.TrimSpace(args.ConsumerID), DatabaseName: strings.TrimSpace(args.DatabaseName), Path: path, Exists: true, Created: created}, nil
 }
 
-func (s *HostOperationsService) GetSQLiteDatabaseStatus(ctx context.Context, args SQLiteDatabaseArgs) (SQLiteDatabaseResult, error) {
+func (s *Service) GetSQLiteDatabaseStatus(ctx context.Context, args SQLiteDatabaseArgs) (SQLiteDatabaseResult, error) {
 	path, err := s.sqliteDatabasePath(args)
 	if err != nil {
 		return SQLiteDatabaseResult{}, err
@@ -96,7 +96,7 @@ func (s *HostOperationsService) GetSQLiteDatabaseStatus(ctx context.Context, arg
 	return SQLiteDatabaseResult{Provider: "sqlite", ConsumerID: strings.TrimSpace(args.ConsumerID), DatabaseName: strings.TrimSpace(args.DatabaseName), Path: path, Exists: statErr == nil}, nil
 }
 
-func (s *HostOperationsService) RemoveSQLiteDatabase(ctx context.Context, args SQLiteDatabaseArgs, confirm bool) (SQLiteDatabaseResult, error) {
+func (s *Service) RemoveSQLiteDatabase(ctx context.Context, args SQLiteDatabaseArgs, confirm bool) (SQLiteDatabaseResult, error) {
 	if !confirm {
 		return SQLiteDatabaseResult{}, errors.New("remove SQLite database requires confirm=true")
 	}

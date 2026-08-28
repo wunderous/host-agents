@@ -1,4 +1,4 @@
-package ops
+package postgres
 
 import (
 	"context"
@@ -289,15 +289,15 @@ spec:
 `, spec.ClusterName, spec.Namespace, retentionAnnotation, spec.RetentionPolicy, spec.ServicePartOf, spec.Instances, spec.ServiceOwner, spec.StorageSize, spec.StorageClass, primaryDatabase, spec.ServiceOwner)
 }
 
-func (s *HostOperationsService) applyPostgreSQLServiceManifest(ctx context.Context, spec postgresqlServiceSpec, manifest, label string) error {
-	if _, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, []string{"apply", "-f", "-"}, []byte(manifest), label, 3*time.Minute); err != nil {
+func (s *Service) applyPostgreSQLServiceManifest(ctx context.Context, spec postgresqlServiceSpec, manifest, label string) error {
+	if _, err := s.deps.RunKubectlWithStdinContext(ctx, spec.VMName, []string{"apply", "-f", "-"}, []byte(manifest), label, 3*time.Minute); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *HostOperationsService) replacePostgreSQLServiceConsumerSecret(ctx context.Context, spec postgresqlServiceSpec, manifest string) error {
-	if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{
+func (s *Service) replacePostgreSQLServiceConsumerSecret(ctx context.Context, spec postgresqlServiceSpec, manifest string) error {
+	if _, err := s.deps.RunKubectlContext(ctx, spec.VMName, []string{
 		"delete", "secret", spec.ConsumerSecretName,
 		"-n", spec.Namespace, "--ignore-not-found=true",
 	}, "replace PostgreSQL service consumer Secret", defaultDiscoveryTimeout); err != nil {
@@ -306,20 +306,20 @@ func (s *HostOperationsService) replacePostgreSQLServiceConsumerSecret(ctx conte
 	return s.applyPostgreSQLServiceManifest(ctx, spec, manifest, "apply PostgreSQL service consumer Secret")
 }
 
-func (s *HostOperationsService) ensurePostgreSQLServiceNamespace(ctx context.Context, spec postgresqlServiceSpec) error {
+func (s *Service) ensurePostgreSQLServiceNamespace(ctx context.Context, spec postgresqlServiceSpec) error {
 	for _, namespace := range []string{spec.Namespace, postgresqlServiceOperatorNamespace} {
-		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"get", "namespace", namespace}, "get namespace", defaultDiscoveryTimeout); err == nil {
+		if _, err := s.deps.RunKubectlContext(ctx, spec.VMName, []string{"get", "namespace", namespace}, "get namespace", defaultDiscoveryTimeout); err == nil {
 			continue
 		}
-		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"create", "namespace", namespace}, "create namespace", defaultDiscoveryTimeout); err != nil {
+		if _, err := s.deps.RunKubectlContext(ctx, spec.VMName, []string{"create", "namespace", namespace}, "create namespace", defaultDiscoveryTimeout); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *HostOperationsService) postgresqlServiceJSON(ctx context.Context, spec postgresqlServiceSpec, args []string, label string) (map[string]any, error) {
-	raw, err := s.runKubernetesKubectlContext(ctx, spec.VMName, append(args, "-o", "json"), label, defaultDiscoveryTimeout)
+func (s *Service) postgresqlServiceJSON(ctx context.Context, spec postgresqlServiceSpec, args []string, label string) (map[string]any, error) {
+	raw, err := s.deps.RunKubectlContext(ctx, spec.VMName, append(args, "-o", "json"), label, defaultDiscoveryTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +385,7 @@ func nestedInt(value map[string]any, keys ...string) int {
 	return 0
 }
 
-func (s *HostOperationsService) postgresqlServiceOperatorReady(ctx context.Context, spec postgresqlServiceSpec) (bool, bool, error) {
+func (s *Service) postgresqlServiceOperatorReady(ctx context.Context, spec postgresqlServiceSpec) (bool, bool, error) {
 	crdPresent, err := s.postgresqlServiceCRDPresent(ctx, spec)
 	if err != nil {
 		return false, false, err
@@ -409,7 +409,7 @@ func (s *HostOperationsService) postgresqlServiceOperatorReady(ctx context.Conte
 	return false, true, nil
 }
 
-func (s *HostOperationsService) postgresqlServiceClusterReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
+func (s *Service) postgresqlServiceClusterReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
 	cluster, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace}, "get PostgreSQL service Cluster")
 	if err != nil {
 		return false, nil
@@ -420,7 +420,7 @@ func (s *HostOperationsService) postgresqlServiceClusterReady(ctx context.Contex
 	return strings.Contains(phase, "healthy") && instances == spec.Instances && readyInstances >= spec.Instances, nil
 }
 
-func (s *HostOperationsService) postgresqlServiceReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
+func (s *Service) postgresqlServiceReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
 	service, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "service", spec.ClusterName + "-rw", "-n", spec.Namespace}, "get PostgreSQL service read/write service")
 	if err != nil {
 		return false, nil
@@ -452,7 +452,7 @@ func decodeSecretValue(data map[string]any, key string) string {
 	return string(value)
 }
 
-func (s *HostOperationsService) postgresqlServiceSecret(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceSecret, bool, error) {
+func (s *Service) postgresqlServiceSecret(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceSecret, bool, error) {
 	secret, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "secret", spec.ClusterName + "-app", "-n", spec.Namespace}, "get PostgreSQL service application secret")
 	if err != nil {
 		return postgresqlServiceSecret{}, false, nil
@@ -466,7 +466,7 @@ func (s *HostOperationsService) postgresqlServiceSecret(ctx context.Context, spe
 	return postgresqlServiceSecret{Username: username, Password: password}, true, nil
 }
 
-func (s *HostOperationsService) postgresqlServiceConsumerSecretReady(ctx context.Context, spec postgresqlServiceSpec) bool {
+func (s *Service) postgresqlServiceConsumerSecretReady(ctx context.Context, spec postgresqlServiceSpec) bool {
 	secret, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "secret", spec.ConsumerSecretName, "-n", spec.Namespace}, "get PostgreSQL consumer Secret")
 	if err != nil {
 		return false
@@ -481,7 +481,7 @@ func (s *HostOperationsService) postgresqlServiceConsumerSecretReady(ctx context
 	return len(spec.ConsumerDatabaseKeys) > 0
 }
 
-func (s *HostOperationsService) postgresqlServicePrimary(ctx context.Context, spec postgresqlServiceSpec) (string, error) {
+func (s *Service) postgresqlServicePrimary(ctx context.Context, spec postgresqlServiceSpec) (string, error) {
 	pods, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "pods", "-n", spec.Namespace, "-l", "cnpg.io/cluster=" + spec.ClusterName + ",role=primary"}, "get PostgreSQL service primary")
 	if err != nil {
 		return "", nil
@@ -550,7 +550,7 @@ func kubectlShellScriptArgument(script string) string {
 	return "eval \"$(printf '%s' '" + encoded + "' | base64 -d)\""
 }
 
-func (s *HostOperationsService) runPostgreSQLServiceSQL(ctx context.Context, spec postgresqlServiceSpec, credentials postgresqlServiceSecret, pod, database, sql string) (string, error) {
+func (s *Service) runPostgreSQLServiceSQL(ctx context.Context, spec postgresqlServiceSpec, credentials postgresqlServiceSecret, pod, database, sql string) (string, error) {
 	serviceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
 	script := postgresqlServiceSQLScript(
 		serviceHost,
@@ -560,16 +560,16 @@ func (s *HostOperationsService) runPostgreSQLServiceSQL(ctx context.Context, spe
 	)
 	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
 	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", kubectlShellScriptArgument(script)}
-	return s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "query PostgreSQL service through read/write service", 60*time.Second)
+	return s.deps.RunKubectlWithStdinContext(ctx, spec.VMName, args, input, "query PostgreSQL service through read/write service", 60*time.Second)
 }
 
-func (s *HostOperationsService) ensurePostgreSQLServiceDatabase(ctx context.Context, spec postgresqlServiceSpec, credentials postgresqlServiceSecret, pod, database string) error {
+func (s *Service) ensurePostgreSQLServiceDatabase(ctx context.Context, spec postgresqlServiceSpec, credentials postgresqlServiceSecret, pod, database string) error {
 	serviceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
 	checkSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", textutil.ShellQuote(database))
 	script := postgresqlServiceSQLScript(serviceHost, credentials.Username, "postgres", checkSQL)
 	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
 	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", kubectlShellScriptArgument(script)}
-	result, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "check PostgreSQL service database", 60*time.Second)
+	result, err := s.deps.RunKubectlWithStdinContext(ctx, spec.VMName, args, input, "check PostgreSQL service database", 60*time.Second)
 	if err != nil {
 		return err
 	}
@@ -579,7 +579,7 @@ func (s *HostOperationsService) ensurePostgreSQLServiceDatabase(ctx context.Cont
 	createSQL := postgresqlServiceCreateDatabaseSQL(database)
 	script = postgresqlServiceSQLScript(serviceHost, credentials.Username, "postgres", createSQL)
 	args[len(args)-1] = script
-	if _, err := s.runKubernetesKubectlWithStdinContext(ctx, spec.VMName, args, input, "create PostgreSQL service database", 60*time.Second); err != nil {
+	if _, err := s.deps.RunKubectlWithStdinContext(ctx, spec.VMName, args, input, "create PostgreSQL service database", 60*time.Second); err != nil {
 		return err
 	}
 	return nil
@@ -617,7 +617,7 @@ data:
 %s`, spec.ConsumerSecretName, spec.Namespace, spec.ConsumerSecretLabel, data)
 }
 
-func (s *HostOperationsService) restartPostgreSQLServiceConsumers(ctx context.Context, spec postgresqlServiceSpec) error {
+func (s *Service) restartPostgreSQLServiceConsumers(ctx context.Context, spec postgresqlServiceSpec) error {
 	deployments, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "deployments", "-n", spec.Namespace, "-l", spec.ConsumerSecretLabel}, "find PostgreSQL consumers")
 	if err != nil {
 		// A CNPG-only VM may not have cell consumers yet. The Secret is still
@@ -631,17 +631,17 @@ func (s *HostOperationsService) restartPostgreSQLServiceConsumers(ctx context.Co
 		if name == "" {
 			continue
 		}
-		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"rollout", "restart", "deployment", name, "-n", spec.Namespace}, "restart PostgreSQL service consumer", 2*time.Minute); err != nil {
+		if _, err := s.deps.RunKubectlContext(ctx, spec.VMName, []string{"rollout", "restart", "deployment", name, "-n", spec.Namespace}, "restart PostgreSQL service consumer", 2*time.Minute); err != nil {
 			return err
 		}
-		if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"rollout", "status", "deployment", name, "-n", spec.Namespace, "--timeout=2m"}, "wait for PostgreSQL service consumer", 3*time.Minute); err != nil {
+		if _, err := s.deps.RunKubectlContext(ctx, spec.VMName, []string{"rollout", "status", "deployment", name, "-n", spec.Namespace, "--timeout=2m"}, "wait for PostgreSQL service consumer", 3*time.Minute); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *HostOperationsService) probePostgreSQLService(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceProbe, error) {
+func (s *Service) probePostgreSQLService(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceProbe, error) {
 	operatorReady, crdPresent, _ := s.postgresqlServiceOperatorReady(ctx, spec)
 	clusterReady, _ := s.postgresqlServiceClusterReady(ctx, spec)
 	serviceReady, _ := s.postgresqlServiceReady(ctx, spec)
@@ -696,7 +696,7 @@ func (s *HostOperationsService) probePostgreSQLService(ctx context.Context, spec
 	return probe, nil
 }
 
-func (s *HostOperationsService) waitForPostgreSQLService(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceProbe, error) {
+func (s *Service) waitForPostgreSQLService(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceProbe, error) {
 	deadline := time.NewTimer(postgresqlServiceReadinessTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(2 * time.Second)
@@ -721,8 +721,8 @@ func (s *HostOperationsService) waitForPostgreSQLService(ctx context.Context, sp
 	}
 }
 
-func (s *HostOperationsService) postgresqlServiceCRDPresent(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
-	if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"get", "crd", "clusters.postgresql.cnpg.io"}, "get CloudNativePG CRD", defaultDiscoveryTimeout); err != nil {
+func (s *Service) postgresqlServiceCRDPresent(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
+	if _, err := s.deps.RunKubectlContext(ctx, spec.VMName, []string{"get", "crd", "clusters.postgresql.cnpg.io"}, "get CloudNativePG CRD", defaultDiscoveryTimeout); err != nil {
 		return false, nil
 	}
 	return true, nil
@@ -732,7 +732,7 @@ func (s *HostOperationsService) postgresqlServiceCRDPresent(ctx context.Context,
 // webhook service has at least one ready endpoint. Applying the tenant Cluster
 // before the webhook endpoints exist fails with "no endpoints available for
 // service cnpg-webhook-service".
-func (s *HostOperationsService) postgresqlServiceWebhookReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
+func (s *Service) postgresqlServiceWebhookReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
 	endpoints, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "endpoints", "cnpg-webhook-service", "-n", postgresqlServiceOperatorNamespace}, "get CloudNativePG webhook endpoints")
 	if err != nil {
 		return false, nil
@@ -753,7 +753,7 @@ func (s *HostOperationsService) postgresqlServiceWebhookReady(ctx context.Contex
 // endpoints are ready. Applying the tenant Cluster before the CRD exists makes
 // a fresh-cluster apply fail, and before the webhook endpoints exist it fails
 // the admission call itself.
-func (s *HostOperationsService) waitForPostgreSQLServiceCRD(ctx context.Context, spec postgresqlServiceSpec) error {
+func (s *Service) waitForPostgreSQLServiceCRD(ctx context.Context, spec postgresqlServiceSpec) error {
 	deadline := time.NewTimer(5 * time.Minute)
 	defer deadline.Stop()
 	ticker := time.NewTicker(2 * time.Second)
@@ -783,8 +783,8 @@ func (s *HostOperationsService) waitForPostgreSQLServiceCRD(ctx context.Context,
 	}
 }
 
-func (s *HostOperationsService) postgresqlServiceK3sReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
-	nodesJSON, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"get", "nodes", "-o", "json"}, "get K3s nodes", defaultDiscoveryTimeout)
+func (s *Service) postgresqlServiceK3sReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
+	nodesJSON, err := s.deps.RunKubectlContext(ctx, spec.VMName, []string{"get", "nodes", "-o", "json"}, "get K3s nodes", defaultDiscoveryTimeout)
 	if err != nil {
 		return false, nil
 	}
@@ -814,7 +814,7 @@ func (s *HostOperationsService) postgresqlServiceK3sReady(ctx context.Context, s
 	return false, nil
 }
 
-func (s *HostOperationsService) waitForPostgreSQLServiceK3sReady(ctx context.Context, spec postgresqlServiceSpec) error {
+func (s *Service) waitForPostgreSQLServiceK3sReady(ctx context.Context, spec postgresqlServiceSpec) error {
 	deadline := time.NewTimer(10 * time.Minute)
 	defer deadline.Stop()
 	ticker := time.NewTicker(2 * time.Second)
@@ -841,7 +841,7 @@ func (s *HostOperationsService) waitForPostgreSQLServiceK3sReady(ctx context.Con
 // K3s readiness, the operator HelmChart, a wait for the CNPG Cluster CRD, and
 // only then the tenant Cluster apply. Reusing the standalone CRD wait pattern
 // prevents a fresh-cluster apply from racing the operator installation.
-func (s *HostOperationsService) ensurePostgreSQLServiceOrdered(ctx context.Context, spec postgresqlServiceSpec) error {
+func (s *Service) ensurePostgreSQLServiceOrdered(ctx context.Context, spec postgresqlServiceSpec) error {
 	if err := s.waitForPostgreSQLServiceK3sReady(ctx, spec); err != nil {
 		return err
 	}
@@ -874,7 +874,7 @@ func postgresqlServiceInfrastructureReady(probe postgresqlServiceProbe) bool {
 // return an incomplete object set while the API server and kubelet restore
 // watches; treating that single observation as a missing installation causes
 // an unnecessary Helm/Cluster reapply and can make the outage self-sustaining.
-func (s *HostOperationsService) probePostgreSQLServiceStable(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceProbe, error) {
+func (s *Service) probePostgreSQLServiceStable(ctx context.Context, spec postgresqlServiceSpec) (postgresqlServiceProbe, error) {
 	var last postgresqlServiceProbe
 	for attempt := 0; attempt < 3; attempt++ {
 		probe, err := s.probePostgreSQLService(ctx, spec)
@@ -898,7 +898,7 @@ func (s *HostOperationsService) probePostgreSQLServiceStable(ctx context.Context
 	return last, nil
 }
 
-func (s *HostOperationsService) ReconcilePostgreSQLService(ctx context.Context, args PostgreSQLServiceArgs, _ func(string)) (map[string]any, error) {
+func (s *Service) ReconcilePostgreSQLService(ctx context.Context, args PostgreSQLServiceArgs, _ func(string)) (map[string]any, error) {
 	spec, err := validatePostgreSQLServiceSpec(args)
 	if err != nil {
 		return nil, err
@@ -968,7 +968,7 @@ func (s *HostOperationsService) ReconcilePostgreSQLService(ctx context.Context, 
 	return result, nil
 }
 
-func (s *HostOperationsService) GetPostgreSQLServiceStatus(ctx context.Context, args PostgreSQLServiceArgs) (map[string]any, error) {
+func (s *Service) GetPostgreSQLServiceStatus(ctx context.Context, args PostgreSQLServiceArgs) (map[string]any, error) {
 	spec, err := validatePostgreSQLServiceSpec(args)
 	if err != nil {
 		return nil, err
@@ -1015,7 +1015,7 @@ func (s *HostOperationsService) GetPostgreSQLServiceStatus(ctx context.Context, 
 	return result, nil
 }
 
-func (s *HostOperationsService) RemovePostgreSQLService(ctx context.Context, args PostgreSQLServiceArgs, confirm bool) (map[string]any, error) {
+func (s *Service) RemovePostgreSQLService(ctx context.Context, args PostgreSQLServiceArgs, confirm bool) (map[string]any, error) {
 	if !confirm {
 		return nil, errors.New("remove_postgresql_service requires confirm=true")
 	}
@@ -1023,15 +1023,15 @@ func (s *HostOperationsService) RemovePostgreSQLService(ctx context.Context, arg
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace, "--ignore-not-found=true", "--wait=true"}, "delete PostgreSQL service Cluster", 5*time.Minute); err != nil {
+	if _, err := s.deps.RunKubectlContext(ctx, spec.VMName, []string{"delete", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace, "--ignore-not-found=true", "--wait=true"}, "delete PostgreSQL service Cluster", 5*time.Minute); err != nil {
 		return nil, err
 	}
 	if spec.RetentionPolicy == "delete" {
-		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "secret", spec.ClusterName + "-app", "-n", spec.Namespace, "--ignore-not-found=true"}, "delete PostgreSQL service Secret", defaultDiscoveryTimeout)
-		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "secret", spec.ConsumerSecretName, "-n", spec.Namespace, "--ignore-not-found=true"}, "delete PostgreSQL consumer Secret", defaultDiscoveryTimeout)
-		_, _ = s.runKubernetesKubectlContext(ctx, spec.VMName, []string{"delete", "pvc", "-l", "cnpg.io/cluster=" + spec.ClusterName, "-n", spec.Namespace, "--ignore-not-found=true"}, "delete PostgreSQL service PVCs", 5*time.Minute)
+		_, _ = s.deps.RunKubectlContext(ctx, spec.VMName, []string{"delete", "secret", spec.ClusterName + "-app", "-n", spec.Namespace, "--ignore-not-found=true"}, "delete PostgreSQL service Secret", defaultDiscoveryTimeout)
+		_, _ = s.deps.RunKubectlContext(ctx, spec.VMName, []string{"delete", "secret", spec.ConsumerSecretName, "-n", spec.Namespace, "--ignore-not-found=true"}, "delete PostgreSQL consumer Secret", defaultDiscoveryTimeout)
+		_, _ = s.deps.RunKubectlContext(ctx, spec.VMName, []string{"delete", "pvc", "-l", "cnpg.io/cluster=" + spec.ClusterName, "-n", spec.Namespace, "--ignore-not-found=true"}, "delete PostgreSQL service PVCs", 5*time.Minute)
 	}
-	s.revokeAllPostgreSQLServiceRelays()
+	s.RevokeAllRelays()
 	return map[string]any{
 		"removed":           true,
 		"vmName":            spec.VMName,
