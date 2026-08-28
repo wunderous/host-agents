@@ -617,6 +617,58 @@ it separately means writing the dispatch wiring twice.
 admission, or task metadata is a compile error; `go test ./test/contract/...`
 green including tool contract conformance.
 
+**Progress — done 2026-08-28.**
+
+`register` in [`internal/tools/registry.go`](../../internal/tools/registry.go)
+now takes `(name, effect, admission, task, handler)`. The three behaviour values
+are **separate positional parameters, not fields of a struct literal**, because
+a struct literal has a zero value for every field it omits; positionally,
+omitting one does not compile. Demonstrated RED: dropping them from one
+registration gives `not enough arguments in call to register`.
+
+All 102 dispatch registrations carry the three values. The two sites that
+registered one handler under two names were unrolled — the names differed in
+behaviour (`agent_shell` inline vs `run_host_command` task-aware), which the
+shared-loop form had hidden.
+
+The four behavioural tables were pruned to the names that have **no** dispatch
+registration — transport-owned and provider-owned tools, which is the honest
+residue §9.3 predicted:
+
+| Table | Before | After |
+|---|---|---|
+| `capabilityEffects` | 75 keys | 20 |
+| `tasks.TaskAwareTools` | 48 keys | 12 |
+| `resource.isHeavyTool` | 27 keys | 6 |
+| `resource.ClassifyTool` prefix inference | every tool | unregistered names only |
+
+`Coordinator.AcquireClass` is new: a caller that knows the class passes it
+instead of having it inferred from the name. `hostmcp` passes the declared class
+and falls back to `ClassifyTool` only when a name has no registration.
+
+*Anti-drift:* [`test/contract/capability_registration_test.go`](../../test/contract/capability_registration_test.go)
+fails if any residual-table key acquires a dispatch registration. Demonstrated
+RED by adding `create_vm` back to `TaskAwareTools`.
+
+**What the effect declaration found.** Ten registered capabilities had been
+falling through `capabilityEffect`'s inference to `"read"` — and therefore
+publishing `RequiresApproval: false` — despite changing host state:
+`agent_shell`, `exec_command`, `run_instance_command`, `ensure_docker`,
+`ensure_k3d`, `ensure_host_firewall_rule`, `ensure_sql_connector`,
+`release_sql_connector`, `install_helm_chart` (now `mutation`) and
+`uninstall_helm_chart` (now `destructive`). This is exactly the defect ADR
+0009's Context paragraph names; most were catalog-excluded, which is why it had
+gone unnoticed. Making the declaration mandatory is what surfaced them.
+
+**Correction to §9.3's table.** "`standalone.go` — 181 tool-name keys → derived
+from the registrations" is **not reachable and was not done.** Measured: 22
+`StandaloneToolNames` entries have no dispatch registration (`list_operations`,
+`opute.provider.*`, the plan/recipe families) and 19 registered names are absent
+from the standalone set (`agent_shell`, the helm and SQL-connector families).
+The two sets answer different questions — *what does this capability do* vs
+*is it exposed in standalone mode* — so `standalone.go` stays its own table.
+Four behavioural tables collapsed, not five.
+
 ---
 
 ## 7. Designing for change
@@ -1047,7 +1099,7 @@ execute in; each milestone names the plan and section that owns it.
 | **M1** | **Baselines and boundary lint** | both | Platform §5 Phase 0.5 · Host Agent §6 W1 | — **done** |
 | **M2** | **Transport contract + dispatch registry** | Host Agent | §6 W2, W3, W4 | — **W2, W4 done; W3 checklist done, seam coverage waits on the `ha-k3` split** |
 | M3 | Partition `internal/ops` | Host Agent | §6 W7 | D2, D3 |
-| M4 | Single capability registration | Host Agent | §6 W8 | D4 |
+| ~~M4~~ | ~~Single capability registration~~ | Host Agent | §6 W8 | — **done 2026-08-28** |
 | M5 | Platform kernel | Platform | §5 Phase 1 | D3, **D6** |
 | M6 | Platform domain slices | Platform | §5 Phase 2 | D5 |
 | M7 | MCP gateway | Platform | §5 Phase 3 | D2 (HWP EOL) |

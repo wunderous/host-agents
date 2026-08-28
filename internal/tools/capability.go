@@ -310,94 +310,48 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
+// capabilityEffects is the residue of the pre-W8 effect table: the names that
+// have no dispatch registration to declare an effect at, because they are
+// handled by the transport or a provider rather than by a host capability.
+// Every name here is asserted to have no registration -- see
+// TestResidualEffectTableHoldsOnlyUnregisteredNames -- so the table cannot
+// regrow into a second source of truth for a capability that has one.
 var capabilityEffects = map[string]string{
 	// Destructive
-	"delete_vm":                    "destructive",
-	"remove_host_file":             "destructive",
-	"remove_sqlite_database":       "destructive",
-	"remove_postgresql_service":    "destructive",
-	"delete_k8s_resource":          "destructive",
-	"delete_oci_registry":          "destructive",
-	"cleanup_container_storage":    "destructive",
-	"reset_incus_stack":            "destructive",
-	"remove_local_llm_model":       "destructive",
-	"remove_local_llm_relay":       "destructive",
-	"remove_local_llm_k3s_proxy":   "destructive",
 	"remove_vm_network_device":     "destructive",
 	"uninstall_provider_tools":     "destructive",
 	"opute.provider.teardown":      "destructive",
-	"remove_service_domain":        "destructive",
 	"delete_cloudflared_connector": "destructive",
 	"delete_cloudflare_tunnel":     "destructive",
 	"remove_host_exposure":         "destructive",
 
-	// Credential bearing
-	"put_k8s_secret":                   "credential_bearing",
-	"ensure_local_llm_relay":           "credential_bearing",
-	"ensure_local_llm_k3s_proxy":       "credential_bearing",
-	"release_postgresql_service_relay": "credential_bearing",
-
 	// Mutation
-	"ensure_host_file":               "mutation",
-	"ensure_host_artifact":           "mutation",
-	"extract_host_archive":           "mutation",
-	"ensure_host_tool":               "mutation",
-	"prepare_host_agent_artifacts":   "mutation",
-	"restart_host_service":           "mutation",
-	"set_host_service_state":         "mutation",
-	"ensure_host_service_supervisor": "mutation",
-	"run_host_command":               "mutation",
-	"ensure_sqlite_database":         "mutation",
-	"reconcile_serving_assignment":   "mutation",
-	"configure_agent_connection":     "mutation",
-	"reconcile_postgresql_service":   "mutation",
-	"install_incus_stack":            "mutation",
-	"provision_container":            "mutation",
-	"probe_gpu_container":            "mutation",
-	"create_vm":                      "mutation",
-	"provision_vm":                   "mutation",
-	"start_vm":                       "mutation",
-	"stop_vm":                        "mutation",
-	"restart_vm":                     "mutation",
-	"update_vm_resources":            "mutation",
-	"apply_manifest":                 "mutation",
-	"install_oci_registry":           "mutation",
-	"ensure_oci_builder":             "mutation",
-	"configure_oci_storage":          "mutation",
-	"build_and_push_oci_image":       "mutation",
-	"stage_build_context":            "mutation",
-	"install_local_llm_model":        "mutation",
-	"configure_local_llm_model":      "mutation",
-	"start_local_llm_runtime":        "mutation",
-	"configure_local_llm_runtime":    "mutation",
-	"stop_local_llm_runtime":         "mutation",
-	"ensure_local_llm_server_binary": "mutation",
-	"register_kubernetes_cluster":    "mutation",
-	"configure_network":              "mutation",
-	"install_provider_tools":         "mutation",
-	"recover_bridge":                 "mutation",
-	"exec_kubernetes_command":        "mutation",
-	"stream_vm_console":              "mutation",
-	"send_console_input":             "mutation",
-	"resize_console":                 "mutation",
-	"run_host_plan":                  "mutation",
-	"run_runtime_recipe":             "mutation",
-	"run_tunnel_recipe":              "mutation",
-	"cancel_operation":               "mutation",
-	"opute.provider.install":         "mutation",
-	"opute.provider.reload":          "mutation",
-	"install_cloudflared_connector":  "mutation",
-	"create_cloudflare_tunnel":       "mutation",
-	"configure_service_domain":       "mutation",
-	"run_sql":                        "mutation",
-	"install_postgresql":             "mutation",
-	"delete_postgresql":              "destructive",
+	"register_kubernetes_cluster":   "mutation",
+	"configure_network":             "mutation",
+	"install_provider_tools":        "mutation",
+	"exec_kubernetes_command":       "mutation",
+	"stream_vm_console":             "mutation",
+	"send_console_input":            "mutation",
+	"resize_console":                "mutation",
+	"run_host_plan":                 "mutation",
+	"run_runtime_recipe":            "mutation",
+	"run_tunnel_recipe":             "mutation",
+	"cancel_operation":              "mutation",
+	"opute.provider.install":        "mutation",
+	"opute.provider.reload":         "mutation",
+	"install_cloudflared_connector": "mutation",
+	"create_cloudflare_tunnel":      "mutation",
 }
 
 func capabilityEffect(def ToolDefinition) string {
 	effect := metaString(def.Meta, "effect", "")
 	if effect != "" {
 		return effect
+	}
+	// A dispatch registration is authoritative: the capability declared its
+	// effect at the site that implements it (W8).
+	if declared, ok := RegisteredEffect(def.Name); ok {
+		return declared
 	}
 	if explicit, ok := capabilityEffects[def.Name]; ok {
 		return explicit
@@ -704,4 +658,16 @@ func CapabilityMeta(def ToolDefinition, snapshot CapabilityCatalogSnapshot) map[
 		break
 	}
 	return meta
+}
+
+// ResidualEffectTableNames exposes the unregistered names capabilityEffects
+// still classifies, so a contract test can assert the table has not regrown to
+// cover a capability that declares its own effect.
+func ResidualEffectTableNames() []string {
+	names := make([]string, 0, len(capabilityEffects))
+	for name := range capabilityEffects {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

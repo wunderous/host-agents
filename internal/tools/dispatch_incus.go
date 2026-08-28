@@ -9,10 +9,11 @@ import (
 	"github.com/wunderous/host-agents/internal/contract/toolname"
 	"github.com/wunderous/host-agents/internal/domain/incus"
 	"github.com/wunderous/host-agents/internal/hostagent"
+	"github.com/wunderous/host-agents/internal/resource"
 )
 
 func init() {
-	register(toolname.ProvisionContainer, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ProvisionContainer, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		nesting := optionalBoolField(args, "nesting")
 		out, err := svc.Incus().ProvisionContainer(incus.ProvisionContainerArgs{
 			ContainerName: stringField(args, "containerName"),
@@ -42,7 +43,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ProbeGPUContainer, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ProbeGPUContainer, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Incus().ProbeGPUContainer(onData)
 		if err != nil {
 			return nil, err
@@ -52,7 +53,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ResetIncusStack, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ResetIncusStack, EffectDestructive, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Incus().ResetIncusStack(ctx, incus.ResetIncusStackArgs{
 			InstanceNames:               stringSliceField(args, "instanceNames"),
 			InstancePrefix:              stringField(args, "instancePrefix"),
@@ -71,7 +72,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetVMInfo, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetVMInfo, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		if vmName == "" {
 			return nil, fmt.Errorf("vmName is required")
@@ -86,7 +87,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListVMs, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListVMs, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		fast, _ := args["fast"].(bool)
 		out, err := svc.Incus().ListVMs(fast)
 		if err != nil {

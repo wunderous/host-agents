@@ -15,13 +15,16 @@ func TestClassifyTool(t *testing.T) {
 		{"host_agent_heartbeat", ClassControl},
 		{"get_host_info", ClassControl},
 		{"list_vms", ClassControl},
-		{"configure_oci_storage", ClassHeavy},
-		{"build_and_push_oci_image", ClassHeavy},
+		// Registered capabilities no longer reach this function -- they
+		// declare their class at their dispatch site (W8). What remains here
+		// is the unregistered residue: transport- and provider-owned names.
+		{"opute.provider.install", ClassHeavy},
+		{"run_runtime_recipe", ClassHeavy},
 		// Serving reconciliation writes an explicit endpoint unit and waits for
 		// its bounded readiness contract. It is a normal host operation, not an
 		// exclusive resource-heavy workload, so unrelated normal work cannot
 		// starve public serving convergence.
-		{"run_host_command", ClassNormal},
+		{"install_sql_forward_sidecar", ClassNormal},
 		{"apply_manifest", ClassNormal},
 	} {
 		if got := ClassifyTool(test.tool); got != test.class {
@@ -35,7 +38,7 @@ func TestHeavyAdmissionIsSerialized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := c.Acquire(context.Background(), "build_and_push_oci_image")
+	first, err := c.AcquireClass(context.Background(), "build_and_push_oci_image", ClassHeavy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +46,7 @@ func TestHeavyAdmissionIsSerialized(t *testing.T) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		_, acquireErr := c.Acquire(ctx, "prepare_host_agent_artifacts")
+		_, acquireErr := c.AcquireClass(ctx, "prepare_host_agent_artifacts", ClassHeavy)
 		deferred <- acquireErr
 	}()
 	if err := <-deferred; err == nil {
@@ -84,7 +87,7 @@ func TestCoResidentCoordinatorsShareHeavyLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	release, err := first.Acquire(context.Background(), "build_and_push_oci_image")
+	release, err := first.AcquireClass(context.Background(), "build_and_push_oci_image", ClassHeavy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +95,7 @@ func TestCoResidentCoordinatorsShareHeavyLock(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if _, err := second.Acquire(ctx, "prepare_host_agent_artifacts"); err == nil {
+	if _, err := second.AcquireClass(ctx, "prepare_host_agent_artifacts", ClassHeavy); err == nil {
 		t.Fatal("expected co-resident coordinator to share the heavy lock")
 	}
 }
@@ -105,7 +108,7 @@ func TestCriticalPressureRejectsHeavyWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.Acquire(context.Background(), "build_and_push_oci_image")
+	_, err = c.AcquireClass(context.Background(), "build_and_push_oci_image", ClassHeavy)
 	if err == nil {
 		t.Fatal("expected resource pressure rejection")
 	}

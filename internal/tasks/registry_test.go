@@ -5,9 +5,12 @@ import (
 	"time"
 )
 
-func TestHostServingReconciliationUsesTaskContract(t *testing.T) {
-	if !TaskAwareTools["run_host_command"] {
-		t.Fatal("run_host_command must use the MCP task contract")
+// run_host_command's task-awareness moved onto its dispatch registration in
+// W8; the assertion lives in test/contract, which can see the registry. What
+// this package still owns is the residue table itself.
+func TestResidualTaskTableIsNotEmpty(t *testing.T) {
+	if !TaskAwareTools["request_task_input"] {
+		t.Fatal("request_task_input is transport-owned and must stay task-aware here")
 	}
 }
 

@@ -10,10 +10,11 @@ import (
 	"github.com/wunderous/host-agents/internal/domain/host"
 	"github.com/wunderous/host-agents/internal/domain/llm"
 	"github.com/wunderous/host-agents/internal/hostagent"
+	"github.com/wunderous/host-agents/internal/resource"
 )
 
 func init() {
-	register(toolname.InstallIncusStack, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.InstallIncusStack, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().InstallIncusStack(host.InstallIncusStackArgs{
 			IncusPackage: stringField(args, "incusPackage"), QemuPackage: stringField(args, "qemuPackage"),
 			GPUPackages:  stringSliceField(args, "gpuPackages"),
@@ -28,7 +29,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ProbeIncusGPU, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ProbeIncusGPU, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().ProbeIncusGPU(args)
 		if err != nil {
 			return nil, err
@@ -38,7 +39,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RunInstanceCommand, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RunInstanceCommand, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().RunInstanceCommand(host.RunInstanceCommandArgs{
 			URI:       stringField(args, "uri"),
 			Command:   stringField(args, "command"),
@@ -53,7 +54,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ProbeOpenaiCompatibleServer, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ProbeOpenaiCompatibleServer, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Llm().ProbeOpenAICompatibleServer(ctx, llm.ProbeOpenAICompatibleArgs{
 			Endpoint:    stringField(args, "endpoint"),
 			ModelRef:    stringField(args, "modelRef"),
@@ -68,7 +69,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.DetectHostPlatform, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.DetectHostPlatform, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().DetectHostPlatform()
 		if err != nil {
 			return nil, err
@@ -78,7 +79,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ProbeHTTPEndpoint, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ProbeHTTPEndpoint, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().ProbeHTTPEndpoint(ctx, host.ProbeHTTPEndpointArgs{Endpoint: stringField(args, "endpoint")})
 		if err != nil {
 			return nil, err
@@ -88,7 +89,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ExecCommand, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ExecCommand, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		parsed := execCommandArgs(args, binding)
 		out, err := svc.Host().ExecCommand(parsed, onData)
 		if err != nil {
@@ -100,7 +101,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureHostFirewallRule, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureHostFirewallRule, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		parsed := host.EnsureHostFirewallRuleArgs{
 			BindingID: stringField(args, "bindingId"),
 			Port:      intField(args, "port"),
@@ -114,7 +115,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.InspectHostService, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.InspectHostService, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().InspectHostService(host.InspectHostServiceArgs{ServiceName: serviceNameFromBinding(args, binding), Scope: serviceScopeFromBinding(args, binding)}, onData)
 		if err != nil {
 			return nil, err
@@ -124,7 +125,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListHostServices, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListHostServices, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().ListHostServices(stringField(args, "scope"))
 		if err != nil {
 			return nil, err
@@ -134,7 +135,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureHostFile, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureHostFile, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().EnsureHostFile(host.EnsureHostFileArgs{Path: stringField(args, "path"), Content: stringField(args, "content"), Mode: intField(args, "mode")})
 		if err != nil {
 			return nil, err
@@ -144,7 +145,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RemoveHostFile, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RemoveHostFile, EffectDestructive, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().RemoveHostFile(host.RemoveHostFileArgs{Path: stringField(args, "path"), ExpectedSHA256: stringField(args, "expectedSha256"), Confirm: boolField(args, "confirm")})
 		if err != nil {
 			return nil, err
@@ -154,7 +155,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureHostArtifact, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureHostArtifact, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().EnsureHostArtifact(host.EnsureHostArtifactArgs{URI: stringField(args, "uri"), Destination: stringField(args, "destination"), SHA256: stringField(args, "sha256"), Executable: boolField(args, "executable")}, onData)
 		if err != nil {
 			return nil, err
@@ -164,7 +165,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ExtractHostArchive, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ExtractHostArchive, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().ExtractHostArchive(host.ExtractHostArchiveArgs{ArchivePath: stringField(args, "archivePath"), Destination: stringField(args, "destination"), Format: stringField(args, "format")}, onData)
 		if err != nil {
 			return nil, err
@@ -174,7 +175,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.InspectHostFile, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.InspectHostFile, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().InspectHostFile(host.InspectHostFileArgs{Path: stringField(args, "path"), ExpectedSHA256: stringField(args, "expectedSha256"), ExpectedContent: stringField(args, "expectedContent")})
 		if err != nil {
 			return nil, err
@@ -184,7 +185,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureHostTool, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureHostTool, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().EnsureHostTool(host.EnsureHostToolArgs{Tool: stringField(args, "tool")}, onData)
 		if err != nil {
 			return nil, err
@@ -194,7 +195,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.PrepareHostAgentArtifacts, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.PrepareHostAgentArtifacts, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().PrepareHostAgentArtifacts(host.PrepareHostAgentArtifactsArgs{
 			SourceDir: stringField(args, "sourceDir"),
 			DestDir:   stringField(args, "destDir"),

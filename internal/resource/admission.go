@@ -105,6 +105,10 @@ func NewCoordinator(config Config) (*Coordinator, error) {
 	return &Coordinator{config: config, lock: lock, notify: make(chan struct{})}, nil
 }
 
+// ClassifyTool infers a class from a tool name. It is the fallback for names
+// with no dispatch registration -- transport-owned and provider-owned tools.
+// A registered capability declares its class at its registration site and
+// reaches Acquire through AcquireClass (plan §9.3, W8).
 func ClassifyTool(tool string) Class {
 	name := strings.ToLower(strings.TrimSpace(tool))
 	if name == "" || name == "health" || name == "ping" || name == "host_agent_heartbeat" ||
@@ -122,16 +126,12 @@ func ClassifyTool(tool string) Class {
 	return ClassNormal
 }
 
+// isHeavyTool is the residue of the pre-W8 heavy list: names with no dispatch
+// registration to declare an admission class at. A registered capability
+// declares resource.ClassHeavy at its registration site.
 func isHeavyTool(name string) bool {
 	for _, candidate := range []string{
-		"install_incus_stack", "reset_incus_stack", "provision_container", "provision_vm", "create_vm",
-		"install_postgresql", "ensure_oci_builder", "configure_oci_storage", "cleanup_container_storage",
-		"reconcile_postgresql_service", "remove_postgresql_service",
-		"build_and_push_oci_image", "prepare_host_agent_artifacts", "stage_build_context",
-		"ensure_host_tool", "install_host_agent", "install_local_llm_model",
-		"ensure_host_artifact",
-		"remove_host_file",
-		"configure_local_llm_model", "start_local_llm_runtime", "configure_local_llm_runtime",
+		"install_host_agent",
 		"run_runtime_recipe",
 		"run_tunnel_recipe",
 		"opute.provider.install",
@@ -148,10 +148,16 @@ func isHeavyTool(name string) bool {
 // Acquire waits for a host-local permit. The returned function must be
 // called exactly once, including on operation cancellation.
 func (c *Coordinator) Acquire(ctx context.Context, tool string) (func(), error) {
+	return c.AcquireClass(ctx, tool, ClassifyTool(tool))
+}
+
+// AcquireClass is Acquire for a caller that already knows the class -- a
+// registered capability declares it, rather than having it inferred from its
+// name.
+func (c *Coordinator) AcquireClass(ctx context.Context, tool string, class Class) (func(), error) {
 	if c == nil {
 		return func() {}, nil
 	}
-	class := ClassifyTool(tool)
 	if class == ClassControl {
 		return func() {}, nil
 	}

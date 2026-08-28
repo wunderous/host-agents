@@ -13,6 +13,7 @@ import (
 	"github.com/wunderous/host-agents/internal/domain/incus"
 	"github.com/wunderous/host-agents/internal/domain/postgres"
 	"github.com/wunderous/host-agents/internal/hostagent"
+	"github.com/wunderous/host-agents/internal/resource"
 )
 
 // These tools call methods still defined on ops/service.go and ops/standalone.go --
@@ -21,14 +22,14 @@ import (
 // dispatch.go as part of that partition.
 
 func init() {
-	register(toolname.GetHostInfo, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetHostInfo, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out := svc.Host().DescribeHost()
 		return structuredResult(out, ""), nil
 	})
 }
 
 func init() {
-	register(toolname.CheckLocalPrerequisites, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.CheckLocalPrerequisites, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Incus().CheckLocalPrerequisites()
 		if err != nil {
 			return nil, err
@@ -38,7 +39,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetLocalStatus, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetLocalStatus, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Incus().GetLocalStatus()
 		if err != nil {
 			return nil, err
@@ -48,7 +49,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ConfigureLocalLLMRuntime, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ConfigureLocalLLMRuntime, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		if localLLMRuntime(args) == "ollama" {
 			return nil, fmt.Errorf("the Ollama runtime configuration is host-wide and pinned to one process, two resident models, and one request at a time")
 		}
@@ -60,7 +61,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RemoveLocalLLMModel, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RemoveLocalLLMModel, EffectDestructive, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		if localLLMRuntime(args) == "ollama" {
 			return structuredResult(map[string]any{"removed": false, "purged": false, "shared": true, "reason": "Ollama model artifacts are shared host state; use the host Ollama lifecycle for explicit garbage collection"}, "shared Ollama model retained"), nil
 		}
@@ -107,13 +108,15 @@ func init() {
 			IsError:           res.ExitCode != 0,
 		}, nil
 	}
-	for _, n := range []string{toolname.AgentShell, toolname.RunHostCommand} {
-		register(n, h)
-	}
+	// One handler, two names. They differ in lifetime: a host command may
+	// outlive its request and is handed to the task contract; agent_shell is
+	// answered inline.
+	register(toolname.AgentShell, EffectMutation, resource.ClassNormal, TaskInline, h)
+	register(toolname.RunHostCommand, EffectMutation, resource.ClassNormal, TaskAware, h)
 }
 
 func init() {
-	register(toolname.EnsureSqlConnector, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureSqlConnector, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		parsed := postgres.EnsureSQLConnectorArgs{
 			DatabaseID: stringField(args, "databaseId"),
 			TargetHost: stringField(args, "targetHost"),
@@ -131,7 +134,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetSqlConnectorStatus, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetSqlConnectorStatus, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		databaseID := stringField(args, "databaseId")
 		out, err := svc.Postgres().GetSQLConnectorStatus(databaseID)
 		if err != nil {
@@ -147,7 +150,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ReleaseSqlConnector, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ReleaseSqlConnector, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		databaseID := stringField(args, "databaseId")
 		force, _ := args["force"].(bool)
 		released, err := svc.Postgres().ReleaseSQLConnector(databaseID, force)
@@ -163,7 +166,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.CreateVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.CreateVM, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		parsed := provisionArgs(args)
 		if strings.TrimSpace(parsed.InstanceType) == "" {
 			parsed.InstanceType = "virtual-machine"
@@ -177,7 +180,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ProvisionVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ProvisionVM, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		parsed := provisionArgs(args)
 		out, err := svc.Incus().ProvisionVM(parsed, onData)
 		if err != nil {
@@ -192,7 +195,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.StartVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.StartVM, EffectMutation, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Incus().StartVM(incus.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
@@ -202,7 +205,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.StopVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.StopVM, EffectMutation, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Incus().StopVM(incus.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
@@ -212,7 +215,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RestartVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RestartVM, EffectMutation, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Incus().RestartVM(incus.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
@@ -222,7 +225,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.UpdateVMResources, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.UpdateVMResources, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Incus().UpdateVMResources(incus.UpdateVMResourcesArgs{
 			VMName: vmNameFromBinding(binding),
 			CPUs:   intField(args, "cpus"),
@@ -236,7 +239,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.DeleteVM, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.DeleteVM, EffectDestructive, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Incus().DeleteVM(incus.VMScopedArgs{VMName: vmNameFromBinding(binding)}, onData)
 		if err != nil {
 			return nil, err
@@ -246,7 +249,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.InstallPostgreSQL, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.InstallPostgreSQL, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Postgres().InstallPostgreSQL(postgres.InstallPostgreSQLArgs{
 			VMName:    vmNameFromBinding(binding),
 			Namespace: stringField(args, "namespace"),
@@ -260,7 +263,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetPostgreSQLStatus, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetPostgreSQLStatus, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Postgres().GetPostgreSQLStatus(vmNameFromBinding(binding), stringField(args, "namespace"))
 		if err != nil {
 			return nil, err
@@ -270,7 +273,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.DeletePostgreSQL, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.DeletePostgreSQL, EffectDestructive, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Postgres().DeletePostgreSQL(vmNameFromBinding(binding), stringField(args, "namespace"), onData)
 		if err != nil {
 			return nil, err
@@ -280,7 +283,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RunSql, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RunSql, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Postgres().RunSQL(vmNameFromBinding(binding), stringField(args, "namespace"), stringField(args, "database"), stringField(args, "sql"))
 		if err != nil {
 			return nil, err
@@ -290,7 +293,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RestartHostService, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RestartHostService, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().RestartHostService(host.RestartHostServiceArgs{ServiceName: stringField(args, "serviceName")}, onData)
 		if err != nil {
 			return nil, err
@@ -300,7 +303,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.SetHostServiceState, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.SetHostServiceState, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().SetHostServiceState(host.SetHostServiceStateArgs{ServiceName: serviceNameFromBinding(args, binding), State: stringField(args, "state"), Scope: serviceScopeFromBinding(args, binding)}, onData)
 		if err != nil {
 			return nil, err
@@ -310,7 +313,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureHostServiceSupervisor, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureHostServiceSupervisor, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().EnsureHostServiceSupervisor(host.EnsureHostServiceSupervisorArgs{Scope: stringField(args, "scope")}, onData)
 		if err != nil {
 			return nil, err
@@ -320,7 +323,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureDocker, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureDocker, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		// EnsureDocker is an unsupported stub on Incus Linux hosts: it always errors,
 		// so the success path below was dead.
 		_, err := svc.Host().EnsureDocker(onData)
@@ -329,7 +332,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureK3d, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureK3d, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		// EnsureK3d is an unsupported stub on Incus Linux hosts: it always errors,
 		// so the success path below was dead.
 		_, err := svc.Host().EnsureK3d(onData)
@@ -338,7 +341,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListNamespaces, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListNamespaces, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		namespaces, err := svc.Kubernetes().ListNamespaces(vmName)
 		if err != nil {
@@ -350,7 +353,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListStorageClasses, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListStorageClasses, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		storageClasses, err := svc.Kubernetes().ListStorageClasses(vmName)
 		if err != nil {
@@ -362,7 +365,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListIngressClasses, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListIngressClasses, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		ingressClasses, err := svc.Kubernetes().ListIngressClasses(vmName)
 		if err != nil {
@@ -373,7 +376,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListPods, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListPods, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		namespace := stringField(args, "namespace")
 		pods, err := svc.Kubernetes().ListPods(vmName, namespace)
@@ -385,7 +388,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListServices, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListServices, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		namespace := stringField(args, "namespace")
 		services, err := svc.Kubernetes().ListServices(vmName, namespace)
@@ -397,7 +400,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListDeployments, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListDeployments, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		namespace := stringField(args, "namespace")
 		deployments, err := svc.Kubernetes().ListDeployments(vmName, namespace)
@@ -409,7 +412,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.DiagnoseBridge, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.DiagnoseBridge, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().DiagnoseBridge(ctx)
 		if err != nil {
 			return nil, err
@@ -419,7 +422,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RecoverBridge, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RecoverBridge, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().RecoverBridge(ctx, onData)
 		if err != nil {
 			return nil, err

@@ -8,10 +8,11 @@ import (
 	"github.com/wunderous/host-agents/internal/contract/toolname"
 	"github.com/wunderous/host-agents/internal/domain/serving"
 	"github.com/wunderous/host-agents/internal/hostagent"
+	"github.com/wunderous/host-agents/internal/resource"
 )
 
 func init() {
-	register(toolname.ReconcileServingAssignment, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ReconcileServingAssignment, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Serving().ReconcileServingAssignment(servingAssignmentArgs(args), onData)
 		if err != nil {
 			return nil, err
@@ -21,7 +22,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.DiscoverServiceIngress, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.DiscoverServiceIngress, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		rawEndpoints, _ := args["endpoints"].([]any)
 		endpoints := make([]serving.ServiceIngressEndpoint, 0, len(rawEndpoints))
 		for _, raw := range rawEndpoints {

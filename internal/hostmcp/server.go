@@ -534,7 +534,13 @@ func (s *Server) DispatchTool(ctx context.Context, name string, args map[string]
 	if s.admission == nil || s.isProviderCapability(name) {
 		return s.dispatchRegisteredOrBuiltIn(ctx, name, rawArgs, binding, onData)
 	}
-	release, err := s.admission.Acquire(ctx, name)
+	// A registered capability declared its admission class at its dispatch
+	// site; only unregistered names fall back to inference by name (W8).
+	class, declared := tools.RegisteredAdmissionClass(name)
+	if !declared {
+		class = resource.ClassifyTool(name)
+	}
+	release, err := s.admission.AcquireClass(ctx, name, class)
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
@@ -1114,7 +1120,7 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		}
 		return s.createInputRequestTask(args)
 	}
-	if tasks.TaskAwareTools[name] {
+	if tools.IsTaskAware(name) || tasks.TaskAwareTools[name] {
 		if !taskExtensionDeclared(req) {
 			return nil, missingTasksCapabilityError()
 		}

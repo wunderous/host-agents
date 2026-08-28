@@ -9,10 +9,11 @@ import (
 	"github.com/wunderous/host-agents/internal/contract/toolname"
 	"github.com/wunderous/host-agents/internal/domain/llm"
 	"github.com/wunderous/host-agents/internal/hostagent"
+	"github.com/wunderous/host-agents/internal/resource"
 )
 
 func init() {
-	register(toolname.CheckLocalLLMPrerequisites, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.CheckLocalLLMPrerequisites, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Llm().CheckOllamaPrerequisites()
 		if err != nil {
 			return nil, err
@@ -22,7 +23,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureLocalLLMServerBinary, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureLocalLLMServerBinary, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		if localLLMRuntime(args) != "llama-cpp" {
 			return nil, fmt.Errorf("unsupported local LLM runtime %q; only llama-cpp is supported", localLLMRuntime(args))
 		}
@@ -62,13 +63,14 @@ func init() {
 		}
 		return structuredResult(out, ""), nil
 	}
-	for _, n := range []string{toolname.ListLocalLLMModels, toolname.ProbeLocalLLM} {
-		register(n, h)
-	}
+	// One handler, two names, but each name declares its own behaviour: the
+	// model list is a control-plane read, the probe talks to the runtime.
+	register(toolname.ListLocalLLMModels, EffectRead, resource.ClassControl, TaskInline, h)
+	register(toolname.ProbeLocalLLM, EffectRead, resource.ClassNormal, TaskInline, h)
 }
 
 func init() {
-	register(toolname.InstallLocalLLMModel, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.InstallLocalLLMModel, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		role, err := localLLMModelRole(args)
 		if err != nil {
 			return nil, err
@@ -131,7 +133,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ConfigureLocalLLMModel, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ConfigureLocalLLMModel, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		if localLLMRuntime(args) == "ollama" {
 			modelRef := localLLMModelRef(args)
 			contextSize := intField(args, "contextSize")
@@ -162,7 +164,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.StartLocalLLMRuntime, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.StartLocalLLMRuntime, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		if localLLMRuntime(args) == "ollama" {
 			out, err := svc.Llm().StartOllamaRuntime(ctx)
 			if err != nil {
@@ -182,7 +184,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.StopLocalLLMRuntime, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.StopLocalLLMRuntime, EffectMutation, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		if localLLMRuntime(args) == "ollama" {
 			if err := svc.Llm().StopOllamaRuntime(ctx); err != nil {
 				return nil, err
@@ -200,7 +202,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureLocalLLMRelay, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureLocalLLMRelay, EffectCredential, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Llm().EnsureLocalLLMRelay(ctx, llm.LocalLLMRelayArgs{SessionID: stringField(args, "sessionId"), ListenHost: stringField(args, "listenHost"), ListenPort: intField(args, "listenPort"), TargetHost: stringField(args, "targetHost"), TargetPort: intField(args, "targetPort"), IncomingToken: stringField(args, "incomingToken"), UpstreamToken: stringField(args, "upstreamToken"), AllowedSourceCIDRs: stringSliceField(args, "allowedSourceCIDRs"), RelayToken: stringField(args, "relayToken"), AllowedSourceIP: stringField(args, "allowedSourceIP")})
 		if err != nil {
 			return nil, err
@@ -210,7 +212,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RemoveLocalLLMRelay, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RemoveLocalLLMRelay, EffectDestructive, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Llm().RemoveLocalLLMRelay(stringField(args, "sessionId"))
 		if err != nil {
 			return nil, err
@@ -220,7 +222,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureLocalLLMK3sProxy, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureLocalLLMK3sProxy, EffectCredential, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Llm().EnsureLocalLLMK3sProxy(llm.LocalLLMK3sProxyArgs{
 			VMName:         vmNameFromBinding(binding),
 			Namespace:      stringField(args, "namespace"),
@@ -243,7 +245,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RemoveLocalLLMK3sProxy, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RemoveLocalLLMK3sProxy, EffectDestructive, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Llm().RemoveLocalLLMK3sProxy(vmNameFromBinding(binding), stringField(args, "namespace"))
 		if err != nil {
 			return nil, err

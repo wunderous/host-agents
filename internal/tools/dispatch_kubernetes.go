@@ -9,10 +9,11 @@ import (
 	"github.com/wunderous/host-agents/internal/contract/toolname"
 	"github.com/wunderous/host-agents/internal/domain/kubernetes"
 	"github.com/wunderous/host-agents/internal/hostagent"
+	"github.com/wunderous/host-agents/internal/resource"
 )
 
 func init() {
-	register(toolname.ListKubernetesClusters, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListKubernetesClusters, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Kubernetes().ListKubernetesClusters(stringField(args, "source"))
 		if err != nil {
 			return nil, err
@@ -22,7 +23,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.InstallHelmChart, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.InstallHelmChart, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		parsed := installHelmChartArgs(args, binding)
 		out, err := svc.Kubernetes().InstallHelmChart(parsed, onData)
 		if err != nil {
@@ -33,7 +34,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.UninstallHelmChart, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.UninstallHelmChart, EffectDestructive, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		parsed := uninstallHelmChartArgs(args, binding)
 		out, err := svc.Kubernetes().UninstallHelmChart(parsed, onData)
 		if err != nil {
@@ -44,7 +45,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ApplyManifest, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ApplyManifest, EffectMutation, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Kubernetes().ApplyManifest(kubernetes.ApplyManifestArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Manifest: stringField(args, "manifest")}, onData)
 		if err != nil {
 			return nil, err
@@ -54,7 +55,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.PutK8sSecret, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.PutK8sSecret, EffectCredential, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		data := map[string]string{}
 		if raw, ok := args["data"].(map[string]any); ok {
 			for key, value := range raw {
@@ -72,7 +73,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetK8sResource, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetK8sResource, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Kubernetes().GetK8sResource(kubernetes.K8sResourceArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Kind: stringField(args, "kind"), ResourceKind: stringField(args, "resourceKind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")})
 		if err != nil {
 			return nil, err
@@ -83,7 +84,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.DeleteK8sResource, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.DeleteK8sResource, EffectDestructive, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Kubernetes().DeleteK8sResource(kubernetes.K8sResourceArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Kind: stringField(args, "kind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")}, onData)
 		if err != nil {
 			return nil, err
@@ -94,7 +95,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetK8sResourceStatus, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetK8sResourceStatus, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Kubernetes().GetK8sResourceStatus(kubernetes.K8sResourceArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Kind: stringField(args, "kind"), ResourceKind: stringField(args, "resourceKind"), ResourceName: stringField(args, "resourceName"), Namespace: stringField(args, "namespace")})
 		if err != nil {
 			return nil, err
@@ -105,7 +106,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ListK8sEvents, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ListK8sEvents, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		limit, _ := args["limit"].(float64)
 		out, err := svc.Kubernetes().ListK8sEvents(kubernetes.K8sEventsArgs{URI: resourceURIFromBinding(binding), VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Limit: int(limit)})
 		if err != nil {
@@ -117,7 +118,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ConfigureServiceDomain, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ConfigureServiceDomain, EffectMutation, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Kubernetes().ConfigureServiceDomain(kubernetes.ConfigureServiceDomainArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), IngressName: stringField(args, "ingressName"), Hostname: stringField(args, "hostname"), ServiceName: stringField(args, "serviceName"), ServicePort: intField(args, "servicePort"), IngressClass: stringField(args, "ingressClass")}, onData)
 		if err != nil {
 			return nil, err
@@ -127,7 +128,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RemoveServiceDomain, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RemoveServiceDomain, EffectDestructive, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Kubernetes().RemoveServiceDomain(kubernetes.ConfigureServiceDomainArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), IngressName: stringField(args, "ingressName")}, onData)
 		if err != nil {
 			return nil, err
@@ -137,7 +138,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RenderHelmTemplate, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RenderHelmTemplate, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Kubernetes().RenderHelmTemplate(kubernetes.RenderHelmTemplateArgs{
 			ChartPath:   stringField(args, "chartPath"),
 			ReleaseName: stringField(args, "releaseName"),

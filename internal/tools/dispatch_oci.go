@@ -9,10 +9,11 @@ import (
 	"github.com/wunderous/host-agents/internal/contract/toolname"
 	"github.com/wunderous/host-agents/internal/domain/oci"
 	"github.com/wunderous/host-agents/internal/hostagent"
+	"github.com/wunderous/host-agents/internal/resource"
 )
 
 func init() {
-	register(toolname.InstallOCIRegistry, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.InstallOCIRegistry, EffectMutation, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Oci().InstallOCIRegistry(oci.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Name: stringField(args, "name"), Image: stringField(args, "image"), StorageSize: stringField(args, "storageSize"), StorageClass: stringField(args, "storageClass"), NodePort: intField(args, "nodePort")}, onData)
 		if err != nil {
 			return nil, err
@@ -22,7 +23,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.GetOCIRegistryStatus, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.GetOCIRegistryStatus, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Oci().GetOCIRegistryStatus(oci.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace"), Name: stringField(args, "name")})
 		if err != nil {
 			return nil, err
@@ -32,7 +33,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.DeleteOCIRegistry, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.DeleteOCIRegistry, EffectDestructive, resource.ClassNormal, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Oci().DeleteOCIRegistry(oci.InstallOCIRegistryArgs{VMName: vmNameFromBinding(binding), Namespace: stringField(args, "namespace")}, onData)
 		if err != nil {
 			return nil, err
@@ -42,7 +43,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureOCIBuilder, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureOCIBuilder, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Oci().EnsureOciBuilder(oci.EnsureOciBuilderArgs{Builder: stringField(args, "builder")}, onData)
 		if err != nil {
 			return nil, err
@@ -52,7 +53,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.ConfigureOCIStorage, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.ConfigureOCIStorage, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Oci().ConfigureOciStorage(ctx, oci.ConfigureOciStorageArgs{
 			Runtime:       stringField(args, "runtime"),
 			MaxBytes:      optionalInt64Field(args, "maxBytes"),
@@ -67,7 +68,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.InspectContainerStorage, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.InspectContainerStorage, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Oci().InspectContainerStorage(ctx, oci.InspectContainerStorageArgs{
 			Runtime: stringField(args, "runtime"),
 		})
@@ -79,7 +80,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.CleanupContainerStorage, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.CleanupContainerStorage, EffectDestructive, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Oci().CleanupContainerStorage(ctx, oci.CleanupContainerStorageArgs{
 			Runtime:       stringField(args, "runtime"),
 			MaxBytes:      optionalInt64Field(args, "maxBytes"),
@@ -94,7 +95,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.BuildAndPushOCIImage, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.BuildAndPushOCIImage, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Oci().BuildAndPushOciImage(ctx, oci.BuildAndPushOciImageArgs{
 			ContextDir:       stringField(args, "contextDir"),
 			Dockerfile:       stringField(args, "dockerfile"),
@@ -112,7 +113,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.StageBuildContext, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.StageBuildContext, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		files := map[string]string{}
 		if raw, ok := args["files"].(map[string]any); ok {
 			for key, value := range raw {

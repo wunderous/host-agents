@@ -373,53 +373,19 @@ func cloneMap(value map[string]any) map[string]any {
 	return out
 }
 
+// TaskAwareTools is the residue of the pre-W8 table: names with no dispatch
+// registration to declare a task mode at, because the transport or a provider
+// handles them rather than a host capability. A registered capability declares
+// tools.TaskAware at its registration site instead, and
+// TestResidualTaskTableHoldsOnlyUnregisteredNames keeps the two from
+// overlapping.
 var TaskAwareTools = map[string]bool{
-	// Generic host commands may legitimately outlive a single MCP request
-	// (for example, a caller-declared validation or service lifecycle job).
-	// Keep them on the standard task/polling contract instead of coupling
-	// their lifetime to the transport request.
-	"run_host_command":              true,
 	"request_task_input":            true,
-	"install_incus_stack":           true,
-	"reset_incus_stack":             true,
-	"create_vm":                     true,
-	"provision_container":           true,
-	"provision_vm":                  true,
-	"delete_vm":                     true,
-	"start_vm":                      true,
-	"stop_vm":                       true,
-	"restart_vm":                    true,
-	"install_postgresql":            true,
-	"reconcile_postgresql_service":  true,
-	"remove_postgresql_service":     true,
-	"apply_manifest":                true,
-	"delete_k8s_resource":           true,
-	"put_k8s_secret":                true,
-	"install_oci_registry":          true,
-	"delete_oci_registry":           true,
-	"configure_service_domain":      true,
-	"remove_service_domain":         true,
 	"install_cloudflared_connector": true,
 	"delete_cloudflared_connector":  true,
-	"ensure_oci_builder":            true,
-	"configure_oci_storage":         true,
-	"cleanup_container_storage":     true,
-	"build_and_push_oci_image":      true,
-	"prepare_host_agent_artifacts":  true,
-	"stage_build_context":           true,
-	"ensure_host_tool":              true,
-	"ensure_host_artifact":          true,
-	"remove_host_file":              true,
-	"delete_postgresql":             true,
 	"configure_network":             true,
 	"remove_vm_network_device":      true,
 	"install_host_agent":            true,
-	"install_local_llm_model":       true,
-	"configure_local_llm_model":     true,
-	"start_local_llm_runtime":       true,
-	"configure_local_llm_runtime":   true,
-	"stop_local_llm_runtime":        true,
-	"remove_local_llm_model":        true,
 	"run_host_plan":                 true,
 	"run_runtime_recipe":            true,
 	"run_tunnel_recipe":             true,
