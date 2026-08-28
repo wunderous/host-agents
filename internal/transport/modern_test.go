@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -308,17 +309,15 @@ func postMCP(t *testing.T, url, token, origin, method, name string, params map[s
 // TestLegacyHandshakeDoesNotBypassModernSurface pins the narrowing recorded in
 // ADR 0011.
 //
-// `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE` used to skip modern-MCP validation for any
-// request whose params omitted `_meta["io.modelcontextprotocol/protocolVersion"]`,
-// on every method. A client could therefore reach `tasks/*` -- which has its own
-// capability negotiation -- and `server/discover` with no `Mcp-Method` header and
-// no protocol version, simply by not asking to be validated. The flag is named
-// for the handshake; its effect was to disable the transport contract.
+// `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE` used to skip modern-MCP validation on every
+// method, for any request that simply omitted the protocol version -- so the flag
+// named for the handshake in fact made the whole transport contract client-elective.
+// The compatibility surface is now enumerated in `legacyCompatibleMethods`, which
+// carries the membership rules; this test pins the outside of that set.
 //
-// The compatibility surface is now enumerated. These two methods are 2026-07-28
-// additions that no pre-2026 client can need, so they stay validated even when
-// the legacy flag is on. TestMCPAllowsLegacyHandshakeWhenOptedIn covers the
-// other half: initialize and tools/list still work for Codex/Cursor.
+// TestMCPAllowsLegacyHandshakeWhenOptedIn covers the other half (initialize and
+// tools/list still work for Codex/Cursor), and TestLegacyCompatibleMethodsAreServed
+// covers the inside of the set.
 func TestLegacyHandshakeDoesNotBypassModernSurface(t *testing.T) {
 	hs := newTransportTestServer(t)
 	authorizer := testAuthorizer(t, "host-bootstrap")
@@ -369,6 +368,61 @@ func TestLegacyHandshakeDoesNotBypassModernSurface(t *testing.T) {
 			// request carrying neither the headers nor the _meta protocol version.
 			if !strings.Contains(string(payload), "-32020") {
 				t.Fatalf("%s in legacy mode = %s, want -32020 HeaderMismatch: the legacy bypass must not cover the 2026-07-28 surface", tc.method, string(payload))
+			}
+		})
+	}
+}
+
+// TestLegacyCompatibleMethodsAreServed asserts that every entry in the legacy
+// bypass allowlist names a method this server actually answers. An entry for an
+// unserved method is pure attack surface: it widens the set of requests that may
+// skip modern-contract validation without buying any client compatibility.
+func TestLegacyCompatibleMethodsAreServed(t *testing.T) {
+	hs := newTransportTestServer(t)
+	httpSrv := NewHTTPServer(HTTPOptions{
+		HostServer: hs, BindHost: "127.0.0.1", Port: 0,
+		Authz: testAuthorizer(t, "host-bootstrap"), AllowLegacyHandshake: true,
+	})
+	ts := httptest.NewServer(httpSrv.Handler())
+	defer ts.Close()
+
+	for method := range legacyCompatibleMethods {
+		t.Run(method, func(t *testing.T) {
+			payload := map[string]any{"jsonrpc": "2.0", "method": method, "params": map[string]any{}}
+			// Notifications carry no id; a request that does is rejected as malformed.
+			if !strings.HasPrefix(method, "notifications/") {
+				payload["id"] = 1
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(body))
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			req.Header.Set("Authorization", "Bearer host-bootstrap")
+
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("post %s: %v", method, err)
+			}
+			defer res.Body.Close()
+			raw, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+
+			// "Served" means reached a handler. Invalid-params (-32602) counts --
+			// these probes send empty params on purpose. Method-not-found does not.
+			if res.StatusCode == http.StatusNotFound ||
+				strings.Contains(string(raw), "-32601") ||
+				strings.Contains(string(raw), "unsupported extension method") {
+				t.Fatalf("allowlisted method %q is not served by this server (status %d): %s\n"+
+					"Remove it from legacyCompatibleMethods -- it widens the legacy bypass for nothing.",
+					method, res.StatusCode, raw)
 			}
 		})
 	}

@@ -68,6 +68,17 @@ linters:
   #         deny:
   #           - pkg: "github.com/wunderous/host-agents/internal/domain/llm"
   #             desc: "S4.3 rule 1: cross-domain access is an injected cordis.ServiceKey."
+  #       hostruntime-knows-no-domains: # W7 -- S9.2 rule 1 (D3)
+  #         list-mode: lax
+  #         files: ["**/internal/hostruntime/**"]
+  #         deny:
+  #           - pkg: "github.com/wunderous/host-agents/internal/domain"
+  #             desc: >-
+  #               S9.2 rule 1: hostruntime is identity, config, and execution
+  #               handles. A domain type reaching it means the member belonged to
+  #               that domain -- this is how internal/ops came back under a new
+  #               name. Enforced by the compiler too; this catches the
+  #               transitive edge (domain/a -> hostruntime -> domain/b).
 
   exclusions:
     generated: lax

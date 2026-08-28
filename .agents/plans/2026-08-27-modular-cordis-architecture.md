@@ -222,14 +222,23 @@ internal/
 │   ├── host/                      #   ← ops/{host_*,exec_command,http_probe,runtime_probe,container_runtime}.go (11)
 │   └── serving/                   #   ← ops/{serving_assignment,generic_service_ingress}.go (2)
 │
-├── hostruntime/                   # the residue of ops/service.go that is genuinely shared:
-│                                  # provider runtime handle, tenant/instance identity, command
-│                                  # runners, request locks, resource snapshot. NOT a god object —
-│                                  # if a method needs a domain type, it belongs in that domain.
+├── hostruntime/                   # the residue of ops/service.go that is genuinely shared.
+│                                  # Membership is a three-part rule, not a judgement call (§9.2):
+│                                  #   1. names no domain/* type   (compiler + depguard)
+│                                  #   2. has >= 2 domain consumers (test)
+│                                  #   3. identity/config/exec handle, never an operation
+│                                  # Measured: 9 of today's 22 fields qualify. Absorbs the VM
+│                                  # runtime handle from internal/provider (§9.1). No plugin.go,
+│                                  # no dispatch table, no tool names -- those are the regression.
 │
 ├── plan/  recipe/                 # declarative execution (2,569 + 1,097). Unchanged.
 ├── state/  session/  resource/  resourceid/  selectors/
-├── authz/  config/  console/  cli/  app/  exec/  fingerprint/  heartbeat/  provider/  version/
+├── provider/                      # PLUGIN lifecycle (ADR 0002): install/validate/status/reload,
+│                                  # descriptors, generations.  ← hostmcp/provider_install.go
+│                                  # Not a domain/*: providers are the extension mechanism, not a
+│                                  # bounded capability area. The VM runtime handle that used to
+│                                  # occupy this name moves to hostruntime (§9.1).
+├── authz/  config/  console/  cli/  app/  exec/  fingerprint/  heartbeat/  version/
 └── (internal/ops and internal/hostmcp/server.go no longer exist)
 ```
 
@@ -356,7 +365,7 @@ against `.agents/decisions/*.json` in the sibling repo, not the two this plan's
 | `host-agent-tool-contract-conformance` | `registerTools` | `hostmcp/server.go` | `mcpserver/registration.go` |
 | `host-agent-tool-contract-conformance` | `capabilityEffect` | `tools/capability.go` | `contract/effect.go` |
 | `provider-neutral-cordis-mcp-boundary` | `recordCapabilityInvocation` | `hostmcp/server.go` | `capability/invocation.go` |
-| `provider-neutral-cordis-mcp-boundary` | `handleProviderInstall` | `hostmcp/provider_install.go` | `domain/*/plugin.go` — **provider-scoped, see below** |
+| `provider-neutral-cordis-mcp-boundary` | `handleProviderInstall` | `hostmcp/provider_install.go` | `provider/lifecycle.go` — **D2 resolved, §9.1** |
 | `typed-capability-edge-derivation` | `deriveCapabilityEdges` | `tools/capability.go` | `contract/effect.go` |
 | `runtime-kind-defaults-and-nested-kvm` | `normalizeProvisionInstanceType` | `ops/incus_launch.go` | `domain/incus/` — **moves in W7** |
 | `wsl-llama-gpu-pinning` | `Environment=CUDA_VISIBLE_DEVICES=0` | `ops/llama_server.go` | `domain/llm/` — **moves in W7** |
@@ -372,9 +381,11 @@ Which commit owns which:
 
 Two details that will bite otherwise:
 
-- **`handleProviderInstall` has no home in §4.2.** It is provider lifecycle,
-  which `ha-k1` moves out of `server.go`. Resolve with D2 before `ha-k1`, not
-  during.
+- ~~**`handleProviderInstall` has no home in §4.2.**~~ **Resolved 2026-08-28
+  (§9.1).** Its home is `internal/provider/lifecycle.go`. The name is freed by
+  folding today's `internal/provider` — which is the *VM runtime handle*, an
+  unrelated meaning of the word — into `hostruntime`, a move §4.2 already
+  specifies. That fold must land in or before `ha-k1`.
 - **One anchor is on a test file.** `llama_server_test.go` moves with its subject
   in W7, so that commit re-anchors `wsl-llama-gpu-pinning` twice over — the
   production file and the test. `bun scripts/decision-records.ts sweep --update`
@@ -514,8 +525,24 @@ Sequenced **after** W1 (anchors already terminal) and **after** W2's partition
 assertion exists (so the cut is verifiable). `ha-k4`'s Ollama move is one of the
 eight, not a separate milestone.
 
-`hostruntime`'s membership rule must be decided before this lands (§7.4, §9 D3),
-not discovered during it — it is the one package that re-accumulates by default.
+~~`hostruntime`'s membership rule must be decided before this lands~~ —
+**decided 2026-08-28, §9.2.** Three parts: names no `domain/*` type
+(compiler + depguard), has two or more domain consumers, and is identity,
+config, or an execution handle rather than an operation. Measured against
+today's service, **9 of 22 fields qualify**; eleven are used in one file or
+none. W7 additionally:
+
+- **folds `internal/provider` (the VM runtime handle) into `hostruntime`**,
+  which frees that name for plugin lifecycle per §9.1 — this must land in or
+  before `ha-k1`, not here, if `ha-k1` re-anchors `handleProviderInstall` first;
+- **deletes `allowInsecureDownloads`** — the env var, the `Options` field, the
+  struct field, and the `config.go`/`app/runtime.go` plumbing. It is never read
+  (§9.2), and per-call `insecureRegistry` is the live mechanism;
+- **enables the `hostruntime-knows-no-domains` depguard rule** already written
+  into [`.golangci.yml`](../../.golangci.yml);
+- **adds the rule-2 consumer test** and the `hostruntime` size ratchet;
+- **creates the `hostruntime-membership` decision record**, anchored to the real
+  package rather than to this plan (§9.2).
 
 *Attaches to:* `ha-k4`, absorbing it.
 *Exit:* `internal/ops` does not exist; `go build ./...` green; W2 partition
@@ -740,9 +767,126 @@ deletion during a refactor.
 | # | Item | Why it cannot be silently refactored | Gate |
 |---|---|---|---|
 | ~~D1~~ | ~~`OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE`~~ **RESOLVED 2026-08-27** — gate kept, default off, bypass surface enumerated. [ADR 0011](../../docs/adr/0011-legacy-handshake-compatibility-gate.md) · decision record `legacy-handshake-compatibility-gate`. | — | **W4 done; M2 unblocked** |
-| D2 | Anchor placement strategy | Re-anchoring to another moving file defers the break rather than fixing it. §4.2 proposes terminal homes; confirm before W1 lands, because W1 is the commit that spends them. | W1 — blocks `ha-k1` and W7 |
+| ~~D2~~ | ~~Anchor placement strategy~~ **RESOLVED 2026-08-28** — terminal homes confirmed as written; `handleProviderInstall` lands in `internal/provider/`, freed by folding the VM runtime handle into `hostruntime` as §4.2 already specifies. See §9.1. | — | **`ha-k1` and W7 unblocked** |
 | D4 | Capability registration site | §7.2 moves capability authoring into `domain/*/plugin.go` using `catalog.Registry`'s existing overlay API. ADR 0009's authority property is preserved — one snapshot, `tools/list` 1:1 — but the ADR's mechanism section describes a different edit site, and conformance M2 owns `catalog.go`. Agree it with that plan rather than assuming it. | W8 — blocks nothing else, but W7 should not land a shape W8 must immediately rework |
-| D3 | `hostruntime` scope | It is the residue of a 239-method god object. Left undefined it re-accumulates: every method that does not obviously belong to a domain lands there, and `internal/ops` returns under a new name. Define its membership rule before W7, not during. | W7 |
+| ~~D3~~ | ~~`hostruntime` scope~~ **RESOLVED 2026-08-28** — three-part membership rule, compiler- and ratchet-enforced. Measured: only 9 of 22 fields qualify. See §9.2. | — | **W7 unblocked** |
+
+### 9.1 D2 resolved — anchor homes, and where `handleProviderInstall` lives
+
+**The terminal-homes table in §6 W1 stands as written.** W1's own correction
+already settled the general strategy: Go anchors re-anchor *with* their code, in
+the commit that moves it, because the anchored symbols are methods on
+`hostmcp.Server` and unexported helpers woven into the packages being split.
+Nothing about that needs revisiting. What was genuinely open is the one row W1
+flagged: `handleProviderInstall` had no home in §4.2.
+
+**The blocker was a name collision, not a missing package.** `internal/provider/`
+already exists — and it is **not** about plugin providers at all. It is the
+**VM runtime handle**: `provider.Runtime`, `RunProvider`, `RunHost`,
+`RunVMExec`, the Incus binary path
+([`internal/provider/provider.go`](../../internal/provider/provider.go), 184
+lines). Meanwhile `handleProviderInstall` is plugin lifecycle in ADR 0002's
+sense: `loadProviderDescriptor`, `provideradapter.Connect`,
+`providerLifecycle.CreateCandidate`, `persistProviderGeneration`. Two unrelated
+meanings of "provider", one package name.
+
+Filing the handler under `internal/provider/` as it stands would conflate them,
+and inventing a third word is worse — ADR 0002 explicitly *supersedes* the
+"provider-extension" draft, so "extension" is retired vocabulary. The live
+vocabulary is `provider`: `plugins/`, `contracts/provider`,
+`ProviderLifecycleManager`, `providercontract`.
+
+**Resolution, using a move §4.2 already specifies.** §4.2 lists the "provider
+runtime handle" as `hostruntime` content. Acting on that frees the name:
+
+| | Today | After |
+|---|---|---|
+| VM runtime handle | `internal/provider/` (`Runtime`, `Config`, `ID`, the exec wrappers) | `internal/hostruntime/` — it is a shared execution handle, which is exactly D3's rule 3 |
+| Plugin lifecycle | `hostmcp/provider_install.go` (408 lines, on `*Server`) | `internal/provider/` — `lifecycle.go`, `descriptor.go`, `generation.go` |
+
+`handleProviderInstall`'s terminal home is therefore
+**`internal/provider/lifecycle.go`**, and the `provider_install` /
+`provider_validate` / `provider_status` / `provider_reload` handlers move with
+it as a set. `provider` is not a `domain/*` package: providers are the extension
+mechanism, not a bounded capability area, so they are not subject to §4.3 rule 1
+and do not get a `plugin.go`.
+
+**Amends the §6 W1 table:** the `handleProviderInstall` row reads
+`internal/provider/lifecycle.go`, not `domain/*/plugin.go`. `ha-k1` still owns
+re-anchoring it.
+
+**Ordering note.** The `internal/provider` → `hostruntime` fold must land in or
+before `ha-k1`, since `ha-k1` is the commit that re-anchors
+`handleProviderInstall` into the freed name. Doing it after would mean two
+renames of the same path and two re-anchorings of the same record.
+
+### 9.2 D3 resolved — the `hostruntime` membership rule
+
+D3's fear is precise and correct: left undefined, `hostruntime` becomes
+`internal/ops` under a new name. A prose boundary will not prevent that, so the
+rule below is stated so a *test* can decide it, and paired with a ratchet.
+
+**A thing belongs in `hostruntime` only if all three hold.**
+
+1. **It names no `domain/*` type.** Compile-enforced — `hostruntime` must not
+   import any `domain/*` package — and stated declaratively in `.golangci.yml`
+   `depguard` so the transitive case is caught too. This is the rule that makes
+   the other two hard to evade.
+2. **It has two or more domain consumers.** One consumer means it belongs to
+   that domain. This is the rule that actually shrinks the residue, and it is
+   checkable by enumerating references per domain package.
+3. **It is identity, configuration, or an execution handle — never an
+   operation.** `hostruntime` supplies the means; it never performs a host
+   operation. No method on a `hostruntime` type may run a provider, kubectl, or
+   container command to effect a change; it hands back the runner and stops.
+
+**Measured against today's `HostOperationsService` (242 methods, 22 fields,
+19,088 lines across 54 files), the rule admits 9 fields:**
+
+| Qualifies (files using it) | Goes to a domain instead |
+|---|---|
+| `resourceRegistry` (7) · `tenantID` (5) · `runtime` (3) · `agentID` (3) · `instanceID` (2) · `ownershipMode` (2) · `sharedHostOwnerInstance` (2) · `resourceSnapshot` (2) · `commandRunnerFn` (1, but it is the shared provider-exec test seam) | `kubernetesExecutor` (4) · `kubectlRunner` (1) → `domain/kubernetes` · `postgresqlServiceRelay` (2) · `sqlSupervisor` (1) · `sqliteDatabaseRoot` (1) → `domain/postgres` · `localLLMRelay` (2) → `domain/llm` · `guestBridgeRelay` (2) → `domain/host` · `ociStoragePolicyPath` · `ociStorageMu` (1 each) → `domain/oci` · `containerLookPathFn`/`CommandFn`/`StreamingCommandFn` (1) → `domain/host` · `resetCheckpointPath` (1) → `domain/host` · `toolsFn` (1) → `domain/host` |
+
+**Eleven of the twenty-two fields are used in one file or none.** They were never
+shared state; they sat on the god object because it was the object that existed.
+That is the measurement that makes rule 2 worth having.
+
+**One field is dead, and should be deleted rather than moved.**
+`allowInsecureDownloads` is plumbed the whole way —
+`OPUTE_STANDALONE_ALLOW_INSECURE_DOWNLOADS` → `config.go:107` →
+`app/runtime.go:73` → `ops.Options` → the struct field — and then **never read**:
+zero occurrences of `s.allowInsecureDownloads` in the repo. Insecure registries
+*are* supported, but per-call via the `insecureRegistry` tool argument
+([`build_and_push_oci_image.go`](../../internal/ops/build_and_push_oci_image.go)),
+which is live and unrelated. So the env var is vestigial config that looks like
+a security control and is not one. Delete the flag, the option, the field, and
+the config plumbing in W7; do not carry it into `hostruntime`.
+
+**Enforcement, so the rule survives contact.** The rule is only as good as what
+fails when it is broken:
+
+- Rule 1 is the compiler, plus `depguard`.
+- Rule 2 gets a test enumerating each `hostruntime` field's consumers and failing
+  at fewer than two. It should be written to name the offending field and the
+  single domain it belongs to.
+- **A size ratchet on `hostruntime`**, in the shape gate landed in M1 — baselined
+  at whatever the W7 partition produces, and never allowed to grow. Rules 1 and 2
+  bound what may enter; the ratchet is what notices the slow accumulation they
+  do not catch. This is the same mechanism as the sibling repo's `module-shape.ts`
+  and this repo's `new-from-rev` lint baseline, and it is chosen for the same
+  reason: a fixed cap gets argued with, a ratchet gets banked.
+
+**`hostruntime` has no `plugin.go` and registers no capabilities.** It is not a
+domain and must not acquire a dispatch table; a tool name appearing in
+`hostruntime` is the first symptom of the regression D3 names.
+
+**No decision record yet — deliberately.** The natural record here ("hostruntime
+membership is the three-part rule") can only anchor to this plan section and a
+commented `.golangci.yml` block until W7 creates the package. A record anchored
+to a file that is about to move is the exact failure D2 spent its time on, so
+**W7 creates it**, anchored to `internal/hostruntime/` and the enabled depguard
+rule, with `verify` running the rule-2 consumer test. Until then this section is
+the authority and §11's W7 row carries the obligation.
 
 ## 10. Verification
 

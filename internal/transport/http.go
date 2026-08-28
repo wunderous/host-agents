@@ -237,6 +237,12 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 //   - `server/discover` -- introduced by 2026-07-28.
 //   - `tasks/*`         -- the tasks extension, which carries its own client
 //     capability negotiation that the old bypass skipped wholesale.
+//   - `resources/*`     -- this server declares the resources capability but
+//     serves no resource method, so allowlisting them would only have widened
+//     the bypass around requests that cannot succeed.
+//
+// TestLegacyCompatibleMethodsAreServed keeps this list from drifting back into
+// naming methods the server does not answer.
 var legacyCompatibleMethods = map[string]struct{}{
 	"initialize":                {},
 	"notifications/initialized": {},
@@ -244,9 +250,6 @@ var legacyCompatibleMethods = map[string]struct{}{
 	"ping":                      {},
 	"tools/list":                {},
 	"tools/call":                {},
-	"resources/list":            {},
-	"resources/read":            {},
-	"resources/templates/list":  {},
 	"prompts/list":              {},
 	"prompts/get":               {},
 }
