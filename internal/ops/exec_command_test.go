@@ -6,6 +6,7 @@ import (
 	"time"
 
 	hostexec "github.com/wunderous/host-agents/internal/exec"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
@@ -26,7 +27,7 @@ func TestExecCommandRequiresCommand(t *testing.T) {
 }
 
 func TestRunInstanceCommandResolvesContainerURIWithoutVMFallback(t *testing.T) {
-	registry := newInMemoryResourceRegistry()
+	registry := hostruntime.NewInMemoryResourceRegistry()
 	if err := registry.UpsertResource(resourceid.Record{
 		URI:          "container:tenant-a:connector",
 		ResourceType: resourceid.TypeContainer,

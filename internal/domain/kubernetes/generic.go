@@ -1,4 +1,4 @@
-package ops
+package kubernetes
 
 import (
 	"errors"
@@ -35,7 +35,7 @@ type K8sEventsArgs struct {
 
 var k8sIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]*$`)
 
-func validateK8sIdentifier(value, field string) error {
+func ValidateIdentifier(value, field string) error {
 	value = strings.TrimSpace(value)
 	if value == "" || !k8sIdentifier.MatchString(value) {
 		return fmt.Errorf("%s contains invalid characters", field)
@@ -43,8 +43,8 @@ func validateK8sIdentifier(value, field string) error {
 	return nil
 }
 
-func (s *HostOperationsService) DeleteK8sResource(args K8sResourceArgs, _ func(string)) (map[string]any, error) {
-	if s.kubernetesExecutor == nil {
+func (s *Service) DeleteK8sResource(args K8sResourceArgs, _ func(string)) (map[string]any, error) {
+	if s.executor == nil {
 		return nil, errors.New("Kubernetes provider is required for delete Kubernetes resource")
 	}
 	kind := strings.TrimSpace(args.Kind)
@@ -53,18 +53,18 @@ func (s *HostOperationsService) DeleteK8sResource(args K8sResourceArgs, _ func(s
 	if strings.TrimSpace(args.URI) == "" || kind == "" || name == "" {
 		return nil, errors.New("uri, kind, and resourceName are required")
 	}
-	if err := validateK8sIdentifier(kind, "kind"); err != nil {
+	if err := ValidateIdentifier(kind, "kind"); err != nil {
 		return nil, err
 	}
-	if err := validateK8sIdentifier(name, "resourceName"); err != nil {
+	if err := ValidateIdentifier(name, "resourceName"); err != nil {
 		return nil, err
 	}
 	if namespace != "" {
-		if err := validateK8sIdentifier(namespace, "namespace"); err != nil {
+		if err := ValidateIdentifier(namespace, "namespace"); err != nil {
 			return nil, err
 		}
 	}
-	out, delegated, err := s.executeKubernetesProvider(KubernetesDeleteResourceOperation, args.URI, map[string]any{
+	out, delegated, err := s.ExecuteProvider(KubernetesDeleteResourceOperation, args.URI, map[string]any{
 		"kind": kind, "resourceName": name, "namespace": namespace,
 	})
 	if !delegated {
@@ -73,8 +73,8 @@ func (s *HostOperationsService) DeleteK8sResource(args K8sResourceArgs, _ func(s
 	return out, err
 }
 
-func (s *HostOperationsService) ApplyManifest(args ApplyManifestArgs, _ func(string)) (map[string]any, error) {
-	if s.kubernetesExecutor == nil {
+func (s *Service) ApplyManifest(args ApplyManifestArgs, _ func(string)) (map[string]any, error) {
+	if s.executor == nil {
 		return nil, errors.New("Kubernetes provider is required for apply manifest")
 	}
 	if strings.TrimSpace(args.URI) == "" {
@@ -87,7 +87,7 @@ func (s *HostOperationsService) ApplyManifest(args ApplyManifestArgs, _ func(str
 	if len(manifest) > 4*1024*1024 {
 		return nil, errors.New("manifest exceeds the 4 MiB limit")
 	}
-	out, delegated, err := s.executeKubernetesProvider(KubernetesApplyManifestOperation, args.URI, map[string]any{
+	out, delegated, err := s.ExecuteProvider(KubernetesApplyManifestOperation, args.URI, map[string]any{
 		"manifest": manifest,
 	})
 	if !delegated {
@@ -96,8 +96,8 @@ func (s *HostOperationsService) ApplyManifest(args ApplyManifestArgs, _ func(str
 	return out, err
 }
 
-func (s *HostOperationsService) GetK8sResource(args K8sResourceArgs) (map[string]any, error) {
-	if s.kubernetesExecutor == nil {
+func (s *Service) GetK8sResource(args K8sResourceArgs) (map[string]any, error) {
+	if s.executor == nil {
 		return nil, errors.New("Kubernetes provider is required for get Kubernetes resource")
 	}
 	kind := strings.TrimSpace(args.Kind)
@@ -109,18 +109,18 @@ func (s *HostOperationsService) GetK8sResource(args K8sResourceArgs) (map[string
 	if strings.TrimSpace(args.URI) == "" || kind == "" || name == "" {
 		return nil, errors.New("uri, kind, and resourceName are required")
 	}
-	if err := validateK8sIdentifier(kind, "kind"); err != nil {
+	if err := ValidateIdentifier(kind, "kind"); err != nil {
 		return nil, err
 	}
-	if err := validateK8sIdentifier(name, "resourceName"); err != nil {
+	if err := ValidateIdentifier(name, "resourceName"); err != nil {
 		return nil, err
 	}
 	if namespace != "" {
-		if err := validateK8sIdentifier(namespace, "namespace"); err != nil {
+		if err := ValidateIdentifier(namespace, "namespace"); err != nil {
 			return nil, err
 		}
 	}
-	out, delegated, err := s.executeKubernetesProvider(KubernetesGetResourceOperation, args.URI, map[string]any{
+	out, delegated, err := s.ExecuteProvider(KubernetesGetResourceOperation, args.URI, map[string]any{
 		"kind": kind, "resourceKind": args.ResourceKind, "resourceName": name, "namespace": namespace,
 	})
 	if !delegated {
@@ -129,8 +129,8 @@ func (s *HostOperationsService) GetK8sResource(args K8sResourceArgs) (map[string
 	return out, err
 }
 
-func (s *HostOperationsService) GetK8sResourceStatus(args K8sResourceArgs) (map[string]any, error) {
-	if s.kubernetesExecutor == nil {
+func (s *Service) GetK8sResourceStatus(args K8sResourceArgs) (map[string]any, error) {
+	if s.executor == nil {
 		return nil, errors.New("Kubernetes provider is required for Kubernetes resource status")
 	}
 	resourceKind := strings.TrimSpace(args.ResourceKind)
@@ -140,13 +140,13 @@ func (s *HostOperationsService) GetK8sResourceStatus(args K8sResourceArgs) (map[
 	if strings.TrimSpace(args.URI) == "" || resourceKind == "" || strings.TrimSpace(args.ResourceName) == "" {
 		return nil, errors.New("uri, resourceKind, and resourceName are required")
 	}
-	if err := validateK8sIdentifier(resourceKind, "resourceKind"); err != nil {
+	if err := ValidateIdentifier(resourceKind, "resourceKind"); err != nil {
 		return nil, err
 	}
-	if err := validateK8sIdentifier(args.ResourceName, "resourceName"); err != nil {
+	if err := ValidateIdentifier(args.ResourceName, "resourceName"); err != nil {
 		return nil, err
 	}
-	out, delegated, err := s.executeKubernetesProvider(KubernetesGetResourceStatusOperation, args.URI, map[string]any{
+	out, delegated, err := s.ExecuteProvider(KubernetesGetResourceStatusOperation, args.URI, map[string]any{
 		"kind": resourceKind, "resourceKind": resourceKind, "resourceName": strings.TrimSpace(args.ResourceName), "namespace": strings.TrimSpace(args.Namespace),
 	})
 	if !delegated {
@@ -157,8 +157,8 @@ func (s *HostOperationsService) GetK8sResourceStatus(args K8sResourceArgs) (map[
 
 // ListK8sEvents returns bounded provider-owned event evidence for an explicit
 // canonical cluster target.
-func (s *HostOperationsService) ListK8sEvents(args K8sEventsArgs) (map[string]any, error) {
-	if s.kubernetesExecutor == nil {
+func (s *Service) ListK8sEvents(args K8sEventsArgs) (map[string]any, error) {
+	if s.executor == nil {
 		return nil, errors.New("Kubernetes provider is required for Kubernetes events")
 	}
 	if strings.TrimSpace(args.URI) == "" {
@@ -171,7 +171,7 @@ func (s *HostOperationsService) ListK8sEvents(args K8sEventsArgs) (map[string]an
 	if limit > 200 {
 		limit = 200
 	}
-	out, delegated, err := s.executeKubernetesProvider(KubernetesListEventsOperation, args.URI, map[string]any{
+	out, delegated, err := s.ExecuteProvider(KubernetesListEventsOperation, args.URI, map[string]any{
 		"namespace": strings.TrimSpace(args.Namespace), "limit": limit,
 	})
 	if !delegated {

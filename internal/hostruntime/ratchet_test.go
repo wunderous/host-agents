@@ -22,7 +22,16 @@ import (
 // all three rules, `ResourceRegistry`, and `SharedHostOwnershipError`. Note
 // what did NOT come with them -- `runVMExec` performs an incus ownership check,
 // so rule 3 makes it an operation and it stays in the incus domain.
-const budgetLines = 320
+//
+// Raised 320 -> 420 for the registry bookkeeping (RegisterResource,
+// DeregisterResource, ResourceURIForProviderName, Coordinates). Same rule-3
+// line: those parse a URI and touch the registry, while ResolveResource asks
+// incus whether an instance exists and therefore stayed behind.
+//
+// Raised 420 -> 470 for the in-memory ResourceRegistry, moved here from
+// internal/ops so a domain test can build a real Shared without importing the
+// package this work is dismantling.
+const budgetLines = 470
 
 func TestHostruntimeStaysWithinBudget(t *testing.T) {
 	entries, err := os.ReadDir(".")

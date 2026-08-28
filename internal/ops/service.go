@@ -18,14 +18,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wunderous/host-agents/internal/domain/kubernetes"
 	hostexec "github.com/wunderous/host-agents/internal/exec"
 	"github.com/wunderous/host-agents/internal/heartbeat"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resourceid"
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 const (
-	defaultDiscoveryTimeout = 45 * time.Second
 	provisionVMTimeout      = 10 * time.Minute
 	clusterAgentServiceName = "opute-cluster-agent"
 	sqlConnectorMaxPerHost  = 32
@@ -88,15 +89,13 @@ type HostOperationsService struct {
 	guestBridgeRelay       *tcpRelayManager
 	localLLMRelay          *localLLMRelayManager
 	postgresqlServiceRelay *postgresqlServiceRelayManager
-	// kubectlRunner is an explicit test seam for the PostgreSQL service ordering
-	// and readiness contract. Production execution always delegates to the
-	// active Kubernetes hostruntime.
-	kubectlRunner func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error)
 	// container command seams keep runtime adapter tests independent of an
 	// installed host runtime. They are intentionally scoped to this service.
 	containerCommandFn          func(context.Context, string, ...string) ([]byte, error)
 	containerStreamingCommandFn func(context.Context, string, []string, func(string)) error
-	kubernetesExecutor          KubernetesProviderExecutor
+	// k8s is the kubernetes domain, built lazily -- see kubernetes_delegate.go.
+	k8s     *kubernetes.Service
+	k8sOnce sync.Once
 }
 
 type Options struct {
@@ -136,7 +135,7 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 	}
 	registry := opts.ResourceRegistry
 	if registry == nil {
-		registry = newInMemoryResourceRegistry()
+		registry = hostruntime.NewInMemoryResourceRegistry()
 	}
 	return &HostOperationsService{
 		shared: hostruntime.Shared{
@@ -794,70 +793,6 @@ func (s *HostOperationsService) getKubernetesList(vmName, resource, namespace st
 	return map[string]any{"items": items}, nil
 }
 
-func (s *HostOperationsService) runKubernetesKubectl(vmName string, kubectlArgs []string, label string) (string, error) {
-	return s.runKubernetesKubectlTimed(vmName, kubectlArgs, label, defaultDiscoveryTimeout)
-}
-
-func (s *HostOperationsService) runKubernetesKubectlTimed(vmName string, kubectlArgs []string, label string, timeout time.Duration) (string, error) {
-	return s.runKubernetesProviderCommand(context.Background(), vmName, kubectlArgs, nil, label, timeout)
-}
-
-func (s *HostOperationsService) runKubernetesKubectlContext(ctx context.Context, vmName string, kubectlArgs []string, label string, timeout time.Duration) (string, error) {
-	if s.kubectlRunner != nil {
-		return s.kubectlRunner(ctx, vmName, kubectlArgs, nil, label, timeout)
-	}
-	return s.runKubernetesProviderCommand(ctx, vmName, kubectlArgs, nil, label, timeout)
-}
-
-func (s *HostOperationsService) runKubernetesKubectlWithStdinContext(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
-	if s.kubectlRunner != nil {
-		return s.kubectlRunner(ctx, vmName, kubectlArgs, input, label, timeout)
-	}
-	return s.runKubernetesProviderCommand(ctx, vmName, kubectlArgs, input, label, timeout)
-}
-
-func (s *HostOperationsService) runKubernetesProviderCommand(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
-	if s.kubernetesExecutor == nil {
-		return "", fmt.Errorf("Kubernetes provider is required for %s; direct Host Agent kubectl execution is disabled", label)
-	}
-	targetURI, err := s.kubernetesTargetURI(vmName)
-	if err != nil {
-		return "", err
-	}
-	args := map[string]any{"kubectlArgs": stringsToAny(kubectlArgs)}
-	if input != nil {
-		args["stdin"] = string(input)
-	}
-	out, delegated, err := s.executeKubernetesProvider(KubernetesExecCommandOperation, targetURI, args)
-	if !delegated {
-		return "", fmt.Errorf("Kubernetes provider is required for %s", label)
-	}
-	if err != nil {
-		return "", fmt.Errorf("failed to %s in %s: %w", label, vmName, err)
-	}
-	stdout, _ := out["stdout"].(string)
-	return strings.TrimSpace(stdout), nil
-}
-
-func stringsToAny(values []string) []any {
-	result := make([]any, len(values))
-	for index, value := range values {
-		result[index] = value
-	}
-	return result
-}
-
-func (s *HostOperationsService) ensureHelmTargetNamespace(vmName, namespace string) error {
-	if namespace == "" || namespace == "kube-system" {
-		return nil
-	}
-	if _, err := s.runKubernetesKubectl(vmName, []string{"get", "namespace", namespace}, "get namespace"); err == nil {
-		return nil
-	}
-	_, err := s.runKubernetesKubectl(vmName, []string{"create", "namespace", namespace}, "create namespace")
-	return err
-}
-
 // --- Cluster agent ---
 
 type InstallClusterAgentArgs struct {
@@ -1251,28 +1186,14 @@ func shellEscape(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
-}
-
-func errString(err error, fallback string) string {
-	if err != nil {
-		return err.Error()
-	}
-	return fallback
-}
-
-func defaultString(value, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
-	}
-	return value
-}
+// These forward to internal/textutil, which every domain shares. The local
+// spellings stay so the ~76 call sites in this package do not churn while it is
+// being dismantled.
+var (
+	firstNonEmpty = textutil.FirstNonEmpty
+	defaultString = textutil.Default
+	errString     = textutil.ErrString
+)
 
 func envOr(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {

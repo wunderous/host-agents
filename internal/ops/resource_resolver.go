@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/wunderous/host-agents/internal/cordis"
 	"github.com/wunderous/host-agents/internal/hostruntime"
@@ -32,54 +31,6 @@ type ResourceRegistryService struct {
 // inMemoryResourceRegistry is the explicit non-persistent fallback used by
 // embedded/unit servers that do not request a state directory. Production
 // servers replace it with the additive SQLite registry in hostmcp.NewServer.
-type inMemoryResourceRegistry struct {
-	mu      sync.RWMutex
-	records map[string]resourceid.Record
-}
-
-func newInMemoryResourceRegistry() ResourceRegistry {
-	return &inMemoryResourceRegistry{records: make(map[string]resourceid.Record)}
-}
-
-func (r *inMemoryResourceRegistry) UpsertResource(record resourceid.Record) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if record.Status == "" {
-		record.Status = "active"
-	}
-	r.records[record.URI] = record
-	return nil
-}
-
-func (r *inMemoryResourceRegistry) GetResource(uri string) (resourceid.Record, bool, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	record, ok := r.records[uri]
-	return record, ok, nil
-}
-
-func (r *inMemoryResourceRegistry) DeleteResource(uri string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.records, uri)
-	return nil
-}
-
-func (r *inMemoryResourceRegistry) ListResources(resourceType, tenantID string) ([]resourceid.Record, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	result := make([]resourceid.Record, 0, len(r.records))
-	for _, record := range r.records {
-		if resourceType != "" && record.ResourceType != resourceType {
-			continue
-		}
-		if tenantID != "" && record.TenantID != tenantID {
-			continue
-		}
-		result = append(result, record)
-	}
-	return result, nil
-}
 
 func (s ResourceRegistryService) Key() cordis.ServiceKey { return ResourceRegistryServiceKey }
 
@@ -92,12 +43,22 @@ func (s ResourceResolverService) Key() cordis.ServiceKey { return ResourceResolv
 
 // Coordinates is the validated result of resolving an opaque entity URI.
 // Callers may only use coordinates after Resolve has checked tenant and type.
-type Coordinates struct {
-	URI          resourceid.URI
-	ResourceType string
-	TenantID     string
-	ResourceID   string
-	Values       map[string]any
+// Coordinates and the registry bookkeeping below it moved to hostruntime: they
+// name no domain type and every domain records what it creates. Resolution
+// stayed here -- it asks incus whether an instance exists, which makes it an
+// operation under S9.2 rule 3.
+type Coordinates = hostruntime.Coordinates
+
+func (s *HostOperationsService) RegisterResource(uri string, coordinates map[string]any) error {
+	return s.shared.RegisterResource(uri, coordinates)
+}
+
+func (s *HostOperationsService) DeregisterResource(uri string) error {
+	return s.shared.DeregisterResource(uri)
+}
+
+func (s *HostOperationsService) ResourceURIForProviderName(providerName string) string {
+	return s.shared.ResourceURIForProviderName(providerName)
 }
 
 func (s *HostOperationsService) SetResourceRegistry(registry ResourceRegistry) {
@@ -186,53 +147,6 @@ func (s *HostOperationsService) ResolveResource(uri, wantType string) (Coordinat
 		return Coordinates{}, fmt.Errorf("resource not found: %s", parsed)
 	}
 	return Coordinates{URI: parsed, ResourceType: parsed.ResourceType, TenantID: parsed.TenantID, ResourceID: parsed.ResourceID, Values: record.Coordinates}, nil
-}
-
-func (s *HostOperationsService) RegisterResource(uri string, coordinates map[string]any) error {
-	parsed, err := resourceid.Parse(uri)
-	if err != nil {
-		return err
-	}
-	if tenant := strings.TrimSpace(s.shared.TenantID); tenant != "" && parsed.TenantID != tenant {
-		return fmt.Errorf("%w: active tenant %q", resourceid.ErrForeignTenant, tenant)
-	}
-	if s.shared.ResourceRegistry == nil {
-		return errors.New("resource registry is not configured")
-	}
-	return s.shared.ResourceRegistry.UpsertResource(resourceid.Record{
-		URI: parsed.String(), ResourceType: parsed.ResourceType, TenantID: parsed.TenantID,
-		ResourceID: parsed.ResourceID, Coordinates: coordinates, Status: "active",
-	})
-}
-
-func (s *HostOperationsService) DeregisterResource(uri string) error {
-	parsed, err := resourceid.Parse(uri)
-	if err != nil {
-		return err
-	}
-	if tenant := strings.TrimSpace(s.shared.TenantID); tenant != "" && parsed.TenantID != tenant {
-		return fmt.Errorf("%w: active tenant %q", resourceid.ErrForeignTenant, tenant)
-	}
-	if s.shared.ResourceRegistry == nil {
-		return errors.New("resource registry is not configured")
-	}
-	return s.shared.ResourceRegistry.DeleteResource(parsed.String())
-}
-
-func (s *HostOperationsService) ResourceURIForProviderName(providerName string) string {
-	if s == nil || s.shared.ResourceRegistry == nil {
-		return ""
-	}
-	records, err := s.shared.ResourceRegistry.ListResources("", s.shared.TenantID)
-	if err != nil {
-		return ""
-	}
-	for _, record := range records {
-		if value, ok := record.Coordinates["providerInstanceName"].(string); ok && value == providerName {
-			return record.URI
-		}
-	}
-	return ""
 }
 
 // AttachLocalLLMModelURIs projects model observations into the same opaque,

@@ -472,12 +472,12 @@ func TestEnsurePostgreSQLServiceRelayCreatesHostForwardWhenTargetOmitted(t *test
 		}
 		return exec.Result{}, errors.New("unexpected command")
 	}
-	service.kubectlRunner = func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
+	service.setKubectlRunner(func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
 		if kubectlArgs[0] == "get" && kubectlArgs[1] == "service" {
 			return `{"spec":{"clusterIP":"10.43.141.91"}}`, nil
 		}
 		return "", errors.New("unexpected kubectl call")
-	}
+	})
 	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}, RelayDeviceName: "test-postgres-rw"})
 	if err != nil {
 		t.Fatal(err)

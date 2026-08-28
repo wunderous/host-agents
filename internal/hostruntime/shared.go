@@ -3,6 +3,7 @@ package hostruntime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -119,4 +120,79 @@ func (s *Shared) RequireSharedHostOwner(operation string) error {
 		Operation:        strings.TrimSpace(operation),
 		Remediation:      "Select the shared-host owner instance or use the approved operator workflow.",
 	}
+}
+
+// Coordinates is a resolved resource identity: the URI plus whatever the
+// registry recorded about where the thing actually lives. It names only
+// resourceid types, so it crosses domain boundaries without dragging any
+// domain's model with it.
+type Coordinates struct {
+	URI          resourceid.URI
+	ResourceType string
+	TenantID     string
+	ResourceID   string
+	Values       map[string]any
+}
+
+// RegisterResource records a resource under the active tenant.
+//
+// This and the two below are registry bookkeeping, not resolution: they parse a
+// URI, check the tenant, and touch the registry. Resolution is a different
+// thing -- it may have to ASK a domain whether an instance exists -- so
+// ResolveResource stays out of hostruntime under S9.2 rule 3.
+func (s *Shared) RegisterResource(uri string, coordinates map[string]any) error {
+	parsed, err := s.parseOwnedURI(uri)
+	if err != nil {
+		return err
+	}
+	if s.ResourceRegistry == nil {
+		return errors.New("resource registry is not configured")
+	}
+	return s.ResourceRegistry.UpsertResource(resourceid.Record{
+		URI: parsed.String(), ResourceType: parsed.ResourceType, TenantID: parsed.TenantID,
+		ResourceID: parsed.ResourceID, Coordinates: coordinates, Status: "active",
+	})
+}
+
+// DeregisterResource removes a resource owned by the active tenant.
+func (s *Shared) DeregisterResource(uri string) error {
+	parsed, err := s.parseOwnedURI(uri)
+	if err != nil {
+		return err
+	}
+	if s.ResourceRegistry == nil {
+		return errors.New("resource registry is not configured")
+	}
+	return s.ResourceRegistry.DeleteResource(parsed.String())
+}
+
+// ResourceURIForProviderName reverse-maps a provider's own instance name back
+// to the URI it was registered under.
+func (s *Shared) ResourceURIForProviderName(providerName string) string {
+	if s == nil || s.ResourceRegistry == nil {
+		return ""
+	}
+	records, err := s.ResourceRegistry.ListResources("", s.TenantID)
+	if err != nil {
+		return ""
+	}
+	for _, record := range records {
+		if value, ok := record.Coordinates["providerInstanceName"].(string); ok && value == providerName {
+			return record.URI
+		}
+	}
+	return ""
+}
+
+// parseOwnedURI parses a resource URI and rejects one belonging to another
+// tenant. Every registry entry point needs both checks, in that order.
+func (s *Shared) parseOwnedURI(uri string) (resourceid.URI, error) {
+	parsed, err := resourceid.Parse(uri)
+	if err != nil {
+		return resourceid.URI{}, err
+	}
+	if tenant := strings.TrimSpace(s.TenantID); tenant != "" && parsed.TenantID != tenant {
+		return resourceid.URI{}, fmt.Errorf("%w: active tenant %q", resourceid.ErrForeignTenant, tenant)
+	}
+	return parsed, nil
 }

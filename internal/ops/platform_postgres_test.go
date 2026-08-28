@@ -13,7 +13,7 @@ func TestEnsurePostgreSQLServiceAppliesOperatorBeforeCluster(t *testing.T) {
 	service := validResetService()
 	applied := false
 	var order []string
-	service.kubectlRunner = func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
+	service.setKubectlRunner(func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
 		cmd := strings.Join(kubectlArgs, " ")
 		order = append(order, cmd)
 		switch {
@@ -41,7 +41,7 @@ func TestEnsurePostgreSQLServiceAppliesOperatorBeforeCluster(t *testing.T) {
 		default:
 			return "", fmt.Errorf("unexpected call: %s", cmd)
 		}
-	}
+	})
 	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}})
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +113,7 @@ func TestPostgreSQLServiceInfrastructureReadyAllowsDatabaseCreation(t *testing.T
 func TestEnsurePostgreSQLServiceNeverAppliesClusterWithoutCRD(t *testing.T) {
 	service := validResetService()
 	clusterApplied := false
-	service.kubectlRunner = func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
+	service.setKubectlRunner(func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
 		switch {
 		case kubectlArgs[0] == "get" && kubectlArgs[1] == "nodes":
 			return `{"items":[{"status":{"conditions":[{"type":"Ready","status":"True"}]}}]}`, nil
@@ -127,7 +127,7 @@ func TestEnsurePostgreSQLServiceNeverAppliesClusterWithoutCRD(t *testing.T) {
 		default:
 			return "", fmt.Errorf("unexpected call")
 		}
-	}
+	})
 	spec, _ := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -142,7 +142,7 @@ func TestEnsurePostgreSQLServiceNeverAppliesClusterWithoutCRD(t *testing.T) {
 func TestEnsurePostgreSQLServiceRequiresK3sReadyBeforeOperator(t *testing.T) {
 	service := validResetService()
 	applies := 0
-	service.kubectlRunner = func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
+	service.setKubectlRunner(func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
 		switch {
 		case kubectlArgs[0] == "get" && kubectlArgs[1] == "nodes":
 			return "", fmt.Errorf("K3s API unavailable")
@@ -152,7 +152,7 @@ func TestEnsurePostgreSQLServiceRequiresK3sReadyBeforeOperator(t *testing.T) {
 		default:
 			return "", fmt.Errorf("unexpected call")
 		}
-	}
+	})
 	spec, _ := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -170,7 +170,7 @@ func TestEnsurePostgreSQLServiceCompletesSQLGatedResult(t *testing.T) {
 	consumerSecret := fmt.Sprintf(`{"data":{"testDatabaseUrl":"%s","testLedgerDatabaseUrl":"%s"}}`,
 		base64.StdEncoding.EncodeToString([]byte("postgresql://opute:p@svc/opute")),
 		base64.StdEncoding.EncodeToString([]byte("postgresql://opute:p@svc/opute_task_ledger")))
-	service.kubectlRunner = func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
+	service.setKubectlRunner(func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
 		command := kubectlArgs[0]
 		switch {
 		case command == "get" && len(kubectlArgs) > 1 && kubectlArgs[1] == "nodes":
@@ -219,7 +219,7 @@ func TestEnsurePostgreSQLServiceCompletesSQLGatedResult(t *testing.T) {
 		default:
 			return "", fmt.Errorf("unexpected kubectl call: %s", strings.Join(kubectlArgs, " "))
 		}
-	}
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	result, err := service.ReconcilePostgreSQLService(ctx, PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb", "test_ledger"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}}, nil)

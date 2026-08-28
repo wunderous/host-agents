@@ -1,4 +1,4 @@
-package ops
+package kubernetes
 
 import (
 	"encoding/json"
@@ -54,7 +54,7 @@ func renderHelmChartManifest(args InstallHelmChartArgs) string {
 	return strings.Join(lines, "\n")
 }
 
-func (s *HostOperationsService) InstallHelmChart(args InstallHelmChartArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) InstallHelmChart(args InstallHelmChartArgs, onData func(string)) (map[string]any, error) {
 	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
 		return nil, fmt.Errorf("vmName is required")
@@ -73,13 +73,13 @@ func (s *HostOperationsService) InstallHelmChart(args InstallHelmChartArgs, onDa
 	}
 
 	if namespace != "kube-system" {
-		if err := s.ensureHelmTargetNamespace(vmName, namespace); err != nil {
+		if err := s.EnsureHelmNamespace(vmName, namespace); err != nil {
 			return nil, err
 		}
 	}
 
 	manifest := renderHelmChartManifest(args)
-	targetURI, err := s.kubernetesTargetURI(vmName)
+	targetURI, err := s.TargetURI(vmName)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (s *HostOperationsService) InstallHelmChart(args InstallHelmChartArgs, onDa
 	}, nil
 }
 
-func (s *HostOperationsService) UninstallHelmChart(args UninstallHelmChartArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) UninstallHelmChart(args UninstallHelmChartArgs, onData func(string)) (map[string]any, error) {
 	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
 		return nil, fmt.Errorf("vmName is required")
@@ -110,7 +110,7 @@ func (s *HostOperationsService) UninstallHelmChart(args UninstallHelmChartArgs, 
 		namespace = "kube-system"
 	}
 
-	targetURI, err := s.kubernetesTargetURI(vmName)
+	targetURI, err := s.TargetURI(vmName)
 	if err != nil {
 		return nil, err
 	}

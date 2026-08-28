@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/wunderous/host-agents/internal/domain/kubernetes"
 )
 
 type InstallOCIRegistryArgs struct {
@@ -21,7 +23,7 @@ func (s *HostOperationsService) DeleteOCIRegistry(args InstallOCIRegistryArgs, o
 	if strings.TrimSpace(args.VMName) == "" {
 		return nil, errors.New("vmName is required")
 	}
-	if err := validateK8sIdentifier(namespace, "namespace"); err != nil {
+	if err := kubernetes.ValidateIdentifier(namespace, "namespace"); err != nil {
 		return nil, err
 	}
 	targetURI, err := s.kubernetesTargetURI(args.VMName)
@@ -44,10 +46,10 @@ func (s *HostOperationsService) InstallOCIRegistry(args InstallOCIRegistryArgs, 
 	image := defaultString(args.Image, "registry:3")
 	storageSize := defaultString(args.StorageSize, "20Gi")
 	storageClass := defaultString(args.StorageClass, "local-path")
-	if err := validateK8sIdentifier(namespace, "namespace"); err != nil {
+	if err := kubernetes.ValidateIdentifier(namespace, "namespace"); err != nil {
 		return nil, err
 	}
-	if err := validateK8sIdentifier(name, "name"); err != nil {
+	if err := kubernetes.ValidateIdentifier(name, "name"); err != nil {
 		return nil, err
 	}
 	if strings.ContainsAny(image, "\r\n'") || strings.TrimSpace(image) == "" {

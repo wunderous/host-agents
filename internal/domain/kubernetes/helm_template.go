@@ -1,4 +1,4 @@
-package ops
+package kubernetes
 
 import (
 	"errors"
@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 // RenderHelmTemplateArgs runs `helm template` on the host agent machine.
@@ -20,7 +22,7 @@ type RenderHelmTemplateArgs struct {
 	Namespace   string   `json:"namespace,omitempty"`
 }
 
-func (s *HostOperationsService) RenderHelmTemplate(args RenderHelmTemplateArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) RenderHelmTemplate(args RenderHelmTemplateArgs, onData func(string)) (map[string]any, error) {
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("render_helm_template is unsupported on %s host agents", runtime.GOOS)
 	}
@@ -39,7 +41,7 @@ func (s *HostOperationsService) RenderHelmTemplate(args RenderHelmTemplateArgs, 
 	if info, statErr := os.Stat(absChart); statErr != nil || !info.IsDir() {
 		return nil, fmt.Errorf("chartPath must be an existing directory: %s", absChart)
 	}
-	toolInfo, err := s.EnsureHostTool(EnsureHostToolArgs{Tool: "helm"}, onData)
+	toolInfo, err := s.deps.EnsureHostTool("helm", onData)
 	if err != nil {
 		return nil, err
 	}
@@ -79,12 +81,12 @@ func (s *HostOperationsService) RenderHelmTemplate(args RenderHelmTemplateArgs, 
 	if onData != nil {
 		onData(fmt.Sprintf("Rendering Helm chart %q...", releaseName))
 	}
-	res, runErr := s.hostCommandRunner(argv, onData, 10*time.Minute)
+	res, runErr := s.shared.HostCommandRunner(argv, onData, 10*time.Minute)
 	if runErr != nil {
 		return nil, runErr
 	}
 	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "helm template failed"))
+		return nil, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "helm template failed"))
 	}
 	return map[string]any{
 		"releaseName": releaseName,
