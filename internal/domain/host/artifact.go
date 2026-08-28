@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"context"
@@ -32,8 +32,8 @@ type EnsureHostArtifactArgs struct {
 // EnsureHostArtifact downloads a caller-declared HTTPS artifact into the
 // current user's home directory and verifies its SHA-256 before installation.
 // It is deliberately unaware of the artifact's producer or purpose.
-func (s *HostOperationsService) EnsureHostArtifact(args EnsureHostArtifactArgs, onData func(string)) (map[string]any, error) {
-	if err := s.requireSharedHostOwner("ensure_host_artifact"); err != nil {
+func (s *Service) EnsureHostArtifact(args EnsureHostArtifactArgs, onData func(string)) (map[string]any, error) {
+	if err := s.shared.RequireSharedHostOwner("ensure_host_artifact"); err != nil {
 		return nil, err
 	}
 	uri := strings.TrimSpace(args.URI)

@@ -1,15 +1,17 @@
-package ops
+package host
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 func TestEnsureAndInspectHostFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	service := NewHostOperationsService(Options{})
+	service := testService(hostruntime.Shared{})
 	path := filepath.Join(home, ".config", "systemd", "user", "example.service")
 	first, err := service.EnsureHostFile(EnsureHostFileArgs{Path: path, Content: "[Service]\nExecStart=/bin/true\n", Mode: 0o644})
 	if err != nil {
@@ -43,7 +45,7 @@ func TestEnsureAndInspectHostFile(t *testing.T) {
 func TestInspectHostFileMatchesExpectedContentWithoutReturningIt(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	service := NewHostOperationsService(Options{})
+	service := testService(hostruntime.Shared{})
 	path := filepath.Join(home, "managed.conf")
 	if _, err := service.EnsureHostFile(EnsureHostFileArgs{Path: path, Content: "secret=runtime\n", Mode: 0o600}); err != nil {
 		t.Fatal(err)
@@ -68,7 +70,7 @@ func TestInspectHostFileMatchesExpectedContentWithoutReturningIt(t *testing.T) {
 }
 
 func TestRemoveHostFileRequiresConfirmationAndHash(t *testing.T) {
-	service := NewHostOperationsService(Options{OwnershipMode: "disabled"})
+	service := testService(hostruntime.Shared{OwnershipMode: "disabled"})
 	path := ".config/opute/test-remove-host-file"
 	created, err := service.EnsureHostFile(EnsureHostFileArgs{Path: path, Content: "owned\n", Mode: 0o600})
 	if err != nil {

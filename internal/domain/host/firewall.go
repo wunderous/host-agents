@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"os"
@@ -32,7 +32,7 @@ type EnsureHostFirewallRuleResult struct {
 	Code      string `json:"code,omitempty"`
 }
 
-func (s *HostOperationsService) EnsureHostFirewallRule(args EnsureHostFirewallRuleArgs) (*EnsureHostFirewallRuleResult, error) {
+func (s *Service) EnsureHostFirewallRule(args EnsureHostFirewallRuleArgs) (*EnsureHostFirewallRuleResult, error) {
 	if runtime.GOOS != "windows" {
 		return &EnsureHostFirewallRuleResult{BindingID: args.BindingID, Port: args.Port, Applied: true, Code: "skipped.non_windows"}, nil
 	}

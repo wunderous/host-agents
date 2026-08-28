@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"github.com/wunderous/host-agents/pkg/hostplatform"
@@ -8,7 +8,7 @@ import (
 // of the host this agent process runs on. Detection is local and
 // provider-neutral: it never consults the control plane and never infers the
 // host kind from an assignment or a product name.
-func (s *HostOperationsService) DetectHostPlatform() (*hostplatform.Platform, error) {
+func (s *Service) DetectHostPlatform() (*hostplatform.Platform, error) {
 	platform := hostplatform.Detect()
 	return &platform, nil
 }

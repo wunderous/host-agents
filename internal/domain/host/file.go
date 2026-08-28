@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"crypto/sha256"
@@ -32,8 +32,8 @@ type RemoveHostFileArgs struct {
 // EnsureHostFile writes a caller-declared file beneath the current user's
 // home directory. It is intentionally a narrow, atomic primitive for managed
 // user configuration such as systemd units; recipes own the file contents.
-func (s *HostOperationsService) EnsureHostFile(args EnsureHostFileArgs) (map[string]any, error) {
-	if err := s.requireSharedHostOwner("ensure_host_file"); err != nil {
+func (s *Service) EnsureHostFile(args EnsureHostFileArgs) (map[string]any, error) {
+	if err := s.shared.RequireSharedHostOwner("ensure_host_file"); err != nil {
 		return nil, err
 	}
 	home, err := os.UserHomeDir()
@@ -95,7 +95,7 @@ func (s *HostOperationsService) EnsureHostFile(args EnsureHostFileArgs) (map[str
 	}, nil
 }
 
-func (s *HostOperationsService) InspectHostFile(args InspectHostFileArgs) (map[string]any, error) {
+func (s *Service) InspectHostFile(args InspectHostFileArgs) (map[string]any, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve home directory: %w", err)
@@ -147,8 +147,8 @@ func (s *HostOperationsService) InspectHostFile(args InspectHostFileArgs) (map[s
 // user's home directory after an explicit confirmation and optional content
 // hash match. It is intentionally separate from ensure_host_file so a recipe
 // cannot turn reconciliation into an implicit deletion.
-func (s *HostOperationsService) RemoveHostFile(args RemoveHostFileArgs) (map[string]any, error) {
-	if err := s.requireSharedHostOwner("remove_host_file"); err != nil {
+func (s *Service) RemoveHostFile(args RemoveHostFileArgs) (map[string]any, error) {
+	if err := s.shared.RequireSharedHostOwner("remove_host_file"); err != nil {
 		return nil, err
 	}
 	if !args.Confirm {

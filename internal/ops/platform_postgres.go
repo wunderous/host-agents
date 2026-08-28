@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 const (
@@ -533,7 +535,7 @@ trap 'rm -f "$pgpass"' EXIT
 cat >"$pgpass"
 chmod 600 "$pgpass"
 PGPASSFILE="$pgpass" psql -h %s -p %d -U %s -d %s -v ON_ERROR_STOP=1 -Atqc %s
-`, shellEscape(serviceHost), postgresqlServicePort, shellEscape(username), shellEscape(database), shellEscape(sql))
+`, textutil.ShellQuote(serviceHost), postgresqlServicePort, textutil.ShellQuote(username), textutil.ShellQuote(database), textutil.ShellQuote(sql))
 }
 
 // Kubernetes provider exec arguments are single-line transport values. Keep
@@ -554,7 +556,7 @@ func (s *HostOperationsService) runPostgreSQLServiceSQL(ctx context.Context, spe
 		serviceHost,
 		credentials.Username,
 		database,
-		fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database)),
+		fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", textutil.ShellQuote(database)),
 	)
 	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
 	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", kubectlShellScriptArgument(script)}
@@ -563,7 +565,7 @@ func (s *HostOperationsService) runPostgreSQLServiceSQL(ctx context.Context, spe
 
 func (s *HostOperationsService) ensurePostgreSQLServiceDatabase(ctx context.Context, spec postgresqlServiceSpec, credentials postgresqlServiceSecret, pod, database string) error {
 	serviceHost := spec.ClusterName + "-rw." + spec.Namespace + ".svc"
-	checkSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", shellEscape(database))
+	checkSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = %s", textutil.ShellQuote(database))
 	script := postgresqlServiceSQLScript(serviceHost, credentials.Username, "postgres", checkSQL)
 	input := []byte(fmt.Sprintf("*:*:*:%s:%s\n", credentials.Username, credentials.Password))
 	args := []string{"exec", "-i", pod, "-n", spec.Namespace, "--", "sh", "-ceu", kubectlShellScriptArgument(script)}

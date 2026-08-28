@@ -7,12 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
-	osuser "os/user"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,7 +19,6 @@ import (
 	"github.com/wunderous/host-agents/internal/domain/llm"
 	"github.com/wunderous/host-agents/internal/domain/oci"
 	hostexec "github.com/wunderous/host-agents/internal/exec"
-	"github.com/wunderous/host-agents/internal/heartbeat"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/internal/textutil"
@@ -37,41 +33,6 @@ const (
 
 var clusterScopedK8sResources = map[string]bool{
 	"namespaces": true, "ingressclasses": true, "storageclasses": true, "clusterissuers": true,
-}
-
-// HostInfoResult mirrors the TypeScript describeHost payload.
-type HostInfoResult struct {
-	URI            string               `json:"uri"`
-	HostName       string               `json:"hostName"`
-	ProviderID     string               `json:"providerId"`
-	LXCBinaryPath  string               `json:"lxcBinaryPath"`
-	SystemctlPath  string               `json:"systemctlPath"`
-	SupportedTools []string             `json:"supportedTools"`
-	Capacity       *VMInventoryCapacity `json:"capacity,omitempty"`
-	System         map[string]any       `json:"system,omitempty"`
-}
-
-// BridgeDiagnosticResult is returned by DiagnoseBridge.
-type BridgeDiagnosticResult struct {
-	BridgeProcess struct {
-		Status    string `json:"status"`
-		Command   string `json:"command,omitempty"`
-		Restarted bool   `json:"restarted,omitempty"`
-	} `json:"bridgeProcess"`
-	BridgePort struct {
-		Port   int    `json:"port"`
-		Status string `json:"status"`
-		Error  string `json:"error,omitempty"`
-	} `json:"bridgePort"`
-	Database struct {
-		Status string `json:"status"`
-		Error  string `json:"error,omitempty"`
-	} `json:"database"`
-	LastHeartbeat struct {
-		At *string `json:"at"`
-	} `json:"lastHeartbeat"`
-	BridgeStatus string `json:"bridgeStatus"`
-	CheckedAt    string `json:"checkedAt"`
 }
 
 // HostOperationsService implements host MCP operations against Incus on Linux.
@@ -202,54 +163,8 @@ func (s *HostOperationsService) SetResourceSnapshot(snapshot func() map[string]a
 	s.shared.ResourceSnapshot = snapshot
 }
 
-func (s *HostOperationsService) DescribeHost() HostInfoResult {
-	pid := s.ReadProviderID()
-	host, _ := os.Hostname()
-	result := HostInfoResult{
-		HostName:       host,
-		ProviderID:     pid,
-		LXCBinaryPath:  s.shared.Runtime.ProviderBinary(),
-		SystemctlPath:  hostruntime.DefaultSystemctlPath,
-		SupportedTools: s.toolsFn(pid),
-	}
-	if uri, err := resourceid.HostURI(s.shared.TenantID, firstNonEmpty(s.shared.AgentID, host)); err == nil {
-		result.URI = uri.String()
-		if s.shared.ResourceRegistry != nil {
-			_ = s.RegisterResource(result.URI, map[string]any{"agentId": s.shared.AgentID, "hostName": host})
-		}
-	}
-	if capacity, err := s.VMInventoryCapacity(); err == nil {
-		result.Capacity = &capacity
-	}
-	result.System = heartbeat.ReadHostSystemMetadata()
-	if s.shared.ResourceSnapshot != nil {
-		if result.System == nil {
-			result.System = map[string]any{}
-		}
-		result.System["resourceAdmission"] = s.shared.ResourceSnapshot()
-	}
-	return result
-}
-
 func (s *HostOperationsService) waitForVMExecReady(vmName string, timeout time.Duration, onData func(string)) error {
 	return s.waitForIncusAgent(vmName, timeout, onData)
-}
-
-func (s *HostOperationsService) RunAgentShell(command string, onData func(string)) (hostexec.Result, error) {
-	return s.RunAgentShellWithTimeout(command, 0, onData)
-}
-
-// RunAgentShellWithTimeout runs a caller-declared host command with an
-// explicit bounded execution budget. A zero timeout preserves the command
-// runner's no-deadline behavior for internal lifecycle calls; externally
-// dispatched commands should provide a positive timeout so the caller's
-// lifecycle has a finite, observable boundary.
-func (s *HostOperationsService) RunAgentShellWithTimeout(command string, timeout time.Duration, onData func(string)) (hostexec.Result, error) {
-	command = strings.TrimSpace(command)
-	if command == "" {
-		return hostexec.Result{}, errors.New("command is required")
-	}
-	return s.shared.Runtime.RunHost([]string{"bash", "-lc", command}, onData, timeout)
 }
 
 // NewVMInteractiveCommand is the ownership-checked command factory for the
@@ -821,220 +736,6 @@ type InstallClusterAgentArgs struct {
 
 // --- Host services / prerequisites ---
 
-type RestartHostServiceArgs struct {
-	ServiceName string `json:"serviceName"`
-}
-
-type SetHostServiceStateArgs struct {
-	ServiceName string `json:"serviceName"`
-	State       string `json:"state"`
-	Scope       string `json:"scope,omitempty"`
-}
-
-// EnsureHostServiceSupervisorArgs describes the lifecycle contract required by
-// a caller-owned host service. It is deliberately independent of any product,
-// service name, URL, or runtime: user-scoped services need a persistent
-// systemd user manager, while system-scoped services only need the system
-// manager to be reachable.
-type EnsureHostServiceSupervisorArgs struct {
-	Scope string `json:"scope,omitempty"`
-}
-
-var safeSystemdUnitName = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+$`)
-
-func restartServiceCommand(serviceName string) []string {
-	// The production host agent itself is a systemd *user* unit.  Invoking
-	// plain systemctl from the unprivileged agent asks polkit for interactive
-	// elevation and fails over MCP with “Interactive authentication required”.
-	// Keep system services on the existing system scope, but route Opute-owned
-	// user units through the user manager they actually belong to.
-	if strings.HasPrefix(serviceName, "opute-") {
-		// --no-block is essential when the target is this very host-agent
-		// service: waiting for systemd to stop this process would close the MCP
-		// operation before the caller can receive its result.
-		return []string{hostruntime.DefaultSystemctlPath, "--user", "--no-block", "restart", serviceName}
-	}
-	return []string{hostruntime.DefaultSystemctlPath, "restart", serviceName}
-}
-
-func serviceStatusCommand(serviceName string) []string {
-	if strings.HasPrefix(serviceName, "opute-") {
-		return []string{hostruntime.DefaultSystemctlPath, "--user", "is-active", serviceName}
-	}
-	return []string{hostruntime.DefaultSystemctlPath, "is-active", serviceName}
-}
-
-func serviceStateUnit(serviceName string) string {
-	return "host-service-state-" + strings.NewReplacer("/", "-", ":", "-", "@", "-", ".", "-").Replace(serviceName)
-}
-
-func serviceStateCommand(serviceName, state, scope string) []string {
-	if state == "restart" && scope == "user" {
-		// A user-systemd transient job is outside the target service's cgroup.
-		// This matters when the target is the MCP process serving this request:
-		// systemctl can enqueue the restart and return a truthful scheduled
-		// result before the current agent is stopped.
-		return []string{
-			hostruntime.DefaultSystemdRunPath,
-			"--user",
-			"--unit=" + serviceStateUnit(serviceName),
-			"--collect",
-			"--no-block",
-			hostruntime.DefaultSystemctlPath,
-			"--user",
-			"--no-block",
-			"restart",
-			serviceName,
-		}
-	}
-	command := []string{hostruntime.DefaultSystemctlPath}
-	if scope == "user" {
-		command = append(command, "--user")
-	} else {
-		command = append([]string{"sudo", "-n"}, command...)
-	}
-	if state == "restart" {
-		command = append(command, "--no-block")
-	}
-	return append(command, state, serviceName)
-}
-
-func (s *HostOperationsService) RestartHostService(args RestartHostServiceArgs, onData func(string)) (map[string]string, error) {
-	if err := s.requireSharedHostOwner("restart_host_service"); err != nil {
-		return nil, err
-	}
-	serviceName := strings.TrimSpace(args.ServiceName)
-	if serviceName == "" {
-		return nil, errors.New("serviceName is required")
-	}
-	if !safeSystemdUnitName.MatchString(serviceName) {
-		return nil, errors.New("serviceName contains invalid characters")
-	}
-	restart, err := s.hostCommandRunner(restartServiceCommand(serviceName), onData, 0)
-	if err != nil || restart.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(restart.Stderr, restart.Stdout, "failed to restart service"))
-	}
-	if strings.HasPrefix(serviceName, "opute-") {
-		return map[string]string{"serviceName": serviceName, "status": "scheduled"}, nil
-	}
-	verify, err := s.hostCommandRunner(serviceStatusCommand(serviceName), onData, 0)
-	if err != nil || verify.ExitCode != 0 || strings.TrimSpace(verify.Stdout) != "active" {
-		return nil, fmt.Errorf("service '%s' is not active after restart", serviceName)
-	}
-	return map[string]string{"serviceName": serviceName, "status": "active"}, nil
-}
-
-// SetHostServiceState provides the generic, approval-gated service lifecycle
-// primitive used by recovery workflows. User scope is the safe default; system
-// scope is explicit and uses non-interactive sudo so MCP cannot hang on a
-// password prompt.
-func (s *HostOperationsService) SetHostServiceState(args SetHostServiceStateArgs, onData func(string)) (map[string]any, error) {
-	if err := s.requireSharedHostOwner("set_host_service_state"); err != nil {
-		return nil, err
-	}
-	serviceName := strings.TrimSpace(args.ServiceName)
-	state := strings.ToLower(strings.TrimSpace(args.State))
-	scope := strings.ToLower(strings.TrimSpace(args.Scope))
-	if serviceName == "" || !safeSystemdUnitName.MatchString(serviceName) {
-		return nil, errors.New("serviceName is required and must be a valid systemd unit name")
-	}
-	if scope == "" {
-		scope = "user"
-	}
-	if scope != "user" && scope != "system" {
-		return nil, errors.New("scope must be user or system")
-	}
-	if state != "start" && state != "stop" && state != "restart" && state != "enable" && state != "disable" {
-		return nil, errors.New("state must be start, stop, restart, enable, or disable")
-	}
-	// Recipes commonly reconcile a unit file immediately before changing its
-	// state. Reload the matching manager so systemd cannot act on a stale unit
-	// definition (notably after an ExecStart or environment change).
-	reloadCommand := []string{hostruntime.DefaultSystemctlPath}
-	if scope == "user" {
-		reloadCommand = append(reloadCommand, "--user", "daemon-reload")
-	} else {
-		reloadCommand = append([]string{"sudo", "-n"}, reloadCommand...)
-		reloadCommand = append(reloadCommand, "daemon-reload")
-	}
-	if reload, reloadErr := s.hostCommandRunner(reloadCommand, onData, 0); reloadErr != nil || reload.ExitCode != 0 {
-		return nil, fmt.Errorf("service manager reload failed: %s", firstNonEmpty(reload.Stderr, reload.Stdout, "command failed"))
-	}
-	command := serviceStateCommand(serviceName, state, scope)
-	result, err := s.hostCommandRunner(command, onData, 0)
-	if err != nil || result.ExitCode != 0 {
-		return nil, fmt.Errorf("service state change failed: %s", firstNonEmpty(result.Stderr, result.Stdout, "command failed"))
-	}
-	status := "applied"
-	if state == "restart" {
-		status = "scheduled"
-	}
-	return map[string]any{"serviceName": serviceName, "state": state, "scope": scope, "status": status}, nil
-}
-
-// EnsureHostServiceSupervisor makes the host service lifecycle explicit. WSL
-// and other session-based Linux environments otherwise terminate a user
-// manager as soon as the last non-interactive session exits, taking every
-// caller-owned service and its listeners with it. The operation is idempotent
-// and reports observed supervisor state rather than claiming service health.
-func (s *HostOperationsService) EnsureHostServiceSupervisor(args EnsureHostServiceSupervisorArgs, onData func(string)) (map[string]any, error) {
-	if err := s.requireSharedHostOwner("ensure_host_service_supervisor"); err != nil {
-		return nil, err
-	}
-	scope := strings.ToLower(strings.TrimSpace(args.Scope))
-	if scope == "" {
-		scope = "user"
-	}
-	if scope != "user" && scope != "system" {
-		return nil, errors.New("scope must be user or system")
-	}
-	if scope == "system" {
-		result, err := s.hostCommandRunner([]string{hostruntime.DefaultSystemctlPath, "is-system-running"}, onData, 10*time.Second)
-		if err != nil || (result.ExitCode != 0 && strings.TrimSpace(result.Stdout) == "") {
-			return nil, fmt.Errorf("system service supervisor is unavailable: %s", firstNonEmpty(result.Stderr, result.Stdout, "systemctl failed"))
-		}
-		return map[string]any{"scope": scope, "status": "ready", "persistent": true, "state": strings.TrimSpace(result.Stdout)}, nil
-	}
-	user := strings.TrimSpace(os.Getenv("USER"))
-	if user == "" {
-		identity, err := osuser.Current()
-		if err != nil {
-			return nil, fmt.Errorf("resolve host service user: %w", err)
-		}
-		user = identity.Username
-	}
-	if user == "" || strings.ContainsAny(user, "\r\n") {
-		return nil, errors.New("resolve host service user: invalid username")
-	}
-	command := []string{"loginctl", "enable-linger", user}
-	result, err := s.hostCommandRunner(command, onData, 15*time.Second)
-	if err != nil || result.ExitCode != 0 {
-		// A non-root host agent may have a narrowly scoped sudo policy prepared
-		// by the bootstrap installer. Never fall back to an interactive prompt.
-		result, err = s.hostCommandRunner([]string{"sudo", "-n", "loginctl", "enable-linger", user}, onData, 15*time.Second)
-	}
-	if err != nil || result.ExitCode != 0 {
-		return nil, fmt.Errorf("enable persistent user service supervisor: %s", firstNonEmpty(result.Stderr, result.Stdout, "loginctl failed"))
-	}
-	observed, err := s.hostCommandRunner([]string{"loginctl", "show-user", user, "-p", "Linger"}, onData, 15*time.Second)
-	if err != nil || observed.ExitCode != 0 || !strings.Contains(observed.Stdout, "Linger=yes") {
-		return nil, fmt.Errorf("verify persistent user service supervisor: %s", firstNonEmpty(observed.Stderr, observed.Stdout, "Linger=yes was not observed"))
-	}
-	bus, err := s.hostCommandRunner([]string{hostruntime.DefaultSystemctlPath, "--user", "show-environment"}, onData, 15*time.Second)
-	if err != nil || bus.ExitCode != 0 {
-		return nil, fmt.Errorf("user service supervisor bus is unavailable: %s", firstNonEmpty(bus.Stderr, bus.Stdout, "systemctl --user failed"))
-	}
-	return map[string]any{"scope": scope, "status": "ready", "persistent": true, "user": user, "linger": true, "userBus": true}, nil
-}
-
-func (s *HostOperationsService) EnsureDocker(onData func(string)) (map[string]any, error) {
-	return nil, errors.New("ensure_docker is not supported on Incus Linux host agents")
-}
-
-func (s *HostOperationsService) EnsureK3d(onData func(string)) (map[string]any, error) {
-	return nil, errors.New("ensure_k3d is not supported on Incus Linux host agents")
-}
-
 // --- SQL connector (TCP relay) ---
 
 type EnsureSQLConnectorArgs struct {
@@ -1072,113 +773,7 @@ func (s *HostOperationsService) StopAllHostTCPRelays() error {
 
 // --- Bridge diagnostics ---
 
-func (s *HostOperationsService) DiagnoseBridge(ctx context.Context) (BridgeDiagnosticResult, error) {
-	return probeBridgeHealth(ctx)
-}
-
-func (s *HostOperationsService) RecoverBridge(ctx context.Context, onData func(string)) (BridgeDiagnosticResult, error) {
-	serviceName := envOr("BRIDGE_SERVICE_NAME", "opute-bridge")
-	if _, err := s.RestartHostService(RestartHostServiceArgs{ServiceName: serviceName}, onData); err != nil {
-		return BridgeDiagnosticResult{}, err
-	}
-	result, err := probeBridgeHealth(ctx)
-	if err != nil {
-		return result, err
-	}
-	result.BridgeProcess.Restarted = true
-	return result, nil
-}
-
-func probeBridgeHealth(ctx context.Context) (BridgeDiagnosticResult, error) {
-	port := 9093
-	if p := strings.TrimSpace(os.Getenv("PLATFORM_MCP_PORT")); p != "" {
-		fmt.Sscanf(p, "%d", &port)
-	}
-	bridgeURL := envOr("BRIDGE_URL", fmt.Sprintf("http://127.0.0.1:%d", port))
-	serviceName := envOr("BRIDGE_SERVICE_NAME", "opute-bridge")
-	checkedAt := time.Now().UTC().Format(time.RFC3339)
-
-	portOpen, portErr := probeTCPPort(ctx, "127.0.0.1", port)
-	result := BridgeDiagnosticResult{CheckedAt: checkedAt}
-	result.BridgeProcess.Command = serviceName
-	if portOpen {
-		result.BridgeProcess.Status = "running"
-		result.BridgePort.Port = port
-		result.BridgePort.Status = "open"
-		result.BridgeStatus = "online"
-	} else {
-		result.BridgeProcess.Status = "stopped"
-		result.BridgePort.Port = port
-		result.BridgePort.Status = "closed"
-		if portErr != nil {
-			result.BridgePort.Error = portErr.Error()
-		}
-		result.BridgeStatus = "offline"
-	}
-
-	dbStatus := "unhealthy"
-	dbErr := "Bridge health check failed"
-	var lastHeartbeat *string
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(bridgeURL, "/")+"/health", nil)
-	if err == nil {
-		resp, err := http.DefaultClient.Do(req)
-		if err == nil {
-			defer resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				var body struct {
-					Database struct {
-						Status string `json:"status"`
-						Error  string `json:"error"`
-					} `json:"database"`
-					LastHeartbeatAt *string `json:"lastHeartbeatAt"`
-				}
-				if json.NewDecoder(resp.Body).Decode(&body) == nil {
-					lastHeartbeat = body.LastHeartbeatAt
-					if body.Database.Status == "healthy" {
-						dbStatus = "healthy"
-						dbErr = ""
-					} else if body.Database.Error != "" {
-						dbErr = body.Database.Error
-					}
-				}
-			} else {
-				dbErr = fmt.Sprintf("Bridge health check failed with HTTP %d", resp.StatusCode)
-			}
-		} else {
-			dbErr = err.Error()
-		}
-	}
-	result.Database.Status = dbStatus
-	if dbErr != "" {
-		result.Database.Error = dbErr
-	}
-	result.LastHeartbeat.At = lastHeartbeat
-	return result, nil
-}
-
-func probeTCPPort(ctx context.Context, host string, port int) (bool, error) {
-	d := net.Dialer{Timeout: 2 * time.Second}
-	conn, err := d.DialContext(ctx, "tcp", fmt.Sprintf("%s:%d", host, port))
-	if err != nil {
-		return false, err
-	}
-	conn.Close()
-	return true, nil
-}
-
 // --- helpers ---
-
-func (s *HostOperationsService) waitForSystemdActive(service string, onData func(string), timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		res, err := s.hostCommandRunner([]string{hostruntime.DefaultSystemctlPath, "is-active", service}, onData, 0)
-		if err == nil && res.ExitCode == 0 && strings.TrimSpace(res.Stdout) == "active" {
-			return nil
-		}
-		time.Sleep(2 * time.Second)
-	}
-	return fmt.Errorf("systemd service '%s' did not become active within %s", service, timeout)
-}
 
 func (s *HostOperationsService) waitForVMServiceActive(vmName, service string, onData func(string), timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
@@ -1192,10 +787,6 @@ func (s *HostOperationsService) waitForVMServiceActive(vmName, service string, o
 	return fmt.Errorf("VM service '%s' on '%s' did not become active within %s", service, vmName, timeout)
 }
 
-func shellEscape(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
-}
-
 // These forward to internal/textutil, which every domain shares. The local
 // spellings stay so the ~76 call sites in this package do not churn while it is
 // being dismantled.
@@ -1205,20 +796,13 @@ var (
 	errString     = textutil.ErrString
 )
 
-func envOr(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
-}
-
 func resolveBridgeURLFromEnv() string {
 	for _, key := range []string{"OPUTE_PLATFORM_PUBLIC_URL", "OPUTE_PLATFORM_URL"} {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 			return strings.TrimRight(v, "/")
 		}
 	}
-	port := envOr("PLATFORM_MCP_PORT", "9093")
+	port := hostruntime.EnvOr("PLATFORM_MCP_PORT", "9093")
 	return fmt.Sprintf("http://127.0.0.1:%s", port)
 }
 

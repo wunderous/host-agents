@@ -2,11 +2,9 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/wunderous/host-agents/internal/hostruntime"
-	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
 type recordingKubernetesExecutor struct {
@@ -59,25 +57,11 @@ func testService(tenant string) *Service {
 		EnsureHostTool: func(string, func(string)) (map[string]any, error) {
 			panic("kubernetes provider tests must not reach the host domain")
 		},
+		// Registry-only resolution: cluster URIs must already be registered,
+		// and passing nil for the adopter means a missing one still fails the
+		// way it should.
 		ResolveResource: func(uri, wantType string) (hostruntime.Coordinates, error) {
-			parsed, err := resourceid.Parse(uri)
-			if err != nil {
-				return hostruntime.Coordinates{}, err
-			}
-			if parsed.TenantID != tenant {
-				return hostruntime.Coordinates{}, fmt.Errorf("%w: active tenant %q", resourceid.ErrForeignTenant, tenant)
-			}
-			if wantType != "" && parsed.ResourceType != wantType {
-				return hostruntime.Coordinates{}, fmt.Errorf("%w: expected %q", resourceid.ErrInvalidURI, wantType)
-			}
-			record, found, err := shared.ResourceRegistry.GetResource(parsed.String())
-			if err != nil || !found {
-				return hostruntime.Coordinates{}, fmt.Errorf("unknown resource %s", uri)
-			}
-			return hostruntime.Coordinates{
-				URI: parsed, ResourceType: parsed.ResourceType, TenantID: parsed.TenantID,
-				ResourceID: parsed.ResourceID, Values: record.Coordinates,
-			}, nil
+			return shared.ResolveResource(uri, wantType, nil)
 		},
 	})
 }

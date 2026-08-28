@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/wunderous/host-agents/internal/heartbeat"
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 var standaloneIdentifier = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
@@ -305,5 +306,5 @@ trap 'rm -f "$pgpass"' EXIT
 cat >"$pgpass"
 chmod 600 "$pgpass"
 PGPASSFILE="$pgpass" psql -h 127.0.0.1 -p 5432 -U %s -d %s -v ON_ERROR_STOP=1 -Atqc %s
-`, shellEscape(username), shellEscape(database), shellEscape(sql))
+`, textutil.ShellQuote(username), textutil.ShellQuote(database), textutil.ShellQuote(sql))
 }

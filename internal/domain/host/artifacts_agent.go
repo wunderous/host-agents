@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"errors"
@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 // PrepareHostAgentArtifactsArgs builds Linux host-agent binaries for Opute platform images.
@@ -17,7 +19,7 @@ type PrepareHostAgentArtifactsArgs struct {
 	Archs     []string `json:"archs,omitempty"`
 }
 
-func (s *HostOperationsService) PrepareHostAgentArtifacts(args PrepareHostAgentArtifactsArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) PrepareHostAgentArtifacts(args PrepareHostAgentArtifactsArgs, onData func(string)) (map[string]any, error) {
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("prepare_host_agent_artifacts is unsupported on %s host agents", runtime.GOOS)
 	}
@@ -69,17 +71,17 @@ func (s *HostOperationsService) PrepareHostAgentArtifacts(args PrepareHostAgentA
 		}
 		buildScript := fmt.Sprintf(
 			`cd %s && export GOCACHE="${GOCACHE:-$HOME/.cache/go-build}" && mkdir -p "$GOCACHE" && GOOS=linux GOARCH=%s go build -buildvcs=false -ldflags=%s -o %s github.com/wunderous/host-agents/cmd/opute-host-agent`,
-			shellEscape(absSource),
+			textutil.ShellQuote(absSource),
 			arch,
-			shellEscape("-s -w"),
-			shellEscape(outputPath),
+			textutil.ShellQuote("-s -w"),
+			textutil.ShellQuote(outputPath),
 		)
-		res, runErr := s.hostCommandRunner([]string{"bash", "-lc", buildScript}, onData, 15*time.Minute)
+		res, runErr := s.shared.HostCommandRunner([]string{"bash", "-lc", buildScript}, onData, 15*time.Minute)
 		if runErr != nil {
 			return nil, runErr
 		}
 		if res.ExitCode != 0 {
-			return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, fmt.Sprintf("go build failed for %s", arch)))
+			return nil, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, fmt.Sprintf("go build failed for %s", arch)))
 		}
 		built = append(built, outputName)
 	}

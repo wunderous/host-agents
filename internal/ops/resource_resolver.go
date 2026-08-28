@@ -1,7 +1,6 @@
 package ops
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -75,78 +74,47 @@ func (s *HostOperationsService) ResourceRegistry() ResourceRegistry {
 }
 
 func (s *HostOperationsService) ResolveResource(uri, wantType string) (Coordinates, error) {
-	parsed, err := resourceid.Parse(uri)
-	if err != nil {
-		return Coordinates{}, err
-	}
-	if tenant := strings.TrimSpace(s.shared.TenantID); tenant != "" && parsed.TenantID != tenant {
-		return Coordinates{}, fmt.Errorf("%w: active tenant %q", resourceid.ErrForeignTenant, tenant)
-	}
-	if wantType != "" && parsed.ResourceType != wantType {
-		return Coordinates{}, fmt.Errorf("%w: expected %q, got %q", resourceid.ErrInvalidURI, wantType, parsed.ResourceType)
-	}
-	if s.shared.ResourceRegistry == nil {
-		return Coordinates{}, errors.New("resource registry is not configured")
-	}
-	record, found, err := s.shared.ResourceRegistry.GetResource(parsed.String())
-	if err != nil {
-		return Coordinates{}, fmt.Errorf("resolve resource %s: %w", parsed, err)
-	}
-	if (!found || record.Status != "active") && (parsed.ResourceType == resourceid.TypeVM || parsed.ResourceType == resourceid.TypeContainer) {
-		// Incus inventory is a discoverable single-key resource. Adopt it only
-		// after the provider confirms the instance exists; never turn a display
-		// name into coordinates without that observation.
-		info, infoErr := s.GetVMInfo(parsed.ResourceID, true)
-		if infoErr == nil && strings.TrimSpace(info.Name) != "" {
-			actualType := resourceid.TypeContainer
-			if strings.EqualFold(info.Type, "vm") {
-				actualType = resourceid.TypeVM
-			}
-			if parsed.ResourceType != actualType {
-				return Coordinates{}, fmt.Errorf("resource type mismatch: %s resolves to %s", parsed, actualType)
-			}
-			coordinates := map[string]any{
-				"providerInstanceName": info.Name,
-				"displayName":          info.Name,
-				"instanceType":         info.Type,
-			}
-			if registerErr := s.RegisterResource(parsed.String(), coordinates); registerErr != nil {
-				return Coordinates{}, registerErr
-			}
-			record, found, err = s.shared.ResourceRegistry.GetResource(parsed.String())
-			if err != nil {
-				return Coordinates{}, err
-			}
+	return s.shared.ResolveResource(uri, wantType, s.adoptResource)
+}
+
+// adoptResource observes a resource the registry has never seen. Both branches
+// are deliberately ASKS, not assumptions: never turn a display name into
+// coordinates without a domain confirming the thing is really there.
+func (s *HostOperationsService) adoptResource(parsed resourceid.URI) (map[string]any, error) {
+	switch parsed.ResourceType {
+	case resourceid.TypeVM, resourceid.TypeContainer:
+		info, err := s.GetVMInfo(parsed.ResourceID, true)
+		if err != nil || strings.TrimSpace(info.Name) == "" {
+			return nil, nil
 		}
-	}
-	if (!found || record.Status != "active") && parsed.ResourceType == resourceid.TypeHostService {
+		actualType := resourceid.TypeContainer
+		if strings.EqualFold(info.Type, "vm") {
+			actualType = resourceid.TypeVM
+		}
+		if parsed.ResourceType != actualType {
+			return nil, fmt.Errorf("resource type mismatch: %s resolves to %s", parsed, actualType)
+		}
+		return map[string]any{
+			"providerInstanceName": info.Name,
+			"displayName":          info.Name,
+			"instanceType":         info.Type,
+		}, nil
+	case resourceid.TypeHostService:
 		parts := strings.SplitN(parsed.ResourceID, "/", 2)
 		if len(parts) != 2 || (parts[0] != "user" && parts[0] != "system") || strings.TrimSpace(parts[1]) == "" {
-			return Coordinates{}, fmt.Errorf("host-service URI must use <scope>/<service-name>: %s", parsed)
+			return nil, fmt.Errorf("host-service URI must use <scope>/<service-name>: %s", parsed)
 		}
-		observed, inspectErr := s.InspectHostService(InspectHostServiceArgs{ServiceName: parts[1], Scope: parts[0]}, nil)
-		if inspectErr != nil {
-			return Coordinates{}, fmt.Errorf("adopt host service %s: %w", parsed, inspectErr)
-		}
-		status, _ := observed["status"].(string)
-		if status == "not-found" || status == "failed" || status == "" {
-			return Coordinates{}, fmt.Errorf("host service not found: %s", parsed)
-		}
-		if registerErr := s.RegisterResource(parsed.String(), map[string]any{
-			"serviceName": parts[1],
-			"scope":       parts[0],
-		}); registerErr != nil {
-			return Coordinates{}, registerErr
-		}
-		record, found, err = s.shared.ResourceRegistry.GetResource(parsed.String())
+		observed, err := s.InspectHostService(InspectHostServiceArgs{ServiceName: parts[1], Scope: parts[0]}, nil)
 		if err != nil {
-			return Coordinates{}, err
+			return nil, fmt.Errorf("adopt host service %s: %w", parsed, err)
 		}
+		switch status, _ := observed["status"].(string); status {
+		case "not-found", "failed", "":
+			return nil, fmt.Errorf("host service not found: %s", parsed)
+		}
+		return map[string]any{"serviceName": parts[1], "scope": parts[0]}, nil
 	}
-	if !found || record.Status != "active" {
-		return Coordinates{}, fmt.Errorf("resource not found: %s", parsed)
-	}
-	return Coordinates{URI: parsed, ResourceType: parsed.ResourceType, TenantID: parsed.TenantID, ResourceID: parsed.ResourceID, Values: record.Coordinates}, nil
+	return nil, nil
 }
 
 // AttachLocalLLMModelURIs projects model observations into the same opaque,

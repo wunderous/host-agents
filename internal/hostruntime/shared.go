@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -195,4 +196,64 @@ func (s *Shared) parseOwnedURI(uri string) (resourceid.URI, error) {
 		return resourceid.URI{}, fmt.Errorf("%w: active tenant %q", resourceid.ErrForeignTenant, tenant)
 	}
 	return parsed, nil
+}
+
+// EnvOr reads an environment variable, falling back when it is unset or blank.
+//
+// A hostruntime member under S9.2: process environment is configuration, every
+// domain reads some of it, and reading a variable is not an operation.
+func EnvOr(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// Adopter observes a resource that the registry does not yet know about and
+// returns the coordinates to record for it, or nil to leave it unresolved.
+//
+// It exists so resolution can be split cleanly: parsing, tenant checking, and
+// the registry lookup are hostruntime's, while OBSERVING that a VM or a systemd
+// unit really exists is a domain operation and stays out (S9.2 rule 3).
+type Adopter func(parsed resourceid.URI) (map[string]any, error)
+
+// ResolveResource turns a URI into coordinates, consulting adopt only when the
+// registry has no active record for it. A nil adopt means registry-only
+// resolution, which is what a caller with no domain to ask should use.
+func (s *Shared) ResolveResource(uri, wantType string, adopt Adopter) (Coordinates, error) {
+	parsed, err := s.parseOwnedURI(uri)
+	if err != nil {
+		return Coordinates{}, err
+	}
+	if wantType != "" && parsed.ResourceType != wantType {
+		return Coordinates{}, fmt.Errorf("%w: expected %q, got %q", resourceid.ErrInvalidURI, wantType, parsed.ResourceType)
+	}
+	if s.ResourceRegistry == nil {
+		return Coordinates{}, errors.New("resource registry is not configured")
+	}
+	record, found, err := s.ResourceRegistry.GetResource(parsed.String())
+	if err != nil {
+		return Coordinates{}, fmt.Errorf("resolve resource %s: %w", parsed, err)
+	}
+	if (!found || record.Status != "active") && adopt != nil {
+		coordinates, adoptErr := adopt(parsed)
+		if adoptErr != nil {
+			return Coordinates{}, adoptErr
+		}
+		if coordinates != nil {
+			if registerErr := s.RegisterResource(parsed.String(), coordinates); registerErr != nil {
+				return Coordinates{}, registerErr
+			}
+			if record, found, err = s.ResourceRegistry.GetResource(parsed.String()); err != nil {
+				return Coordinates{}, err
+			}
+		}
+	}
+	if !found || record.Status != "active" {
+		return Coordinates{}, fmt.Errorf("resource not found: %s", parsed)
+	}
+	return Coordinates{
+		URI: parsed, ResourceType: parsed.ResourceType, TenantID: parsed.TenantID,
+		ResourceID: parsed.ResourceID, Values: record.Coordinates,
+	}, nil
 }

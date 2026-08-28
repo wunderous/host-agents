@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"context"
@@ -15,6 +15,8 @@ import (
 	"time"
 
 	hostexec "github.com/wunderous/host-agents/internal/exec"
+	"github.com/wunderous/host-agents/internal/fsutil"
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 type EnsureHostToolArgs struct {
@@ -33,8 +35,8 @@ type InstallIncusStackArgs struct {
 	InstallQEMU  bool     `json:"installQemu,omitempty"`
 }
 
-func (s *HostOperationsService) InstallIncusStack(args InstallIncusStackArgs, onData func(string)) (map[string]any, error) {
-	if err := s.requireSharedHostOwner("install_incus_stack"); err != nil {
+func (s *Service) InstallIncusStack(args InstallIncusStackArgs, onData func(string)) (map[string]any, error) {
+	if err := s.shared.RequireSharedHostOwner("install_incus_stack"); err != nil {
 		return nil, err
 	}
 	if runtime.GOOS != "linux" {
@@ -130,55 +132,55 @@ func (s *HostOperationsService) InstallIncusStack(args InstallIncusStackArgs, on
 	return result, nil
 }
 
-func (s *HostOperationsService) ensureIncusContainerRuntime(onData func(string)) error {
-	storage, err := s.commandRunner([]string{"storage", "list", "--format", "json"}, onData, 30*time.Second)
+func (s *Service) ensureIncusContainerRuntime(onData func(string)) error {
+	storage, err := s.shared.CommandRunner([]string{"storage", "list", "--format", "json"}, onData, 30*time.Second)
 	if err != nil || storage.ExitCode != 0 {
-		return fmt.Errorf("inspect storage pools: %s", firstNonEmpty(storage.Stderr, storage.Stdout, errString(err, "incus storage list failed")))
+		return fmt.Errorf("inspect storage pools: %s", textutil.FirstNonEmpty(storage.Stderr, storage.Stdout, textutil.ErrString(err, "incus storage list failed")))
 	}
 	if !strings.Contains(storage.Stdout, `"name":"default"`) {
-		created, createErr := s.commandRunner([]string{"storage", "create", "default", "dir"}, onData, 2*time.Minute)
+		created, createErr := s.shared.CommandRunner([]string{"storage", "create", "default", "dir"}, onData, 2*time.Minute)
 		if createErr != nil || created.ExitCode != 0 {
-			return fmt.Errorf("create default storage pool: %s", firstNonEmpty(created.Stderr, created.Stdout, errString(createErr, "incus storage create failed")))
+			return fmt.Errorf("create default storage pool: %s", textutil.FirstNonEmpty(created.Stderr, created.Stdout, textutil.ErrString(createErr, "incus storage create failed")))
 		}
 	}
-	network, err := s.commandRunner([]string{"network", "list", "--format", "json"}, onData, 30*time.Second)
+	network, err := s.shared.CommandRunner([]string{"network", "list", "--format", "json"}, onData, 30*time.Second)
 	if err != nil || network.ExitCode != 0 {
-		return fmt.Errorf("inspect networks: %s", firstNonEmpty(network.Stderr, network.Stdout, errString(err, "incus network list failed")))
+		return fmt.Errorf("inspect networks: %s", textutil.FirstNonEmpty(network.Stderr, network.Stdout, textutil.ErrString(err, "incus network list failed")))
 	}
 	if !strings.Contains(network.Stdout, `"name":"incusbr0"`) {
-		created, createErr := s.commandRunner([]string{"network", "create", "incusbr0", "ipv4.address=10.0.100.1/24", "ipv4.nat=true", "ipv6.address=none"}, onData, 2*time.Minute)
+		created, createErr := s.shared.CommandRunner([]string{"network", "create", "incusbr0", "ipv4.address=10.0.100.1/24", "ipv4.nat=true", "ipv6.address=none"}, onData, 2*time.Minute)
 		if createErr != nil || created.ExitCode != 0 {
-			return fmt.Errorf("create Incus container network: %s", firstNonEmpty(created.Stderr, created.Stdout, errString(createErr, "incus network create failed")))
+			return fmt.Errorf("create Incus container network: %s", textutil.FirstNonEmpty(created.Stderr, created.Stdout, textutil.ErrString(createErr, "incus network create failed")))
 		}
 	}
-	profile, err := s.commandRunner([]string{"profile", "device", "show", "default"}, onData, 30*time.Second)
+	profile, err := s.shared.CommandRunner([]string{"profile", "device", "show", "default"}, onData, 30*time.Second)
 	if err != nil || profile.ExitCode != 0 {
-		return fmt.Errorf("inspect default profile: %s", firstNonEmpty(profile.Stderr, profile.Stdout, errString(err, "incus profile device show failed")))
+		return fmt.Errorf("inspect default profile: %s", textutil.FirstNonEmpty(profile.Stderr, profile.Stdout, textutil.ErrString(err, "incus profile device show failed")))
 	}
 	if !incusProfileHasDevice(profile.Stdout, "root") {
-		added, addErr := s.commandRunner([]string{"profile", "device", "add", "default", "root", "disk", "path=/", "pool=default"}, onData, 2*time.Minute)
+		added, addErr := s.shared.CommandRunner([]string{"profile", "device", "add", "default", "root", "disk", "path=/", "pool=default"}, onData, 2*time.Minute)
 		if addErr != nil || added.ExitCode != 0 {
-			return fmt.Errorf("attach default root disk: %s", firstNonEmpty(added.Stderr, added.Stdout, errString(addErr, "incus profile device add failed")))
+			return fmt.Errorf("attach default root disk: %s", textutil.FirstNonEmpty(added.Stderr, added.Stdout, textutil.ErrString(addErr, "incus profile device add failed")))
 		}
 	}
 	// A clean Incus install can have a default profile with only its root
 	// device. Reconcile the network device as part of the runtime contract so
 	// every system container receives an interface backed by the managed bridge.
 	if !incusProfileHasDevice(profile.Stdout, "eth0") {
-		added, addErr := s.commandRunner([]string{
+		added, addErr := s.shared.CommandRunner([]string{
 			"profile", "device", "add", "default", "eth0", "nic",
 			"nictype=bridged", "parent=incusbr0", "name=eth0",
 		}, onData, 2*time.Minute)
 		if addErr != nil || added.ExitCode != 0 {
-			return fmt.Errorf("attach default container network: %s", firstNonEmpty(added.Stderr, added.Stdout, errString(addErr, "incus profile network device add failed")))
+			return fmt.Errorf("attach default container network: %s", textutil.FirstNonEmpty(added.Stderr, added.Stdout, textutil.ErrString(addErr, "incus profile network device add failed")))
 		}
 	} else {
 		for _, setting := range [][2]string{{"nictype", "bridged"}, {"parent", "incusbr0"}, {"name", "eth0"}} {
-			updated, updateErr := s.commandRunner([]string{
+			updated, updateErr := s.shared.CommandRunner([]string{
 				"profile", "device", "set", "default", "eth0", setting[0], setting[1],
 			}, onData, 2*time.Minute)
 			if updateErr != nil || updated.ExitCode != 0 {
-				return fmt.Errorf("reconcile default container network %s: %s", setting[0], firstNonEmpty(updated.Stderr, updated.Stdout, errString(updateErr, "incus profile network device update failed")))
+				return fmt.Errorf("reconcile default container network %s: %s", setting[0], textutil.FirstNonEmpty(updated.Stderr, updated.Stdout, textutil.ErrString(updateErr, "incus profile network device update failed")))
 			}
 		}
 	}
@@ -219,7 +221,7 @@ func incusCandidateSatisfies(candidate, requested string) bool {
 	return strings.HasPrefix(withoutEpoch, requestedMajor)
 }
 
-func (s *HostOperationsService) configureZabblyIncusRepository(ctx context.Context, channel string) error {
+func (s *Service) configureZabblyIncusRepository(ctx context.Context, channel string) error {
 	keyFile, err := os.CreateTemp("", "opute-zabbly-key-*")
 	if err != nil {
 		return err
@@ -285,14 +287,14 @@ func virtualizationVersions() map[string]any {
 	return out
 }
 
-func (s *HostOperationsService) ProbeIncusGPU(args map[string]any) (map[string]any, error) {
+func (s *Service) ProbeIncusGPU(args map[string]any) (map[string]any, error) {
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("probe_incus_gpu is unsupported on %s host agents", runtime.GOOS)
 	}
 	result := virtualizationVersions()
-	result["dxg"] = fileExists("/dev/dxg")
-	result["wslGpuLibraries"] = fileExists("/usr/lib/wsl/lib/libcuda.so") || fileExists("/usr/lib/wsl/lib/libcuda.so.1")
-	result["nvidiaSmi"] = commandAvailable("nvidia-smi") || fileExists("/usr/lib/wsl/lib/nvidia-smi")
+	result["dxg"] = fsutil.Exists("/dev/dxg")
+	result["wslGpuLibraries"] = fsutil.Exists("/usr/lib/wsl/lib/libcuda.so") || fsutil.Exists("/usr/lib/wsl/lib/libcuda.so.1")
+	result["nvidiaSmi"] = commandAvailable("nvidia-smi") || fsutil.Exists("/usr/lib/wsl/lib/nvidia-smi")
 	result["incusGpuDevice"] = commandAvailable("incus")
 	incusOK := versionAtLeast(fmt.Sprint(result["incus"]), 7, 2)
 	qemuRequired, _ := args["qemuRequired"].(bool)
@@ -319,7 +321,6 @@ func versionAtLeast(value string, wantMajor, wantMinor int) bool {
 	return major > wantMajor || (major == wantMajor && minor >= wantMinor)
 }
 
-func fileExists(path string) bool       { _, err := os.Stat(path); return err == nil }
 func commandAvailable(name string) bool { _, err := exec.LookPath(name); return err == nil }
 
 func currentUserName() string {
@@ -331,8 +332,8 @@ func currentUserName() string {
 
 // EnsureHostTool installs a small, explicitly allowlisted set of generic host
 // build/runtime tools. Application-specific setup remains outside the agent.
-func (s *HostOperationsService) EnsureHostTool(args EnsureHostToolArgs, onData func(string)) (map[string]any, error) {
-	if err := s.requireSharedHostOwner("ensure_host_tool"); err != nil {
+func (s *Service) EnsureHostTool(args EnsureHostToolArgs, onData func(string)) (map[string]any, error) {
+	if err := s.shared.RequireSharedHostOwner("ensure_host_tool"); err != nil {
 		return nil, err
 	}
 	if runtime.GOOS != "linux" {
@@ -373,7 +374,7 @@ func (s *HostOperationsService) EnsureHostTool(args EnsureHostToolArgs, onData f
 	return map[string]any{"tool": tool, "path": path, "available": true, "alreadyAvailable": false}, nil
 }
 
-func (s *HostOperationsService) ensureBunTool(onData func(string)) (map[string]any, error) {
+func (s *Service) ensureBunTool(onData func(string)) (map[string]any, error) {
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return nil, errors.New("bun is not installed and user home is unavailable for a user-local install")
@@ -390,14 +391,14 @@ func (s *HostOperationsService) ensureBunTool(onData func(string)) (map[string]a
 	defer cancel()
 	installScript := fmt.Sprintf(
 		`curl -fsSL https://bun.sh/install | bash -s -- --no-modify-shell && test -x %s`,
-		shellEscape(bunPath),
+		textutil.ShellQuote(bunPath),
 	)
-	res, runErr := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", installScript}, onData, 0)
+	res, runErr := s.shared.HostCommandRunnerContext(ctx, []string{"bash", "-lc", installScript}, onData, 0)
 	if runErr != nil {
 		return nil, runErr
 	}
 	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "bun install failed"))
+		return nil, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "bun install failed"))
 	}
 	if _, statErr := os.Stat(bunPath); statErr != nil {
 		return nil, fmt.Errorf("bun was installed but remains unavailable: %w", statErr)
@@ -405,7 +406,7 @@ func (s *HostOperationsService) ensureBunTool(onData func(string)) (map[string]a
 	return map[string]any{"tool": "bun", "path": bunPath, "available": true, "alreadyAvailable": false}, nil
 }
 
-func (s *HostOperationsService) ensureHelmTool(onData func(string)) (map[string]any, error) {
+func (s *Service) ensureHelmTool(onData func(string)) (map[string]any, error) {
 	if path, err := exec.LookPath("helm"); err == nil {
 		return map[string]any{"tool": "helm", "path": path, "available": true, "alreadyAvailable": true}, nil
 	}
@@ -421,15 +422,15 @@ func (s *HostOperationsService) ensureHelmTool(onData func(string)) (map[string]
 	defer cancel()
 	installScript := fmt.Sprintf(
 		`mkdir -p %s && curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | HELM_INSTALL_DIR=%s USE_SUDO=false bash`,
-		shellEscape(installDir),
-		shellEscape(installDir),
+		textutil.ShellQuote(installDir),
+		textutil.ShellQuote(installDir),
 	)
-	res, runErr := s.hostCommandRunnerContext(ctx, []string{"bash", "-lc", installScript}, onData, 0)
+	res, runErr := s.shared.HostCommandRunnerContext(ctx, []string{"bash", "-lc", installScript}, onData, 0)
 	if runErr != nil {
 		return nil, runErr
 	}
 	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "helm install failed"))
+		return nil, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "helm install failed"))
 	}
 	path := filepath.Join(installDir, "helm")
 	if _, statErr := os.Stat(path); statErr != nil {

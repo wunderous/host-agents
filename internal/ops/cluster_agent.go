@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/wunderous/host-agents/internal/heartbeat"
+	"github.com/wunderous/host-agents/internal/hostruntime"
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 const (
@@ -84,14 +86,14 @@ func renderClusterAgentInstallScript(bridgeURL string, arch clusterAgentArch, co
 		fmt.Sprintf(
 			"curl -sfL --max-time %d %s | gunzip > %s",
 			clusterAgentArtifactDownloadSeconds,
-			shellEscape(artifactURL),
+			textutil.ShellQuote(artifactURL),
 			clusterAgentBinaryPath,
 		),
 		fmt.Sprintf("chmod 755 %s", clusterAgentBinaryPath),
-		fmt.Sprintf("printf '%%s' %s | base64 -d > %s", shellEscape(encodedConfig), clusterAgentConfigPath),
+		fmt.Sprintf("printf '%%s' %s | base64 -d > %s", textutil.ShellQuote(encodedConfig), clusterAgentConfigPath),
 		fmt.Sprintf(
 			"printf '%%s' %s | base64 -d > /etc/systemd/system/%s.service",
-			shellEscape(encodedUnit),
+			textutil.ShellQuote(encodedUnit),
 			clusterAgentServiceName,
 		),
 		"systemctl daemon-reload",
@@ -120,7 +122,7 @@ func wrapHostPrivilegedShellBody(body string) string {
 }
 
 func defaultBridgePort() int {
-	if v := strings.TrimSpace(envOr("PLATFORM_MCP_PORT", "")); v != "" {
+	if v := strings.TrimSpace(hostruntime.EnvOr("PLATFORM_MCP_PORT", "")); v != "" {
 		if port, err := strconv.Atoi(v); err == nil && port > 0 {
 			return port
 		}
@@ -154,7 +156,7 @@ func isLoopbackBridgeURL(bridgeURL string) bool {
 
 func (s *HostOperationsService) probeBridgeHealthFromGuest(vmName, baseURL string, onData func(string)) bool {
 	healthURL := strings.TrimRight(baseURL, "/") + "/health"
-	script := fmt.Sprintf("curl -sf -o /dev/null %s", shellEscape(healthURL))
+	script := fmt.Sprintf("curl -sf -o /dev/null %s", textutil.ShellQuote(healthURL))
 	res, err := s.runVMExec(vmName, []string{"bash", "-lc", script}, onData, 15*time.Second)
 	return err == nil && res.ExitCode == 0
 }
@@ -212,7 +214,7 @@ func (s *HostOperationsService) resolveBridgeEndpointForVM(
 
 	for _, host := range []string{
 		"host.lan",
-		strings.TrimSpace(envOr("OPUTE_PLATFORM_GUEST_HOST", "")),
+		strings.TrimSpace(hostruntime.EnvOr("OPUTE_PLATFORM_GUEST_HOST", "")),
 	} {
 		if host == "host.lan" {
 			res, err := s.runVMExec(vmName, []string{"getent", "hosts", "host.lan"}, onData, 10*time.Second)
@@ -318,7 +320,7 @@ func (s *HostOperationsService) InstallClusterAgent(args InstallClusterAgentArgs
 		if installResult.ExitCode != 0 {
 			return nil, fmt.Errorf("%s", firstNonEmpty(installResult.Stderr, installResult.Stdout, "host cluster agent install failed"))
 		}
-		if err := s.waitForSystemdActive(clusterAgentServiceName, onData, clusterAgentServiceWait); err != nil {
+		if err := s.host().WaitForSystemdActive(clusterAgentServiceName, onData, clusterAgentServiceWait); err != nil {
 			return nil, err
 		}
 		return map[string]any{

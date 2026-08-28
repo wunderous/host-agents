@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"context"
@@ -24,7 +24,7 @@ type HTTPObservation struct {
 	Error      string `json:"error,omitempty"`
 }
 
-func (s *HostOperationsService) ProbeHTTPEndpoint(ctx context.Context, args ProbeHTTPEndpointArgs) (*HTTPObservation, error) {
+func (s *Service) ProbeHTTPEndpoint(ctx context.Context, args ProbeHTTPEndpointArgs) (*HTTPObservation, error) {
 	endpoint := strings.TrimSpace(args.Endpoint)
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || strings.ContainsAny(endpoint, "\r\n\x00") {

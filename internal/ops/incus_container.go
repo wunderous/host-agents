@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wunderous/host-agents/internal/fsutil"
 	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
@@ -207,12 +208,12 @@ func (s *HostOperationsService) attachContainerGPUDevices(name string, wslLibs b
 	if onData != nil {
 		onData("Attaching GPU devices to container...")
 	}
-	if fileExists("/dev/dxg") {
+	if fsutil.Exists("/dev/dxg") {
 		if err := s.ensureIncusDevice(name, "dxg", []string{"config", "device", "add", name, "dxg", "unix-char", "source=/dev/dxg", "path=/dev/dxg"}); err != nil {
 			return fmt.Errorf("attach /dev/dxg: %w", err)
 		}
 	}
-	if wslLibs && fileExists(wslGpuLibHostPath) {
+	if wslLibs && fsutil.Exists(wslGpuLibHostPath) {
 		if err := s.ensureIncusDevice(name, "wsl-gpu-libs", []string{
 			"config", "device", "add", name, "wsl-gpu-libs", "disk",
 			"source=" + wslGpuLibHostPath, "path=" + wslGpuLibGuestPath, "readonly=true",
@@ -224,7 +225,7 @@ func (s *HostOperationsService) attachContainerGPUDevices(name string, wslLibs b
 		{"/usr/lib/wsl/lib/nvidia-smi", "/usr/local/bin/nvidia-smi"},
 		{"/usr/lib/wsl/lib/nvidia-smi", "/usr/bin/nvidia-smi"},
 	} {
-		if fileExists(candidate.host) {
+		if fsutil.Exists(candidate.host) {
 			_ = s.ensureIncusDevice(name, "nvidia-smi-bind", []string{
 				"config", "device", "add", name, "nvidia-smi-bind", "disk",
 				"source=" + candidate.host, "path=" + candidate.guest, "readonly=true",
@@ -439,7 +440,7 @@ func (s *HostOperationsService) ensureContainerNesting(name string) error {
 // ensureContainerRuntimeDevices attaches generic runtime devices required by
 // nested workloads inside an Incus system container.
 func (s *HostOperationsService) ensureContainerRuntimeDevices(name string) error {
-	if fileExists("/dev/kmsg") {
+	if fsutil.Exists("/dev/kmsg") {
 		if err := s.ensureIncusDevice(name, "kmsg", []string{
 			"config", "device", "add", name, "kmsg", "unix-char",
 			"source=/dev/kmsg", "path=/dev/kmsg",

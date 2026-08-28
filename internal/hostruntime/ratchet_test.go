@@ -31,7 +31,12 @@ import (
 // Raised 420 -> 470 for the in-memory ResourceRegistry, moved here from
 // internal/ops so a domain test can build a real Shared without importing the
 // package this work is dismantling.
-const budgetLines = 470
+//
+// Raised 470 -> 540 for EnvOr and the registry half of ResolveResource. The
+// split is the point: parsing, the tenant check, and the registry lookup are
+// hostruntime's, while OBSERVING that a VM or a systemd unit exists is a domain
+// operation and is passed in as an Adopter. Rule 3 held; it just needed a seam.
+const budgetLines = 540
 
 func TestHostruntimeStaysWithinBudget(t *testing.T) {
 	entries, err := os.ReadDir(".")

@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"strings"
@@ -11,7 +11,7 @@ import (
 )
 
 func TestExecCommandRequiresName(t *testing.T) {
-	svc := &HostOperationsService{}
+	svc := testService(hostruntime.Shared{})
 	_, err := svc.ExecCommand(ExecCommandArgs{Command: "true"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "name is required") {
 		t.Fatalf("expected name error, got %v", err)
@@ -19,7 +19,7 @@ func TestExecCommandRequiresName(t *testing.T) {
 }
 
 func TestExecCommandRequiresCommand(t *testing.T) {
-	svc := &HostOperationsService{}
+	svc := testService(hostruntime.Shared{})
 	_, err := svc.ExecCommand(ExecCommandArgs{VMName: "vm1"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "command is required") {
 		t.Fatalf("expected command error, got %v", err)
@@ -38,7 +38,7 @@ func TestRunInstanceCommandResolvesContainerURIWithoutVMFallback(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	svc := NewHostOperationsService(Options{TenantID: "tenant-a", ResourceRegistry: registry})
+	svc := testService(hostruntime.Shared{TenantID: "tenant-a", ResourceRegistry: registry})
 	var got []string
 	svc.shared.CommandRunnerFn = func(args []string, _ func(string), _ time.Duration) (hostexec.Result, error) {
 		got = append([]string(nil), args...)
@@ -57,7 +57,7 @@ func TestRunInstanceCommandResolvesContainerURIWithoutVMFallback(t *testing.T) {
 }
 
 func TestRunInstanceCommandRejectsForeignTenantAndWrongType(t *testing.T) {
-	svc := NewHostOperationsService(Options{TenantID: "tenant-a"})
+	svc := testService(hostruntime.Shared{TenantID: "tenant-a", ResourceRegistry: hostruntime.NewInMemoryResourceRegistry()})
 	if _, err := svc.RunInstanceCommand(RunInstanceCommandArgs{URI: "container:tenant-b:connector", Command: "true"}, nil); err == nil || !strings.Contains(err.Error(), "different tenant") {
 		t.Fatalf("expected foreign tenant rejection, got %v", err)
 	}

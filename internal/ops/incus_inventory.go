@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wunderous/host-agents/internal/contract/vminfo"
 	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
@@ -52,20 +53,9 @@ func (s *HostOperationsService) ListVMs(fast bool) (VMListResult, error) {
 // VMInventoryCapacity describes declared Incus allocations and instance mix.
 // It is intentionally based on Incus configuration, not guest-reported usage,
 // so callers can see oversubscription before the guest becomes unhealthy.
-type VMInventoryCapacity struct {
-	RunningVMCount            int   `json:"runningVmCount"`
-	TotalVMCount              int   `json:"totalVmCount"`
-	RunningVMCPULimitCores    int   `json:"runningVmCpuLimitCores"`
-	TotalVMCPULimitCores      int   `json:"totalVmCpuLimitCores"`
-	RunningVMMemoryLimitBytes int64 `json:"runningVmMemoryLimitBytes"`
-	TotalVMMemoryLimitBytes   int64 `json:"totalVmMemoryLimitBytes"`
-	RunningVMDiskLimitBytes   int64 `json:"runningVmDiskLimitBytes"`
-	TotalVMDiskLimitBytes     int64 `json:"totalVmDiskLimitBytes"`
-	RunningQEMUCount          int   `json:"runningQemuCount"`
-	TotalQEMUCount            int   `json:"totalQemuCount"`
-	RunningContainerCount     int   `json:"runningContainerCount"`
-	TotalContainerCount       int   `json:"totalContainerCount"`
-}
+// VMInventoryCapacity lives in internal/contract/vminfo: incus measures it,
+// host reports it in DescribeHost, and neither may import the other.
+type VMInventoryCapacity = vminfo.VMInventoryCapacity
 
 func (s *HostOperationsService) VMInventoryCapacity() (VMInventoryCapacity, error) {
 	items, err := s.listIncusVirtualMachines()

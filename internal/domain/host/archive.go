@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"archive/tar"
@@ -27,8 +27,8 @@ type ExtractHostArchiveArgs struct {
 // ExtractHostArchive extracts a verified archive beneath the current user's
 // home directory after rejecting absolute and traversal entries. The archive
 // producer and its contents remain recipe-owned.
-func (s *HostOperationsService) ExtractHostArchive(args ExtractHostArchiveArgs, onData func(string)) (map[string]any, error) {
-	if err := s.requireSharedHostOwner("extract_host_archive"); err != nil {
+func (s *Service) ExtractHostArchive(args ExtractHostArchiveArgs, onData func(string)) (map[string]any, error) {
+	if err := s.shared.RequireSharedHostOwner("extract_host_archive"); err != nil {
 		return nil, err
 	}
 	format := strings.ToLower(strings.TrimSpace(args.Format))

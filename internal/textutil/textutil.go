@@ -34,3 +34,9 @@ func ErrString(err error, fallback string) string {
 	}
 	return fallback
 }
+
+// ShellQuote wraps a value in single quotes, escaping any it contains, so it
+// can be embedded in a shell command without changing its meaning.
+func ShellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+}

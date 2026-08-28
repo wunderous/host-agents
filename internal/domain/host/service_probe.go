@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"fmt"
@@ -16,7 +16,7 @@ type InspectHostServiceArgs struct {
 
 // InspectHostService returns read-only systemd evidence for a caller-owned
 // service. It never starts, stops, enables, or reloads the unit.
-func (s *HostOperationsService) InspectHostService(args InspectHostServiceArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) InspectHostService(args InspectHostServiceArgs, onData func(string)) (map[string]any, error) {
 	serviceName := strings.TrimSpace(args.ServiceName)
 	if serviceName == "" || !safeSystemdUnitName.MatchString(serviceName) {
 		return nil, fmt.Errorf("serviceName is required and must be a valid systemd unit name")
@@ -33,7 +33,7 @@ func (s *HostOperationsService) InspectHostService(args InspectHostServiceArgs, 
 		commandPrefix = append(commandPrefix, "--user")
 	}
 	command := append(append([]string{}, commandPrefix...), "is-active", serviceName)
-	result, err := s.hostCommandRunner(command, onData, 15*time.Second)
+	result, err := s.shared.HostCommandRunner(command, onData, 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("inspect host service: %w", err)
 	}
@@ -41,7 +41,7 @@ func (s *HostOperationsService) InspectHostService(args InspectHostServiceArgs, 
 	if status == "" {
 		status = strings.TrimSpace(result.Stderr)
 	}
-	enabledResult, enabledErr := s.hostCommandRunner(append(append([]string{}, commandPrefix...), "is-enabled", serviceName), onData, 15*time.Second)
+	enabledResult, enabledErr := s.shared.HostCommandRunner(append(append([]string{}, commandPrefix...), "is-enabled", serviceName), onData, 15*time.Second)
 	unitFileState := strings.TrimSpace(enabledResult.Stdout)
 	if unitFileState == "" {
 		unitFileState = strings.TrimSpace(enabledResult.Stderr)
@@ -58,7 +58,7 @@ func (s *HostOperationsService) InspectHostService(args InspectHostServiceArgs, 
 }
 
 // ListHostServices returns a list of systemd services and registers their canonical URIs.
-func (s *HostOperationsService) ListHostServices(scope string) (map[string]any, error) {
+func (s *Service) ListHostServices(scope string) (map[string]any, error) {
 	scope = strings.ToLower(strings.TrimSpace(scope))
 	if scope == "" {
 		scope = "user"
@@ -71,13 +71,13 @@ func (s *HostOperationsService) ListHostServices(scope string) (map[string]any, 
 		commandPrefix = append(commandPrefix, "--user")
 	}
 	command := append(append([]string{}, commandPrefix...), "list-units", "--type=service", "--all", "--no-pager", "--plain", "--no-legend")
-	result, err := s.hostCommandRunner(command, nil, 15*time.Second)
+	result, err := s.shared.HostCommandRunner(command, nil, 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("list host services: %w", err)
 	}
 	lines := strings.Split(result.Stdout, "\n")
 	services := make([]map[string]any, 0, len(lines))
-	tenantID := s.effectiveTenantID()
+	tenantID := s.shared.EffectiveTenantID()
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -104,7 +104,7 @@ func (s *HostOperationsService) ListHostServices(scope string) (map[string]any, 
 			continue
 		}
 		if s.shared.ResourceRegistry != nil {
-			_ = s.RegisterResource(uri.String(), map[string]any{
+			_ = s.shared.RegisterResource(uri.String(), map[string]any{
 				"serviceName": serviceName,
 				"scope":       scope,
 			})

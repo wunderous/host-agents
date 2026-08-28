@@ -1,4 +1,4 @@
-package ops
+package host
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/wunderous/host-agents/internal/resourceid"
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 const defaultExecCommandTimeout = 30 * time.Second
@@ -28,8 +29,8 @@ type RunInstanceCommandArgs struct {
 	TimeoutMs int
 }
 
-func (s *HostOperationsService) RunInstanceCommand(args RunInstanceCommandArgs, onData func(string)) (map[string]any, error) {
-	uri, err := s.ResolveResource(strings.TrimSpace(args.URI), "")
+func (s *Service) RunInstanceCommand(args RunInstanceCommandArgs, onData func(string)) (map[string]any, error) {
+	uri, err := s.deps.ResolveResource(strings.TrimSpace(args.URI), "")
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +49,7 @@ func (s *HostOperationsService) RunInstanceCommand(args RunInstanceCommandArgs, 
 	if args.TimeoutMs > 0 {
 		timeout = time.Duration(args.TimeoutMs) * time.Millisecond
 	}
-	res, err := s.runVMExec(providerName, append([]string{command}, args.Args...), onData, timeout)
+	res, err := s.deps.RunVMExec(providerName, append([]string{command}, args.Args...), onData, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +67,7 @@ func (s *HostOperationsService) RunInstanceCommand(args RunInstanceCommandArgs, 
 	}, nil
 }
 
-func (s *HostOperationsService) ExecCommand(args ExecCommandArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) ExecCommand(args ExecCommandArgs, onData func(string)) (map[string]any, error) {
 	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
 		return nil, fmt.Errorf("name is required")
@@ -82,12 +83,12 @@ func (s *HostOperationsService) ExecCommand(args ExecCommandArgs, onData func(st
 	}
 
 	guestArgv := append([]string{command}, args.Args...)
-	res, err := s.runVMExec(vmName, guestArgv, onData, timeout)
+	res, err := s.deps.RunVMExec(vmName, guestArgv, onData, timeout)
 	if err != nil {
 		return nil, err
 	}
 	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, fmt.Sprintf("command failed with exit %d", res.ExitCode)))
+		return nil, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, fmt.Sprintf("command failed with exit %d", res.ExitCode)))
 	}
 
 	output := res.Stdout
