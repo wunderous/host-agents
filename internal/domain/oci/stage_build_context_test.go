@@ -1,4 +1,4 @@
-package ops
+package oci
 
 import (
 	"os"
@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 func TestStageBuildContextWritesAllowlistedDir(t *testing.T) {
@@ -18,7 +20,7 @@ func TestStageBuildContextWritesAllowlistedDir(t *testing.T) {
 	}
 	dest := filepath.Join(home, ".opute", "build-contexts", "unit-test")
 	_ = os.RemoveAll(dest)
-	svc := &HostOperationsService{}
+	svc := &Service{shared: &hostruntime.Shared{}}
 	out, err := svc.StageBuildContext(StageBuildContextArgs{
 		DestDir: dest,
 		Files: map[string]string{
@@ -45,7 +47,7 @@ func TestStageBuildContextRejectsEscape(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux-only")
 	}
-	svc := &HostOperationsService{}
+	svc := &Service{shared: &hostruntime.Shared{}}
 	_, err := svc.StageBuildContext(StageBuildContextArgs{
 		DestDir: "/tmp/not-allowed",
 		Files:   map[string]string{"Dockerfile": "FROM scratch\n"},

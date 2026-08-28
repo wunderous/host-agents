@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/wunderous/host-agents/internal/contract/k8sname"
 )
 
 type ConfigureServiceDomainArgs struct {
@@ -21,7 +23,7 @@ func (s *Service) ConfigureServiceDomain(args ConfigureServiceDomainArgs, onData
 		return nil, errors.New("vmName, namespace, ingressName, hostname, serviceName, and positive servicePort are required")
 	}
 	for value, field := range map[string]string{args.Namespace: "namespace", args.IngressName: "ingressName", args.ServiceName: "serviceName"} {
-		if err := ValidateIdentifier(value, field); err != nil {
+		if err := k8sname.Validate(value, field); err != nil {
 			return nil, err
 		}
 	}
@@ -66,10 +68,10 @@ func (s *Service) RemoveServiceDomain(args ConfigureServiceDomainArgs, onData fu
 	if strings.TrimSpace(args.VMName) == "" || strings.TrimSpace(args.Namespace) == "" || strings.TrimSpace(args.IngressName) == "" {
 		return nil, errors.New("vmName, namespace, and ingressName are required")
 	}
-	if err := ValidateIdentifier(args.Namespace, "namespace"); err != nil {
+	if err := k8sname.Validate(args.Namespace, "namespace"); err != nil {
 		return nil, err
 	}
-	if err := ValidateIdentifier(args.IngressName, "ingressName"); err != nil {
+	if err := k8sname.Validate(args.IngressName, "ingressName"); err != nil {
 		return nil, err
 	}
 	targetURI, err := s.TargetURI(args.VMName)

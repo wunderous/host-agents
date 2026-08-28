@@ -1,4 +1,4 @@
-package ops
+package oci
 
 import (
 	"context"
@@ -36,7 +36,7 @@ type BuildAndPushOciImageArgs struct {
 
 // BuildAndPushOciImage ensures a builder is available, builds the image, and
 // pushes it. Long-running progress is streamed through onData.
-func (s *HostOperationsService) BuildAndPushOciImage(ctx context.Context, args BuildAndPushOciImageArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) BuildAndPushOciImage(ctx context.Context, args BuildAndPushOciImageArgs, onData func(string)) (map[string]any, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -106,7 +106,7 @@ func (s *HostOperationsService) BuildAndPushOciImage(ctx context.Context, args B
 		// still uses the supported image-store path when possible.
 		if runtimeAdapter, err = s.resolveContainerRuntime(ctx, "auto"); err == nil {
 			builder = runtimeAdapter.Name()
-		} else if path, lookErr := s.containerLookPath("buildah"); lookErr == nil {
+		} else if path, lookErr := s.shared.ContainerLookPath("buildah"); lookErr == nil {
 			_ = path
 			builder = "buildah"
 		} else {

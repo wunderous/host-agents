@@ -1,8 +1,10 @@
-package ops
+package oci
 
 import (
 	"reflect"
 	"testing"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 func TestValidateOciStoragePolicy(t *testing.T) {
@@ -41,7 +43,7 @@ func TestValidateCleanupPolicyUsesThePersistedBudgetFloor(t *testing.T) {
 
 func TestOciStoragePolicyPersistsAtomically(t *testing.T) {
 	path := t.TempDir() + "/oci-storage-policy.json"
-	service := &HostOperationsService{ociStoragePolicyPath: path}
+	service := &Service{shared: &hostruntime.Shared{}, storagePolicyPath: path}
 	want := ociStoragePolicy{MaxBytes: 8 << 30, MinAgeSeconds: 3 * 24 * 60 * 60}
 	if err := service.saveOciStoragePolicy(want); err != nil {
 		t.Fatalf("save policy: %v", err)

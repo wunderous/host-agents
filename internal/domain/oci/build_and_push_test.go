@@ -1,4 +1,4 @@
-package ops
+package oci
 
 import (
 	"context"
@@ -7,10 +7,12 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 func TestBuildAndPushOciImageValidatesArgs(t *testing.T) {
-	svc := &HostOperationsService{}
+	svc := &Service{shared: &hostruntime.Shared{}}
 	_, err := svc.BuildAndPushOciImage(context.Background(), BuildAndPushOciImageArgs{}, nil)
 	if runtime.GOOS != "linux" {
 		if err == nil || !strings.Contains(err.Error(), "unsupported") {

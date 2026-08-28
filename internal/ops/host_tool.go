@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	hostexec "github.com/wunderous/host-agents/internal/exec"
 )
 
 type EnsureHostToolArgs struct {
@@ -86,10 +88,10 @@ func (s *HostOperationsService) InstallIncusStack(args InstallIncusStackArgs, on
 	if err := s.configureZabblyIncusRepository(ctx, channel); err != nil {
 		return nil, fmt.Errorf("configure Incus package repository: %w", err)
 	}
-	if err := runPrivilegedPackageCommand(ctx, "apt-get", "update"); err != nil {
+	if err := hostexec.RunPrivilegedPackage(ctx, "apt-get", "update"); err != nil {
 		return nil, fmt.Errorf("update virtualization packages: %w", err)
 	}
-	if err := runPrivilegedPackageCommand(ctx, "dpkg", "--configure", "-a"); err != nil {
+	if err := hostexec.RunPrivilegedPackage(ctx, "dpkg", "--configure", "-a"); err != nil {
 		return nil, fmt.Errorf("repair interrupted package state: %w", err)
 	}
 	incusVersion := strings.TrimSpace(args.IncusVersion)
@@ -106,18 +108,18 @@ func (s *HostOperationsService) InstallIncusStack(args InstallIncusStackArgs, on
 	if candidate := aptCandidate(incusPackage); candidate != "" {
 		argsInstall = append(argsInstall, incusPackage+"="+candidate)
 	}
-	if err := runPrivilegedPackageCommand(ctx, argsInstall[0], argsInstall[1:]...); err != nil {
+	if err := hostexec.RunPrivilegedPackage(ctx, argsInstall[0], argsInstall[1:]...); err != nil {
 		return nil, fmt.Errorf("install virtualization packages: %w", err)
 	}
 	// The incus-admin group is created by the Incus package. Granting access
 	// before installation makes clean-host bootstrap fail with "group does not
 	// exist". A root-run bootstrap agent does not need the supplemental group.
 	if user := currentUserName(); user != "" && user != "root" {
-		if err := runPrivilegedPackageCommand(ctx, "usermod", "-aG", "incus-admin", user); err != nil {
+		if err := hostexec.RunPrivilegedPackage(ctx, "usermod", "-aG", "incus-admin", user); err != nil {
 			return nil, fmt.Errorf("grant Incus admin access: %w", err)
 		}
 	}
-	if err := runPrivilegedPackageCommand(ctx, "systemctl", "enable", "--now", "incus.service"); err != nil {
+	if err := hostexec.RunPrivilegedPackage(ctx, "systemctl", "enable", "--now", "incus.service"); err != nil {
 		return nil, fmt.Errorf("start Incus daemon: %w", err)
 	}
 	if err := s.ensureIncusContainerRuntime(onData); err != nil {
@@ -255,13 +257,13 @@ func (s *HostOperationsService) configureZabblyIncusRepository(ctx context.Conte
 	if err != nil {
 		return err
 	}
-	if err := runPrivilegedPackageCommand(ctx, "install", "-d", "/etc/apt/keyrings"); err != nil {
+	if err := hostexec.RunPrivilegedPackage(ctx, "install", "-d", "/etc/apt/keyrings"); err != nil {
 		return err
 	}
-	if err := runPrivilegedPackageCommand(ctx, "install", "-m", "0644", keyPath, "/etc/apt/keyrings/zabbly.asc"); err != nil {
+	if err := hostexec.RunPrivilegedPackage(ctx, "install", "-m", "0644", keyPath, "/etc/apt/keyrings/zabbly.asc"); err != nil {
 		return err
 	}
-	return runPrivilegedPackageCommand(ctx, "install", "-m", "0644", sourcePath, "/etc/apt/sources.list.d/zabbly-incus.sources")
+	return hostexec.RunPrivilegedPackage(ctx, "install", "-m", "0644", sourcePath, "/etc/apt/sources.list.d/zabbly-incus.sources")
 }
 
 func packageAvailable(name string) bool {
@@ -358,10 +360,10 @@ func (s *HostOperationsService) EnsureHostTool(args EnsureHostToolArgs, onData f
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	if err := runPrivilegedPackageCommand(ctx, "apt-get", "update"); err != nil {
+	if err := hostexec.RunPrivilegedPackage(ctx, "apt-get", "update"); err != nil {
 		return nil, fmt.Errorf("update apt package indexes: %w", err)
 	}
-	if err := runPrivilegedPackageCommand(ctx, "apt-get", "install", "-y", packageName); err != nil {
+	if err := hostexec.RunPrivilegedPackage(ctx, "apt-get", "install", "-y", packageName); err != nil {
 		return nil, fmt.Errorf("install host tool %s: %w", tool, err)
 	}
 	path, err := exec.LookPath(tool)

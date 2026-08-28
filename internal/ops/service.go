@@ -20,6 +20,7 @@ import (
 
 	"github.com/wunderous/host-agents/internal/domain/kubernetes"
 	"github.com/wunderous/host-agents/internal/domain/llm"
+	"github.com/wunderous/host-agents/internal/domain/oci"
 	hostexec "github.com/wunderous/host-agents/internal/exec"
 	"github.com/wunderous/host-agents/internal/heartbeat"
 	"github.com/wunderous/host-agents/internal/hostruntime"
@@ -84,7 +85,11 @@ type HostOperationsService struct {
 	resetCheckpointPath  string
 	ociStoragePolicyPath string
 	sqliteDatabaseRoot   string
-	ociStorageMu         sync.Mutex
+
+	// oci is the oci domain, built lazily -- see oci_delegate.go. It holds the
+	// container storage policy lock, so it is one instance per service.
+	ociSvc  *oci.Service
+	ociOnce sync.Once
 
 	sqlSupervisor    *sqlConnectorSupervisor
 	guestBridgeRelay *tcpRelayManager

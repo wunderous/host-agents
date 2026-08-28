@@ -2,9 +2,9 @@ package kubernetes
 
 import (
 	"errors"
-	"fmt"
-	"regexp"
 	"strings"
+
+	"github.com/wunderous/host-agents/internal/contract/k8sname"
 )
 
 // ApplyManifestArgs describes an arbitrary Kubernetes manifest supplied by a
@@ -33,16 +33,6 @@ type K8sEventsArgs struct {
 	Limit     int    `json:"limit,omitempty"`
 }
 
-var k8sIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]*$`)
-
-func ValidateIdentifier(value, field string) error {
-	value = strings.TrimSpace(value)
-	if value == "" || !k8sIdentifier.MatchString(value) {
-		return fmt.Errorf("%s contains invalid characters", field)
-	}
-	return nil
-}
-
 func (s *Service) DeleteK8sResource(args K8sResourceArgs, _ func(string)) (map[string]any, error) {
 	if s.executor == nil {
 		return nil, errors.New("Kubernetes provider is required for delete Kubernetes resource")
@@ -53,14 +43,14 @@ func (s *Service) DeleteK8sResource(args K8sResourceArgs, _ func(string)) (map[s
 	if strings.TrimSpace(args.URI) == "" || kind == "" || name == "" {
 		return nil, errors.New("uri, kind, and resourceName are required")
 	}
-	if err := ValidateIdentifier(kind, "kind"); err != nil {
+	if err := k8sname.Validate(kind, "kind"); err != nil {
 		return nil, err
 	}
-	if err := ValidateIdentifier(name, "resourceName"); err != nil {
+	if err := k8sname.Validate(name, "resourceName"); err != nil {
 		return nil, err
 	}
 	if namespace != "" {
-		if err := ValidateIdentifier(namespace, "namespace"); err != nil {
+		if err := k8sname.Validate(namespace, "namespace"); err != nil {
 			return nil, err
 		}
 	}
@@ -109,14 +99,14 @@ func (s *Service) GetK8sResource(args K8sResourceArgs) (map[string]any, error) {
 	if strings.TrimSpace(args.URI) == "" || kind == "" || name == "" {
 		return nil, errors.New("uri, kind, and resourceName are required")
 	}
-	if err := ValidateIdentifier(kind, "kind"); err != nil {
+	if err := k8sname.Validate(kind, "kind"); err != nil {
 		return nil, err
 	}
-	if err := ValidateIdentifier(name, "resourceName"); err != nil {
+	if err := k8sname.Validate(name, "resourceName"); err != nil {
 		return nil, err
 	}
 	if namespace != "" {
-		if err := ValidateIdentifier(namespace, "namespace"); err != nil {
+		if err := k8sname.Validate(namespace, "namespace"); err != nil {
 			return nil, err
 		}
 	}
@@ -140,10 +130,10 @@ func (s *Service) GetK8sResourceStatus(args K8sResourceArgs) (map[string]any, er
 	if strings.TrimSpace(args.URI) == "" || resourceKind == "" || strings.TrimSpace(args.ResourceName) == "" {
 		return nil, errors.New("uri, resourceKind, and resourceName are required")
 	}
-	if err := ValidateIdentifier(resourceKind, "resourceKind"); err != nil {
+	if err := k8sname.Validate(resourceKind, "resourceKind"); err != nil {
 		return nil, err
 	}
-	if err := ValidateIdentifier(args.ResourceName, "resourceName"); err != nil {
+	if err := k8sname.Validate(args.ResourceName, "resourceName"); err != nil {
 		return nil, err
 	}
 	out, delegated, err := s.ExecuteProvider(KubernetesGetResourceStatusOperation, args.URI, map[string]any{

@@ -1,16 +1,17 @@
-package ops
+package oci
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	hostexec "github.com/wunderous/host-agents/internal/exec"
 )
 
 // containerRuntimeAdapter is the host-side abstraction for OCI runtime
@@ -34,7 +35,7 @@ type containerRuntimeAdapter interface {
 }
 
 type podmanRuntimeAdapter struct {
-	service *HostOperationsService
+	service *Service
 	path    string
 }
 
@@ -479,7 +480,7 @@ func parseImageTime(value string) int64 {
 	return 0
 }
 
-func (s *HostOperationsService) resolveContainerRuntime(ctx context.Context, requested string) (containerRuntimeAdapter, error) {
+func (s *Service) resolveContainerRuntime(ctx context.Context, requested string) (containerRuntimeAdapter, error) {
 	requested = strings.ToLower(strings.TrimSpace(requested))
 	if requested == "" {
 		requested = "auto"
@@ -487,7 +488,7 @@ func (s *HostOperationsService) resolveContainerRuntime(ctx context.Context, req
 	if requested != "auto" && requested != "podman" {
 		return nil, errors.New("runtime must be one of auto or podman")
 	}
-	path, err := s.containerLookPath("podman")
+	path, err := s.shared.ContainerLookPath("podman")
 	if requested == "podman" && err != nil {
 		return nil, errors.New("podman is not installed")
 	}
@@ -505,40 +506,24 @@ func (s *HostOperationsService) resolveContainerRuntime(ctx context.Context, req
 	return nil, errors.New("podman is unavailable")
 }
 
-func (s *HostOperationsService) containerLookPath(command string) (string, error) {
-	return s.shared.ContainerLookPath(command)
-}
-
-func (s *HostOperationsService) runContainerCommand(ctx context.Context, command string, args ...string) ([]byte, error) {
+func (s *Service) runContainerCommand(ctx context.Context, command string, args ...string) ([]byte, error) {
 	if s != nil && s.containerCommandFn != nil {
 		return s.containerCommandFn(ctx, command, args...)
 	}
 	return runCommand(ctx, command, args...)
 }
 
-func (s *HostOperationsService) runContainerStreamingCommand(ctx context.Context, command string, args []string, onData func(string)) error {
+func (s *Service) runContainerStreamingCommand(ctx context.Context, command string, args []string, onData func(string)) error {
 	if s != nil && s.containerStreamingCommandFn != nil {
 		return s.containerStreamingCommandFn(ctx, command, args, onData)
 	}
 	return runStreamingCommand(execCommand(ctx, command, args...), onData)
 }
 
-// These variables keep command execution replaceable in focused unit tests
-// without changing the production adapter contract.
-var runCommand = func(ctx context.Context, command string, args ...string) ([]byte, error) {
-	cmd := execCommand(ctx, command, args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		text := strings.TrimSpace(string(output))
-		if text != "" {
-			return nil, fmt.Errorf("%w: %s", err, text)
-		}
-	}
-	return output, err
-}
-
-var execLookPath = func(command string) (string, error) { return exec.LookPath(command) }
-
-var execCommand = func(ctx context.Context, command string, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, command, args...)
-}
+// Command execution forwards to internal/exec, which owns the process
+// primitives. The local spellings stay as vars so this package's adapter tests
+// can still replace them.
+var (
+	runCommand  = hostexec.Run
+	execCommand = hostexec.Command
+)

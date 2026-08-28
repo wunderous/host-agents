@@ -1,4 +1,4 @@
-package ops
+package oci
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	hostexec "github.com/wunderous/host-agents/internal/exec"
 )
 
 type EnsureOciBuilderArgs struct {
@@ -16,20 +18,20 @@ type EnsureOciBuilderArgs struct {
 // EnsureOciBuilder makes the host-side OCI image builder available. Podman is
 // the only runtime adapter currently implemented. Buildah and BuildKit remain
 // accepted as legacy build-only values for existing callers.
-func (s *HostOperationsService) EnsureOciBuilder(args EnsureOciBuilderArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) EnsureOciBuilder(args EnsureOciBuilderArgs, onData func(string)) (map[string]any, error) {
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("ensure_oci_builder is unsupported on %s host agents", runtime.GOOS)
 	}
 	builder := strings.ToLower(strings.TrimSpace(args.Builder))
 	if builder == "" || builder == "auto" {
-		if path, err := s.containerLookPath("podman"); err == nil {
+		if path, err := s.shared.ContainerLookPath("podman"); err == nil {
 			adapter := &podmanRuntimeAdapter{service: s, path: path}
 			if readyErr := adapter.Ready(context.Background()); readyErr == nil {
 				return ociBuilderResult("podman", path, true), nil
 			}
 		}
 		for _, candidate := range []string{"buildah", "buildkitd"} {
-			if path, err := s.containerLookPath(candidate); err == nil {
+			if path, err := s.shared.ContainerLookPath(candidate); err == nil {
 				if candidate == "buildkitd" {
 					return ociBuilderResult("buildkit", path, true), nil
 				}
@@ -42,7 +44,7 @@ func (s *HostOperationsService) EnsureOciBuilder(args EnsureOciBuilderArgs, onDa
 		return nil, errors.New("builder must be one of auto, podman, buildah, or buildkit")
 	}
 	if builder == "podman" {
-		if path, err := s.containerLookPath("podman"); err == nil {
+		if path, err := s.shared.ContainerLookPath("podman"); err == nil {
 			adapter := &podmanRuntimeAdapter{service: s, path: path}
 			if readyErr := adapter.Ready(context.Background()); readyErr != nil {
 				return nil, readyErr
@@ -54,14 +56,14 @@ func (s *HostOperationsService) EnsureOciBuilder(args EnsureOciBuilderArgs, onDa
 	if builder == "buildkit" {
 		commandName = "buildkitd"
 	}
-	if path, err := s.containerLookPath(commandName); err == nil {
+	if path, err := s.shared.ContainerLookPath(commandName); err == nil {
 		return ociBuilderResult(builder, path, true), nil
 	}
 	packageName := builder
 	if builder == "buildkit" {
 		packageName = "moby-buildkit"
 	}
-	if _, err := s.containerLookPath("apt-get"); err != nil {
+	if _, err := s.shared.ContainerLookPath("apt-get"); err != nil {
 		return nil, fmt.Errorf("%s is not installed and apt-get is unavailable; install package %q through the host OS package manager", builder, packageName)
 	}
 	if onData != nil {
@@ -69,13 +71,13 @@ func (s *HostOperationsService) EnsureOciBuilder(args EnsureOciBuilderArgs, onDa
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	if err := runPrivilegedPackageCommand(ctx, "apt-get", "update"); err != nil {
+	if err := hostexec.RunPrivilegedPackage(ctx, "apt-get", "update"); err != nil {
 		return nil, fmt.Errorf("update apt package indexes: %w", err)
 	}
-	if err := runPrivilegedPackageCommand(ctx, "apt-get", "install", "-y", packageName); err != nil {
+	if err := hostexec.RunPrivilegedPackage(ctx, "apt-get", "install", "-y", packageName); err != nil {
 		return nil, fmt.Errorf("install OCI builder %s: %w", builder, err)
 	}
-	path, err := s.containerLookPath(commandName)
+	path, err := s.shared.ContainerLookPath(commandName)
 	if err != nil {
 		return nil, fmt.Errorf("OCI builder %s was installed but %s is still unavailable: %w", builder, commandName, err)
 	}
@@ -86,19 +88,4 @@ var ociBuilderNames = map[string]bool{"podman": true, "buildah": true, "buildkit
 
 func ociBuilderResult(builder, path string, alreadyAvailable bool) map[string]any {
 	return map[string]any{"builder": builder, "runtime": builder, "path": path, "available": true, "alreadyAvailable": alreadyAvailable}
-}
-
-func runPrivilegedPackageCommand(ctx context.Context, command string, args ...string) error {
-	argv := append([]string{"-n", command}, args...)
-	command = "sudo"
-	cmd := execCommand(ctx, command, argv...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		message := strings.TrimSpace(string(output))
-		if message == "" {
-			message = err.Error()
-		}
-		return errors.New(message)
-	}
-	return nil
 }

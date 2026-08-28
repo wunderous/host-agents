@@ -134,10 +134,6 @@ func (s *HostOperationsService) executeKubernetesProvider(operation, targetURI s
 	return s.kubernetes().ExecuteProvider(operation, targetURI, arguments)
 }
 
-func (s *HostOperationsService) kubernetesTargetURI(vmName string) (string, error) {
-	return s.kubernetes().TargetURI(vmName)
-}
-
 // HelmValuesYAML is a pure encoder with no service state; the dispatch layer
 // calls it directly.
 func HelmValuesYAML(raw any) string { return kubernetes.HelmValuesYAML(raw) }

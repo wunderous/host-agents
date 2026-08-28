@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/wunderous/host-agents/internal/contract/k8sname"
 	"github.com/wunderous/host-agents/internal/textutil"
 )
 
@@ -27,10 +28,10 @@ func (s *Service) PutK8sSecret(args PutK8sSecretArgs, _ func(string)) (map[strin
 		return nil, errors.New("uri and name are required")
 	}
 	namespace := textutil.Default(args.Namespace, "default")
-	if err := ValidateIdentifier(namespace, "namespace"); err != nil {
+	if err := k8sname.Validate(namespace, "namespace"); err != nil {
 		return nil, err
 	}
-	if err := ValidateIdentifier(args.Name, "name"); err != nil {
+	if err := k8sname.Validate(args.Name, "name"); err != nil {
 		return nil, err
 	}
 	if len(args.Data) == 0 {

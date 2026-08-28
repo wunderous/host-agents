@@ -86,6 +86,12 @@ linters:
           deny:
             - pkg: "github.com/wunderous/host-agents/internal/domain"
               desc: "S4.3 rule 1: cross-domain access is an injected seam, not an import."
+        no-cross-domain-oci:
+          list-mode: lax
+          files: ["**/internal/domain/oci/**"]
+          deny:
+            - pkg: "github.com/wunderous/host-agents/internal/domain"
+              desc: "S4.3 rule 1: cross-domain access is an injected seam, not an import."
   #       no-cross-domain-incus:        # W7, one block per domain
   #         list-mode: lax
   #         files: ["**/internal/domain/incus/**"]

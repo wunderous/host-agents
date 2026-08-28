@@ -1,4 +1,4 @@
-package ops
+package oci
 
 import (
 	"encoding/base64"
@@ -21,7 +21,7 @@ type StageBuildContextArgs struct {
 }
 
 // StageBuildContext materializes a host-local directory tree from MCP tool args.
-func (s *HostOperationsService) StageBuildContext(args StageBuildContextArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) StageBuildContext(args StageBuildContextArgs, onData func(string)) (map[string]any, error) {
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("stage_build_context is unsupported on %s host agents", runtime.GOOS)
 	}

@@ -1,4 +1,4 @@
-package ops
+package oci
 
 import (
 	"context"
@@ -114,7 +114,7 @@ func TestCleanupContainerStorageDryRunAndSafety(t *testing.T) {
 		},
 		images: []containerImage{{ID: "old-unused", Created: now - 120, Containers: 0, Size: 100}, {ID: "old-running", Created: now - 120, Containers: 1, Size: 100}, {ID: "new-unused", Created: now - 10, Containers: 0, Size: 100}},
 	}
-	service := &HostOperationsService{}
+	service := &Service{shared: &hostruntime.Shared{}}
 	result, err := service.cleanupContainerStorageLocked(context.Background(), fake, ociStoragePolicy{Runtime: "podman", MinAgeSeconds: 60}, ptrInt64(150), true, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestBuildAndPushPodmanAdapterArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	var calls [][]string
-	service := &HostOperationsService{
+	service := &Service{
 		containerCommandFn: func(_ context.Context, command string, args ...string) ([]byte, error) {
 			if command != "/fake/podman" || len(args) < 1 || args[0] != "info" {
 				return nil, errors.New("unexpected readiness command")
@@ -150,7 +150,7 @@ func TestBuildAndPushPodmanAdapterArguments(t *testing.T) {
 			calls = append(calls, append([]string{command}, args...))
 			return nil
 		},
-		shared: hostruntime.Shared{
+		shared: &hostruntime.Shared{
 			ContainerLookPathFn: func(command string) (string, error) {
 				if command == "podman" {
 					return "/fake/podman", nil
@@ -195,7 +195,7 @@ func TestBuildAndPushPodmanAdapterBuildArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 	var calls [][]string
-	service := &HostOperationsService{
+	service := &Service{
 		containerCommandFn: func(_ context.Context, command string, args ...string) ([]byte, error) {
 			if command != "/fake/podman" || len(args) < 1 || args[0] != "info" {
 				return nil, errors.New("unexpected readiness command")
@@ -206,7 +206,7 @@ func TestBuildAndPushPodmanAdapterBuildArgs(t *testing.T) {
 			calls = append(calls, append([]string{command}, args...))
 			return nil
 		},
-		shared: hostruntime.Shared{
+		shared: &hostruntime.Shared{
 			ContainerLookPathFn: func(command string) (string, error) {
 				if command == "podman" {
 					return "/fake/podman", nil
@@ -263,8 +263,8 @@ func TestBuildAndPushPodmanAdapterUntagOptOutAndDigestRef(t *testing.T) {
 		t.Fatal(err)
 	}
 	var calls [][]string
-	newService := func() *HostOperationsService {
-		return &HostOperationsService{
+	newService := func() *Service {
+		return &Service{
 			containerCommandFn: func(_ context.Context, command string, args ...string) ([]byte, error) {
 				if command != "/fake/podman" || len(args) < 1 || args[0] != "info" {
 					return nil, errors.New("unexpected readiness command")
@@ -275,7 +275,7 @@ func TestBuildAndPushPodmanAdapterUntagOptOutAndDigestRef(t *testing.T) {
 				calls = append(calls, append([]string{command}, args...))
 				return nil
 			},
-			shared: hostruntime.Shared{
+			shared: &hostruntime.Shared{
 				ContainerLookPathFn: func(command string) (string, error) {
 					if command == "podman" {
 						return "/fake/podman", nil
@@ -330,7 +330,7 @@ func TestBuildAndPushPodmanAdapterUntagFailureIsWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 	var calls [][]string
-	service := &HostOperationsService{
+	service := &Service{
 		containerCommandFn: func(_ context.Context, command string, args ...string) ([]byte, error) {
 			if command != "/fake/podman" || len(args) < 1 || args[0] != "info" {
 				return nil, errors.New("unexpected readiness command")
@@ -344,7 +344,7 @@ func TestBuildAndPushPodmanAdapterUntagFailureIsWarning(t *testing.T) {
 			}
 			return nil
 		},
-		shared: hostruntime.Shared{
+		shared: &hostruntime.Shared{
 			ContainerLookPathFn: func(command string) (string, error) {
 				if command == "podman" {
 					return "/fake/podman", nil

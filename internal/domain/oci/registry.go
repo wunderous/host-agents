@@ -1,11 +1,12 @@
-package ops
+package oci
 
 import (
 	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/wunderous/host-agents/internal/domain/kubernetes"
+	"github.com/wunderous/host-agents/internal/contract/k8sname"
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 type InstallOCIRegistryArgs struct {
@@ -18,38 +19,38 @@ type InstallOCIRegistryArgs struct {
 	NodePort     int    `json:"nodePort,omitempty"`
 }
 
-func (s *HostOperationsService) DeleteOCIRegistry(args InstallOCIRegistryArgs, onData func(string)) (map[string]any, error) {
-	namespace := defaultString(args.Namespace, "registry-system")
+func (s *Service) DeleteOCIRegistry(args InstallOCIRegistryArgs, onData func(string)) (map[string]any, error) {
+	namespace := textutil.Default(args.Namespace, "registry-system")
 	if strings.TrimSpace(args.VMName) == "" {
 		return nil, errors.New("vmName is required")
 	}
-	if err := kubernetes.ValidateIdentifier(namespace, "namespace"); err != nil {
+	if err := k8sname.Validate(namespace, "namespace"); err != nil {
 		return nil, err
 	}
-	targetURI, err := s.kubernetesTargetURI(args.VMName)
+	targetURI, err := s.deps.KubernetesTargetURI(args.VMName)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.DeleteK8sResource(K8sResourceArgs{URI: targetURI, Kind: "namespace", ResourceName: namespace}, onData); err != nil {
+	if _, err := s.deps.DeleteK8sResource(targetURI, "namespace", namespace, "", onData); err != nil {
 		return nil, err
 	}
 	return map[string]any{"vmName": args.VMName, "namespace": namespace, "deleted": true}, nil
 }
 
-func (s *HostOperationsService) InstallOCIRegistry(args InstallOCIRegistryArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) InstallOCIRegistry(args InstallOCIRegistryArgs, onData func(string)) (map[string]any, error) {
 	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
 	}
-	namespace := defaultString(args.Namespace, "registry-system")
-	name := defaultString(args.Name, "local-registry")
-	image := defaultString(args.Image, "registry:3")
-	storageSize := defaultString(args.StorageSize, "20Gi")
-	storageClass := defaultString(args.StorageClass, "local-path")
-	if err := kubernetes.ValidateIdentifier(namespace, "namespace"); err != nil {
+	namespace := textutil.Default(args.Namespace, "registry-system")
+	name := textutil.Default(args.Name, "local-registry")
+	image := textutil.Default(args.Image, "registry:3")
+	storageSize := textutil.Default(args.StorageSize, "20Gi")
+	storageClass := textutil.Default(args.StorageClass, "local-path")
+	if err := k8sname.Validate(namespace, "namespace"); err != nil {
 		return nil, err
 	}
-	if err := kubernetes.ValidateIdentifier(name, "name"); err != nil {
+	if err := k8sname.Validate(name, "name"); err != nil {
 		return nil, err
 	}
 	if strings.ContainsAny(image, "\r\n'") || strings.TrimSpace(image) == "" {
@@ -133,11 +134,11 @@ spec:
       targetPort: registry
       nodePort: %d
 `, namespace, name, namespace, storageClass, storageSize, name, namespace, name, name, image, name, name, namespace, name, nodePort)
-	targetURI, err := s.kubernetesTargetURI(vmName)
+	targetURI, err := s.deps.KubernetesTargetURI(vmName)
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.ApplyManifest(ApplyManifestArgs{URI: targetURI, Manifest: manifest}, onData)
+	out, err := s.deps.ApplyManifest(targetURI, manifest, onData)
 	if err != nil {
 		return nil, err
 	}
@@ -148,14 +149,14 @@ spec:
 	return out, nil
 }
 
-func (s *HostOperationsService) GetOCIRegistryStatus(args InstallOCIRegistryArgs) (map[string]any, error) {
-	namespace := defaultString(args.Namespace, "registry-system")
-	name := defaultString(args.Name, "local-registry")
-	targetURI, err := s.kubernetesTargetURI(args.VMName)
+func (s *Service) GetOCIRegistryStatus(args InstallOCIRegistryArgs) (map[string]any, error) {
+	namespace := textutil.Default(args.Namespace, "registry-system")
+	name := textutil.Default(args.Name, "local-registry")
+	targetURI, err := s.deps.KubernetesTargetURI(args.VMName)
 	if err != nil {
 		return nil, err
 	}
-	deployment, err := s.GetK8sResource(K8sResourceArgs{URI: targetURI, Kind: "deployment", ResourceName: name, Namespace: namespace})
+	deployment, err := s.deps.GetK8sResource(targetURI, "deployment", name, namespace)
 	if err != nil {
 		return nil, err
 	}

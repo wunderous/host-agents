@@ -1,4 +1,4 @@
-package ops
+package oci
 
 import (
 	"context"
@@ -91,8 +91,8 @@ func loadOciStoragePolicyAt(path string) (ociStoragePolicy, error) {
 	return policy, nil
 }
 
-func (s *HostOperationsService) loadOciStoragePolicy() (ociStoragePolicy, error) {
-	return loadOciStoragePolicyAt(s.ociStoragePolicyPath)
+func (s *Service) loadOciStoragePolicy() (ociStoragePolicy, error) {
+	return loadOciStoragePolicyAt(s.storagePolicyPath)
 }
 
 func saveOciStoragePolicyAt(path string, policy ociStoragePolicy) error {
@@ -133,13 +133,13 @@ func saveOciStoragePolicyAt(path string, policy ociStoragePolicy) error {
 	return nil
 }
 
-func (s *HostOperationsService) saveOciStoragePolicy(policy ociStoragePolicy) error {
-	return saveOciStoragePolicyAt(s.ociStoragePolicyPath, policy)
+func (s *Service) saveOciStoragePolicy(policy ociStoragePolicy) error {
+	return saveOciStoragePolicyAt(s.storagePolicyPath, policy)
 }
 
 // InspectContainerStorage reports runtime-reported storage categories without
 // changing images, containers, volumes, networks, or policy state.
-func (s *HostOperationsService) InspectContainerStorage(ctx context.Context, args InspectContainerStorageArgs) (map[string]any, error) {
+func (s *Service) InspectContainerStorage(ctx context.Context, args InspectContainerStorageArgs) (map[string]any, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -170,14 +170,14 @@ func (s *HostOperationsService) InspectContainerStorage(ctx context.Context, arg
 // CleanupContainerStorage removes only age-eligible unused images and asks the
 // selected adapter to prune supported build cache. It never invokes a broad
 // system prune and never force-removes image references.
-func (s *HostOperationsService) CleanupContainerStorage(ctx context.Context, args CleanupContainerStorageArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) CleanupContainerStorage(ctx context.Context, args CleanupContainerStorageArgs, onData func(string)) (map[string]any, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("cleanup_container_storage is unsupported on %s host agents", runtime.GOOS)
 	}
-	if err := s.requireSharedHostOwner("cleanup_container_storage"); err != nil {
+	if err := s.shared.RequireSharedHostOwner("cleanup_container_storage"); err != nil {
 		return nil, err
 	}
 	policy, err := s.loadOciStoragePolicy()
@@ -197,8 +197,8 @@ func (s *HostOperationsService) CleanupContainerStorage(ctx context.Context, arg
 	if err != nil {
 		return nil, err
 	}
-	s.ociStorageMu.Lock()
-	defer s.ociStorageMu.Unlock()
+	s.storageMu.Lock()
+	defer s.storageMu.Unlock()
 	return s.cleanupContainerStorageLocked(ctx, adapter, policy, args.MaxBytes, args.DryRun, onData)
 }
 
@@ -217,7 +217,7 @@ func validateCleanupPolicy(policy ociStoragePolicy, maxBytes *int64) error {
 	return nil
 }
 
-func (s *HostOperationsService) cleanupContainerStorageLocked(ctx context.Context, adapter containerRuntimeAdapter, policy ociStoragePolicy, maxBytes *int64, dryRun bool, onData func(string)) (map[string]any, error) {
+func (s *Service) cleanupContainerStorageLocked(ctx context.Context, adapter containerRuntimeAdapter, policy ociStoragePolicy, maxBytes *int64, dryRun bool, onData func(string)) (map[string]any, error) {
 	if maxBytes != nil {
 		policy.MaxBytes = *maxBytes
 	}
@@ -325,14 +325,14 @@ func (s *HostOperationsService) cleanupContainerStorageLocked(ctx context.Contex
 
 // ConfigureOciStorage persists the storage policy and optionally runs
 // the same safe cleanup operation used by the explicit cleanup tool.
-func (s *HostOperationsService) ConfigureOciStorage(ctx context.Context, args ConfigureOciStorageArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) ConfigureOciStorage(ctx context.Context, args ConfigureOciStorageArgs, onData func(string)) (map[string]any, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("configure_oci_storage is unsupported on %s host agents", runtime.GOOS)
 	}
-	if err := s.requireSharedHostOwner("configure_oci_storage"); err != nil {
+	if err := s.shared.RequireSharedHostOwner("configure_oci_storage"); err != nil {
 		return nil, err
 	}
 	policy, err := s.loadOciStoragePolicy()
@@ -351,8 +351,8 @@ func (s *HostOperationsService) ConfigureOciStorage(ctx context.Context, args Co
 	if err := validateOciStoragePolicy(policy); err != nil {
 		return nil, err
 	}
-	s.ociStorageMu.Lock()
-	defer s.ociStorageMu.Unlock()
+	s.storageMu.Lock()
+	defer s.storageMu.Unlock()
 	if err := s.saveOciStoragePolicy(policy); err != nil {
 		return nil, err
 	}
@@ -375,12 +375,12 @@ func (s *HostOperationsService) ConfigureOciStorage(ctx context.Context, args Co
 
 // enforceOciStoragePolicy is called by image builds only. It is deliberately
 // not called by heartbeat processing.
-func (s *HostOperationsService) enforceOciStoragePolicy(ctx context.Context, builder string, onData func(string)) (map[string]any, error) {
-	if strings.TrimSpace(s.ociStoragePolicyPath) == "" || (builder != "podman" && builder != "auto") {
+func (s *Service) enforceOciStoragePolicy(ctx context.Context, builder string, onData func(string)) (map[string]any, error) {
+	if strings.TrimSpace(s.storagePolicyPath) == "" || (builder != "podman" && builder != "auto") {
 		return nil, nil
 	}
-	s.ociStorageMu.Lock()
-	defer s.ociStorageMu.Unlock()
+	s.storageMu.Lock()
+	defer s.storageMu.Unlock()
 	policy, err := s.loadOciStoragePolicy()
 	if err != nil {
 		return nil, err
