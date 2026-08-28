@@ -20,7 +20,7 @@ import (
 
 	hostexec "github.com/wunderous/host-agents/internal/exec"
 	"github.com/wunderous/host-agents/internal/heartbeat"
-	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
@@ -73,7 +73,7 @@ type BridgeDiagnosticResult struct {
 
 // HostOperationsService implements host MCP operations against Incus on Linux.
 type HostOperationsService struct {
-	runtime                 *provider.Runtime
+	runtime                 *hostruntime.Runtime
 	tenantID                string
 	resourceRegistry        ResourceRegistry
 	toolsFn                 func(providerID string) []string
@@ -90,11 +90,10 @@ type HostOperationsService struct {
 	guestBridgeRelay       *tcpRelayManager
 	localLLMRelay          *localLLMRelayManager
 	postgresqlServiceRelay *postgresqlServiceRelayManager
-	allowInsecureDownloads bool
 	resourceSnapshot       func() map[string]any
 	// kubectlRunner is an explicit test seam for the PostgreSQL service ordering
 	// and readiness contract. Production execution always delegates to the
-	// active Kubernetes provider.
+	// active Kubernetes hostruntime.
 	kubectlRunner func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error)
 	// commandRunnerFn is a test seam for provider command execution (Incus
 	// CLI). When nil, the real provider runtime is used.
@@ -108,9 +107,8 @@ type HostOperationsService struct {
 }
 
 type Options struct {
-	ProviderID                provider.ID
+	ProviderID                hostruntime.ID
 	ToolsForProvider          func(providerID string) []string
-	AllowInsecureDownloads    bool
 	InstanceID                string
 	AgentID                   string
 	OwnershipMode             string
@@ -125,8 +123,8 @@ type Options struct {
 }
 
 func NewHostOperationsService(opts Options) *HostOperationsService {
-	cfg := provider.ResolveConfig(opts.ProviderID)
-	rt := provider.NewRuntime(cfg)
+	cfg := hostruntime.ResolveConfig(opts.ProviderID)
+	rt := hostruntime.NewRuntime(cfg)
 	toolsFn := opts.ToolsForProvider
 	if toolsFn == nil {
 		toolsFn = func(string) []string { return nil }
@@ -163,7 +161,6 @@ func NewHostOperationsService(opts Options) *HostOperationsService {
 		guestBridgeRelay:        newTCPRelayManager(),
 		localLLMRelay:           newPersistentLocalLLMRelayManagerAtWithLock(opts.RelayConfigDir, opts.SharedHostResourceLockDir),
 		postgresqlServiceRelay:  newPersistentPostgreSQLServiceRelayManagerAt(postgresRelayConfigDir),
-		allowInsecureDownloads:  opts.AllowInsecureDownloads,
 	}
 }
 
@@ -208,7 +205,7 @@ func (s *HostOperationsService) DescribeHost() HostInfoResult {
 		HostName:       host,
 		ProviderID:     pid,
 		LXCBinaryPath:  s.runtime.ProviderBinary(),
-		SystemctlPath:  provider.DefaultSystemctlPath,
+		SystemctlPath:  hostruntime.DefaultSystemctlPath,
 		SupportedTools: s.toolsFn(pid),
 	}
 	if uri, err := resourceid.HostURI(s.tenantID, firstNonEmpty(s.agentID, host)); err == nil {
@@ -918,16 +915,16 @@ func restartServiceCommand(serviceName string) []string {
 		// --no-block is essential when the target is this very host-agent
 		// service: waiting for systemd to stop this process would close the MCP
 		// operation before the caller can receive its result.
-		return []string{provider.DefaultSystemctlPath, "--user", "--no-block", "restart", serviceName}
+		return []string{hostruntime.DefaultSystemctlPath, "--user", "--no-block", "restart", serviceName}
 	}
-	return []string{provider.DefaultSystemctlPath, "restart", serviceName}
+	return []string{hostruntime.DefaultSystemctlPath, "restart", serviceName}
 }
 
 func serviceStatusCommand(serviceName string) []string {
 	if strings.HasPrefix(serviceName, "opute-") {
-		return []string{provider.DefaultSystemctlPath, "--user", "is-active", serviceName}
+		return []string{hostruntime.DefaultSystemctlPath, "--user", "is-active", serviceName}
 	}
-	return []string{provider.DefaultSystemctlPath, "is-active", serviceName}
+	return []string{hostruntime.DefaultSystemctlPath, "is-active", serviceName}
 }
 
 func serviceStateUnit(serviceName string) string {
@@ -941,19 +938,19 @@ func serviceStateCommand(serviceName, state, scope string) []string {
 		// systemctl can enqueue the restart and return a truthful scheduled
 		// result before the current agent is stopped.
 		return []string{
-			provider.DefaultSystemdRunPath,
+			hostruntime.DefaultSystemdRunPath,
 			"--user",
 			"--unit=" + serviceStateUnit(serviceName),
 			"--collect",
 			"--no-block",
-			provider.DefaultSystemctlPath,
+			hostruntime.DefaultSystemctlPath,
 			"--user",
 			"--no-block",
 			"restart",
 			serviceName,
 		}
 	}
-	command := []string{provider.DefaultSystemctlPath}
+	command := []string{hostruntime.DefaultSystemctlPath}
 	if scope == "user" {
 		command = append(command, "--user")
 	} else {
@@ -1016,7 +1013,7 @@ func (s *HostOperationsService) SetHostServiceState(args SetHostServiceStateArgs
 	// Recipes commonly reconcile a unit file immediately before changing its
 	// state. Reload the matching manager so systemd cannot act on a stale unit
 	// definition (notably after an ExecStart or environment change).
-	reloadCommand := []string{provider.DefaultSystemctlPath}
+	reloadCommand := []string{hostruntime.DefaultSystemctlPath}
 	if scope == "user" {
 		reloadCommand = append(reloadCommand, "--user", "daemon-reload")
 	} else {
@@ -1055,7 +1052,7 @@ func (s *HostOperationsService) EnsureHostServiceSupervisor(args EnsureHostServi
 		return nil, errors.New("scope must be user or system")
 	}
 	if scope == "system" {
-		result, err := s.hostCommandRunner([]string{provider.DefaultSystemctlPath, "is-system-running"}, onData, 10*time.Second)
+		result, err := s.hostCommandRunner([]string{hostruntime.DefaultSystemctlPath, "is-system-running"}, onData, 10*time.Second)
 		if err != nil || (result.ExitCode != 0 && strings.TrimSpace(result.Stdout) == "") {
 			return nil, fmt.Errorf("system service supervisor is unavailable: %s", firstNonEmpty(result.Stderr, result.Stdout, "systemctl failed"))
 		}
@@ -1086,7 +1083,7 @@ func (s *HostOperationsService) EnsureHostServiceSupervisor(args EnsureHostServi
 	if err != nil || observed.ExitCode != 0 || !strings.Contains(observed.Stdout, "Linger=yes") {
 		return nil, fmt.Errorf("verify persistent user service supervisor: %s", firstNonEmpty(observed.Stderr, observed.Stdout, "Linger=yes was not observed"))
 	}
-	bus, err := s.hostCommandRunner([]string{provider.DefaultSystemctlPath, "--user", "show-environment"}, onData, 15*time.Second)
+	bus, err := s.hostCommandRunner([]string{hostruntime.DefaultSystemctlPath, "--user", "show-environment"}, onData, 15*time.Second)
 	if err != nil || bus.ExitCode != 0 {
 		return nil, fmt.Errorf("user service supervisor bus is unavailable: %s", firstNonEmpty(bus.Stderr, bus.Stdout, "systemctl --user failed"))
 	}
@@ -1237,7 +1234,7 @@ func probeTCPPort(ctx context.Context, host string, port int) (bool, error) {
 func (s *HostOperationsService) waitForSystemdActive(service string, onData func(string), timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		res, err := s.hostCommandRunner([]string{provider.DefaultSystemctlPath, "is-active", service}, onData, 0)
+		res, err := s.hostCommandRunner([]string{hostruntime.DefaultSystemctlPath, "is-active", service}, onData, 0)
 		if err == nil && res.ExitCode == 0 && strings.TrimSpace(res.Stdout) == "active" {
 			return nil
 		}
@@ -1249,7 +1246,7 @@ func (s *HostOperationsService) waitForSystemdActive(service string, onData func
 func (s *HostOperationsService) waitForVMServiceActive(vmName, service string, onData func(string), timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		res, err := s.runVMExec(vmName, []string{provider.DefaultSystemctlPath, "is-active", service}, onData, 30*time.Second)
+		res, err := s.runVMExec(vmName, []string{hostruntime.DefaultSystemctlPath, "is-active", service}, onData, 30*time.Second)
 		if err == nil && res.ExitCode == 0 && strings.TrimSpace(res.Stdout) == "active" {
 			return nil
 		}

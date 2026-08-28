@@ -16,8 +16,8 @@ import (
 
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/ops"
-	"github.com/wunderous/host-agents/internal/provider"
 	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
 )
@@ -25,7 +25,7 @@ import (
 func newStandaloneTestServer(t *testing.T, allowMutations bool) *Server {
 	t.Helper()
 	svc := ops.NewHostOperationsService(ops.Options{
-		ProviderID: provider.IDIncus,
+		ProviderID: hostruntime.IDIncus,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)
 			if err != nil {

@@ -14,8 +14,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/hostmcp"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/ops"
-	"github.com/wunderous/host-agents/internal/provider"
 	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/internal/transport"
 )
@@ -34,7 +34,7 @@ func requireIncus(t *testing.T) {
 func newLiveServer(t *testing.T) (*hostmcp.Server, *httptest.Server) {
 	t.Helper()
 	svc := ops.NewHostOperationsService(ops.Options{
-		ProviderID: provider.IDIncus,
+		ProviderID: hostruntime.IDIncus,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)
 			if err != nil {
@@ -211,7 +211,7 @@ func TestLiveVMCreateListDelete(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	if err := provider.RequireLinux(); err != nil {
+	if err := hostruntime.RequireLinux(); err != nil {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())

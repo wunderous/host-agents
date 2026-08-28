@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
@@ -28,7 +28,7 @@ func (s *HostOperationsService) InspectHostService(args InspectHostServiceArgs, 
 	if scope != "user" && scope != "system" {
 		return nil, fmt.Errorf("scope must be user or system")
 	}
-	commandPrefix := []string{provider.DefaultSystemctlPath}
+	commandPrefix := []string{hostruntime.DefaultSystemctlPath}
 	if scope == "user" {
 		commandPrefix = append(commandPrefix, "--user")
 	}
@@ -66,7 +66,7 @@ func (s *HostOperationsService) ListHostServices(scope string) (map[string]any, 
 	if scope != "user" && scope != "system" {
 		return nil, fmt.Errorf("scope must be user or system")
 	}
-	commandPrefix := []string{provider.DefaultSystemctlPath}
+	commandPrefix := []string{hostruntime.DefaultSystemctlPath}
 	if scope == "user" {
 		commandPrefix = append(commandPrefix, "--user")
 	}

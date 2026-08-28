@@ -4,21 +4,21 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 func TestRestartHostServiceCommandUsesUserManagerForOputeUnits(t *testing.T) {
-	want := []string{provider.DefaultSystemctlPath, "--user", "--no-block", "restart", "opute-host-agent.service"}
+	want := []string{hostruntime.DefaultSystemctlPath, "--user", "--no-block", "restart", "opute-host-agent.service"}
 	if got := restartServiceCommand("opute-host-agent.service"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v, want %#v", got, want)
 	}
-	if got := serviceStatusCommand("opute-host-agent.service"); !reflect.DeepEqual(got, []string{provider.DefaultSystemctlPath, "--user", "is-active", "opute-host-agent.service"}) {
+	if got := serviceStatusCommand("opute-host-agent.service"); !reflect.DeepEqual(got, []string{hostruntime.DefaultSystemctlPath, "--user", "is-active", "opute-host-agent.service"}) {
 		t.Fatalf("status command got %#v", got)
 	}
 }
 
 func TestRestartHostServiceCommandKeepsSystemScopeForOtherUnits(t *testing.T) {
-	if got := restartServiceCommand("ssh.service"); !reflect.DeepEqual(got, []string{provider.DefaultSystemctlPath, "restart", "ssh.service"}) {
+	if got := restartServiceCommand("ssh.service"); !reflect.DeepEqual(got, []string{hostruntime.DefaultSystemctlPath, "restart", "ssh.service"}) {
 		t.Fatalf("got %#v", got)
 	}
 }
@@ -31,12 +31,12 @@ func TestRestartHostServiceRejectsUnsafeUnitNames(t *testing.T) {
 
 func TestServiceStateRestartUsesDetachedUserSystemdJob(t *testing.T) {
 	want := []string{
-		provider.DefaultSystemdRunPath,
+		hostruntime.DefaultSystemdRunPath,
 		"--user",
 		"--unit=host-service-state-bootstrap-service",
 		"--collect",
 		"--no-block",
-		provider.DefaultSystemctlPath,
+		hostruntime.DefaultSystemctlPath,
 		"--user",
 		"--no-block",
 		"restart",

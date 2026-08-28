@@ -43,17 +43,14 @@ linters:
     - staticcheck
     - unused
     - bodyclose
-    # depguard is intentionally NOT enabled yet: it errors out when no rule
-    # carries a non-empty allow/deny list, and the packages its rules name do
-    # not exist until W7. Enable it together with the first real rule below.
+    - depguard
 
   # Package-boundary rules (S4.3), enabled as their packages appear.
-  # depguard rejects an empty rule set, so both the linter and this settings
-  # block stay commented until W3/W7 give them something real to guard:
-  #
-  # settings:
-  #   depguard:
-  #     rules:
+  # depguard rejects an empty rule set, so the rules below stay commented until
+  # their packages exist. hostruntime is live as of the W7 fold.
+  settings:
+    depguard:
+      rules:
   #       no-mcp-in-domains:            # W3
   #         list-mode: lax
   #         files: ["**/internal/domain/**"]
@@ -68,17 +65,17 @@ linters:
   #         deny:
   #           - pkg: "github.com/wunderous/host-agents/internal/domain/llm"
   #             desc: "S4.3 rule 1: cross-domain access is an injected cordis.ServiceKey."
-  #       hostruntime-knows-no-domains: # W7 -- S9.2 rule 1 (D3)
-  #         list-mode: lax
-  #         files: ["**/internal/hostruntime/**"]
-  #         deny:
-  #           - pkg: "github.com/wunderous/host-agents/internal/domain"
-  #             desc: >-
-  #               S9.2 rule 1: hostruntime is identity, config, and execution
-  #               handles. A domain type reaching it means the member belonged to
-  #               that domain -- this is how internal/ops came back under a new
-  #               name. Enforced by the compiler too; this catches the
-  #               transitive edge (domain/a -> hostruntime -> domain/b).
+        hostruntime-knows-no-domains: # W7 -- S9.2 rule 1 (D3)
+          list-mode: lax
+          files: ["**/internal/hostruntime/**"]
+          deny:
+            - pkg: "github.com/wunderous/host-agents/internal/domain"
+              desc: >-
+                S9.2 rule 1: hostruntime is identity, config, and execution
+                handles. A domain type reaching it means the member belonged to
+                that domain -- this is how internal/ops came back under a new
+                name. Enforced by the compiler too; this catches the
+                transitive edge (domain/a -> hostruntime -> domain/b).
 
   exclusions:
     generated: lax

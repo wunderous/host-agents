@@ -15,8 +15,8 @@ import (
 
 	hostcapability "github.com/wunderous/host-agents/internal/capability"
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/ops"
-	"github.com/wunderous/host-agents/internal/provider"
 	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/tools"
 )
@@ -48,7 +48,7 @@ func (c *capturingCapability) ValidateResult(_ context.Context, result *mcp.Call
 func newBindingTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	svc := ops.NewHostOperationsService(ops.Options{
-		ProviderID: provider.IDIncus,
+		ProviderID: hostruntime.IDIncus,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)
 			if err != nil {

@@ -13,8 +13,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/hostmcp"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/ops"
-	"github.com/wunderous/host-agents/internal/provider"
 	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/internal/transport"
 )
@@ -22,7 +22,7 @@ import (
 func newLiveServerWithOwnership(t *testing.T, instanceID, checkpointPath string) (*hostmcp.Server, *httptest.Server) {
 	t.Helper()
 	svc := ops.NewHostOperationsService(ops.Options{
-		ProviderID:              provider.IDIncus,
+		ProviderID:              hostruntime.IDIncus,
 		InstanceID:              instanceID,
 		OwnershipMode:           "enforce",
 		SharedHostOwnerInstance: instanceID,

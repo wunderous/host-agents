@@ -8,7 +8,7 @@ import (
 
 	"github.com/wunderous/host-agents/internal/authz"
 	"github.com/wunderous/host-agents/internal/config"
-	"github.com/wunderous/host-agents/internal/provider"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/state"
 	"github.com/wunderous/host-agents/internal/transport"
 )
@@ -94,5 +94,5 @@ func validateConfig(cfg config.Config) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	return provider.RequireSupportedPlatform(provider.ID(cfg.ProviderID))
+	return hostruntime.RequireSupportedPlatform(hostruntime.ID(cfg.ProviderID))
 }

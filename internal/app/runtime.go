@@ -7,8 +7,8 @@ import (
 
 	"github.com/wunderous/host-agents/internal/config"
 	"github.com/wunderous/host-agents/internal/hostmcp"
+	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/ops"
-	"github.com/wunderous/host-agents/internal/provider"
 	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/internal/version"
@@ -60,7 +60,7 @@ func buildHostRuntime(cfg config.Config, logger *slog.Logger) ([]string, *ops.Ho
 	}
 
 	svc := ops.NewHostOperationsService(ops.Options{
-		ProviderID:                provider.NormalizeProviderID(cfg.ProviderID),
+		ProviderID:                hostruntime.NormalizeProviderID(cfg.ProviderID),
 		TenantID:                  cfg.TenantID,
 		InstanceID:                cfg.InstanceID,
 		AgentID:                   cfg.RemoteAgentID,
@@ -70,7 +70,6 @@ func buildHostRuntime(cfg config.Config, logger *slog.Logger) ([]string, *ops.Ho
 		OciStoragePolicyPath:      filepath.Join(cfg.HostResourceLockDir, "oci-storage-policy.json"),
 		SQLiteDatabaseRoot:        cfg.SQLiteDatabaseRoot,
 		SharedHostOwnerInstance:   cfg.SharedHostOwnerInstance,
-		AllowInsecureDownloads:    cfg.AgentMode == "standalone" && cfg.StandaloneAllowInsecureDownloads,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)
 			if err != nil {
