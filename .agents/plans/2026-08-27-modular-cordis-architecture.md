@@ -247,11 +247,11 @@ Every `domain/<x>` package has the same four files:
 ```
 internal/domain/postgres/
 ├── plugin.go      # cordis.Plugin: ID(), Inject() []ServiceKey, Apply(*Context) (Effect, error)
-│                  # ALSO the single edit site for this domain's capabilities:
-│                  # descriptor + effect + handler + admission + task, one typed
-│                  # registration into catalog.Registry (§7.2)
+│                  # Wiring only. NO descriptors, no capability table (§9.3 D4).
 ├── service.go     # the domain's methods, lifted off *HostOperationsService
-├── dispatch.go    # registers this domain's tool names on dispatch.Registry
+├── dispatch.go    # this domain's capabilities: one typed registration each,
+│                  # carrying handler + effect + admission + task. The DESCRIPTOR
+│                  # stays in catalog/ per ADR 0009 and §4.3 rule 4 (§9.3 D4).
 └── *_test.go
 ```
 
@@ -651,9 +651,12 @@ What changes:
   `tasks/registry.go` (429) and `resource/admission.go` (309) become derived.
 - Adding a capability: **one file, one package.** Down from five and two.
 
-This wants confirming against the conformance plan's Milestone 2, which owns
-`catalog.go` — see §9 D4. It is a change of edit site, not of authority, but it
-touches an ADR's mechanism and should be agreed rather than assumed.
+> **Corrected 2026-08-28 (§9.3, D4).** The paragraph above is wrong where it says
+> the mechanism already exists. `catalog.Registry`'s overlay API cannot carry a
+> built-in capability: `baseConflict` rejects any `OperationID` already in `base`,
+> and every built-in is in `base`. Descriptors stay in the catalog; the domain
+> registration carries handler, effect, admission and task only. The target is
+> **two** edit sites, not one — see §9.3 for what that does and does not buy.
 
 ### 7.3 Boundary rules the compiler cannot state
 
@@ -784,7 +787,7 @@ deletion during a refactor.
 |---|---|---|---|
 | ~~D1~~ | ~~`OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE`~~ **RESOLVED 2026-08-27** — gate kept, default off, bypass surface enumerated. [ADR 0011](../../docs/adr/0011-legacy-handshake-compatibility-gate.md) · decision record `legacy-handshake-compatibility-gate`. | — | **W4 done; M2 unblocked** |
 | ~~D2~~ | ~~Anchor placement strategy~~ **RESOLVED 2026-08-28** — terminal homes confirmed as written; `handleProviderInstall` lands in `internal/provider/`, freed by folding the VM runtime handle into `hostruntime` as §4.2 already specifies. See §9.1. | — | **`ha-k1` and W7 unblocked** |
-| D4 | Capability registration site | §7.2 moves capability authoring into `domain/*/plugin.go` using `catalog.Registry`'s existing overlay API. ADR 0009's authority property is preserved — one snapshot, `tools/list` 1:1 — but the ADR's mechanism section describes a different edit site, and conformance M2 owns `catalog.go`. Agree it with that plan rather than assuming it. | W8 — blocks nothing else, but W7 should not land a shape W8 must immediately rework |
+| ~~D4~~ | ~~Capability registration site~~ | **Resolved 2026-08-28, §9.3.** §4.3 rule 4 stands: domains register behaviour, never descriptors. §7.2's premise that `catalog.Registry`'s overlay API can carry built-in capabilities is false — `baseConflict` rejects any registration whose `OperationID` is already in `base`, and the built-ins *are* `base`. | W8 |
 | ~~D3~~ | ~~`hostruntime` scope~~ **RESOLVED 2026-08-28** — three-part membership rule, compiler- and ratchet-enforced. Measured: only 9 of 22 fields qualify. See §9.2. | — | **W7 unblocked** |
 
 ### 9.1 D2 resolved — anchor homes, and where `handleProviderInstall` lives
@@ -903,6 +906,69 @@ to a file that is about to move is the exact failure D2 spent its time on, so
 **W7 creates it**, anchored to `internal/hostruntime/` and the enabled depguard
 rule, with `verify` running the rule-2 consumer test. Until then this section is
 the authority and §11's W7 row carries the obligation.
+
+### 9.3 D4 resolved — descriptors stay in the catalog, domains register behaviour
+
+**§4.3 rule 4 wins. §7.2's mechanism claim is wrong and is amended here.**
+
+§7.2 argues the move is free because "the mechanism already exists":
+`catalog.Registry` is registration-based, so a domain can register its own
+capability through `Register` / `RegisterRegistration`. Checked against the
+code, that is true only for *dynamic provider* capabilities and false for the
+built-ins §7.2 is talking about:
+
+- [`Registry.baseConflict`](../../internal/catalog/registry.go) rejects any
+  registration whose `OperationID` already appears in `base`, and
+  `RegisterRegistration` returns `"conflicts with the base catalog"` when it does.
+- `base` is the compiled-in snapshot: the embedded JSON schemas
+  (`schemas/all-tools.json`, `incus-tools.json`) plus the Go descriptors in
+  [`internal/tools/catalog.go`](../../internal/tools/catalog.go). Every built-in
+  host capability is in it.
+- So the overlay API is ADR 0002's dynamic-provider path, deliberately walled off
+  from the authoritative catalog. Routing built-ins through it would mean either
+  removing them from `base` — which is exactly the second source of truth ADR 0009
+  exists to prevent — or defeating `baseConflict`.
+
+**The decision.** A capability's *identity* — name, input and output schema,
+description, version — stays in the catalog, authored where ADR 0009 puts it and
+validated by `ValidateBase`. A capability's *behaviour* — handler, effect,
+admission rule, task metadata — becomes one typed registration in
+`domain/x/dispatch.go`.
+
+That is the split §4.3 rule 4 already states, and it is the one the code allows.
+
+**What this actually buys, stated honestly.** §7.2's headline of "one file, one
+package" is not reachable without breaking ADR 0009. What is reachable is **two**:
+the authoritative descriptor, and one typed registration. The win is real and it
+is not the descriptor — it is collapsing the four *behavioural* tool-name-keyed
+tables that exist today into fields on one registration:
+
+| Today | After |
+|---|---|
+| `capabilityEffects` map — [`internal/tools/capability.go`](../../internal/tools/capability.go) | `Effect` field on the registration |
+| `standalone.go` — 181 tool-name keys | derived from the registrations |
+| `tasks/registry.go` — 50 tool-name keys | `Task` field |
+| `resource/admission.go` — 3 tool-name keys | `Admission` field |
+| dispatch — 102 registrations (W2) | the registration itself |
+
+Five edit sites become two, and a capability that forgets its effect fails to
+compile rather than falling through `capabilityEffect`'s inference at runtime —
+which is the standalone-table inference ADR 0009's Context paragraph already
+names as a defect.
+
+**Enforcement.** Extend W2's parity test: every catalog tool has exactly one
+domain registration and every registration names a catalog tool. W2 already
+proved that shape works — it is the same assertion, over a richer value.
+
+**Consequence for W7, which is why this had to be decided first.** Domain
+packages get the typed registration in `dispatch.go`. There is no descriptor
+table in `plugin.go` and no per-domain catalog. W7 can land its cut without W8
+reworking it.
+
+**Amends §4.2:** the `plugin.go` line reading "descriptor + effect + handler +
+admission + task, one typed registration into `catalog.Registry`" is wrong on
+both the file and the mechanism. The registration lives in `dispatch.go`, carries
+effect/handler/admission/task, and does not go through `catalog.Registry`.
 
 ## 10. Verification
 
