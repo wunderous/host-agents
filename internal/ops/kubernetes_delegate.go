@@ -122,3 +122,27 @@ func (s *HostOperationsService) executeKubernetesProvider(operation, targetURI s
 // HelmValuesYAML is a pure encoder with no service state; the dispatch layer
 // calls it directly.
 func HelmValuesYAML(raw any) string { return kubernetes.HelmValuesYAML(raw) }
+
+func (s *HostOperationsService) ListNamespaces(vmName string) ([]string, error) {
+	return s.kubernetes().ListNamespaces(vmName)
+}
+
+func (s *HostOperationsService) ListStorageClasses(vmName string) ([]string, error) {
+	return s.kubernetes().ListStorageClasses(vmName)
+}
+
+func (s *HostOperationsService) ListIngressClasses(vmName string) ([]string, error) {
+	return s.kubernetes().ListIngressClasses(vmName)
+}
+
+func (s *HostOperationsService) ListServices(vmName, namespace string) ([]map[string]any, error) {
+	return s.kubernetes().ListServices(vmName, namespace)
+}
+
+func (s *HostOperationsService) ListPods(vmName, namespace string) ([]map[string]any, error) {
+	return s.kubernetes().ListPods(vmName, namespace)
+}
+
+func (s *HostOperationsService) ListDeployments(vmName, namespace string) ([]map[string]any, error) {
+	return s.kubernetes().ListDeployments(vmName, namespace)
+}
