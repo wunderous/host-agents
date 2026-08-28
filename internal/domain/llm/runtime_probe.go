@@ -1,4 +1,4 @@
-package ops
+package llm
 
 import (
 	"bufio"
@@ -42,7 +42,7 @@ type RuntimeModel struct {
 	Name string `json:"name"`
 }
 
-func (s *HostOperationsService) ProbeOpenAICompatibleServer(ctx context.Context, args ProbeOpenAICompatibleArgs) (*RuntimeObservation, error) {
+func (s *Service) ProbeOpenAICompatibleServer(ctx context.Context, args ProbeOpenAICompatibleArgs) (*RuntimeObservation, error) {
 	base, err := normalizeOpenAIBaseURL(args.Endpoint)
 	if err != nil {
 		return nil, err

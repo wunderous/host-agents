@@ -1,4 +1,4 @@
-package ops
+package llm
 
 import (
 	"context"
@@ -47,7 +47,7 @@ func TestProbeOpenAICompatibleServer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &HostOperationsService{}
+	service := &Service{}
 	result, err := service.ProbeOpenAICompatibleServer(context.Background(), ProbeOpenAICompatibleArgs{
 		Endpoint:    server.URL + "/v1",
 		ModelRef:    "hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M",
@@ -68,7 +68,7 @@ func TestProbeOpenAICompatibleServerDoesNotReturnBearerToken(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":[{"id":"model"}]}`))
 	}))
 	defer server.Close()
-	result, err := (&HostOperationsService{}).ProbeOpenAICompatibleServer(context.Background(), ProbeOpenAICompatibleArgs{Endpoint: server.URL, BearerToken: strings.Repeat("s", 32)})
+	result, err := (&Service{}).ProbeOpenAICompatibleServer(context.Background(), ProbeOpenAICompatibleArgs{Endpoint: server.URL, BearerToken: strings.Repeat("s", 32)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestProbeOpenAICompatibleServerRejectsReasoningOnlyStream(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := (&HostOperationsService{}).ProbeOpenAICompatibleServer(context.Background(), ProbeOpenAICompatibleArgs{
+	result, err := (&Service{}).ProbeOpenAICompatibleServer(context.Background(), ProbeOpenAICompatibleArgs{
 		Endpoint:    server.URL,
 		ModelRef:    "model",
 		IncludeChat: true,

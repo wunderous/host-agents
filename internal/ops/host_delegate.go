@@ -15,6 +15,7 @@ import (
 // delegating methods so the dispatch registry and the domains that have not
 // moved yet are unaffected; this file disappears with internal/ops itself.
 type (
+	ConfigureAgentConnectionArgs    = host.ConfigureAgentConnectionArgs
 	ExtractHostArchiveArgs          = host.ExtractHostArchiveArgs
 	EnsureHostArtifactArgs          = host.EnsureHostArtifactArgs
 	ProbeHTTPEndpointArgs           = host.ProbeHTTPEndpointArgs
@@ -156,4 +157,8 @@ func (s *HostOperationsService) ProbeIncusGPU(args map[string]any) (map[string]a
 
 func (s *HostOperationsService) EnsureHostTool(args EnsureHostToolArgs, onData func(string)) (map[string]any, error) {
 	return s.host().EnsureHostTool(args, onData)
+}
+
+func (s *HostOperationsService) ConfigureAgentConnection(args ConfigureAgentConnectionArgs, onData func(string)) (map[string]any, error) {
+	return s.host().ConfigureAgentConnection(args, onData)
 }

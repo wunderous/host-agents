@@ -10,6 +10,9 @@ import (
 // delegating methods so the dispatch registry and the domains that have not
 // moved yet are unaffected; this file disappears with internal/ops itself.
 type (
+	ProbeOpenAICompatibleArgs       = llm.ProbeOpenAICompatibleArgs
+	RuntimeObservation              = llm.RuntimeObservation
+	RuntimeModel                    = llm.RuntimeModel
 	LocalLLMProbeResult             = llm.LocalLLMProbeResult
 	LocalLLMPrerequisitesResult     = llm.LocalLLMPrerequisitesResult
 	LocalLLMRelayArgs               = llm.LocalLLMRelayArgs
@@ -125,3 +128,7 @@ func (s *HostOperationsService) RemoveLocalLLMK3sProxy(vmName, namespace string)
 
 // DefaultOllamaModel is the model the dispatch layer falls back to.
 const DefaultOllamaModel = llm.DefaultOllamaModel
+
+func (s *HostOperationsService) ProbeOpenAICompatibleServer(ctx context.Context, args ProbeOpenAICompatibleArgs) (*RuntimeObservation, error) {
+	return s.llm().ProbeOpenAICompatibleServer(ctx, args)
+}
