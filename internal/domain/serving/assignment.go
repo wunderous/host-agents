@@ -1,4 +1,4 @@
-package ops
+package serving
 
 import (
 	"encoding/json"
@@ -383,7 +383,7 @@ func servingArtifactCommand(artifact map[string]any) (string, string, error) {
 // and Kubernetes deployment mutations remain composed from the generic
 // build/push/apply primitives; this call still provides the common admission
 // and readiness contract for those runtimes.
-func (s *HostOperationsService) ReconcileServingAssignment(args ServingAssignmentArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) ReconcileServingAssignment(args ServingAssignmentArgs, onData func(string)) (map[string]any, error) {
 	if err := validateServingAssignment(args); err != nil {
 		return nil, err
 	}
@@ -455,7 +455,7 @@ func (s *HostOperationsService) ReconcileServingAssignment(args ServingAssignmen
 						_ = os.Remove(pidFile)
 					}
 					if adoptUnmanagedReadyService && preStart != "" {
-						if _, err := s.RunAgentShell(preStart, onData); err != nil {
+						if err := s.deps.RunAgentShell(preStart, onData); err != nil {
 							releaseServingLaunch(args)
 							return nil, fmt.Errorf("source artifact pre-start command failed: %w", err)
 						}
@@ -478,7 +478,7 @@ func (s *HostOperationsService) ReconcileServingAssignment(args ServingAssignmen
 					// a host-agent process restart while retaining assignment-scoped stop
 					// and replacement semantics.
 					launch := servingLaunchCommand(pidFile, args.AssignmentID, command, restartPolicy)
-					if _, err := s.RunAgentShell(launch, onData); err != nil {
+					if err := s.deps.RunAgentShell(launch, onData); err != nil {
 						releaseServingLaunch(args)
 						return nil, err
 					}
@@ -495,11 +495,7 @@ func (s *HostOperationsService) ReconcileServingAssignment(args ServingAssignmen
 	}
 
 	if args.Runtime == "process" && args.ServiceUnit != "" {
-		serviceResult, err := s.SetHostServiceState(SetHostServiceStateArgs{
-			ServiceName: args.ServiceUnit,
-			State:       args.DesiredState,
-			Scope:       "user",
-		}, onData)
+		serviceResult, err := s.deps.SetHostServiceState(args.ServiceUnit, args.DesiredState, "user", onData)
 		if err != nil {
 			return nil, err
 		}

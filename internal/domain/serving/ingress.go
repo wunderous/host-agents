@@ -1,7 +1,6 @@
-package ops
+package serving
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,7 +21,7 @@ type DiscoverServiceIngressArgs struct {
 
 // DiscoverServiceIngress is the generic form of ingress discovery. Product
 // hostnames are never inferred; the caller supplies named endpoint bindings.
-func (s *HostOperationsService) DiscoverServiceIngress(args DiscoverServiceIngressArgs) (map[string]any, error) {
+func (s *Service) DiscoverServiceIngress(args DiscoverServiceIngressArgs) (map[string]any, error) {
 	if strings.TrimSpace(args.VMName) == "" || len(args.Endpoints) == 0 {
 		return nil, errors.New("vmName and endpoints are required")
 	}
@@ -32,25 +31,16 @@ func (s *HostOperationsService) DiscoverServiceIngress(args DiscoverServiceIngre
 		}
 	}
 	vmName := strings.TrimSpace(args.VMName)
-	ns := defaultString(strings.TrimSpace(args.IngressNamespace), "kube-system")
-	svcName := defaultString(strings.TrimSpace(args.IngressService), "traefik")
-	info, err := s.GetVMInfo(vmName, true)
+	ns := orDefault(args.IngressNamespace, "kube-system")
+	svcName := orDefault(args.IngressService, "traefik")
+	bridgeIP, err := s.deps.BridgeIP(vmName)
 	if err != nil {
 		return nil, err
 	}
-	bridgeIP := firstBridgeIPv4(info.IPv4)
 	if bridgeIP == "" {
 		return nil, fmt.Errorf("no bridge IPv4 found for target %s", vmName)
 	}
-
-	lbIP, lbHostname := "", ""
-	stdout, err := s.runKubernetesKubectl(vmName, []string{"get", "svc", svcName, "-n", ns, "-o", "json"}, "discover ingress service")
-	if err == nil && stdout != "" {
-		var service map[string]any
-		if json.Unmarshal([]byte(stdout), &service) == nil {
-			lbIP, lbHostname = loadBalancerFromService(service)
-		}
-	}
+	lbIP, lbHostname := s.deps.IngressLoadBalancer(vmName, ns, svcName)
 	ingressIP := bridgeIP
 	if lbIP != "" {
 		ingressIP = lbIP
@@ -66,4 +56,12 @@ func (s *HostOperationsService) DiscoverServiceIngress(args DiscoverServiceIngre
 		"endpoints":            args.Endpoints,
 		"note":                 "Use the caller-declared endpoint bindings with the observed ingress address; no product hostname was inferred.",
 	}, nil
+}
+
+// orDefault substitutes a fallback for a blank value.
+func orDefault(value, fallback string) string {
+	if trimmed := strings.TrimSpace(value); trimmed != "" {
+		return trimmed
+	}
+	return fallback
 }

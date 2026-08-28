@@ -51,14 +51,29 @@ linters:
   settings:
     depguard:
       rules:
-  #       no-mcp-in-domains:            # W3
-  #         list-mode: lax
-  #         files: ["**/internal/domain/**"]
-  #         deny:
-  #           - pkg: "github.com/wunderous/host-agents/internal/transport"
-  #             desc: "C-02: MCP terminates at internal/cordis/mcp."
-  #           - pkg: "github.com/wunderous/host-agents/internal/mcpserver"
-  #             desc: "C-02: domains register handlers, not MCP."
+        no-mcp-in-domains: # W3 -- enabled with the first domain package
+          list-mode: lax
+          files: ["**/internal/domain/**"]
+          deny:
+            - pkg: "github.com/wunderous/host-agents/internal/transport"
+              desc: "C-02: MCP terminates at internal/cordis/mcp."
+            - pkg: "github.com/wunderous/host-agents/internal/mcpserver"
+              desc: "C-02: domains register handlers, not MCP."
+        no-ops-in-domains: # W7 -- the strangler only runs one way
+          list-mode: lax
+          files: ["**/internal/domain/**"]
+          deny:
+            - pkg: "github.com/wunderous/host-agents/internal/ops"
+              desc: >-
+                internal/ops delegates INTO domains and is deleted last. A
+                domain importing it would make the dependency mutual and strand
+                the extraction; take what you need as an injected Deps seam.
+        no-cross-domain-serving: # W7, one block per domain
+          list-mode: lax
+          files: ["**/internal/domain/serving/**"]
+          deny:
+            - pkg: "github.com/wunderous/host-agents/internal/domain"
+              desc: "S4.3 rule 1: cross-domain access is an injected seam, not an import."
   #       no-cross-domain-incus:        # W7, one block per domain
   #         list-mode: lax
   #         files: ["**/internal/domain/incus/**"]

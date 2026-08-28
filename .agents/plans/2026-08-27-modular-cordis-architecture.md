@@ -530,12 +530,24 @@ ensures they are written against the *post-split* owner, not the current one.
 
 *Attaches to:* `ha-k1`, conformance M5.
 
-### W7 — Partition `internal/ops` in one commit
+### W7 — Partition `internal/ops` ~~in one commit~~ as a strangler
 
-The eight `domain/*` packages and `hostruntime` from §4.2, together. Extracting
-one domain from a flat package means building the shared-seam boundary
-(`hostruntime`) anyway; having built it, the other seven are mechanical, and
-doing them separately means seven rounds of deciding what is "shared".
+**Revised 2026-08-28.** The eight `domain/*` packages and `hostruntime` from
+§4.2 land one domain at a time, not in a single commit. `internal/ops` keeps
+thin delegating methods and type aliases while each domain takes ownership, and
+is deleted last.
+
+The original reason for one commit was that extracting one domain means building
+the shared-seam boundary anyway, and doing them separately means seven rounds of
+deciding what is "shared". That reason is spent: §9.2 decided the membership
+rule once, `hostruntime.Shared` exists, and nothing about domains two through
+eight re-opens the question. What one commit would still cost is a single
+unreviewable diff across 19k lines with no green state in between.
+
+Progress: **`serving` extracted 2026-08-28** (2 operations, 4 injected seams).
+It is the pattern for the rest -- a domain declares what it needs from other
+domains as `Deps`, stated in primitives rather than in another domain's types,
+so no two domains ever import each other.
 
 Sequenced **after** W1 (anchors already terminal) and **after** W2's partition
 assertion exists (so the cut is verifiable). `ha-k4`'s Ollama move is one of the

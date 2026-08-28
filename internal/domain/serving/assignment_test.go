@@ -1,4 +1,4 @@
-package ops
+package serving
 
 import (
 	"net"
@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 func genericServingAssignment() ServingAssignmentArgs {
@@ -29,13 +31,13 @@ func genericServingAssignment() ServingAssignmentArgs {
 func TestReconcileServingAssignmentRejectsVMTarget(t *testing.T) {
 	args := genericServingAssignment()
 	args.Target = map[string]any{"hostId": "host-a", "resourceId": "vm-a", "kind": "virtual-machine", "instanceType": "vm"}
-	if _, err := (&HostOperationsService{}).ReconcileServingAssignment(args, nil); err == nil {
+	if _, err := testService().ReconcileServingAssignment(args, nil); err == nil {
 		t.Fatal("expected VM target to be rejected")
 	}
 }
 
 func TestReconcileServingAssignmentAcceptsExplicitContainerTarget(t *testing.T) {
-	result, err := (&HostOperationsService{}).ReconcileServingAssignment(genericServingAssignment(), nil)
+	result, err := testService().ReconcileServingAssignment(genericServingAssignment(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +168,7 @@ func TestReconcileServingAssignmentDoesNotDuplicateLiveProcess(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Remove(pidFile) })
 
-	result, err := (&HostOperationsService{}).ReconcileServingAssignment(args, nil)
+	result, err := testService().ReconcileServingAssignment(args, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,4 +178,25 @@ func TestReconcileServingAssignmentDoesNotDuplicateLiveProcess(t *testing.T) {
 	if result["starting"] != true {
 		t.Fatalf("expected starting state, got %#v", result)
 	}
+}
+
+// testService builds the domain with deps that fail loudly. These tests cover
+// validation and local process supervision, neither of which crosses a domain
+// boundary -- so a call into any dep here means the boundary moved, and the
+// test should say so rather than silently exercise a stub.
+func testService() *Service {
+	return New(&hostruntime.Shared{}, Deps{
+		RunAgentShell: func(string, func(string)) error {
+			panic("serving unit tests must not reach the host domain")
+		},
+		SetHostServiceState: func(string, string, string, func(string)) (map[string]any, error) {
+			panic("serving unit tests must not reach the host domain")
+		},
+		BridgeIP: func(string) (string, error) {
+			panic("serving unit tests must not reach the incus domain")
+		},
+		IngressLoadBalancer: func(string, string, string) (string, string) {
+			panic("serving unit tests must not reach the kubernetes domain")
+		},
+	})
 }
