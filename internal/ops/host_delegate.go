@@ -49,7 +49,7 @@ func (s *HostOperationsService) host() *host.Service {
 			return s.VMInventoryCapacity()
 		},
 		RunVMExec: func(vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
-			return s.runVMExec(vmName, guestArgv, onData, timeout)
+			return s.incus().RunVMExec(vmName, guestArgv, onData, timeout)
 		},
 		SupportedTools: s.toolsFn,
 	})

@@ -1,4 +1,4 @@
-package ops
+package incus
 
 import (
 	"errors"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/wunderous/host-agents/internal/fsutil"
 	"github.com/wunderous/host-agents/internal/resourceid"
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 const (
@@ -38,7 +39,7 @@ type ContainerStatusResult struct {
 	InstanceType  string `json:"instanceType"`
 }
 
-func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, onData func(string)) (ContainerStatusResult, error) {
+func (s *Service) ProvisionContainer(args ProvisionContainerArgs, onData func(string)) (ContainerStatusResult, error) {
 	name := strings.TrimSpace(args.ContainerName)
 	if name == "" {
 		return ContainerStatusResult{}, errors.New("containerName is required")
@@ -78,8 +79,8 @@ func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, 
 			onData(fmt.Sprintf("Reusing existing Incus container %q", name))
 		}
 		started, startErr := s.commandRunner([]string{"start", name}, onData, 2*time.Minute)
-		if startErr != nil || (started.ExitCode != 0 && !strings.Contains(strings.ToLower(firstNonEmpty(started.Stderr, started.Stdout)), "already running")) {
-			return ContainerStatusResult{}, fmt.Errorf("start existing container: %s", firstNonEmpty(started.Stderr, started.Stdout, errString(startErr, "incus start failed")))
+		if startErr != nil || (started.ExitCode != 0 && !strings.Contains(strings.ToLower(textutil.FirstNonEmpty(started.Stderr, started.Stdout)), "already running")) {
+			return ContainerStatusResult{}, fmt.Errorf("start existing container: %s", textutil.FirstNonEmpty(started.Stderr, started.Stdout, textutil.ErrString(startErr, "incus start failed")))
 		}
 		if err := s.ensureIncusInstanceAutostart(name); err != nil {
 			return ContainerStatusResult{}, err
@@ -130,12 +131,12 @@ func (s *HostOperationsService) ProvisionContainer(args ProvisionContainerArgs, 
 	return s.containerStatusResult(name, image, "running"), nil
 }
 
-func (s *HostOperationsService) containerStatusResult(name, image, status string) ContainerStatusResult {
+func (s *Service) containerStatusResult(name, image, status string) ContainerStatusResult {
 	result := ContainerStatusResult{ContainerName: name, Image: image, Status: status, InstanceType: "container"}
 	if uri, err := resourceid.ContainerURI(s.shared.TenantID, name); err == nil {
 		result.URI = uri.String()
 		if s.shared.ResourceRegistry != nil {
-			_ = s.RegisterResource(result.URI, map[string]any{
+			_ = s.shared.RegisterResource(result.URI, map[string]any{
 				"providerInstanceName": name,
 				"displayName":          name,
 				"instanceType":         "container",
@@ -145,7 +146,7 @@ func (s *HostOperationsService) containerStatusResult(name, image, status string
 	return result
 }
 
-func (s *HostOperationsService) incusInstanceExists(name string) (bool, error) {
+func (s *Service) incusInstanceExists(name string) (bool, error) {
 	res, err := s.commandRunner([]string{"list", name, "--format", "csv"}, nil, 30*time.Second)
 	if err != nil {
 		return false, err
@@ -156,7 +157,7 @@ func (s *HostOperationsService) incusInstanceExists(name string) (bool, error) {
 	return strings.TrimSpace(res.Stdout) != "", nil
 }
 
-func (s *HostOperationsService) launchIncusContainer(name, image, disk string, cpus int, memory string, nesting bool, onData func(string), timeout time.Duration) error {
+func (s *Service) launchIncusContainer(name, image, disk string, cpus int, memory string, nesting bool, onData func(string), timeout time.Duration) error {
 	if onData != nil {
 		onData(fmt.Sprintf("Launching Incus system container %q...", name))
 	}
@@ -190,7 +191,7 @@ func (s *HostOperationsService) launchIncusContainer(name, image, disk string, c
 	}
 	launched, err := s.commandRunner(launch, onData, timeout)
 	if err != nil || launched.ExitCode != 0 {
-		return fmt.Errorf("launch container: %s", firstNonEmpty(launched.Stderr, launched.Stdout, errString(err, fmt.Sprintf("incus exited %d", launched.ExitCode))))
+		return fmt.Errorf("launch container: %s", textutil.FirstNonEmpty(launched.Stderr, launched.Stdout, textutil.ErrString(err, fmt.Sprintf("incus exited %d", launched.ExitCode))))
 	}
 	if nesting {
 		if err := s.ensureContainerRuntimeDevices(name); err != nil {
@@ -200,21 +201,21 @@ func (s *HostOperationsService) launchIncusContainer(name, image, disk string, c
 	return s.ensureIncusInstanceAutostart(name)
 }
 
-func (s *HostOperationsService) ensureIncusInstanceAutostart(name string) error {
+func (s *Service) ensureIncusInstanceAutostart(name string) error {
 	return s.setIncusInstanceConfig(name, "boot.autostart", "true")
 }
 
-func (s *HostOperationsService) attachContainerGPUDevices(name string, wslLibs bool, onData func(string)) error {
+func (s *Service) attachContainerGPUDevices(name string, wslLibs bool, onData func(string)) error {
 	if onData != nil {
 		onData("Attaching GPU devices to container...")
 	}
 	if fsutil.Exists("/dev/dxg") {
-		if err := s.ensureIncusDevice(name, "dxg", []string{"config", "device", "add", name, "dxg", "unix-char", "source=/dev/dxg", "path=/dev/dxg"}); err != nil {
+		if err := s.EnsureDevice(name, "dxg", []string{"config", "device", "add", name, "dxg", "unix-char", "source=/dev/dxg", "path=/dev/dxg"}); err != nil {
 			return fmt.Errorf("attach /dev/dxg: %w", err)
 		}
 	}
 	if wslLibs && fsutil.Exists(wslGpuLibHostPath) {
-		if err := s.ensureIncusDevice(name, "wsl-gpu-libs", []string{
+		if err := s.EnsureDevice(name, "wsl-gpu-libs", []string{
 			"config", "device", "add", name, "wsl-gpu-libs", "disk",
 			"source=" + wslGpuLibHostPath, "path=" + wslGpuLibGuestPath, "readonly=true",
 		}); err != nil {
@@ -226,14 +227,14 @@ func (s *HostOperationsService) attachContainerGPUDevices(name string, wslLibs b
 		{"/usr/lib/wsl/lib/nvidia-smi", "/usr/bin/nvidia-smi"},
 	} {
 		if fsutil.Exists(candidate.host) {
-			_ = s.ensureIncusDevice(name, "nvidia-smi-bind", []string{
+			_ = s.EnsureDevice(name, "nvidia-smi-bind", []string{
 				"config", "device", "add", name, "nvidia-smi-bind", "disk",
 				"source=" + candidate.host, "path=" + candidate.guest, "readonly=true",
 			})
 			break
 		}
 	}
-	if err := s.ensureIncusDevice(name, "gpu", []string{"config", "device", "add", name, "gpu", "gpu", "gputype=physical"}); err != nil {
+	if err := s.EnsureDevice(name, "gpu", []string{"config", "device", "add", name, "gpu", "gpu", "gputype=physical"}); err != nil {
 		return err
 	}
 	return s.restartIncusInstanceIfRunning(name, onData)
@@ -264,7 +265,7 @@ func evaluateSystemContainerGPUProbe(guestStdout string) (gpuOK bool, status str
 	}
 }
 
-func (s *HostOperationsService) ensureIncusDevice(instance, deviceName string, addArgs []string) error {
+func (s *Service) EnsureDevice(instance, deviceName string, addArgs []string) error {
 	if err := s.assertIncusOwnership(instance, "configure_instance_device"); err != nil {
 		return err
 	}
@@ -274,7 +275,7 @@ func (s *HostOperationsService) ensureIncusDevice(instance, deviceName string, a
 	}
 	added, err := s.commandRunner(addArgs, nil, 2*time.Minute)
 	if err != nil || added.ExitCode != 0 {
-		detail := firstNonEmpty(added.Stderr, added.Stdout, errString(err, "device add failed"))
+		detail := textutil.FirstNonEmpty(added.Stderr, added.Stdout, textutil.ErrString(err, "device add failed"))
 		if strings.Contains(strings.ToLower(detail), "already exists") || strings.Contains(strings.ToLower(detail), "already configured") {
 			return nil
 		}
@@ -283,18 +284,18 @@ func (s *HostOperationsService) ensureIncusDevice(instance, deviceName string, a
 	return nil
 }
 
-func (s *HostOperationsService) attachContainerModelVolume(name, volume string, onData func(string)) error {
+func (s *Service) attachContainerModelVolume(name, volume string, onData func(string)) error {
 	volume = strings.TrimSpace(volume)
 	if volume == "" {
 		return nil
 	}
-	return s.ensureIncusDevice(name, "models", []string{
+	return s.EnsureDevice(name, "models", []string{
 		"config", "device", "add", name, "models", "disk",
 		"pool=default", "source=" + volume, "path=/models",
 	})
 }
 
-func (s *HostOperationsService) ensureContainerHTTPProxy(name string, port int, onData func(string)) error {
+func (s *Service) ensureContainerHTTPProxy(name string, port int, onData func(string)) error {
 	deviceName := "http-proxy"
 	show, err := s.commandRunner([]string{"config", "device", "show", name}, nil, 30*time.Second)
 	if err == nil && show.ExitCode == 0 && strings.Contains(show.Stdout, deviceName+":") {
@@ -303,7 +304,7 @@ func (s *HostOperationsService) ensureContainerHTTPProxy(name string, port int, 
 	proxy := fmt.Sprintf("listen=tcp:0.0.0.0:%d,connect=tcp:127.0.0.1:%d", port, port)
 	added, err := s.commandRunner([]string{"config", "device", "add", name, deviceName, "proxy", proxy}, onData, 2*time.Minute)
 	if err != nil || added.ExitCode != 0 {
-		detail := firstNonEmpty(added.Stderr, added.Stdout, errString(err, "proxy add failed"))
+		detail := textutil.FirstNonEmpty(added.Stderr, added.Stdout, textutil.ErrString(err, "proxy add failed"))
 		if strings.Contains(strings.ToLower(detail), "already exists") {
 			return nil
 		}
@@ -357,11 +358,11 @@ fi
 `
 
 // ProbeGPUContainer launches a disposable system container, probes GPU visibility, and deletes it.
-func (s *HostOperationsService) ProbeGPUContainer(onData func(string)) (map[string]any, error) {
+func (s *Service) ProbeGPUContainer(onData func(string)) (map[string]any, error) {
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("probe_gpu_container is unsupported on %s host agents", runtime.GOOS)
 	}
-	hostTier, err := s.ProbeIncusGPU(map[string]any{"qemuRequired": false})
+	hostTier, err := s.deps.ProbeIncusGPU(map[string]any{"qemuRequired": false})
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +392,7 @@ func (s *HostOperationsService) ProbeGPUContainer(onData func(string)) (map[stri
 		result["error"] = err.Error()
 		return result, nil
 	}
-	if err := s.waitForVMExecReady(probeName, 3*time.Minute, onData); err != nil {
+	if err := s.WaitForVMExecReady(probeName, 3*time.Minute, onData); err != nil {
 		result["status"] = "probe_exec_unavailable"
 		result["error"] = err.Error()
 		return result, nil
@@ -399,7 +400,7 @@ func (s *HostOperationsService) ProbeGPUContainer(onData func(string)) (map[stri
 	prep, prepErr := s.commandRunner([]string{"exec", probeName, "--", "sh", "-lc", "command -v python3 >/dev/null 2>&1 || (export DEBIAN_FRONTEND=noninteractive && apt-get update -qq && apt-get install -y -qq python3)"}, onData, 3*time.Minute)
 	if prepErr != nil || prep.ExitCode != 0 {
 		result["status"] = "probe_prepare_failed"
-		result["error"] = firstNonEmpty(prep.Stderr, prep.Stdout, errString(prepErr, "failed to prepare GPU probe container"))
+		result["error"] = textutil.FirstNonEmpty(prep.Stderr, prep.Stdout, textutil.ErrString(prepErr, "failed to prepare GPU probe container"))
 		return result, nil
 	}
 	probe, execErr := s.commandRunner([]string{"exec", probeName, "--", "sh", "-lc", gpuContainerGuestProbeScript}, onData, 90*time.Second)
@@ -411,7 +412,7 @@ func (s *HostOperationsService) ProbeGPUContainer(onData func(string)) (map[stri
 	}
 	if execErr != nil || probe.ExitCode != 0 {
 		result["status"] = "guest_probe_failed"
-		result["guestProbeError"] = firstNonEmpty(probe.Stderr, guestStdout, errString(execErr, "guest probe failed"))
+		result["guestProbeError"] = textutil.FirstNonEmpty(probe.Stderr, guestStdout, textutil.ErrString(execErr, "guest probe failed"))
 		return result, nil
 	}
 	gpuOK, status, blockers := evaluateSystemContainerGPUProbe(guestStdout)
@@ -423,25 +424,11 @@ func (s *HostOperationsService) ProbeGPUContainer(onData func(string)) (map[stri
 	return result, nil
 }
 
-func (s *HostOperationsService) ensureContainerNesting(name string) error {
-	res, err := s.commandRunner([]string{"config", "get", name, "security.nesting"}, nil, 30*time.Second)
-	if err != nil || res.ExitCode != 0 {
-		return fmt.Errorf("read security.nesting: %s", firstNonEmpty(res.Stderr, res.Stdout, "incus config get failed"))
-	}
-	if strings.TrimSpace(res.Stdout) != "true" {
-		set, setErr := s.commandRunner([]string{"config", "set", name, "security.nesting=true"}, nil, 30*time.Second)
-		if setErr != nil || set.ExitCode != 0 {
-			return fmt.Errorf("enable security.nesting: %s", firstNonEmpty(set.Stderr, set.Stdout, "incus config set failed"))
-		}
-	}
-	return s.ensureContainerRuntimeDevices(name)
-}
-
 // ensureContainerRuntimeDevices attaches generic runtime devices required by
 // nested workloads inside an Incus system container.
-func (s *HostOperationsService) ensureContainerRuntimeDevices(name string) error {
+func (s *Service) ensureContainerRuntimeDevices(name string) error {
 	if fsutil.Exists("/dev/kmsg") {
-		if err := s.ensureIncusDevice(name, "kmsg", []string{
+		if err := s.EnsureDevice(name, "kmsg", []string{
 			"config", "device", "add", name, "kmsg", "unix-char",
 			"source=/dev/kmsg", "path=/dev/kmsg",
 		}); err != nil {
@@ -451,7 +438,7 @@ func (s *HostOperationsService) ensureContainerRuntimeDevices(name string) error
 	return nil
 }
 
-func (s *HostOperationsService) restartIncusInstanceIfRunning(name string, onData func(string)) error {
+func (s *Service) restartIncusInstanceIfRunning(name string, onData func(string)) error {
 	info, err := s.commandRunner([]string{"info", name, "--format", "json"}, onData, 30*time.Second)
 	if err != nil || info.ExitCode != 0 {
 		return nil
@@ -464,11 +451,11 @@ func (s *HostOperationsService) restartIncusInstanceIfRunning(name string, onDat
 	}
 	stopped, stopErr := s.commandRunner([]string{"stop", name, "--force"}, onData, 2*time.Minute)
 	if stopErr != nil || stopped.ExitCode != 0 {
-		return fmt.Errorf("stop container for device reload: %s", firstNonEmpty(stopped.Stderr, stopped.Stdout, errString(stopErr, "incus stop failed")))
+		return fmt.Errorf("stop container for device reload: %s", textutil.FirstNonEmpty(stopped.Stderr, stopped.Stdout, textutil.ErrString(stopErr, "incus stop failed")))
 	}
 	started, startErr := s.commandRunner([]string{"start", name}, onData, 2*time.Minute)
 	if startErr != nil || started.ExitCode != 0 {
-		return fmt.Errorf("start container after device reload: %s", firstNonEmpty(started.Stderr, started.Stdout, errString(startErr, "incus start failed")))
+		return fmt.Errorf("start container after device reload: %s", textutil.FirstNonEmpty(started.Stderr, started.Stdout, textutil.ErrString(startErr, "incus start failed")))
 	}
 	return nil
 }

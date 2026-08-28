@@ -1,10 +1,12 @@
-package ops
+package incus
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 // Incus accepts a root disk `size` on any storage pool, but only some drivers
@@ -152,7 +154,7 @@ func poolEnforcesQuota(pool incusStoragePool, mounts []mountEntry) (bool, string
 	return false, fmt.Sprintf("storage pool %q uses the %q driver, which does not enforce root disk quotas", pool.Name, pool.Driver)
 }
 
-func (s *HostOperationsService) readIncusStoragePool(name string) (incusStoragePool, error) {
+func (s *Service) readIncusStoragePool(name string) (incusStoragePool, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return incusStoragePool{}, fmt.Errorf("storage pool name is required")
@@ -162,7 +164,7 @@ func (s *HostOperationsService) readIncusStoragePool(name string) (incusStorageP
 		return incusStoragePool{}, err
 	}
 	if res.ExitCode != 0 {
-		return incusStoragePool{}, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "storage pool query failed"))
+		return incusStoragePool{}, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "storage pool query failed"))
 	}
 	var payload struct {
 		Name   string            `json:"name"`
@@ -172,7 +174,7 @@ func (s *HostOperationsService) readIncusStoragePool(name string) (incusStorageP
 	if err := json.Unmarshal([]byte(res.Stdout), &payload); err != nil {
 		return incusStoragePool{}, err
 	}
-	pool := incusStoragePool{Name: firstNonEmpty(payload.Name, name), Driver: payload.Driver}
+	pool := incusStoragePool{Name: textutil.FirstNonEmpty(payload.Name, name), Driver: payload.Driver}
 	if payload.Config != nil {
 		pool.Source = payload.Config["source"]
 	}
@@ -181,7 +183,7 @@ func (s *HostOperationsService) readIncusStoragePool(name string) (incusStorageP
 
 // resolveRootDiskPool mirrors the pool selection performed by the launch paths
 // so admission inspects the pool the instance will actually use.
-func (s *HostOperationsService) resolveRootDiskPool() (string, error) {
+func (s *Service) resolveRootDiskPool() (string, error) {
 	if devices, err := s.readDefaultProfileDevices(); err == nil {
 		if root := devices["root"]; root.Type == "disk" && strings.TrimSpace(root.Pool) != "" {
 			return strings.TrimSpace(root.Pool), nil
@@ -196,7 +198,7 @@ func (s *HostOperationsService) resolveRootDiskPool() (string, error) {
 // accepting it would report a limit the guest does not have. An implicit
 // default is dropped instead of failing, because the caller asked for no bound
 // and must not be told it received one.
-func (s *HostOperationsService) admitRootDiskQuota(requested string, explicit bool) (rootDiskQuota, error) {
+func (s *Service) admitRootDiskQuota(requested string, explicit bool) (rootDiskQuota, error) {
 	requested = strings.TrimSpace(requested)
 	if requested == "" {
 		return rootDiskQuota{}, nil

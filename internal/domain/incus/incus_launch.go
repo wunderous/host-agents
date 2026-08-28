@@ -1,4 +1,4 @@
-package ops
+package incus
 
 import (
 	"encoding/json"
@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 // normalizeProvisionInstanceType maps caller input to "container" (default) or
@@ -23,7 +25,7 @@ func normalizeProvisionInstanceType(raw string) string {
 	}
 }
 
-func (s *HostOperationsService) readIncusInstanceType(name string) (string, error) {
+func (s *Service) ReadInstanceType(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", errors.New("instance name is required")
@@ -36,7 +38,7 @@ func (s *HostOperationsService) readIncusInstanceType(name string) (string, erro
 		return "", err
 	}
 	if res.ExitCode != 0 {
-		return "", fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "incus info failed"))
+		return "", fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus info failed"))
 	}
 	var info struct {
 		Type string `json:"type"`
@@ -53,13 +55,13 @@ type incusProfileDevice struct {
 	Pool string `json:"pool,omitempty"`
 }
 
-func (s *HostOperationsService) readDefaultProfileDevices() (map[string]incusProfileDevice, error) {
+func (s *Service) readDefaultProfileDevices() (map[string]incusProfileDevice, error) {
 	res, err := s.commandRunner([]string{"query", "/1.0/profiles/default"}, nil, defaultDiscoveryTimeout)
 	if err != nil {
 		return nil, err
 	}
 	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "incus profile query failed"))
+		return nil, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus profile query failed"))
 	}
 	var profile struct {
 		Devices map[string]incusProfileDevice `json:"devices"`
@@ -116,13 +118,13 @@ func resolveIncusImageSource(normalizedLaunchImage string) map[string]any {
 	return map[string]any{"type": "image", "alias": image}
 }
 
-func (s *HostOperationsService) resolveDefaultStoragePool() (string, error) {
+func (s *Service) resolveDefaultStoragePool() (string, error) {
 	res, err := s.commandRunner([]string{"query", "/1.0/storage-pools"}, nil, defaultDiscoveryTimeout)
 	if err != nil {
 		return "", err
 	}
 	if res.ExitCode != 0 {
-		return "", fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "storage pool query failed"))
+		return "", fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "storage pool query failed"))
 	}
 	var entries []string
 	if err := json.Unmarshal([]byte(res.Stdout), &entries); err != nil {
@@ -150,7 +152,7 @@ func (s *HostOperationsService) resolveDefaultStoragePool() (string, error) {
 	return names[0], nil
 }
 
-func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus int, memory, disk string, onData func(string), timeout time.Duration) error {
+func (s *Service) launchIncusVMViaAPI(vmName, image string, cpus int, memory, disk string, onData func(string), timeout time.Duration) error {
 	normalizedImage := normalizeIncusLaunchImage(image)
 	if normalizedImage == "" {
 		normalizedImage = "images:ubuntu/22.04"
@@ -232,7 +234,7 @@ func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus i
 		return err
 	}
 	if create.ExitCode != 0 {
-		return fmt.Errorf("incus create %q: %s", vmName, firstNonEmpty(create.Stderr, create.Stdout, "failed to create VM"))
+		return fmt.Errorf("incus create %q: %s", vmName, textutil.FirstNonEmpty(create.Stderr, create.Stdout, "failed to create VM"))
 	}
 	// Incus profiles may provide a small root disk for VMs. Apply the caller's
 	// requested size explicitly after creation so the provisioning contract is
@@ -255,7 +257,7 @@ func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus i
 			return err
 		}
 		if resize.ExitCode != 0 {
-			return fmt.Errorf("incus resize root disk %q: %s", vmName, firstNonEmpty(resize.Stderr, resize.Stdout, "failed to resize root disk"))
+			return fmt.Errorf("incus resize root disk %q: %s", vmName, textutil.FirstNonEmpty(resize.Stderr, resize.Stdout, "failed to resize root disk"))
 		}
 	}
 
@@ -266,7 +268,7 @@ func (s *HostOperationsService) launchIncusVMViaAPI(vmName, image string, cpus i
 		return err
 	}
 	if start.ExitCode != 0 {
-		return fmt.Errorf("incus start %q: %s", vmName, firstNonEmpty(start.Stderr, start.Stdout, "failed to start VM"))
+		return fmt.Errorf("incus start %q: %s", vmName, textutil.FirstNonEmpty(start.Stderr, start.Stdout, "failed to start VM"))
 	}
 	return nil
 }
@@ -281,15 +283,4 @@ func incusVMConfig(cpus int, memory string) map[string]string {
 		// relying on an operator to start it manually after every reboot.
 		"boot.autostart": "true",
 	}
-}
-
-// ensureIncusVMAutostart repairs existing instances while keeping the
-// restart invariant in one place. New instances receive the same setting in
-// incusVMConfig during creation.
-func (s *HostOperationsService) ensureIncusVMAutostart(vmName string) error {
-	vmName = strings.TrimSpace(vmName)
-	if vmName == "" {
-		return errors.New("vmName is required")
-	}
-	return s.setIncusInstanceConfig(vmName, "boot.autostart", "true")
 }

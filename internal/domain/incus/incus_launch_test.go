@@ -1,9 +1,11 @@
-package ops
+package incus
 
 import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 
 	"github.com/wunderous/host-agents/internal/exec"
 )
@@ -35,7 +37,7 @@ func TestNormalizeProvisionInstanceType(t *testing.T) {
 
 func TestLaunchIncusContainerUsesDefaultResources(t *testing.T) {
 	var launchArgs []string
-	service := &HostOperationsService{}
+	service := &Service{shared: &hostruntime.Shared{}}
 	service.shared.CommandRunnerFn = func(args []string, _ func(string), _ time.Duration) (exec.Result, error) {
 		if len(args) > 0 && args[0] == "launch" {
 			launchArgs = append([]string(nil), args...)

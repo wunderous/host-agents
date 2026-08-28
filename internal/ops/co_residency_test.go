@@ -38,7 +38,7 @@ func TestSharedHostOwnershipRejectsNonOwnerMutation(t *testing.T) {
 			SharedHostOwnerInstance: "dogfood",
 		},
 	}
-	err := service.requireSharedHostOwner("start_local_llm_runtime")
+	err := service.shared.RequireSharedHostOwner("start_local_llm_runtime")
 	if err == nil || !strings.Contains(err.Error(), "shared_host_ownership_required") {
 		t.Fatalf("expected shared-host mismatch, got %v", err)
 	}

@@ -1,4 +1,4 @@
-package ops
+package incus
 
 import (
 	"encoding/json"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/wunderous/host-agents/internal/contract/vminfo"
 	"github.com/wunderous/host-agents/internal/resourceid"
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 type incusListItem struct {
@@ -33,12 +34,12 @@ type incusInstanceState struct {
 	} `json:"network"`
 }
 
-func (s *HostOperationsService) ListVMs(fast bool) (VMListResult, error) {
+func (s *Service) ListVMs(fast bool) (VMListResult, error) {
 	items, err := s.listIncusVirtualMachines()
 	if err != nil {
 		return VMListResult{}, err
 	}
-	vms := make([]VMInfo, 0, len(items))
+	vms := make([]vminfo.VMInfo, 0, len(items))
 	for _, item := range items {
 		info, err := s.mapIncusListItem(item, fast)
 		if err != nil {
@@ -56,7 +57,7 @@ func (s *HostOperationsService) ListVMs(fast bool) (VMListResult, error) {
 // host reports it in DescribeHost, and neither may import the other.
 type VMInventoryCapacity = vminfo.VMInventoryCapacity
 
-func (s *HostOperationsService) VMInventoryCapacity() (VMInventoryCapacity, error) {
+func (s *Service) VMInventoryCapacity() (VMInventoryCapacity, error) {
 	items, err := s.listIncusVirtualMachines()
 	if err != nil {
 		return VMInventoryCapacity{}, err
@@ -102,7 +103,7 @@ func (s *HostOperationsService) VMInventoryCapacity() (VMInventoryCapacity, erro
 }
 
 // VMInventoryStats preserves the compact heartbeat helper used by older callers.
-func (s *HostOperationsService) VMInventoryStats() (running int, total int, err error) {
+func (s *Service) VMInventoryStats() (running int, total int, err error) {
 	capacity, err := s.VMInventoryCapacity()
 	if err != nil {
 		return 0, 0, err
@@ -151,17 +152,17 @@ func parseCapacityBytes(value string) int64 {
 	return int64(parsed * factor)
 }
 
-func (s *HostOperationsService) GetVMInfo(vmName string, fast bool) (VMInfo, error) {
+func (s *Service) GetVMInfo(vmName string, fast bool) (vminfo.VMInfo, error) {
 	vmName = strings.TrimSpace(vmName)
 	if vmName == "" {
-		return VMInfo{}, errors.New("vmName is required")
+		return vminfo.VMInfo{}, errors.New("vmName is required")
 	}
 	if err := s.assertIncusOwnership(vmName, "get_vm_info"); err != nil {
-		return VMInfo{}, err
+		return vminfo.VMInfo{}, err
 	}
 	items, err := s.listIncusVirtualMachines()
 	if err != nil {
-		return VMInfo{}, err
+		return vminfo.VMInfo{}, err
 	}
 	for _, item := range items {
 		if !s.ownedIncusItem(item) {
@@ -171,16 +172,16 @@ func (s *HostOperationsService) GetVMInfo(vmName string, fast bool) (VMInfo, err
 			return s.mapIncusListItem(item, fast)
 		}
 	}
-	return VMInfo{}, fmt.Errorf("VM '%s' not found", vmName)
+	return vminfo.VMInfo{}, fmt.Errorf("VM '%s' not found", vmName)
 }
 
-func (s *HostOperationsService) listIncusVirtualMachines() ([]incusListItem, error) {
+func (s *Service) listIncusVirtualMachines() ([]incusListItem, error) {
 	res, err := s.commandRunner([]string{"list", "--format", "json"}, nil, defaultDiscoveryTimeout)
 	if err != nil {
 		return nil, err
 	}
 	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "incus list failed"))
+		return nil, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus list failed"))
 	}
 	var items []incusListItem
 	if err := json.Unmarshal([]byte(res.Stdout), &items); err != nil {
@@ -198,7 +199,7 @@ func (s *HostOperationsService) listIncusVirtualMachines() ([]incusListItem, err
 	return filtered, nil
 }
 
-func (s *HostOperationsService) mapIncusListItem(item incusListItem, fast bool) (VMInfo, error) {
+func (s *Service) mapIncusListItem(item incusListItem, fast bool) (vminfo.VMInfo, error) {
 	status := mapIncusStatus(item.Status)
 	var agentReady *bool
 	if status == "running" && !fast {
@@ -214,7 +215,7 @@ func (s *HostOperationsService) mapIncusListItem(item incusListItem, fast bool) 
 	if uri, uriErr := resourceid.New(resourceType, s.shared.TenantID, item.Name); uriErr == nil {
 		info.URI = uri.String()
 		if s.shared.ResourceRegistry != nil {
-			_ = s.RegisterResource(info.URI, map[string]any{
+			_ = s.shared.RegisterResource(info.URI, map[string]any{
 				"providerInstanceName": item.Name,
 				"displayName":          info.Name,
 				"instanceType":         info.Type,
@@ -242,11 +243,11 @@ func (s *HostOperationsService) mapIncusListItem(item incusListItem, fast bool) 
 	return info, nil
 }
 
-func buildVMInfoFromIncusListItem(item incusListItem, agentReady *bool) VMInfo {
+func buildVMInfoFromIncusListItem(item incusListItem, agentReady *bool) vminfo.VMInfo {
 	cpus := extractIncusCPUCount(item)
 	memory := extractIncusMemory(item)
 	disk := extractIncusDisk(item)
-	info := VMInfo{
+	info := vminfo.VMInfo{
 		Kind:       resourceid.TypeVM,
 		Name:       item.Name,
 		Type:       mapIncusInstanceType(item.Type),
@@ -458,13 +459,13 @@ func formatIncusBytes(value any) string {
 	return fmt.Sprintf("%dB", int64(bytes))
 }
 
-func (s *HostOperationsService) readGuestCpuCount(vmName string) (int, error) {
+func (s *Service) readGuestCpuCount(vmName string) (int, error) {
 	res, err := s.commandRunner([]string{"exec", vmName, "--", "nproc"}, nil, 15*time.Second)
 	if err != nil {
 		return 0, err
 	}
 	if res.ExitCode != 0 {
-		return 0, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "nproc failed"))
+		return 0, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "nproc failed"))
 	}
 	cpus, err := strconv.Atoi(strings.TrimSpace(res.Stdout))
 	if err != nil || cpus <= 0 {
@@ -540,7 +541,7 @@ func extractIPv4FromState(state map[string]any) []string {
 	return ips
 }
 
-func (s *HostOperationsService) readIncusInstanceIPv4(vmName string) ([]string, error) {
+func (s *Service) readIncusInstanceIPv4(vmName string) ([]string, error) {
 	if err := s.assertIncusOwnership(vmName, "read_instance_state"); err != nil {
 		return nil, err
 	}
@@ -550,7 +551,7 @@ func (s *HostOperationsService) readIncusInstanceIPv4(vmName string) ([]string, 
 		return nil, err
 	}
 	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "incus query failed"))
+		return nil, fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus query failed"))
 	}
 	var state incusInstanceState
 	if err := json.Unmarshal([]byte(res.Stdout), &state); err != nil {
@@ -571,7 +572,7 @@ func urlPathEscape(name string) string {
 	return strings.ReplaceAll(name, "/", "%2F")
 }
 
-func (s *HostOperationsService) waitForIncusAgent(vmName string, timeout time.Duration, onData func(string)) error {
+func (s *Service) waitForIncusAgent(vmName string, timeout time.Duration, onData func(string)) error {
 	if timeout <= 0 {
 		timeout = 5 * time.Minute
 	}
@@ -586,12 +587,12 @@ func (s *HostOperationsService) waitForIncusAgent(vmName string, timeout time.Du
 	return fmt.Errorf("timed out waiting for Incus VM agent on %q", vmName)
 }
 
-func (s *HostOperationsService) probeIncusAgent(vmName string) bool {
+func (s *Service) probeIncusAgent(vmName string) bool {
 	res, err := s.commandRunner([]string{"exec", vmName, "--", "true"}, nil, 15*time.Second)
 	return err == nil && res.ExitCode == 0
 }
 
-func (s *HostOperationsService) setIncusInstanceConfig(vmName, key, value string) error {
+func (s *Service) setIncusInstanceConfig(vmName, key, value string) error {
 	if key != oputeIncusOwnerLabel {
 		if err := s.assertIncusOwnership(vmName, "set_instance_config"); err != nil {
 			return err
@@ -602,7 +603,7 @@ func (s *HostOperationsService) setIncusInstanceConfig(vmName, key, value string
 		return err
 	}
 	if res.ExitCode != 0 {
-		return fmt.Errorf("%s", firstNonEmpty(res.Stderr, res.Stdout, "incus config set failed"))
+		return fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus config set failed"))
 	}
 	return nil
 }

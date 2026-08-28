@@ -1,10 +1,11 @@
-package ops
+package incus
 
 import (
 	"os/exec"
 	"time"
 
 	"github.com/wunderous/host-agents/internal/heartbeat"
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 type LocalPrerequisitesResult struct {
@@ -15,7 +16,7 @@ type LocalPrerequisitesResult struct {
 	Checks         map[string]string `json:"checks,omitempty"`
 }
 
-func (s *HostOperationsService) CheckLocalPrerequisites() (*LocalPrerequisitesResult, error) {
+func (s *Service) CheckLocalPrerequisites() (*LocalPrerequisitesResult, error) {
 	commands := map[string]bool{}
 	for _, name := range []string{"incus", "bash", "curl", "base64"} {
 		_, err := exec.LookPath(name)
@@ -30,7 +31,7 @@ func (s *HostOperationsService) CheckLocalPrerequisites() (*LocalPrerequisitesRe
 		providerReady = true
 		checks["incus"] = "ready"
 	} else {
-		checks["incus"] = firstNonEmpty(res.Stderr, res.Stdout, "incus check failed")
+		checks["incus"] = textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus check failed")
 	}
 	return &LocalPrerequisitesResult{
 		Provider:       string(s.shared.Runtime.ReadProviderID()),
@@ -41,7 +42,7 @@ func (s *HostOperationsService) CheckLocalPrerequisites() (*LocalPrerequisitesRe
 	}, nil
 }
 
-func (s *HostOperationsService) GetLocalStatus() (map[string]any, error) {
+func (s *Service) GetLocalStatus() (map[string]any, error) {
 	vms, err := s.ListVMs(true)
 	if err != nil {
 		return nil, err

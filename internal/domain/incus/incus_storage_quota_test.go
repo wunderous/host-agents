@@ -1,4 +1,4 @@
-package ops
+package incus
 
 import (
 	"fmt"
@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 
 	"github.com/wunderous/host-agents/internal/exec"
 )
@@ -96,9 +98,9 @@ func TestPoolEnforcesQuota(t *testing.T) {
 
 // stubQuotaService answers the two Incus queries admission performs: the
 // default profile (for the root pool) and the pool record itself.
-func stubQuotaService(t *testing.T, driver, source string) *HostOperationsService {
+func stubQuotaService(t *testing.T, driver, source string) *Service {
 	t.Helper()
-	service := &HostOperationsService{}
+	service := &Service{shared: &hostruntime.Shared{}}
 	service.shared.CommandRunnerFn = func(args []string, _ func(string), _ time.Duration) (exec.Result, error) {
 		joined := strings.Join(args, " ")
 		switch {

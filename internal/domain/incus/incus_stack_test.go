@@ -1,4 +1,4 @@
-package ops
+package incus
 
 import (
 	"errors"
@@ -11,9 +11,9 @@ import (
 	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
-func validResetService() *HostOperationsService {
-	return &HostOperationsService{
-		shared: hostruntime.Shared{
+func validResetService() *Service {
+	return &Service{
+		shared: &hostruntime.Shared{
 			InstanceID:              "agent-a",
 			OwnershipMode:           "enforce",
 			SharedHostOwnerInstance: "agent-a",

@@ -1,4 +1,4 @@
-package ops
+package incus
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/wunderous/host-agents/internal/hostruntime"
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 const (
@@ -50,11 +51,11 @@ func (e *IncusOwnershipMismatchError) Error() string {
 	return fmt.Sprintf("incus_ownership_mismatch: %s is owned by %s, expected %s", e.VMName, e.ActualOwner, e.ExpectedInstance)
 }
 
-func (s *HostOperationsService) ownershipEnabled() bool {
+func (s *Service) ownershipEnabled() bool {
 	return strings.TrimSpace(s.shared.InstanceID) != ""
 }
 
-func (s *HostOperationsService) readIncusOwner(vmName string) (string, error) {
+func (s *Service) readIncusOwner(vmName string) (string, error) {
 	if !s.ownershipEnabled() {
 		return "", nil
 	}
@@ -63,12 +64,12 @@ func (s *HostOperationsService) readIncusOwner(vmName string) (string, error) {
 		return "", err
 	}
 	if res.ExitCode != 0 {
-		return "", fmt.Errorf("read Incus ownership for %q: %s", vmName, firstNonEmpty(res.Stderr, res.Stdout, "incus config get failed"))
+		return "", fmt.Errorf("read Incus ownership for %q: %s", vmName, textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus config get failed"))
 	}
 	return strings.TrimSpace(res.Stdout), nil
 }
 
-func (s *HostOperationsService) assertIncusOwnership(vmName, operation string) error {
+func (s *Service) assertIncusOwnership(vmName, operation string) error {
 	vmName = strings.TrimSpace(vmName)
 	if vmName == "" || !s.ownershipEnabled() || s.shared.OwnershipMode != "enforce" {
 		return nil
@@ -94,21 +95,21 @@ func (s *HostOperationsService) assertIncusOwnership(vmName, operation string) e
 	}
 }
 
-func (s *HostOperationsService) ownedIncusItem(item incusListItem) bool {
+func (s *Service) ownedIncusItem(item incusListItem) bool {
 	if !s.ownershipEnabled() || s.shared.OwnershipMode != "enforce" {
 		return true
 	}
 	return pickIncusConfigValue(item, oputeIncusOwnerLabel) == s.shared.InstanceID
 }
 
-func (s *HostOperationsService) ownerConfigValue() string {
+func (s *Service) ownerConfigValue() string {
 	return strings.TrimSpace(s.shared.InstanceID)
 }
 
-func (s *HostOperationsService) ownerAgentConfigValue() string {
+func (s *Service) ownerAgentConfigValue() string {
 	return strings.TrimSpace(s.shared.AgentID)
 }
 
-func (s *HostOperationsService) requireSharedHostOwner(operation string) error {
+func (s *Service) requireSharedHostOwner(operation string) error {
 	return s.shared.RequireSharedHostOwner(operation)
 }

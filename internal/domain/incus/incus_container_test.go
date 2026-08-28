@@ -1,11 +1,13 @@
-package ops
+package incus
 
 import (
 	"testing"
+
+	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 func TestProvisionContainerRequiresName(t *testing.T) {
-	svc := &HostOperationsService{}
+	svc := &Service{shared: &hostruntime.Shared{}}
 	_, err := svc.ProvisionContainer(ProvisionContainerArgs{}, nil)
 	if err == nil || err.Error() != "containerName is required" {
 		t.Fatalf("expected containerName required error, got %v", err)

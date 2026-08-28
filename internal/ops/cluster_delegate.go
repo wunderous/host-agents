@@ -31,13 +31,13 @@ func (s *HostOperationsService) cluster() *cluster.Service {
 			ListKubernetesClusters:    s.ListKubernetesClusters,
 			RunAgentShellWithTimeout:  s.RunAgentShellWithTimeout,
 			ExecuteKubernetesProvider: s.executeKubernetesProvider,
-			EnsureIncusDevice:         s.ensureIncusDevice,
-			ReadIncusInstanceType:     s.readIncusInstanceType,
+			EnsureIncusDevice:         s.incus().EnsureDevice,
+			ReadIncusInstanceType:     s.incus().ReadInstanceType,
 			RunVMExec: func(vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
-				return s.runVMExec(vmName, guestArgv, onData, timeout)
+				return s.incus().RunVMExec(vmName, guestArgv, onData, timeout)
 			},
-			WaitForVMExecReady:     s.waitForVMExecReady,
-			WaitForVMServiceActive: s.waitForVMServiceActive,
+			WaitForVMExecReady:     s.incus().WaitForVMExecReady,
+			WaitForVMServiceActive: s.incus().WaitForVMServiceActive,
 			WaitForSystemdActive:   s.host().WaitForSystemdActive,
 		})
 	})

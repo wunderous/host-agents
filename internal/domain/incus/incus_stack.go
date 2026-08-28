@@ -1,4 +1,4 @@
-package ops
+package incus
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/wunderous/host-agents/internal/textutil"
 )
 
 type ResetIncusStackArgs struct {
@@ -39,7 +41,7 @@ type resetIncusCheckpoint struct {
 	UpdatedAt  string                    `json:"updatedAt"`
 }
 
-func (s *HostOperationsService) readResetCheckpoint() (*resetIncusCheckpoint, error) {
+func (s *Service) readResetCheckpoint() (*resetIncusCheckpoint, error) {
 	if strings.TrimSpace(s.resetCheckpointPath) == "" {
 		return nil, nil
 	}
@@ -60,7 +62,7 @@ func (s *HostOperationsService) readResetCheckpoint() (*resetIncusCheckpoint, er
 	return &checkpoint, nil
 }
 
-func (s *HostOperationsService) writeResetCheckpoint(checkpoint resetIncusCheckpoint) error {
+func (s *Service) writeResetCheckpoint(checkpoint resetIncusCheckpoint) error {
 	if strings.TrimSpace(s.resetCheckpointPath) == "" {
 		return nil
 	}
@@ -85,7 +87,7 @@ func (s *HostOperationsService) writeResetCheckpoint(checkpoint resetIncusCheckp
 	return nil
 }
 
-func (s *HostOperationsService) clearResetCheckpoint() error {
+func (s *Service) clearResetCheckpoint() error {
 	if strings.TrimSpace(s.resetCheckpointPath) == "" {
 		return nil
 	}
@@ -95,13 +97,13 @@ func (s *HostOperationsService) clearResetCheckpoint() error {
 	return nil
 }
 
-func (s *HostOperationsService) listAllIncusInstancesForReset() ([]incusListItem, error) {
+func (s *Service) listAllIncusInstancesForReset() ([]incusListItem, error) {
 	res, err := s.commandRunner([]string{"list", "--format", "json"}, nil, defaultDiscoveryTimeout)
 	if err != nil {
 		return nil, err
 	}
 	if res.ExitCode != 0 {
-		return nil, errors.New(firstNonEmpty(res.Stderr, res.Stdout, "incus list failed"))
+		return nil, errors.New(textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus list failed"))
 	}
 	var items []incusListItem
 	if err := json.Unmarshal([]byte(res.Stdout), &items); err != nil {
@@ -126,7 +128,7 @@ func resetInstanceSelected(item incusListItem, args ResetIncusStackArgs) bool {
 func validateResetInventoryOwnership(inventory []ResetIncusInventoryItem, instanceID string) error {
 	for _, candidate := range inventory {
 		if candidate.Owner != instanceID {
-			return fmt.Errorf("reset_incus_stack refuses unowned instance %q (owner %q)", candidate.Name, firstNonEmpty(candidate.Owner, "unowned"))
+			return fmt.Errorf("reset_incus_stack refuses unowned instance %q (owner %q)", candidate.Name, textutil.FirstNonEmpty(candidate.Owner, "unowned"))
 		}
 	}
 	return nil
@@ -135,20 +137,20 @@ func validateResetInventoryOwnership(inventory []ResetIncusInventoryItem, instan
 // verifyResetIncusStack probes the post-reinstall Incus runtime state: the
 // default storage pool, the incusbr0 bridge, and the default-profile root
 // disk. The reset is not evidence-complete until all three invariants hold.
-func (s *HostOperationsService) verifyResetIncusStack() (map[string]any, error) {
+func (s *Service) verifyResetIncusStack() (map[string]any, error) {
 	storage, err := s.commandRunner([]string{"storage", "list", "--format", "json"}, nil, defaultDiscoveryTimeout)
 	if err != nil || storage.ExitCode != 0 {
-		return nil, errors.New(firstNonEmpty(storage.Stderr, storage.Stdout, errString(err, "verify Incus storage pools failed")))
+		return nil, errors.New(textutil.FirstNonEmpty(storage.Stderr, storage.Stdout, textutil.ErrString(err, "verify Incus storage pools failed")))
 	}
 	poolReady := strings.Contains(storage.Stdout, `"name":"default"`)
 	network, err := s.commandRunner([]string{"network", "list", "--format", "json"}, nil, defaultDiscoveryTimeout)
 	if err != nil || network.ExitCode != 0 {
-		return nil, errors.New(firstNonEmpty(network.Stderr, network.Stdout, errString(err, "verify Incus networks failed")))
+		return nil, errors.New(textutil.FirstNonEmpty(network.Stderr, network.Stdout, textutil.ErrString(err, "verify Incus networks failed")))
 	}
 	bridgeReady := strings.Contains(network.Stdout, `"name":"incusbr0"`)
 	profile, err := s.commandRunner([]string{"profile", "device", "show", "default"}, nil, defaultDiscoveryTimeout)
 	if err != nil || profile.ExitCode != 0 {
-		return nil, errors.New(firstNonEmpty(profile.Stderr, profile.Stdout, errString(err, "verify Incus default profile failed")))
+		return nil, errors.New(textutil.FirstNonEmpty(profile.Stderr, profile.Stdout, textutil.ErrString(err, "verify Incus default profile failed")))
 	}
 	profileReady := strings.Contains(profile.Stdout, "root:")
 	verified := poolReady && bridgeReady && profileReady
@@ -185,7 +187,7 @@ func resetInventory(items []incusListItem, args ResetIncusStackArgs) []ResetIncu
 	return out
 }
 
-func (s *HostOperationsService) validateResetIncusStack(args ResetIncusStackArgs) error {
+func (s *Service) validateResetIncusStack(args ResetIncusStackArgs) error {
 	if !args.Confirm {
 		return errors.New("reset_incus_stack requires confirm=true")
 	}
@@ -215,7 +217,7 @@ func (s *HostOperationsService) validateResetIncusStack(args ResetIncusStackArgs
 	return nil
 }
 
-func (s *HostOperationsService) ResetIncusStack(ctx context.Context, args ResetIncusStackArgs, onData func(string)) (map[string]any, error) {
+func (s *Service) ResetIncusStack(ctx context.Context, args ResetIncusStackArgs, onData func(string)) (map[string]any, error) {
 	if err := s.validateResetIncusStack(args); err != nil {
 		return nil, err
 	}
@@ -278,15 +280,7 @@ func (s *HostOperationsService) ResetIncusStack(ctx context.Context, args ResetI
 	}
 	// Stop in-process relays before deleting their target guests. This is
 	// revocation, not a best-effort cleanup after a destructive operation.
-	if s.clusterSvc != nil {
-		s.cluster().StopGuestBridgeRelays()
-	}
-	if s.llmSvc != nil {
-		s.llm().StopRelays()
-	}
-	if s.postgresSvc != nil {
-		s.postgres().RevokeAllRelays()
-	}
+	s.deps.RevokeRelays()
 	for _, candidate := range inventory {
 		if resetContainsString(checkpoint.Deleted, candidate.Name) {
 			continue
@@ -309,7 +303,7 @@ func (s *HostOperationsService) ResetIncusStack(ctx context.Context, args ResetI
 		if runErr != nil || deleteResult.ExitCode != 0 {
 			checkpoint.Phase = "interrupted"
 			_ = s.writeResetCheckpoint(*checkpoint)
-			return nil, fmt.Errorf("delete owned instance %q: %s", candidate.Name, firstNonEmpty(deleteResult.Stderr, deleteResult.Stdout, errString(runErr, "delete failed")))
+			return nil, fmt.Errorf("delete owned instance %q: %s", candidate.Name, textutil.FirstNonEmpty(deleteResult.Stderr, deleteResult.Stdout, textutil.ErrString(runErr, "delete failed")))
 		}
 		checkpoint.Deleted = append(checkpoint.Deleted, candidate.Name)
 		if err := s.writeResetCheckpoint(*checkpoint); err != nil {
@@ -325,7 +319,7 @@ func (s *HostOperationsService) ResetIncusStack(ctx context.Context, args ResetI
 	if err := s.writeResetCheckpoint(*checkpoint); err != nil {
 		return nil, fmt.Errorf("write reset checkpoint before reconcile: %w", err)
 	}
-	reconciled, reinstallErr := s.InstallIncusStack(InstallIncusStackArgs{}, onData)
+	reconciled, reinstallErr := s.deps.ReinstallIncusStack(onData)
 	if reinstallErr != nil {
 		checkpoint.Phase = "interrupted"
 		_ = s.writeResetCheckpoint(*checkpoint)
