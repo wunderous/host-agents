@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	defaultOciStorageMinAgeSeconds int64 = 24 * 60 * 60
 	minOciStorageMinAgeSeconds     int64 = 60 * 60
+	defaultOciStorageMinAgeSeconds       = minOciStorageMinAgeSeconds
 	maxOciStorageMinAgeSeconds     int64 = 365 * 24 * 60 * 60
 	minOciStorageBudgetBytes       int64 = 1 << 30
 )
