@@ -10,25 +10,58 @@ import (
 	"strings"
 )
 
-const Version = "v1"
+// Version changes whenever the meaning of a physical identity changes. v2
+// deliberately distinguishes WSL's Windows installation identity from the
+// distro-local execution context.
+const Version = "v2"
 
 type Source string
 
 const (
-	SourceLinuxMachineID     Source = "linux-machine-id"
-	SourceWindowsMachineGUID Source = "windows-machine-guid"
-	SourceMacOSPlatformUUID  Source = "macos-io-platform-uuid"
+	SourceLinuxMachineID           Source = "linux-machine-id"
+	SourceWindowsMachineGUID       Source = "windows-machine-guid"
+	SourceWindowsMachineGUIDViaWSL Source = "windows-machine-guid-via-wsl"
+	SourceMacOSPlatformUUID        Source = "macos-io-platform-uuid"
 )
 
+type ExecutionContextKind string
+
+const (
+	ExecutionContextNativeWindows ExecutionContextKind = "native-windows"
+	ExecutionContextWSL           ExecutionContextKind = "wsl"
+	ExecutionContextNativeLinux   ExecutionContextKind = "native-linux"
+	ExecutionContextMacOS         ExecutionContextKind = "macos"
+)
+
+type ExecutionContext struct {
+	ID          string               `json:"id"`
+	Kind        ExecutionContextKind `json:"kind"`
+	DisplayName string               `json:"displayName,omitempty"`
+}
+
 type Identity struct {
-	Fingerprint        string `json:"fingerprint"`
-	FingerprintVersion string `json:"fingerprintVersion"`
-	FingerprintSource  Source `json:"fingerprintSource"`
+	Fingerprint        string           `json:"fingerprint"`
+	FingerprintVersion string           `json:"fingerprintVersion"`
+	FingerprintSource  Source           `json:"fingerprintSource"`
+	ExecutionContext   ExecutionContext `json:"executionContext"`
 }
 
 func ReadIdentity() (Identity, error) {
 	switch runtime.GOOS {
 	case "linux":
+		context, err := readLinuxExecutionContext()
+		if err != nil {
+			return Identity{}, err
+		}
+		if context.Kind == ExecutionContextWSL {
+			guid, err := readWindowsMachineGUID()
+			if err != nil {
+				return Identity{}, fmt.Errorf("read Windows MachineGuid through WSL interop: %w", err)
+			}
+			identity := format(SourceWindowsMachineGUIDViaWSL, guid)
+			identity.ExecutionContext = context
+			return identity, nil
+		}
 		raw, err := os.ReadFile("/etc/machine-id")
 		if err != nil {
 			return Identity{}, err
@@ -37,27 +70,72 @@ func ReadIdentity() (Identity, error) {
 		if v == "" {
 			return Identity{}, fmt.Errorf("empty /etc/machine-id")
 		}
-		return format(SourceLinuxMachineID, v), nil
+		identity := format(SourceLinuxMachineID, v)
+		identity.ExecutionContext = context
+		return identity, nil
 	case "windows":
 		guid, err := readWindowsMachineGUID()
 		if err != nil {
 			return Identity{}, err
 		}
-		return format(SourceWindowsMachineGUID, guid), nil
+		identity := format(SourceWindowsMachineGUID, guid)
+		identity.ExecutionContext = ExecutionContext{ID: string(ExecutionContextNativeWindows), Kind: ExecutionContextNativeWindows, DisplayName: "Windows"}
+		return identity, nil
 	case "darwin":
 		uuid, err := readMacPlatformUUID()
 		if err != nil {
 			return Identity{}, err
 		}
-		return format(SourceMacOSPlatformUUID, uuid), nil
+		identity := format(SourceMacOSPlatformUUID, uuid)
+		identity.ExecutionContext = ExecutionContext{ID: "native-macos", Kind: ExecutionContextMacOS, DisplayName: "macOS"}
+		return identity, nil
 	default:
 		return Identity{}, fmt.Errorf("unsupported platform %s", runtime.GOOS)
 	}
 }
 
+func readLinuxExecutionContext() (ExecutionContext, error) {
+	raw, err := os.ReadFile("/etc/machine-id")
+	if err != nil {
+		return ExecutionContext{}, err
+	}
+	machineID := strings.TrimSpace(string(raw))
+	if machineID == "" {
+		return ExecutionContext{}, fmt.Errorf("empty /etc/machine-id for execution context")
+	}
+	if isWSL() {
+		digest := sha256.Sum256([]byte("execution-context:" + Version + ":wsl:" + strings.ToLower(machineID)))
+		return ExecutionContext{
+			ID:          "wsl:" + hex.EncodeToString(digest[:]),
+			Kind:        ExecutionContextWSL,
+			DisplayName: strings.TrimSpace(os.Getenv("WSL_DISTRO_NAME")),
+		}, nil
+	}
+	return ExecutionContext{ID: "native-linux", Kind: ExecutionContextNativeLinux, DisplayName: "Linux"}, nil
+}
+
+func isWSL() bool {
+	if strings.TrimSpace(os.Getenv("WSL_INTEROP")) != "" || strings.TrimSpace(os.Getenv("WSL_DISTRO_NAME")) != "" {
+		return true
+	}
+	raw, err := os.ReadFile("/proc/version")
+	if err != nil {
+		return false
+	}
+	value := strings.ToLower(string(raw))
+	return strings.Contains(value, "microsoft") || strings.Contains(value, "wsl")
+}
+
 func format(source Source, value string) Identity {
 	normalized := strings.ToLower(strings.TrimSpace(value))
-	digest := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s", Version, source, normalized)))
+	physicalSource := source
+	if source == SourceWindowsMachineGUIDViaWSL {
+		// Native Windows and WSL interop read the same Windows installation
+		// MachineGuid. Preserve the acquisition source in evidence, but use one
+		// canonical physical digest for parent grouping.
+		physicalSource = SourceWindowsMachineGUID
+	}
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s", Version, physicalSource, normalized)))
 	return Identity{
 		Fingerprint:        fmt.Sprintf("host:%s:%s", Version, hex.EncodeToString(digest[:])),
 		FingerprintVersion: Version,
@@ -66,21 +144,53 @@ func format(source Source, value string) Identity {
 }
 
 func readWindowsMachineGUID() (string, error) {
-	cmd := exec.Command("reg", "query", `HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "MachineGuid") {
-			parts := strings.Fields(line)
-			if len(parts) >= 3 {
+	commands := windowsMachineGUIDCommands()
+	var lastErr error
+	for _, argv := range commands {
+		cmd := exec.Command(argv[0], argv[1:]...)
+		out, err := cmd.Output()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if len(argv) > 1 && argv[1] == "-NoProfile" {
+			if value := strings.TrimSpace(string(out)); value != "" {
+				return value, nil
+			}
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			parts := strings.Fields(strings.TrimSpace(line))
+			if len(parts) >= 3 && strings.EqualFold(parts[0], "MachineGuid") {
 				return parts[len(parts)-1], nil
 			}
 		}
 	}
+	if lastErr != nil {
+		return "", fmt.Errorf("MachineGuid not found: %w", lastErr)
+	}
 	return "", fmt.Errorf("MachineGuid not found")
+}
+
+func windowsMachineGUIDCommands() [][]string {
+	powershellArgs := []string{
+		"-NoProfile",
+		"-NonInteractive",
+		"-Command",
+		"(Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Cryptography' -Name MachineGuid).MachineGuid",
+	}
+	regArgs := []string{"query", `HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid"}
+
+	// systemd services in WSL do not inherit the interactive Windows interop
+	// directories in PATH. Prefer their stable mounted locations, then retain
+	// PATH lookup for interactive shells and alternate WSL configurations.
+	return [][]string{
+		append([]string{"/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"}, powershellArgs...),
+		append([]string{"/mnt/c/Windows/System32/reg.exe"}, regArgs...),
+		append([]string{"/mnt/c/Windows/system32/reg.exe"}, regArgs...),
+		append([]string{"powershell.exe"}, powershellArgs...),
+		append([]string{"reg.exe"}, regArgs...),
+		append([]string{"reg"}, regArgs...),
+	}
 }
 
 func readMacPlatformUUID() (string, error) {
