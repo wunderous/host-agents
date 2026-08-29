@@ -22,6 +22,13 @@ import (
 )
 
 func (s *Server) handleProviderInstall(args map[string]any) (*mcp.CallToolResult, error) {
+	return s.handleProviderInstallContext(context.Background(), args)
+}
+
+func (s *Server) handleProviderInstallContext(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	descriptor, baseDir, err := loadProviderDescriptor(args)
 	if err != nil {
 		return tools.ErrorResult(err), nil
@@ -31,11 +38,11 @@ func (s *Server) handleProviderInstall(args map[string]any) (*mcp.CallToolResult
 		descriptor.Server.Endpoint = override
 		endpoint = override
 	}
-	adapter, err := provideradapter.Connect(context.Background(), descriptor, provideradapter.Options{BearerToken: recipeStringField(args, "token")})
+	adapter, err := provideradapter.Connect(ctx, descriptor, provideradapter.Options{BearerToken: recipeStringField(args, "token")})
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
-	manifest, err := adapter.InstallManifest(context.Background())
+	manifest, err := adapter.InstallManifest(ctx)
 	if err != nil {
 		_ = adapter.Close()
 		return tools.ErrorResult(err), nil
@@ -55,7 +62,7 @@ func (s *Server) handleProviderInstall(args map[string]any) (*mcp.CallToolResult
 		_ = adapter.Close()
 		return tools.ErrorResult(fmt.Errorf("persist provider generation: %w", err)), nil
 	}
-	s.emitProviderLifecycleEvent(context.Background(), ProviderEventCandidate, manifest.Provider.ID, candidate.ID, "")
+	s.emitProviderLifecycleEvent(ctx, ProviderEventCandidate, manifest.Provider.ID, candidate.ID, "")
 	s.providerMu.Lock()
 	s.providerCandidates[candidate.ID] = adapter
 	s.providerCandidateManifests[candidate.ID] = manifest
@@ -95,12 +102,25 @@ func (s *Server) handleProviderInstall(args map[string]any) (*mcp.CallToolResult
 		"providerManifest":     manifest,
 	}
 	if manifest.Validation.Capability == capability.Tunneling {
+		if err := ctx.Err(); err != nil {
+			return tools.ErrorResult(err), nil
+		}
 		return s.handleRunTunnelRecipe(runArgs)
+	}
+	if err := ctx.Err(); err != nil {
+		return tools.ErrorResult(err), nil
 	}
 	return s.handleRunRuntimeRecipe(runArgs)
 }
 
 func (s *Server) handleProviderValidate(args map[string]any) (*mcp.CallToolResult, error) {
+	return s.handleProviderValidateContext(context.Background(), args)
+}
+
+func (s *Server) handleProviderValidateContext(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	providerID := recipeStringField(args, "provider")
 	session, err := s.providerLifecycle.OpenSession(providerID)
 	if err != nil {
@@ -121,7 +141,7 @@ func (s *Server) handleProviderValidate(args map[string]any) (*mcp.CallToolResul
 	if operation == "" {
 		return tools.ErrorResult(fmt.Errorf("provider %q does not declare a validation operation", providerID)), nil
 	}
-	result, err := adapter.CallSynchronousOnly(context.Background(), operation, args)
+	result, err := adapter.CallSynchronousOnly(ctx, operation, args)
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
@@ -165,10 +185,14 @@ func (s *Server) completeProviderCandidate(generationID string) {
 }
 
 func (s *Server) handleProviderReload(args map[string]any) (*mcp.CallToolResult, error) {
+	return s.handleProviderReloadContext(context.Background(), args)
+}
+
+func (s *Server) handleProviderReloadContext(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	if recipeStringField(args, "source") == "" && recipeStringField(args, "descriptor") == "" {
 		return tools.ErrorResult(fmt.Errorf("provider reload requires descriptor source")), nil
 	}
-	return s.handleProviderInstall(args)
+	return s.handleProviderInstallContext(ctx, args)
 }
 
 func loadProviderDescriptor(args map[string]any) (providercontract.PluginDescriptor, string, error) {

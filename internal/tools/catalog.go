@@ -343,6 +343,8 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"opute.provider.teardown":          true,
 		"get_capability_catalog":           true,
 		"open_assistant_session":           true,
+		"get_host_capacity":                true,
+		"reconcile_host_resource_policy":   true,
 	}
 	seen := make(map[string]bool, len(needed))
 	for _, definition := range defs {
@@ -589,6 +591,18 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"evidence": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		}},
 	}, ToolDefinition{
+		Name:         "terminate_wsl_distribution",
+		Title:        "Terminate WSL distribution",
+		Description:  "Terminate exactly one named WSL distribution through the tested Windows interop capability. Requires host approval.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"distro"}, "properties": map[string]any{"distro": map[string]any{"type": "string", "minLength": 1}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"distro", "terminated"}},
+	}, ToolDefinition{
+		Name:         "shutdown_wsl",
+		Title:        "Shutdown WSL environment",
+		Description:  "Shutdown the complete WSL2 environment through the tested Windows lifecycle capability. Requires explicit destructive approval.",
+		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"shutdown"}},
+	}, ToolDefinition{
 		Name:        "apply_manifest",
 		Title:       "Apply Kubernetes manifest",
 		Description: "Apply a generic Kubernetes manifest to a VM-backed cluster.",
@@ -644,48 +658,56 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"source": map[string]any{"type": "string", "minLength": 1}, "descriptor": map[string]any{"type": "object"}, "endpoint": map[string]any{"type": "string", "format": "uri"}, "token": map[string]any{"type": "string", "writeOnly": true}, "mode": map[string]any{"type": "string"}, "recipeSource": map[string]any{"type": "string"}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}, "activate": map[string]any{"type": "boolean"}, "resume": map[string]any{"type": "boolean"},
 		}},
 		OutputSchema: map[string]any{"type": "object"},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
 	}, ToolDefinition{
 		Name:         "opute.provider.validate",
 		Title:        "Validate provider",
 		Description:  "Run a provider-declared capability validation operation through the generic provider MCP contract.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"provider"}, "properties": map[string]any{"provider": map[string]any{"type": "string", "minLength": 1}, "operation": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}}},
 		OutputSchema: map[string]any{"type": "object"},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{
 		Name:         "opute.provider.status",
 		Title:        "Get provider status",
 		Description:  "Read the connected provider and active provider-generation state without changing host state.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"provider"}, "properties": map[string]any{"provider": map[string]any{"type": "string", "minLength": 1}}},
 		OutputSchema: map[string]any{"type": "object"},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{
 		Name:         "opute.provider.reload",
 		Title:        "Reload provider",
 		Description:  "Load a new trusted provider module generation and reconcile its selected recipe before activation.",
 		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"source": map[string]any{"type": "string", "minLength": 1}, "descriptor": map[string]any{"type": "object"}, "endpoint": map[string]any{"type": "string", "format": "uri"}, "token": map[string]any{"type": "string", "writeOnly": true}, "mode": map[string]any{"type": "string"}, "recipeSource": map[string]any{"type": "string"}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}, "activate": map[string]any{"type": "boolean"}}},
 		OutputSchema: map[string]any{"type": "object"},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
 	}, ToolDefinition{
 		Name:         "opute.provider.teardown",
 		Title:        "Teardown provider",
 		Description:  "Ask the connected provider for a generic teardown host plan, validate it, execute it durably, and retire the provider only after the plan succeeds.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"provider", "confirm"}, "properties": map[string]any{"provider": map[string]any{"type": "string", "minLength": 1}, "generation": map[string]any{"type": "string", "minLength": 1}, "inputs": map[string]any{"type": "object"}, "confirm": map[string]any{"type": "boolean"}, "resume": map[string]any{"type": "boolean"}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
 	}, ToolDefinition{
 		Name:         "validate_host_plan",
 		Title:        "Validate host plan",
 		Description:  "Validate a generic host-plan.v1 document against the current authorized capability catalog without changing host state.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"plan"}, "properties": map[string]any{"plan": map[string]any{}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"valid", "contractVersion", "catalogRevision"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{
 		Name:         "run_host_plan",
 		Title:        "Run host plan",
 		Description:  "Execute an explicit generic host-plan.v1 document with durable idempotency, readiness validation, recovery, and resume state.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"plan"}, "properties": map[string]any{"plan": map[string]any{}, "resume": map[string]any{"type": "boolean"}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "normal", "cpuCores": 0.25, "memoryBytes": 268435456, "tasks": 1}},
 	}, ToolDefinition{
 		Name:         "get_host_plan_run",
 		Title:        "Get host plan run",
 		Description:  "Read the durable status, node results, and revision metadata for a host-plan.v1 run.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"runId"}, "properties": map[string]any{"runId": map[string]any{"type": "string", "minLength": 1}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "nodes"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{
 		Name:        "validate_runtime_recipe",
 		Title:       "Validate runtime recipe",
@@ -694,6 +716,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"valid", "recipeId", "recipeVersion", "recipeHash", "rawSha256", "plan"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{
 		Name:        "run_runtime_recipe",
 		Title:       "Run runtime recipe",
@@ -703,42 +726,74 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 			"inputs": map[string]any{"type": "object"}, "resume": map[string]any{"type": "boolean"}, "runId": map[string]any{"type": "string", "minLength": 1}, "activate": map[string]any{"type": "boolean"},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
 	}, ToolDefinition{
 		Name:         "get_runtime_recipe_run",
 		Title:        "Get runtime recipe run",
 		Description:  "Read the durable status, expanded plan evidence, and recipe provenance for a runtime-recipe.v1 run.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"runId"}, "properties": map[string]any{"runId": map[string]any{"type": "string", "minLength": 1}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "nodes", "recipe"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{
 		Name:         "validate_tunnel_recipe",
 		Title:        "Validate tunnel recipe",
 		Description:  "Resolve and validate an external tunnel-recipe.v1 source and its embedded host-plan.v1 without changing host state.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"source"}, "properties": map[string]any{"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"valid", "recipeId", "recipeVersion", "recipeHash", "rawSha256", "plan"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{
 		Name:         "run_tunnel_recipe",
 		Title:        "Run tunnel recipe",
 		Description:  "Execute an external tunnel-recipe.v1 through the existing durable host-plan runner; activation validates generic HTTP exposure before replacing the active tunnel capability.",
 		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}, "resume": map[string]any{"type": "boolean"}, "runId": map[string]any{"type": "string", "minLength": 1}, "activate": map[string]any{"type": "boolean"}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
 	}, ToolDefinition{
 		Name:         "get_tunnel_run",
 		Title:        "Get tunnel run",
 		Description:  "Read durable tunnel-recipe.v1 provenance and host-plan state.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"runId"}, "properties": map[string]any{"runId": map[string]any{"type": "string", "minLength": 1}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "nodes", "recipe"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{
 		Name:         "get_capability_catalog",
 		Title:        "Get capability catalog",
 		Description:  "Return the immutable authorized capability snapshot and revision used for typed proposals and host plans.",
 		InputSchema:  map[string]any{"type": "object"},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"providerId", "catalogRevision", "tools"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{
 		Name:         "open_assistant_session",
 		Title:        "Open assistant session",
 		Description:  "Negotiate the bounded assistant-session.v1 contract and bind the client to the current capability revision.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"sessionId", "supportedContractVersions"}, "properties": map[string]any{"sessionId": map[string]any{"type": "string", "minLength": 1}, "tenantId": map[string]any{"type": "string", "minLength": 1}, "supportedContractVersions": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}}, "catalogRevision": map[string]any{"type": "string"}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "sessionId", "catalogRevision", "tenantId"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
+	}, ToolDefinition{
+		Name:         "get_host_capacity",
+		Title:        "Get host capacity",
+		Description:  "Read provider-neutral host capacity, reservations, pressure, and resource-enforcement state.",
+		InputSchema:  map[string]any{"type": "object", "properties": map[string]any{}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"policyRevision", "enforcement", "effectiveLimits", "currentUsage", "reservations", "queue"}},
+		Meta:         map[string]any{"effect": "read"},
+	}, ToolDefinition{
+		Name:        "reconcile_host_resource_policy",
+		Title:       "Reconcile host resource policy",
+		Description: "Reconcile an already-authorized versioned host resource policy against one exact host-service URI; raw systemd, cgroup, WSL, and shell controls are not accepted.",
+		InputSchema: map[string]any{"type": "object", "required": []string{"policyRevision", "uri"}, "properties": map[string]any{
+			"policyRevision": map[string]any{"type": "string", "minLength": 1},
+			"uri":            map[string]any{"type": "string", "minLength": 1, resourceTypeKeyword: "host-service"},
+			"scope":          map[string]any{"type": "string", "enum": []string{"user", "system"}},
+		}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"reconciled", "policyRevision", "enforcement", "capacity"}},
+		Meta: map[string]any{
+			"effect":        "mutation",
+			"needsApproval": true,
+			// Reconciliation is the bounded control-plane recovery path. A zero
+			// cost control request is intentionally admitted while workload
+			// enforcement is unknown so it can repair that boundary.
+			"resourceCost": map[string]any{"class": "control"},
+		},
 	}, ToolDefinition{
 		Name:        "list_host_services",
 		Title:       "List Host Services",

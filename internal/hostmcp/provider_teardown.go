@@ -12,6 +12,13 @@ import (
 const providerTeardownOperation = "opute.provider.teardown"
 
 func (s *Server) handleProviderTeardown(args map[string]any) (*mcp.CallToolResult, error) {
+	return s.handleProviderTeardownContext(context.Background(), args)
+}
+
+func (s *Server) handleProviderTeardownContext(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	providerID := recipeStringField(args, "provider")
 	if providerID == "" {
 		return tools.ErrorResult(fmt.Errorf("provider is required")), nil
@@ -39,7 +46,7 @@ func (s *Server) handleProviderTeardown(args map[string]any) (*mcp.CallToolResul
 	prepareArgs["phase"] = "prepare"
 	providerInputs := s.providerTeardownInputs(args)
 	prepareArgs["inputs"] = providerInputs
-	result, err := adapter.CallSynchronousOnly(context.Background(), providerTeardownOperation, prepareArgs)
+	result, err := adapter.CallSynchronousOnly(ctx, providerTeardownOperation, prepareArgs)
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
@@ -103,6 +110,13 @@ func cloneProviderTeardownArgs(args map[string]any) map[string]any {
 }
 
 func (s *Server) completeProviderTeardown(metadata map[string]any) error {
+	return s.completeProviderTeardownContext(context.Background(), metadata)
+}
+
+func (s *Server) completeProviderTeardownContext(ctx context.Context, metadata map[string]any) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	providerID := recipeStringField(metadata, "providerId")
 	generationID := recipeStringField(metadata, "providerGenerationId")
 	if providerID == "" || generationID == "" {
@@ -130,7 +144,7 @@ func (s *Server) completeProviderTeardown(metadata map[string]any) error {
 		finalizeInputs[key] = value
 	}
 	finalizeInputs["phase"] = "finalize"
-	finalize, err := adapter.CallSynchronousOnly(context.Background(), providerTeardownOperation, map[string]any{"phase": "finalize", "inputs": finalizeInputs})
+	finalize, err := adapter.CallSynchronousOnly(ctx, providerTeardownOperation, map[string]any{"phase": "finalize", "inputs": finalizeInputs})
 	if err != nil {
 		return fmt.Errorf("finalize provider teardown: %w", err)
 	}
@@ -138,8 +152,8 @@ func (s *Server) completeProviderTeardown(metadata map[string]any) error {
 		return fmt.Errorf("provider %q teardown finalization failed", providerID)
 	}
 	session.Close()
-	s.emitProviderLifecycleEvent(context.Background(), ProviderEventDraining, providerID, generationID, "teardown")
-	if err := s.providerLifecycle.Drain(context.Background(), generationID); err != nil {
+	s.emitProviderLifecycleEvent(ctx, ProviderEventDraining, providerID, generationID, "teardown")
+	if err := s.providerLifecycle.Drain(ctx, generationID); err != nil {
 		return fmt.Errorf("drain provider generation: %w", err)
 	}
 	if generation, ok := s.providerLifecycle.Get(generationID); ok {
@@ -156,7 +170,7 @@ func (s *Server) completeProviderTeardown(metadata map[string]any) error {
 	delete(s.providerValidation, providerID)
 	s.providerMu.Unlock()
 	s.retireProviderCapabilities(providerID, generationID)
-	s.emitProviderLifecycleEvent(context.Background(), ProviderEventStopped, providerID, generationID, "teardown")
+	s.emitProviderLifecycleEvent(ctx, ProviderEventStopped, providerID, generationID, "teardown")
 	if s.state != nil {
 		if err := s.state.RemoveActiveCapabilitiesForProvider(providerID); err != nil {
 			return fmt.Errorf("clear active provider capabilities: %w", err)

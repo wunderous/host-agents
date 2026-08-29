@@ -918,6 +918,20 @@
     }
   },
   {
+    "name": "terminate_wsl_distribution",
+    "title": "Terminate WSL distribution",
+    "description": "Terminate exactly one named WSL distribution through the tested Windows interop capability. Requires host approval.",
+    "inputSchema": {"type": "object", "required": ["distro"], "properties": {"distro": {"type": "string", "minLength": 1}}},
+    "outputSchema": {"type": "object", "required": ["distro", "terminated"]}
+  },
+  {
+    "name": "shutdown_wsl",
+    "title": "Shutdown WSL environment",
+    "description": "Shutdown the complete WSL2 environment through the tested Windows lifecycle capability. Requires explicit destructive approval.",
+    "inputSchema": {"type": "object", "properties": {}},
+    "outputSchema": {"type": "object", "required": ["shutdown"]}
+  },
+  {
     "name": "diagnose_bridge",
     "title": "Diagnose Bridge",
     "description": "Probes the local bridge control plane (port 9092) and check its health",
@@ -5822,6 +5836,75 @@
     },
     "_meta": {
       "needsApproval": true
+    }
+  },
+  {
+    "name": "get_host_capacity",
+    "title": "Get host capacity",
+    "description": "Read provider-neutral host capacity, reservations, pressure, and resource-enforcement state.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "policyRevision",
+        "enforcement",
+        "effectiveLimits",
+        "currentUsage",
+        "reservations",
+        "queue"
+      ]
+    },
+    "_meta": {
+      "effect": "read"
+    }
+  },
+  {
+    "name": "reconcile_host_resource_policy",
+    "title": "Reconcile host resource policy",
+    "description": "Reconcile an already-authorized versioned host resource policy against one exact host-service URI; raw systemd, cgroup, WSL, and shell controls are not accepted.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "policyRevision",
+        "uri"
+      ],
+      "properties": {
+        "policyRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "x-opute-resource-type": "host-service"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "reconciled",
+        "policyRevision",
+        "enforcement",
+        "capacity"
+      ]
+    },
+    "_meta": {
+      "effect": "mutation",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "control"
+      }
     }
   }
 ]

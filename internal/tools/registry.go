@@ -123,6 +123,23 @@ func RegisteredAdmissionClass(name string) (resource.Class, bool) {
 	return entry.Admission, true
 }
 
+// RegisteredResourceCost publishes the typed compatibility cost for a
+// built-in registration. The admission class is declared at the registration
+// site; this projection keeps older registrations usable while making their
+// cost visible in the immutable capability descriptor. Provider operations do
+// not use this fallback and must declare resourceCost in their manifest.
+func RegisteredResourceCost(name string) (ResourceCost, bool) {
+	entry, ok := toolHandlers[name]
+	if !ok {
+		return ResourceCost{}, false
+	}
+	cost := resource.DefaultCostForClass(entry.Admission)
+	return ResourceCost{
+		CPUCores: cost.CPUCores, MemoryBytes: cost.MemoryBytes,
+		DiskBytes: cost.DiskBytes, Tasks: cost.Tasks, Class: string(cost.Class),
+	}, true
+}
+
 // IsTaskAware reports whether a registered capability outlives its request.
 func IsTaskAware(name string) bool {
 	entry, ok := toolHandlers[name]

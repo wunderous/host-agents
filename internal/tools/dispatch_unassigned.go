@@ -86,7 +86,11 @@ func init() {
 		if timeoutMs > 2*60*60*1000 {
 			return nil, fmt.Errorf("timeoutMs exceeds the two-hour maximum")
 		}
-		res, err := svc.Host().RunAgentShellWithTimeout(command, time.Duration(timeoutMs)*time.Millisecond, onData)
+		operationID, taskID := resource.OperationIdentityFromContext(ctx)
+		if operationID == "" {
+			operationID = taskID
+		}
+		res, err := svc.Host().RunWorkloadCommandContext(ctx, command, operationID, time.Duration(timeoutMs)*time.Millisecond, onData)
 		if err != nil {
 			return nil, err
 		}

@@ -101,7 +101,10 @@ func init() {
 			return nil, err
 		}
 		out = withBindingURI(out, binding, "cluster")
-		return structuredResult(out, ""), nil
+		if _, ok := out["message"]; !ok {
+			out["message"] = "Kubernetes resource status returned."
+		}
+		return structuredResult(out, "Kubernetes resource status returned."), nil
 	})
 }
 

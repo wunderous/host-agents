@@ -37,6 +37,7 @@ type CapabilityDescriptor struct {
 	DefaultLabels       map[string]string               `json:"defaultLabels,omitempty"`
 	GateMessage         string                          `json:"gateMessage,omitempty"`
 	Consequence         string                          `json:"consequence,omitempty"`
+	ResourceCost        *ResourceCost                   `json:"resourceCost,omitempty"`
 	Idempotent          bool                            `json:"idempotent"`
 	SupportsReadiness   bool                            `json:"supportsReadiness"`
 	ValidationSchema    string                          `json:"validationSchema,omitempty"`
@@ -46,6 +47,16 @@ type CapabilityDescriptor struct {
 	Produces            []ResourceBinding               `json:"produces,omitempty"`
 	InputEdges          []CapabilityEdge                `json:"inputEdges,omitempty"`
 	OutputEdges         []CapabilityEdge                `json:"outputEdges,omitempty"`
+}
+
+// ResourceCost is typed admission metadata published by a capability. It is
+// provider-neutral; dynamic workload capabilities must declare it explicitly.
+type ResourceCost struct {
+	CPUCores    float64 `json:"cpuCores,omitempty"`
+	MemoryBytes int64   `json:"memoryBytes,omitempty"`
+	DiskBytes   int64   `json:"diskBytes,omitempty"`
+	Tasks       int64   `json:"tasks,omitempty"`
+	Class       string  `json:"class,omitempty"`
 }
 
 // ResourceBinding is a declarative public relationship owned by the
@@ -94,13 +105,15 @@ type BoundResource struct {
 // durable evidence records it separately from the raw arguments, and callers
 // cannot smuggle provider coordinates through the argument map.
 type ExecutionBinding struct {
-	SchemaVersion   string          `json:"schemaVersion"`
-	TenantID        string          `json:"tenantId,omitempty"`
-	Admission       string          `json:"admission,omitempty"`
-	Resources       []BoundResource `json:"resources,omitempty"`
-	CatalogRevision string          `json:"catalogRevision,omitempty"`
-	GenerationID    string          `json:"generationId,omitempty"`
-	Authorization   string          `json:"authorization,omitempty"`
+	SchemaVersion          string          `json:"schemaVersion"`
+	TenantID               string          `json:"tenantId,omitempty"`
+	Admission              string          `json:"admission,omitempty"`
+	ReservationID          string          `json:"reservationId,omitempty"`
+	ResourcePolicyRevision string          `json:"resourcePolicyRevision,omitempty"`
+	Resources              []BoundResource `json:"resources,omitempty"`
+	CatalogRevision        string          `json:"catalogRevision,omitempty"`
+	GenerationID           string          `json:"generationId,omitempty"`
+	Authorization          string          `json:"authorization,omitempty"`
 }
 
 // Coordinate returns the first non-empty provider-native coordinate with the
@@ -401,6 +414,7 @@ func capabilityDescriptor(providerID string, def ToolDefinition) CapabilityDescr
 		DefaultLabels:     metaStringMap(def.Meta, "defaultLabels"),
 		GateMessage:       gateMessage,
 		Consequence:       consequence,
+		ResourceCost:      resourceCost(def),
 		Idempotent:        effect == "read" || metaBool(def.Meta, "idempotent"),
 		SupportsReadiness: metaBool(def.Meta, "supportsReadiness") || effect != "read",
 		Requires:          resourceBindings(def, "requires"),
@@ -408,6 +422,25 @@ func capabilityDescriptor(providerID string, def ToolDefinition) CapabilityDescr
 		OutputType:        metaString(def.Meta, "outputType", ""),
 		ResultTypes:       resultTypes(def.Meta),
 	}
+}
+
+func resourceCost(def ToolDefinition) *ResourceCost {
+	if def.Meta != nil {
+		raw, ok := def.Meta["resourceCost"]
+		if ok && raw != nil {
+			encoded, err := json.Marshal(raw)
+			if err == nil {
+				var cost ResourceCost
+				if err := json.Unmarshal(encoded, &cost); err == nil {
+					return &cost
+				}
+			}
+		}
+	}
+	if cost, ok := RegisteredResourceCost(def.Name); ok {
+		return &cost
+	}
+	return nil
 }
 
 // CapabilityDescriptorFromDefinition converts one public tool definition into

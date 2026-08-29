@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wunderous/host-agents/internal/plan"
+	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/state"
 	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
@@ -233,6 +234,7 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 		"generation":      doc.Generation,
 		"catalogRevision": snapshot.Revision,
 	}, cancel)
+	taskCtx = resource.WithOperationIdentity(taskCtx, taskName, rec.TaskID)
 	s.planMu.Lock()
 	if s.closed {
 		s.planMu.Unlock()
@@ -297,7 +299,7 @@ func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc,
 		applyRecipeOutputMapping(&final, recipeMetadata)
 	}
 	if runErr == nil && status == "completed" && recipeBoolField(recipeMetadata, "providerTeardown") {
-		if err := s.completeProviderTeardown(recipeMetadata); err != nil {
+		if err := s.completeProviderTeardownContext(ctx, recipeMetadata); err != nil {
 			status = "failed"
 			final.Status = status
 			final.Error = err.Error()

@@ -3,11 +3,13 @@ package hostmcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
+	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
@@ -163,6 +165,33 @@ func TestProviderWireSchemaMatchesDescriptor(t *testing.T) {
 		return
 	}
 	t.Fatal("provider operation missing from tools/list")
+}
+
+func TestProviderMutationWithoutResourceCostFailsClosed(t *testing.T) {
+	server, _ := newBindingTestServer(t)
+	config := resource.DefaultConfig(t.TempDir())
+	config.FailClosedOnUnknown = false
+	admission, err := resource.NewCoordinator(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.admission = admission
+
+	manifest := fakeProviderManifest("opute.capability.fake.mutate")
+	manifest.Services[0].Operations[0].Effect = "mutation"
+	if err := server.registerProviderServices(manifest); err != nil {
+		t.Fatal(err)
+	}
+	result, err := server.DispatchTool(context.Background(), "opute.capability.fake.mutate", map[string]any{}, nil)
+	if err != nil {
+		t.Fatalf("dispatch returned protocol error: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("mutation without resource cost was accepted: %#v", result)
+	}
+	if len(result.Content) == 0 || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "resource_declaration_required") {
+		t.Fatalf("unexpected missing-cost error: %#v", result.Content)
+	}
 }
 
 func TestProviderRefreshUnpublishesOperationsRemovedFromManifest(t *testing.T) {

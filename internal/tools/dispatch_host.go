@@ -79,6 +79,26 @@ func init() {
 }
 
 func init() {
+	register(toolname.TerminateWSLDistribution, EffectMutation, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().TerminateWSLDistribution(ctx, stringField(args, "distro"), onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "WSL distribution terminated."), nil
+	})
+}
+
+func init() {
+	register(toolname.ShutdownWSL, EffectDestructive, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().ShutdownWSL(ctx, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "WSL environment shut down."), nil
+	})
+}
+
+func init() {
 	register(toolname.ProbeHTTPEndpoint, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().ProbeHTTPEndpoint(ctx, host.ProbeHTTPEndpointArgs{Endpoint: stringField(args, "endpoint")})
 		if err != nil {

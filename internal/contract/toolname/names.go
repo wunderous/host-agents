@@ -50,6 +50,7 @@ const (
 	GetClusterDetails             = "get_cluster_details"
 	GetClusterRuntimeDetails      = "get_cluster_runtime_details"
 	GetHostInfo                   = "get_host_info"
+	GetHostCapacity               = "get_host_capacity"
 	GetK8sResource                = "get_k8s_resource"
 	GetK8sResourceStatus          = "get_k8s_resource_status"
 	GetLocalStatus                = "get_local_status"
@@ -90,6 +91,7 @@ const (
 	PutK8sSecret                  = "put_k8s_secret"
 	ReconcilePostgreSQLService    = "reconcile_postgresql_service"
 	ReconcileServingAssignment    = "reconcile_serving_assignment"
+	ReconcileHostResourcePolicy   = "reconcile_host_resource_policy"
 	RecoverBridge                 = "recover_bridge"
 	ReleasePostgreSQLServiceRelay = "release_postgresql_service_relay"
 	ReleaseSqlConnector           = "release_sql_connector"
@@ -111,6 +113,8 @@ const (
 	StageBuildContext             = "stage_build_context"
 	StartLocalLLMRuntime          = "start_local_llm_runtime"
 	StartVM                       = "start_vm"
+	TerminateWSLDistribution      = "terminate_wsl_distribution"
+	ShutdownWSL                   = "shutdown_wsl"
 	StopLocalLLMRuntime           = "stop_local_llm_runtime"
 	StopVM                        = "stop_vm"
 	UninstallHelmChart            = "uninstall_helm_chart"
@@ -159,6 +163,7 @@ func All() []string {
 		GetClusterDetails,
 		GetClusterRuntimeDetails,
 		GetHostInfo,
+		GetHostCapacity,
 		GetK8sResource,
 		GetK8sResourceStatus,
 		GetLocalStatus,
@@ -199,6 +204,7 @@ func All() []string {
 		PutK8sSecret,
 		ReconcilePostgreSQLService,
 		ReconcileServingAssignment,
+		ReconcileHostResourcePolicy,
 		RecoverBridge,
 		ReleasePostgreSQLServiceRelay,
 		ReleaseSqlConnector,
@@ -220,6 +226,8 @@ func All() []string {
 		StageBuildContext,
 		StartLocalLLMRuntime,
 		StartVM,
+		TerminateWSLDistribution,
+		ShutdownWSL,
 		StopLocalLLMRuntime,
 		StopVM,
 		UninstallHelmChart,

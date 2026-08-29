@@ -593,6 +593,16 @@
       "name": "release_postgresql_service_relay",
       "classification": "mutation",
       "support": "experimental"
+    },
+    {
+      "name": "get_host_capacity",
+      "classification": "read_only",
+      "support": "stable"
+    },
+    {
+      "name": "reconcile_host_resource_policy",
+      "classification": "mutation",
+      "support": "experimental"
     }
   ]
 }

@@ -39,7 +39,7 @@ type Server struct {
 	standalone                 bool
 	allowMutations             bool
 	state                      *state.Store
-	admission                  *resource.Coordinator
+	admission                  resource.HostResourceService
 	mu                         sync.Mutex
 	catalogMu                  sync.RWMutex
 	planMu                     sync.Mutex
@@ -81,7 +81,7 @@ type Options struct {
 	AllowMutations         bool
 	StateDir               string
 	Version                string
-	Admission              *resource.Coordinator
+	Admission              resource.HostResourceService
 	AllowedImplementations map[string]bool
 	AuthorizedProviders    map[string]bool
 }
@@ -138,6 +138,10 @@ func NewServer(opts Options) (*Server, error) {
 		Capabilities: capabilities,
 		Logger:       opts.Logger,
 	})
+	resourceService := opts.Admission
+	if resourceService == nil {
+		resourceService = opts.Ops.ResourceService()
+	}
 	hs := &Server{
 		mcpServer:                  srv,
 		logger:                     opts.Logger,
@@ -148,7 +152,7 @@ func NewServer(opts Options) (*Server, error) {
 		standalone:                 opts.Standalone,
 		allowMutations:             opts.AllowMutations,
 		toolDefs:                   catalog,
-		admission:                  opts.Admission,
+		admission:                  resourceService,
 		catalog:                    capabilityCatalog,
 		registry:                   registry,
 		capabilities:               make(map[string]hostcapability.Capability),
@@ -183,7 +187,7 @@ func NewServer(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("restore provider generations: %w", err)
 		}
 	}
-	if _, err := hs.providerContext.Plugin(resourceServicesPlugin{registry: opts.Ops.ResourceRegistry(), resolver: opts.Ops, tenantID: opts.Ops.TenantID()}); err != nil {
+	if _, err := hs.providerContext.Plugin(resourceServicesPlugin{registry: opts.Ops.ResourceRegistry(), resolver: opts.Ops, tenantID: opts.Ops.TenantID(), service: resourceService}); err != nil {
 		return nil, fmt.Errorf("mount resource services: %w", err)
 	}
 	hs.registerTools()
@@ -393,6 +397,13 @@ func (s *Server) registerProviderServicesForGeneration(manifest providercontract
 				Idempotent:        operation.Idempotent,
 				SupportsReadiness: operation.SupportsReadiness,
 			}
+			if operation.ResourceCost != nil {
+				descriptor.ResourceCost = &tools.ResourceCost{
+					CPUCores: operation.ResourceCost.CPUCores, MemoryBytes: operation.ResourceCost.MemoryBytes,
+					DiskBytes: operation.ResourceCost.DiskBytes, Tasks: operation.ResourceCost.Tasks,
+					Class: operation.ResourceCost.Class,
+				}
+			}
 			serviceID := service.ID
 			providerCapability := hostcapability.NewProviderAdapter(descriptor, func(ctx context.Context, args hostcapability.RawArguments, _ tools.ExecutionBinding, _ hostcapability.ExecutionSink) (*mcp.CallToolResult, error) {
 				// Every provider operation is affine to the generation that
@@ -483,69 +494,199 @@ func (s *Server) DispatchTool(ctx context.Context, name string, args map[string]
 	rawArgs := cloneArguments(args)
 	// MCP HTTP calls enter through handleToolCall, which intercepts lifecycle
 	// tools before the generic capability adapter. Internal host-worker calls
-	// enter here directly, so keep the same neutral lifecycle boundary for both
-	// transports. Without this branch a platform-connected agent advertises
-	// provider lifecycle tools but routes them into the generic tools dispatcher,
-	// where they correctly fail as unknown built-ins.
-	switch name {
-	case "validate_host_plan":
-		return s.handleValidateHostPlan(rawArgs)
-	case "run_host_plan":
-		return s.handleRunHostPlan(rawArgs)
-	case "get_host_plan_run":
-		return s.handleGetHostPlanRun(rawArgs)
-	case "validate_runtime_recipe":
-		return s.handleValidateRuntimeRecipe(rawArgs)
-	case "run_runtime_recipe":
-		return s.handleRunRuntimeRecipe(rawArgs)
-	case "get_runtime_recipe_run":
-		return s.handleGetRuntimeRecipeRun(rawArgs)
-	case "validate_tunnel_recipe":
-		return s.handleValidateTunnelRecipe(rawArgs)
-	case "run_tunnel_recipe":
-		return s.handleRunTunnelRecipe(rawArgs)
-	case "get_tunnel_run":
-		return s.handleGetTunnelRun(rawArgs)
-	case "opute.provider.install":
-		return s.handleProviderInstall(rawArgs)
-	case "opute.provider.validate":
-		return s.handleProviderValidate(rawArgs)
-	case "opute.provider.status":
-		return s.handleProviderStatus(rawArgs)
-	case "opute.provider.reload":
-		return s.handleProviderReload(rawArgs)
-	case "opute.provider.teardown":
-		return s.handleProviderTeardown(rawArgs)
-	case "get_capability_catalog":
-		return s.handleGetCapabilityCatalog()
-	case "open_assistant_session":
-		return s.handleOpenAssistantSession(rawArgs)
+	// enter here directly, so use one lifecycle adapter for both transports.
+	// The adapter admits the lifecycle operation before its provider callback or
+	// durable plan is started; plan nodes acquire their own inherited/typed
+	// reservation at the generic dispatch boundary.
+	if result, err, handled := s.dispatchLifecycleTool(ctx, name, rawArgs); handled {
+		return result, err
 	}
 	binding, err := resolveExecutionBinding(s, name, rawArgs)
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
-	// Provider operations are orchestration boundaries, not host-local
-	// primitives. A provider may call the public Host Agent callback to run a
-	// generic primitive; holding this process's admission lock while waiting
-	// for that callback would deadlock the shared-host coordinator (the outer
-	// provider call holds a normal/read permit while the callback may require a
-	// heavy/write permit such as ensure_host_artifact or apply_manifest).
-	if s.admission == nil || s.isProviderCapability(name) {
+	if s.admission == nil {
 		return s.dispatchRegisteredOrBuiltIn(ctx, name, rawArgs, binding, onData)
 	}
-	// A registered capability declared its admission class at its dispatch
-	// site; only unregistered names fall back to inference by name (W8).
-	class, declared := tools.RegisteredAdmissionClass(name)
-	if !declared {
-		class = resource.ClassifyTool(name)
-	}
-	release, err := s.admission.AcquireClass(ctx, name, class)
+	reservation, err := s.admitInvocation(ctx, name, rawArgs, binding)
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
-	defer release()
+	if reservation != nil {
+		defer func() { _ = s.admission.Release(reservation) }()
+		binding.ReservationID = reservation.ID
+		binding.ResourcePolicyRevision = s.admission.Snapshot().PolicyRevision
+		ctx = resource.WithReservation(ctx, reservation)
+	}
 	return s.dispatchRegisteredOrBuiltIn(ctx, name, rawArgs, binding, onData)
+}
+
+// dispatchLifecycleTool handles the small set of transport-owned operations
+// that are not ordinary capability registrations. They still have a typed
+// catalog descriptor and must cross the same resource-admission boundary as a
+// registered capability. The lifecycle routing table is explicit operation
+// ownership, not a name-based resource classifier.
+func (s *Server) dispatchLifecycleTool(ctx context.Context, name string, args map[string]any) (*mcp.CallToolResult, error, bool) {
+	if !isLifecycleTool(name) {
+		return nil, nil, false
+	}
+	binding := tools.ExecutionBinding{
+		SchemaVersion: tools.ExecutionBindingSchemaVersion,
+		Admission:     "tenant-resource-registry",
+		Authorization: "admitted",
+	}
+	if s.admission != nil {
+		reservation, err := s.admitInvocation(ctx, name, args, binding)
+		if err != nil {
+			return tools.ErrorResult(err), nil, true
+		}
+		if reservation != nil {
+			defer func() { _ = s.admission.Release(reservation) }()
+			ctx = resource.WithReservation(ctx, reservation)
+			binding.ReservationID = reservation.ID
+			binding.ResourcePolicyRevision = s.admission.Snapshot().PolicyRevision
+		}
+	}
+	result, err := s.invokeLifecycleTool(ctx, name, args)
+	return result, err, true
+}
+
+func isLifecycleTool(name string) bool {
+	switch name {
+	case "validate_host_plan", "run_host_plan", "get_host_plan_run",
+		"validate_runtime_recipe", "run_runtime_recipe", "get_runtime_recipe_run",
+		"validate_tunnel_recipe", "run_tunnel_recipe", "get_tunnel_run",
+		"opute.provider.install", "opute.provider.validate", "opute.provider.status",
+		"opute.provider.reload", "opute.provider.teardown",
+		"get_capability_catalog", "open_assistant_session":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) invokeLifecycleTool(ctx context.Context, name string, args map[string]any) (*mcp.CallToolResult, error) {
+	switch name {
+	case "validate_host_plan":
+		return s.handleValidateHostPlan(args)
+	case "run_host_plan":
+		return s.handleRunHostPlan(args)
+	case "get_host_plan_run":
+		return s.handleGetHostPlanRun(args)
+	case "validate_runtime_recipe":
+		return s.handleValidateRuntimeRecipe(args)
+	case "run_runtime_recipe":
+		return s.handleRunRuntimeRecipe(args)
+	case "get_runtime_recipe_run":
+		return s.handleGetRuntimeRecipeRun(args)
+	case "validate_tunnel_recipe":
+		return s.handleValidateTunnelRecipe(args)
+	case "run_tunnel_recipe":
+		return s.handleRunTunnelRecipe(args)
+	case "get_tunnel_run":
+		return s.handleGetTunnelRun(args)
+	case "opute.provider.install":
+		return s.handleProviderInstallContext(ctx, args)
+	case "opute.provider.validate":
+		return s.handleProviderValidateContext(ctx, args)
+	case "opute.provider.status":
+		return s.handleProviderStatus(args)
+	case "opute.provider.reload":
+		return s.handleProviderReloadContext(ctx, args)
+	case "opute.provider.teardown":
+		return s.handleProviderTeardownContext(ctx, args)
+	case "get_capability_catalog":
+		return s.handleGetCapabilityCatalog()
+	case "open_assistant_session":
+		return s.handleOpenAssistantSession(args)
+	default:
+		return nil, fmt.Errorf("unknown lifecycle tool %q", name)
+	}
+}
+
+func (s *Server) admitInvocation(ctx context.Context, name string, args map[string]any, binding tools.ExecutionBinding) (*resource.Reservation, error) {
+	class, declared := tools.RegisteredAdmissionClass(name)
+	if !declared {
+		// Transport-owned lifecycle definitions carry their cost in the typed
+		// catalog descriptor. Do not infer a workload class from a name: an
+		// unregistered mutating operation must fail closed below.
+		class = resource.ClassControl
+	}
+	cost := resource.DefaultCostForClass(class)
+	descriptor, found := s.capabilityDescriptor(name)
+	if found && descriptor.ResourceCost != nil {
+		declaredClass := class
+		if descriptor.ResourceCost.Class != "" {
+			parsed, ok := admissionClass(descriptor.ResourceCost.Class)
+			if !ok {
+				return nil, fmt.Errorf("resource_declaration_invalid: capability %q declares unknown resource class %q", name, descriptor.ResourceCost.Class)
+			}
+			declaredClass = parsed
+		}
+		cost = resource.AdmissionRequest{
+			Class: declaredClass, CPUCores: descriptor.ResourceCost.CPUCores,
+			MemoryBytes: descriptor.ResourceCost.MemoryBytes, DiskBytes: descriptor.ResourceCost.DiskBytes,
+			Tasks: descriptor.ResourceCost.Tasks,
+		}
+	} else if found && s.isProviderCapability(name) && descriptor.Effect != string(tools.EffectRead) {
+		return nil, fmt.Errorf("resource_declaration_required: provider workload capability %q must declare typed resourceCost metadata", name)
+	} else if found && s.isProviderCapability(name) {
+		// Read-only provider calls have no declared host workload. They do not
+		// take a permit, which preserves nested provider callbacks while still
+		// requiring typed cost metadata for every mutating provider operation.
+		cost = resource.DefaultCostForClass(resource.ClassControl)
+	} else if found && descriptor.Effect != string(tools.EffectRead) && !declared {
+		return nil, fmt.Errorf("resource_declaration_required: capability %q must declare typed resourceCost metadata", name)
+	} else if !found && !declared {
+		return nil, fmt.Errorf("resource_declaration_required: operation %q is not registered with a typed resource cost", name)
+	}
+	cost.Operation = name
+	cost.AgentID = s.agent.AgentID()
+	cost.OperationID = stringArgument(args, "operationId")
+	cost.TaskID = stringArgument(args, "taskId")
+	if operationID, taskID := resource.OperationIdentityFromContext(ctx); cost.OperationID == "" && cost.TaskID == "" {
+		cost.OperationID, cost.TaskID = operationID, taskID
+	}
+	cost.ResourceURI = firstBoundURI(binding)
+	cost.GenerationID = binding.GenerationID
+	if parent, ok := resource.ReservationFromContext(ctx); ok {
+		cost.ParentReservationID = parent.ID
+	}
+	return s.admission.Admit(ctx, cost)
+}
+
+func (s *Server) capabilityDescriptor(name string) (tools.CapabilityDescriptor, bool) {
+	s.catalogMu.RLock()
+	defer s.catalogMu.RUnlock()
+	for _, descriptor := range s.catalog.Tools {
+		if descriptor.Name == name {
+			return descriptor, true
+		}
+	}
+	return tools.CapabilityDescriptor{}, false
+}
+
+func admissionClass(value string) (resource.Class, bool) {
+	switch resource.Class(strings.TrimSpace(value)) {
+	case resource.ClassControl, resource.ClassNormal, resource.ClassHeavy:
+		return resource.Class(value), true
+	default:
+		return "", false
+	}
+}
+
+func stringArgument(args map[string]any, key string) string {
+	value, _ := args[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func firstBoundURI(binding tools.ExecutionBinding) string {
+	for _, bound := range binding.Resources {
+		if strings.TrimSpace(bound.URI) != "" {
+			return bound.URI
+		}
+	}
+	return ""
 }
 
 func (s *Server) isProviderCapability(name string) bool {
@@ -1016,39 +1157,8 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 	if s.standalone && (tools.IsStandaloneMutation(name) || (dynamicEffect != "" && dynamicEffect != "read")) && !s.allowMutations {
 		return tools.ErrorResult(fmt.Errorf("standalone mutations are disabled; set OPUTE_STANDALONE_ALLOW_MUTATIONS=true")), nil
 	}
-	switch name {
-	case "validate_host_plan":
-		return s.handleValidateHostPlan(args)
-	case "run_host_plan":
-		return s.handleRunHostPlan(args)
-	case "get_host_plan_run":
-		return s.handleGetHostPlanRun(args)
-	case "validate_runtime_recipe":
-		return s.handleValidateRuntimeRecipe(args)
-	case "run_runtime_recipe":
-		return s.handleRunRuntimeRecipe(args)
-	case "get_runtime_recipe_run":
-		return s.handleGetRuntimeRecipeRun(args)
-	case "validate_tunnel_recipe":
-		return s.handleValidateTunnelRecipe(args)
-	case "run_tunnel_recipe":
-		return s.handleRunTunnelRecipe(args)
-	case "get_tunnel_run":
-		return s.handleGetTunnelRun(args)
-	case "opute.provider.install":
-		return s.handleProviderInstall(args)
-	case "opute.provider.validate":
-		return s.handleProviderValidate(args)
-	case "opute.provider.status":
-		return s.handleProviderStatus(args)
-	case "opute.provider.reload":
-		return s.handleProviderReload(args)
-	case "opute.provider.teardown":
-		return s.handleProviderTeardown(args)
-	case "get_capability_catalog":
-		return s.handleGetCapabilityCatalog()
-	case "open_assistant_session":
-		return s.handleOpenAssistantSession(args)
+	if result, err, handled := s.dispatchLifecycleTool(ctx, name, args); handled {
+		return result, err
 	}
 	if name == "cancel_operation" {
 		if id, _ := args["operationId"].(string); id != "" {
@@ -1248,6 +1358,7 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 	}
 	taskCtx, cancel := context.WithCancel(context.Background())
 	rec := s.tasks.CreateWithCancel(name, s.redactTaskArgs(name, args), time.Hour, desc, nil, cancel)
+	taskCtx = resource.WithOperationIdentity(taskCtx, name, rec.TaskID)
 	if s.state != nil {
 		_ = s.state.Create(rec.TaskID, name, desc)
 	}

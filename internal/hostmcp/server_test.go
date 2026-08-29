@@ -18,6 +18,7 @@ import (
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
 	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/hostruntime"
+	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
 )
@@ -174,6 +175,26 @@ func TestDispatchToolRoutesLifecycleCallsThroughProviderBoundary(t *testing.T) {
 	payload, ok := result.StructuredContent.(tools.CapabilityCatalogSnapshot)
 	if !ok || payload.Revision == "" {
 		t.Fatalf("capability catalog result = %#v", result.StructuredContent)
+	}
+}
+
+func TestPolicyReconcileRemainsAdmissibleWhenWorkloadEnforcementIsUnknown(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	config := resource.DefaultConfig(t.TempDir())
+	config.FailClosedOnUnknown = true
+	config.EnforcementProbe = func() string { return resource.EnforcementUnknown }
+	admission, err := resource.NewCoordinator(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.admission = admission
+
+	reservation, err := server.admitInvocation(context.Background(), "reconcile_host_resource_policy", map[string]any{}, tools.ExecutionBinding{})
+	if err != nil {
+		t.Fatalf("policy reconciliation was blocked by workload enforcement state: %v", err)
+	}
+	if reservation == nil || reservation.ID != "control" {
+		t.Fatalf("policy reconciliation reservation = %#v, want zero-cost control reservation", reservation)
 	}
 }
 

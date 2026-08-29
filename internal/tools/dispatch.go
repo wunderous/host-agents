@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -100,7 +101,8 @@ func NewCapabilityError(owner, code string, err error) *CapabilityError {
 
 // ErrorResult builds an MCP error tool result.
 func ErrorResult(err error) *mcp.CallToolResult {
-	if admissionErr, ok := err.(*resource.AdmissionError); ok {
+	var admissionErr *resource.AdmissionError
+	if errors.As(err, &admissionErr) {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: "Error: " + err.Error()}},
 			StructuredContent: map[string]any{
@@ -112,6 +114,22 @@ func ErrorResult(err error) *mcp.CallToolResult {
 				"owner":        "admission",
 			},
 			IsError: true,
+		}
+	}
+	var requestErr *resource.RequestError
+	if errors.As(err, &requestErr) {
+		return &mcp.CallToolResult{
+			Content:           []mcp.Content{&mcp.TextContent{Text: "Error: " + err.Error()}},
+			StructuredContent: map[string]any{"code": requestErr.Code, "field": requestErr.Field, "reason": requestErr.Reason, "owner": "admission"},
+			IsError:           true,
+		}
+	}
+	var reconcileErr *resource.ReconcileError
+	if errors.As(err, &reconcileErr) {
+		return &mcp.CallToolResult{
+			Content:           []mcp.Content{&mcp.TextContent{Text: "Error: " + err.Error()}},
+			StructuredContent: map[string]any{"code": reconcileErr.Code, "reason": reconcileErr.Reason, "owner": "admission"},
+			IsError:           true,
 		}
 	}
 	if capabilityErr, ok := err.(*CapabilityError); ok {
