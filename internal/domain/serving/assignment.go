@@ -315,14 +315,16 @@ func servingSystemdUnitActive(unit string) bool {
 func servingLaunchCommand(pidFile, assignmentID, command, restartPolicy string) string {
 	unit := servingTransientUnit(assignmentID)
 	logToken := servingFileToken(assignmentID)
+	resourceProperties := " --property=Slice=opute-workload.slice --property=MemoryHigh=5G --property=MemoryMax=6G --property=MemorySwapMax=1G --property=CPUQuota=600% --property=CPUWeight=100 --property=TasksMax=4096 --property=StartLimitIntervalSec=60s --property=StartLimitBurst=5"
 	restartProperties := ""
 	if restartPolicy == "on-failure" || restartPolicy == "always" {
 		restartProperties = " --property=Restart=" + restartPolicy + " --property=RestartSec=2s"
 	}
 	return fmt.Sprintf(
-		"pidfile=%s; unit=%s; systemctl --user stop \"$unit\" >/dev/null 2>&1 || true; systemctl --user reset-failed \"$unit\" >/dev/null 2>&1 || true; terminate_tree() { target=\"$1\"; for child in $(pgrep -P \"$target\" 2>/dev/null || true); do terminate_tree \"$child\"; done; kill -TERM \"$target\" 2>/dev/null || true; }; if test -s \"$pidfile\"; then old=$(cat \"$pidfile\"); kill -TERM -- -\"$old\" 2>/dev/null || true; terminate_tree \"$old\"; fi; systemd-run --user --unit=\"$unit\" --collect --no-block --property=KillMode=control-group%s /bin/bash -lic %s >/tmp/serving-assignment-%s-supervisor.log 2>&1; for _ in $(seq 1 50); do pid=$(systemctl --user show \"$unit\" -p MainPID --value 2>/dev/null || true); if [[ \"$pid\" =~ ^[1-9][0-9]*$ ]] && kill -0 \"$pid\" 2>/dev/null; then printf '%%s\\n' \"$pid\" >\"$pidfile\"; exit 0; fi; sleep 0.1; done; echo \"serving supervisor did not expose a live main PID for $unit\" >&2; systemctl --user status \"$unit\" --no-pager 2>&1 || true; exit 1",
+		"pidfile=%s; unit=%s; systemctl --user stop \"$unit\" >/dev/null 2>&1 || true; systemctl --user reset-failed \"$unit\" >/dev/null 2>&1 || true; rm -f \"$pidfile\"; systemd-run --user --unit=\"$unit\" --collect --no-block --property=KillMode=control-group%s%s /bin/bash -lic %s >/tmp/serving-assignment-%s-supervisor.log 2>&1; for _ in $(seq 1 50); do pid=$(systemctl --user show \"$unit\" -p MainPID --value 2>/dev/null || true); if [[ \"$pid\" =~ ^[1-9][0-9]*$ ]] && kill -0 \"$pid\" 2>/dev/null; then printf '%%s\\n' \"$pid\" >\"$pidfile\"; exit 0; fi; sleep 0.1; done; echo \"serving supervisor did not expose a live main PID for $unit\" >&2; systemctl --user status \"$unit\" --no-pager 2>&1 || true; exit 1",
 		shellQuoteServing(pidFile),
 		shellQuoteServing(unit),
+		resourceProperties,
 		restartProperties,
 		shellQuoteServing(command),
 		logToken,
@@ -468,15 +470,10 @@ func (s *Service) ReconcileServingAssignment(args ServingAssignmentArgs, onData 
 					// process. The assignment is the generic service boundary; losing
 					// these values here would make a valid service appear configured while
 					// its child observes a different runtime contract.
-					// Own a process session per assignment generation. Killing only the
-					// launcher PID leaves a service's watcher/worker tree alive after a
-					// source revision changes, so the next generation can keep serving old
-					// code and occupy the same endpoints. `setsid` makes the recorded PID
-					// the process-group leader; the group kill is generic and does not
-					// depend on the caller's runtime or service implementation.
-					// The user-systemd unit is the generic lifecycle owner. It survives
-					// a host-agent process restart while retaining assignment-scoped stop
-					// and replacement semantics.
+					// The user-systemd unit is the generic lifecycle owner. Its
+					// control-group kill mode stops the complete assignment tree and it
+					// survives a Host Agent process restart while retaining
+					// assignment-scoped replacement semantics.
 					launch := servingLaunchCommand(pidFile, args.AssignmentID, command, restartPolicy)
 					if err := s.deps.RunAgentShell(launch, onData); err != nil {
 						releaseServingLaunch(args)

@@ -11,7 +11,25 @@ func TestRenderLlamaSystemdUnitPinsQwenTemplateAndGPU(t *testing.T) {
 	unit := renderLlamaSystemdUnit(LlamaServerConfig{
 		Port: 8080, ModelRef: "qwen3.5-0.8b-opute-llama", ArtifactPath: "/models/qwen3.5-0.8b-q4_k_m.gguf", ContextSize: 8192, GpuLayers: 999, BinaryPath: "/usr/local/bin/llama-server",
 	})
-	for _, expected := range []string{"Description=Opute llama-server runtime", "--model /models/qwen3.5-0.8b-q4_k_m.gguf --alias \"qwen3.5-0.8b-opute-llama\"", "--jinja", "--reasoning-budget 0", "--n-gpu-layers 999", "--ctx-size 8192", "CUDA_VISIBLE_DEVICES=0"} {
+	for _, expected := range []string{
+		"Description=Opute llama-server runtime",
+		"StartLimitIntervalSec=60s",
+		"StartLimitBurst=5",
+		"Slice=opute-workload.slice",
+		"KillMode=control-group",
+		"MemoryHigh=5G",
+		"MemoryMax=6G",
+		"MemorySwapMax=1G",
+		"CPUQuota=600%",
+		"CPUWeight=100",
+		"TasksMax=4096",
+		"--model /models/qwen3.5-0.8b-q4_k_m.gguf --alias \"qwen3.5-0.8b-opute-llama\"",
+		"--jinja",
+		"--reasoning-budget 0",
+		"--n-gpu-layers 999",
+		"--ctx-size 8192",
+		"CUDA_VISIBLE_DEVICES=0",
+	} {
 		if !strings.Contains(unit, expected) {
 			t.Fatalf("unit missing %q:\n%s", expected, unit)
 		}

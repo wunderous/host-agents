@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"regexp"
 	"strings"
@@ -142,6 +143,9 @@ func validateOperation(operation Operation, owner string) error {
 	if operation.TaskSupport != "" && operation.TaskSupport != "sync_only" && operation.TaskSupport != "bridged" {
 		return fmt.Errorf("provider operation %q has unsupported taskSupport %q", operation.ID, operation.TaskSupport)
 	}
+	if err := validateResourceCost(operation.ResourceCost, operation.ID); err != nil {
+		return err
+	}
 	for _, binding := range operation.Requires {
 		if strings.TrimSpace(binding.ResourceType) == "" {
 			return fmt.Errorf("provider operation %q has a resource binding without resourceType", operation.ID)
@@ -165,6 +169,30 @@ func validateOperation(operation Operation, owner string) error {
 		}
 	}
 	return nil
+}
+
+func validateResourceCost(cost *ResourceCost, operationID string) error {
+	if cost == nil {
+		return nil
+	}
+	if math.IsNaN(cost.CPUCores) || math.IsInf(cost.CPUCores, 0) || cost.CPUCores < 0 {
+		return fmt.Errorf("provider operation %q has an invalid resourceCost.cpuCores", operationID)
+	}
+	for field, value := range map[string]int64{
+		"memoryBytes": cost.MemoryBytes,
+		"diskBytes":   cost.DiskBytes,
+		"tasks":       cost.Tasks,
+	} {
+		if value < 0 {
+			return fmt.Errorf("provider operation %q has a negative resourceCost.%s", operationID, field)
+		}
+	}
+	switch strings.TrimSpace(cost.Class) {
+	case "", "control", "normal", "heavy":
+		return nil
+	default:
+		return fmt.Errorf("provider operation %q has unsupported resourceCost.class %q", operationID, cost.Class)
+	}
 }
 
 func validateResultTypes(operation Operation) error {

@@ -99,11 +99,22 @@ type Operation struct {
 	Produces          []ResourceBinding               `json:"produces,omitempty" yaml:"produces,omitempty"`
 	Idempotent        bool                            `json:"idempotent" yaml:"idempotent"`
 	SupportsReadiness bool                            `json:"supportsReadiness" yaml:"supportsReadiness"`
+	ResourceCost      *ResourceCost                   `json:"resourceCost,omitempty" yaml:"resourceCost,omitempty"`
 	SupportsStreaming bool                            `json:"supportsStreaming,omitempty" yaml:"supportsStreaming,omitempty"`
 	// TaskSupport is explicit because MCP discovery does not transfer task
 	// ownership through the Host Agent boundary. Providers currently use
 	// sync_only until a Host Agent task bridge is implemented.
 	TaskSupport string `json:"taskSupport,omitempty" yaml:"taskSupport,omitempty"`
+}
+
+// ResourceCost is the provider-declared, provider-neutral admission cost for
+// one operation. The Host Agent owns admission; providers only declare cost.
+type ResourceCost struct {
+	CPUCores    float64 `json:"cpuCores,omitempty" yaml:"cpuCores,omitempty"`
+	MemoryBytes int64   `json:"memoryBytes,omitempty" yaml:"memoryBytes,omitempty"`
+	DiskBytes   int64   `json:"diskBytes,omitempty" yaml:"diskBytes,omitempty"`
+	Tasks       int64   `json:"tasks,omitempty" yaml:"tasks,omitempty"`
+	Class       string  `json:"class,omitempty" yaml:"class,omitempty"`
 }
 
 // ResourceBinding is provider-declared metadata. The host validates its

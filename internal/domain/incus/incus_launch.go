@@ -25,6 +25,29 @@ func normalizeProvisionInstanceType(raw string) string {
 	}
 }
 
+// parseProvisionInstanceType preserves the historical container default for an
+// omitted value while making an explicitly supplied runtime kind a typed
+// contract. Provisioning an existing instance must never turn a typo or a
+// runtime-kind mismatch into a second launch attempt.
+func parseProvisionInstanceType(raw string) (kind string, explicit bool, err error) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if normalized == "" {
+		return "container", false, nil
+	}
+	switch normalized {
+	case "container", "system-container":
+		return "container", true, nil
+	case "vm", "virtual-machine", "virtual_machine", "virtual machine":
+		return "virtual-machine", true, nil
+	default:
+		return "", true, &IncusRuntimeKindError{
+			Code:        "incus_runtime_kind_invalid",
+			Requested:   strings.TrimSpace(raw),
+			Remediation: "Use instanceType=container or instanceType=virtual-machine.",
+		}
+	}
+}
+
 func (s *Service) ReadInstanceType(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -33,12 +56,16 @@ func (s *Service) ReadInstanceType(name string) (string, error) {
 	if err := s.assertIncusOwnership(name, "read_instance_info"); err != nil {
 		return "", err
 	}
-	res, err := s.commandRunner([]string{"info", name, "--format", "json"}, nil, defaultDiscoveryTimeout)
+	// The Incus CLI used by the WSL host does not expose --format for
+	// `incus info`. Query the instance API directly so runtime-kind validation
+	// remains stable across CLI versions and does not depend on human output.
+	path := fmt.Sprintf("/1.0/instances/%s", urlPathEscape(name))
+	res, err := s.commandRunner([]string{"query", path}, nil, defaultDiscoveryTimeout)
 	if err != nil {
 		return "", err
 	}
 	if res.ExitCode != 0 {
-		return "", fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus info failed"))
+		return "", fmt.Errorf("%s", textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus instance query failed"))
 	}
 	var info struct {
 		Type string `json:"type"`
@@ -46,7 +73,29 @@ func (s *Service) ReadInstanceType(name string) (string, error) {
 	if err := json.Unmarshal([]byte(res.Stdout), &info); err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(info.Type), nil
+	typeName := strings.TrimSpace(info.Type)
+	if typeName == "" {
+		return "", errors.New("incus instance type is missing")
+	}
+	return typeName, nil
+}
+
+// normalizeObservedInstanceType maps the only two Incus runtime kinds this
+// provider owns into the provisioning vocabulary. Unknown kinds fail closed;
+// they must not be reported as a container or VM by a compatibility default.
+func normalizeObservedInstanceType(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "container":
+		return "container", nil
+	case "virtual-machine", "virtual machine":
+		return "virtual-machine", nil
+	default:
+		return "", &IncusRuntimeKindError{
+			Code:        "incus_runtime_kind_unknown",
+			Observed:    strings.TrimSpace(raw),
+			Remediation: "Inspect the Incus instance runtime kind before provisioning it.",
+		}
+	}
 }
 
 type incusProfileDevice struct {

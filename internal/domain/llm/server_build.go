@@ -150,7 +150,7 @@ install -m 0755 %s/bin/llama-server %s
 		llamaShellQuote(buildRoot), llamaShellQuote(sourceRoot), llamaShellQuote(buildRoot), llamaShellQuote(sourceRoot), llamaShellQuote(buildRoot),
 		llamaShellQuote(archivePath), llamaShellQuote(sourceRoot), llamaShellQuote(sourceRoot), llamaShellQuote(buildRoot), archFlag,
 		llamaShellQuote(buildRoot), llamaShellQuote(buildRoot), llamaShellQuote(filepath.Dir(outputPath)), llamaShellQuote(buildRoot), llamaShellQuote(outputPath))
-	buildResult, buildErr := s.shared.HostCommandRunnerContext(ctx, []string{"bash", "-lc", buildScript}, onData, 45*time.Minute)
+	buildResult, buildErr := s.shared.HostWorkloadRunnerContext(ctx, "llama-server-build-"+outputPath, []string{"bash", "-lc", buildScript}, onData, 45*time.Minute)
 	if buildErr != nil {
 		return nil, fmt.Errorf("build CUDA llama-server: %w", buildErr)
 	}

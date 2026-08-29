@@ -454,11 +454,21 @@ func renderLlamaSystemdUnit(cfg LlamaServerConfig) string {
 	return fmt.Sprintf(`[Unit]
 Description=Opute llama-server runtime
 After=network.target
+StartLimitIntervalSec=60s
+StartLimitBurst=5
 
 [Service]
 Type=simple
 Environment=CUDA_VISIBLE_DEVICES=0
 ExecStart=%s --model %s%s --host 127.0.0.1 --port %d --jinja%s%s --reasoning-budget 0 --ctx-size %d --n-gpu-layers %d --temp 0.1 --top-p 0.9 --seed 42
+Slice=opute-workload.slice
+KillMode=control-group
+MemoryHigh=5G
+MemoryMax=6G
+MemorySwapMax=1G
+CPUQuota=600%%
+CPUWeight=100
+TasksMax=4096
 Restart=on-failure
 RestartSec=3
 

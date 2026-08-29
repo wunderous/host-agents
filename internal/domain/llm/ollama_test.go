@@ -29,6 +29,16 @@ func TestRenderOllamaSystemdUnitUsesSharedConcurrencyPolicy(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"Description=Opute shared Ollama runtime",
+		"StartLimitIntervalSec=60s",
+		"StartLimitBurst=5",
+		"Slice=opute-workload.slice",
+		"KillMode=control-group",
+		"MemoryHigh=5G",
+		"MemoryMax=6G",
+		"MemorySwapMax=1G",
+		"CPUQuota=600%",
+		"CPUWeight=100",
+		"TasksMax=4096",
 		"ExecStart=/usr/local/bin/ollama serve",
 		"Environment=OLLAMA_HOST=127.0.0.1:11434",
 		"Environment=OLLAMA_NUM_PARALLEL=1",

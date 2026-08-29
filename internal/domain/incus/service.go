@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wunderous/host-agents/internal/hostruntime"
+	"github.com/wunderous/host-agents/internal/resource"
 )
 
 // defaultDiscoveryTimeout bounds a read-only incus query. The kubernetes domain
@@ -29,6 +30,10 @@ type Deps struct {
 	// one seam rather than three because incus does not need to know which
 	// domains hold relays.
 	RevokeRelays func()
+	// ResourceService is the shared typed host admission boundary. Incus uses
+	// its neutral effective limits together with declared instance inventory;
+	// it does not create a provider-specific coordinator.
+	ResourceService resource.HostResourceService
 }
 
 // Service is the incus domain's entry point.
@@ -39,9 +44,10 @@ type Service struct {
 	// resetCheckpointPath persists the progress of a stack reset so an
 	// interrupted one can be resumed rather than restarted.
 	resetCheckpointPath string
+	resourceService     resource.HostResourceService
 }
 
 // New builds the incus domain over the shared runtime seam.
 func New(shared *hostruntime.Shared, deps Deps, resetCheckpointPath string) *Service {
-	return &Service{shared: shared, deps: deps, resetCheckpointPath: resetCheckpointPath}
+	return &Service{shared: shared, deps: deps, resetCheckpointPath: resetCheckpointPath, resourceService: deps.ResourceService}
 }

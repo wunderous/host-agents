@@ -30,7 +30,8 @@ func (s *Service) Incus() *incus.Service {
 			ReinstallIncusStack: func(onData func(string)) (map[string]any, error) {
 				return s.Host().InstallIncusStack(InstallIncusStackArgs{}, onData)
 			},
-			RevokeRelays: s.revokeRelays,
+			RevokeRelays:    s.revokeRelays,
+			ResourceService: s.resourceSvc,
 		}, s.resetCheckpointPath)
 	})
 	return s.incusSvc

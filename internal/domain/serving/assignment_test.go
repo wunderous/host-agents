@@ -67,9 +67,30 @@ func TestServingTransientUnitIsHostGeneric(t *testing.T) {
 
 func TestServingLaunchUsesUserSystemdSupervisor(t *testing.T) {
 	command := servingLaunchCommand(servingPidFile("service-a"), "service-a", "cd '/workspace' && exec 'bun' 'run' 'dev'", "on-failure")
-	for _, want := range []string{"systemd-run --user", "--property=KillMode=control-group", "--property=Restart=on-failure", "--property=RestartSec=2s", "host-serving-service-a", "systemctl --user show"} {
+	for _, want := range []string{
+		"systemd-run --user",
+		"--property=Slice=opute-workload.slice",
+		"--property=KillMode=control-group",
+		"--property=MemoryHigh=5G",
+		"--property=MemoryMax=6G",
+		"--property=MemorySwapMax=1G",
+		"--property=CPUQuota=600%",
+		"--property=CPUWeight=100",
+		"--property=TasksMax=4096",
+		"--property=StartLimitIntervalSec=60s",
+		"--property=StartLimitBurst=5",
+		"--property=Restart=on-failure",
+		"--property=RestartSec=2s",
+		"host-serving-service-a",
+		"systemctl --user show",
+	} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("launch command missing %q: %s", want, command)
+		}
+	}
+	for _, forbidden := range []string{"terminate_tree", "kill -TERM", "pkill"} {
+		if strings.Contains(command, forbidden) {
+			t.Fatalf("launch command must not use detached process cleanup %q: %s", forbidden, command)
 		}
 	}
 }

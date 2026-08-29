@@ -54,26 +54,34 @@ func (s *Service) ProvisionContainer(args ProvisionContainerArgs, onData func(st
 	if image == "" {
 		image = "images:ubuntu/24.04"
 	}
-	requestedDisk := strings.TrimSpace(args.Disk)
-	disk := requestedDisk
-	if disk == "" {
-		disk = defaultIncusContainerRootDisk
-	}
-	quota, quotaErr := s.admitRootDiskQuota(disk, requestedDisk != "")
-	if quotaErr != nil {
-		return ContainerStatusResult{}, quotaErr
-	}
-	disk = quota.Size
-	if disk == "" && onData != nil {
-		onData(fmt.Sprintf("Provisioning %q without a root disk quota: %s", name, quota.Reason))
-	}
 	nesting := true
 	if args.Nesting != nil {
 		nesting = *args.Nesting
 	}
-	if existing, err := s.incusInstanceExists(name); err == nil && existing {
+	existing, err := s.incusInstanceExists(name)
+	if err != nil {
+		return ContainerStatusResult{}, fmt.Errorf("inspect existing Incus instance: %w", err)
+	}
+	if existing {
 		if err := s.assertIncusOwnership(name, "provision_container"); err != nil {
 			return ContainerStatusResult{}, err
+		}
+		observed, err := s.ReadInstanceType(name)
+		if err != nil {
+			return ContainerStatusResult{}, fmt.Errorf("validate existing Incus runtime kind: %w", err)
+		}
+		actualKind, err := normalizeObservedInstanceType(observed)
+		if err != nil {
+			runtimeErr := err.(*IncusRuntimeKindError)
+			runtimeErr.VMName = name
+			return ContainerStatusResult{}, runtimeErr
+		}
+		if actualKind != "container" {
+			return ContainerStatusResult{}, &IncusRuntimeKindError{
+				Code: "incus_runtime_kind_mismatch", VMName: name,
+				Requested: "container", Observed: actualKind,
+				Remediation: "Use the VM provisioning operation for a virtual-machine instance.",
+			}
 		}
 		if onData != nil {
 			onData(fmt.Sprintf("Reusing existing Incus container %q", name))
@@ -107,7 +115,31 @@ func (s *Service) ProvisionContainer(args ProvisionContainerArgs, onData func(st
 		}
 		return s.containerStatusResult(name, image, "running"), nil
 	}
-	if err := s.launchIncusContainer(name, image, disk, args.CPUs, strings.TrimSpace(args.Memory), nesting, onData, 10*time.Minute); err != nil {
+	requestedDisk := strings.TrimSpace(args.Disk)
+	disk := requestedDisk
+	if disk == "" {
+		disk = defaultIncusContainerRootDisk
+	}
+	quota, quotaErr := s.admitRootDiskQuota(disk, requestedDisk != "")
+	if quotaErr != nil {
+		return ContainerStatusResult{}, quotaErr
+	}
+	disk = quota.Size
+	if disk == "" && onData != nil {
+		onData(fmt.Sprintf("Provisioning %q without a root disk quota: %s", name, quota.Reason))
+	}
+	cpus := args.CPUs
+	if cpus <= 0 {
+		cpus = defaultIncusVMCPUs
+	}
+	memory := strings.TrimSpace(args.Memory)
+	if memory == "" {
+		memory = defaultIncusVMMemory
+	}
+	if err := s.enforceIncusAggregateBudget(name, cpus, memory, disk); err != nil {
+		return ContainerStatusResult{}, err
+	}
+	if err := s.launchIncusContainer(name, image, disk, cpus, memory, nesting, onData, 10*time.Minute); err != nil {
 		return ContainerStatusResult{}, err
 	}
 	if args.GPU {
@@ -152,7 +184,7 @@ func (s *Service) incusInstanceExists(name string) (bool, error) {
 		return false, err
 	}
 	if res.ExitCode != 0 {
-		return false, nil
+		return false, fmt.Errorf("incus list %q: %s", name, textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus list failed"))
 	}
 	return strings.TrimSpace(res.Stdout) != "", nil
 }

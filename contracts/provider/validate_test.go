@@ -75,6 +75,31 @@ func TestValidateOperationKeepsSelectorsDeclarativeAndOutputScoped(t *testing.T)
 	}
 }
 
+func TestValidateOperationRequiresFiniteNonNegativeResourceCost(t *testing.T) {
+	base := validService().Operations[0]
+	base.ResourceCost = &ResourceCost{Class: "heavy", CPUCores: 2, MemoryBytes: 2 << 30, DiskBytes: 4 << 30, Tasks: 8}
+	if err := validateOperation(base, "test"); err != nil {
+		t.Fatalf("valid resource cost rejected: %v", err)
+	}
+	for name, mutate := range map[string]func(*ResourceCost){
+		"negative cpu":    func(cost *ResourceCost) { cost.CPUCores = -1 },
+		"negative memory": func(cost *ResourceCost) { cost.MemoryBytes = -1 },
+		"negative disk":   func(cost *ResourceCost) { cost.DiskBytes = -1 },
+		"negative tasks":  func(cost *ResourceCost) { cost.Tasks = -1 },
+		"unknown class":   func(cost *ResourceCost) { cost.Class = "unbounded" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			cost := *base.ResourceCost
+			mutate(&cost)
+			operation := base
+			operation.ResourceCost = &cost
+			if err := validateOperation(operation, "test"); err == nil {
+				t.Fatal("invalid resource cost was accepted")
+			}
+		})
+	}
+}
+
 // serviceManifest returns a manifest whose only variable is the service under
 // test, so a failure names the service rule rather than unrelated envelope
 // validation.

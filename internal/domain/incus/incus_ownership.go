@@ -36,6 +36,18 @@ type IncusOwnershipMismatchError struct {
 	Remediation      string `json:"remediation"`
 }
 
+// IncusRuntimeKindError prevents a request for one Incus runtime kind from
+// silently reusing, relaunching, or misreporting an instance of another kind.
+// Resource limits are part of the existing instance's contract and are never
+// changed by a provisioning retry.
+type IncusRuntimeKindError struct {
+	Code        string `json:"code"`
+	VMName      string `json:"vmName,omitempty"`
+	Requested   string `json:"requested,omitempty"`
+	Observed    string `json:"observed,omitempty"`
+	Remediation string `json:"remediation"`
+}
+
 // SharedHostOwnershipError is owned by hostruntime: shared-host ownership is
 // an identity concern, and both incus and host operations report it.
 type SharedHostOwnershipError = hostruntime.SharedHostOwnershipError
@@ -49,6 +61,17 @@ func (e *IncusOwnershipMismatchError) Error() string {
 		return string(encoded)
 	}
 	return fmt.Sprintf("incus_ownership_mismatch: %s is owned by %s, expected %s", e.VMName, e.ActualOwner, e.ExpectedInstance)
+}
+
+func (e *IncusRuntimeKindError) Error() string {
+	if e == nil {
+		return "incus runtime kind validation failed"
+	}
+	encoded, err := json.Marshal(e)
+	if err == nil {
+		return string(encoded)
+	}
+	return fmt.Sprintf("%s: instance %q requested=%q observed=%q", e.Code, e.VMName, e.Requested, e.Observed)
 }
 
 func (s *Service) ownershipEnabled() bool {

@@ -13,6 +13,7 @@ import (
 	"github.com/wunderous/host-agents/internal/textutil"
 
 	"github.com/wunderous/host-agents/internal/hostruntime"
+	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
@@ -95,6 +96,57 @@ func (s *Service) provisionVM(args ProvisionVMArgs, onData func(string)) (VMStat
 	if memory == "" {
 		memory = defaultIncusVMMemory
 	}
+	instanceType, explicitType, err := parseProvisionInstanceType(args.InstanceType)
+	if err != nil {
+		return VMStatusResult{}, err
+	}
+	existing, err := s.incusInstanceExists(vmName)
+	if err != nil {
+		return VMStatusResult{}, fmt.Errorf("inspect existing Incus instance: %w", err)
+	}
+	if existing {
+		if err := s.assertIncusOwnership(vmName, "provision_vm"); err != nil {
+			return VMStatusResult{}, err
+		}
+		observed, err := s.ReadInstanceType(vmName)
+		if err != nil {
+			return VMStatusResult{}, fmt.Errorf("validate existing Incus runtime kind: %w", err)
+		}
+		actualKind, err := normalizeObservedInstanceType(observed)
+		if err != nil {
+			runtimeErr := err.(*IncusRuntimeKindError)
+			runtimeErr.VMName = vmName
+			return VMStatusResult{}, runtimeErr
+		}
+		if explicitType && actualKind != instanceType {
+			return VMStatusResult{}, &IncusRuntimeKindError{
+				Code: "incus_runtime_kind_mismatch", VMName: vmName,
+				Requested: instanceType, Observed: actualKind,
+				Remediation: "Use the existing instance runtime kind or delete it through the approved lifecycle operation before reprovisioning.",
+			}
+		}
+		// An omitted kind reuses the observed runtime kind. This is an
+		// idempotent status/start operation, never a create or resize.
+		instanceType = actualKind
+		if instanceType == "virtual-machine" {
+			if err := s.startExistingInstance(vmName, onData); err != nil {
+				return VMStatusResult{}, err
+			}
+			return s.vmStatusResult(vmName, image, "running", instanceType), nil
+		}
+		container, err := s.ProvisionContainer(ProvisionContainerArgs{
+			ContainerName: vmName,
+			Image:         image,
+			CPUs:          cpus,
+			Memory:        memory,
+			Disk:          args.Disk,
+			Nesting:       boolPointer(true),
+		}, onData)
+		if err != nil {
+			return VMStatusResult{}, err
+		}
+		return s.vmStatusResult(container.ContainerName, container.Image, container.Status, container.InstanceType), nil
+	}
 	requestedDisk := strings.TrimSpace(args.Disk)
 	disk := requestedDisk
 	if disk == "" {
@@ -108,14 +160,10 @@ func (s *Service) provisionVM(args ProvisionVMArgs, onData func(string)) (VMStat
 	if disk == "" && onData != nil {
 		onData(fmt.Sprintf("Provisioning %q without a root disk quota: %s", vmName, quota.Reason))
 	}
-
-	instanceType := normalizeProvisionInstanceType(args.InstanceType)
-	if exists, err := s.incusInstanceExists(vmName); err == nil && exists {
-		if err := s.assertIncusOwnership(vmName, "provision_vm"); err != nil {
+	if instanceType == "virtual-machine" {
+		if err := s.enforceIncusAggregateBudget(vmName, cpus, memory, disk); err != nil {
 			return VMStatusResult{}, err
 		}
-	}
-	if instanceType == "virtual-machine" {
 		if err := s.launchIncusVMViaAPI(vmName, image, cpus, memory, disk, onData, provisionVMTimeout); err != nil {
 			return VMStatusResult{}, err
 		}
@@ -140,6 +188,65 @@ func (s *Service) provisionVM(args ProvisionVMArgs, onData func(string)) (VMStat
 		return VMStatusResult{}, err
 	}
 	return s.vmStatusResult(container.ContainerName, container.Image, container.Status, container.InstanceType), nil
+}
+
+func boolPointer(value bool) *bool { return &value }
+
+func (s *Service) startExistingInstance(name string, onData func(string)) error {
+	started, err := s.commandRunner([]string{"start", name}, onData, 2*time.Minute)
+	if err != nil || (started.ExitCode != 0 && !strings.Contains(strings.ToLower(textutil.FirstNonEmpty(started.Stderr, started.Stdout)), "already running")) {
+		return fmt.Errorf("start existing Incus instance: %s", textutil.FirstNonEmpty(started.Stderr, started.Stdout, textutil.ErrString(err, "incus start failed")))
+	}
+	if err := s.ensureIncusInstanceAutostart(name); err != nil {
+		return err
+	}
+	return nil
+}
+
+// enforceIncusAggregateBudget rejects a new allocation when declared Incus
+// limits already consume the effective host budget. Existing instances are
+// observations here; this check never resizes or mutates them.
+func (s *Service) enforceIncusAggregateBudget(vmName string, cpus int, memory, disk string) error {
+	if s.resourceService == nil {
+		return nil
+	}
+	snapshot := s.resourceService.Snapshot()
+	if snapshot.Enforcement != resource.EnforcementEnforced {
+		return &resource.AdmissionError{
+			Code:         "host_resource_enforcement_unknown",
+			Class:        resource.ClassHeavy,
+			Pressure:     snapshot.Pressure,
+			Reason:       "Incus workload launch requires verified host cgroup enforcement",
+			RetryAfterMs: 1000,
+		}
+	}
+	capacity, err := s.VMInventoryCapacity()
+	if err != nil {
+		return fmt.Errorf("observe Incus allocation before launch: %w", err)
+	}
+	limits := snapshot.EffectiveLimits
+	if limits.CPUCores > 0 && float64(capacity.TotalVMCPULimitCores+cpus) > limits.CPUCores {
+		return incusAggregateAdmissionError(vmName, "CPU allocation exceeds effective host capacity")
+	}
+	requestedMemory := parseCapacityBytes(memory)
+	if limits.MemoryBytes > 0 && requestedMemory > 0 && capacity.TotalVMMemoryLimitBytes+requestedMemory > limits.MemoryBytes {
+		return incusAggregateAdmissionError(vmName, "memory allocation exceeds effective host capacity")
+	}
+	requestedDisk := parseCapacityBytes(disk)
+	if limits.DiskBytes > 0 && requestedDisk > 0 && capacity.TotalVMDiskLimitBytes+requestedDisk > limits.DiskBytes {
+		return incusAggregateAdmissionError(vmName, "disk allocation exceeds effective host capacity")
+	}
+	return nil
+}
+
+func incusAggregateAdmissionError(vmName, reason string) error {
+	return &resource.AdmissionError{
+		Code:         "host_capacity_saturated",
+		Class:        resource.ClassHeavy,
+		Pressure:     "normal",
+		Reason:       fmt.Sprintf("cannot launch Incus instance %q: %s", vmName, reason),
+		RetryAfterMs: 1000,
+	}
 }
 
 func (s *Service) vmStatusResult(name, image, status, instanceType string) VMStatusResult {
