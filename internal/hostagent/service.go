@@ -17,6 +17,7 @@ import (
 	"github.com/wunderous/host-agents/internal/domain/oci"
 	"github.com/wunderous/host-agents/internal/domain/postgres"
 	"github.com/wunderous/host-agents/internal/hostruntime"
+	"github.com/wunderous/host-agents/internal/resource"
 )
 
 // Service is the composition root's handle. One per host agent process.
@@ -53,6 +54,7 @@ type Service struct {
 	postgresSvc            *postgres.Service
 	postgresOnce           sync.Once
 	postgresRelayConfigDir string
+	resourceSvc            resource.HostResourceService
 	// k8s is the kubernetes domain, built lazily -- built in kubernetes_domain.go.
 	k8s     *kubernetes.Service
 	k8sOnce sync.Once
@@ -72,6 +74,7 @@ type Options struct {
 	SharedHostOwnerInstance   string
 	TenantID                  string
 	ResourceRegistry          ResourceRegistry
+	ResourceService           resource.HostResourceService
 }
 
 func New(opts Options) *Service {
@@ -113,6 +116,7 @@ func New(opts Options) *Service {
 		sqliteDatabaseRoot:     strings.TrimSpace(opts.SQLiteDatabaseRoot),
 		relayDirs:              [2]string{opts.RelayConfigDir, opts.SharedHostResourceLockDir},
 		postgresRelayConfigDir: postgresRelayConfigDir,
+		resourceSvc:            opts.ResourceService,
 	}
 }
 
@@ -121,6 +125,13 @@ func (s *Service) TenantID() string {
 		return ""
 	}
 	return s.shared.TenantID
+}
+
+func (s *Service) AgentID() string {
+	if s == nil {
+		return ""
+	}
+	return s.shared.AgentID
 }
 
 func resolveResetCheckpointPath(explicitPath, relayConfigDir string) string {
@@ -141,4 +152,20 @@ func (s *Service) ReadProviderID() string {
 // diagnostics such as get_host_info and get_local_status.
 func (s *Service) SetResourceSnapshot(snapshot func() map[string]any) {
 	s.shared.ResourceSnapshot = snapshot
+}
+
+// ResourceService returns the one host-wide typed capacity service mounted by
+// the runtime. Domains and provider callbacks reuse its reservation context;
+// they do not create another coordinator.
+func (s *Service) ResourceService() resource.HostResourceService {
+	if s == nil {
+		return nil
+	}
+	return s.resourceSvc
+}
+
+func (s *Service) SetResourceService(service resource.HostResourceService) {
+	if s != nil {
+		s.resourceSvc = service
+	}
 }

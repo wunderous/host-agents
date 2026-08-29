@@ -3,8 +3,11 @@ package resource
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wunderous/host-agents/internal/heartbeat"
@@ -30,31 +33,56 @@ type Config struct {
 	MinAvailableMemoryBytes int64
 	MinAvailableDiskBytes   int64
 	DiskPaths               []string
+	PolicyRevision          string
+	EnforcementMode         string
+	FailClosedOnUnknown     bool
+	CPUCapacityCores        float64
+	MemoryCapacityBytes     int64
+	DiskCapacityBytes       int64
+	TaskCapacity            int64
+	ReservationTTL          time.Duration
+	TenantID                string
+	// ReconcilePolicy is the concrete host backend. The resource package only
+	// validates the policy revision and exact host-service identity; systemd,
+	// WSL, Incus, and shell details stay in the owning host/provider domain.
+	ReconcilePolicy PolicyReconcileFunc
+	// EnforcementProbe reports whether the concrete workload boundary is
+	// observable and effective. It is deliberately a neutral result so the
+	// resource service never needs to know which host mechanism produced it.
+	EnforcementProbe func() string
 }
 
 // DefaultConfig returns a conservative policy for a WSL/Incus development
 // host. The caller should override LockDir and thresholds from configuration.
 func DefaultConfig(lockDir string) Config {
 	return Config{
-		LockDir:   lockDir,
-		MaxNormal: 2,
-		MaxHeavy:  1,
-		MaxQueued: 16,
-		DiskPaths: []string{"/"},
+		LockDir:        lockDir,
+		MaxNormal:      2,
+		MaxHeavy:       1,
+		MaxQueued:      16,
+		PolicyRevision: HostResourcePolicyRevision,
+		ReservationTTL: 15 * time.Minute,
+		DiskPaths:      []string{"/"},
 	}
 }
 
 // PressureSnapshot is safe to expose in diagnostics and heartbeat metadata.
 type PressureSnapshot struct {
-	Pressure             string `json:"pressure"`
-	Reason               string `json:"reason,omitempty"`
-	MemoryAvailableBytes int64  `json:"memoryAvailableBytes,omitempty"`
-	DiskAvailableBytes   int64  `json:"diskAvailableBytes,omitempty"`
-	DiskPressure         string `json:"diskPressure,omitempty"`
-	NormalInFlight       int    `json:"normalInFlight"`
-	HeavyInFlight        int    `json:"heavyInFlight"`
-	Queued               int    `json:"queued"`
-	CheckedAt            string `json:"checkedAt"`
+	Pressure             string                             `json:"pressure"`
+	Reason               string                             `json:"reason,omitempty"`
+	MemoryAvailableBytes int64                              `json:"memoryAvailableBytes,omitempty"`
+	DiskAvailableBytes   int64                              `json:"diskAvailableBytes,omitempty"`
+	DiskPressure         string                             `json:"diskPressure,omitempty"`
+	NormalInFlight       int                                `json:"normalInFlight"`
+	HeavyInFlight        int                                `json:"heavyInFlight"`
+	Queued               int                                `json:"queued"`
+	CheckedAt            string                             `json:"checkedAt"`
+	MemoryEvents         map[string]int64                   `json:"memoryEvents,omitempty"`
+	PressureStalls       map[string]heartbeat.PressureStall `json:"psi,omitempty"`
+	CgroupControllers    []string                           `json:"cgroupControllers,omitempty"`
+	CgroupEnforcement    string                             `json:"enforcement,omitempty"`
+	TasksCurrent         int64                              `json:"tasksCurrent,omitempty"`
+	TasksLimit           int64                              `json:"tasksLimit,omitempty"`
 }
 
 // AdmissionError is a retryable host-local capacity response.
@@ -74,8 +102,10 @@ func (e *AdmissionError) Error() string {
 }
 
 type Coordinator struct {
-	config Config
-	lock   hostLock
+	config          Config
+	lock            hostLock
+	reservationLock hostLock
+	reservationPath string
 
 	mu           sync.Mutex
 	normalActive int
@@ -83,6 +113,8 @@ type Coordinator struct {
 	queued       int
 	heavyQueued  int
 	notify       chan struct{}
+	reservations map[string]persistedReservation
+	closed       atomic.Bool
 }
 
 func NewCoordinator(config Config) (*Coordinator, error) {
@@ -98,11 +130,28 @@ func NewCoordinator(config Config) (*Coordinator, error) {
 	if len(config.DiskPaths) == 0 {
 		config.DiskPaths = []string{"/"}
 	}
+	if strings.TrimSpace(config.PolicyRevision) == "" {
+		config.PolicyRevision = HostResourcePolicyRevision
+	}
+	if config.ReservationTTL <= 0 {
+		config.ReservationTTL = 15 * time.Minute
+	}
+	if strings.TrimSpace(config.LockDir) == "" {
+		config.LockDir = filepath.Join(os.TempDir(), "opute-host-agent-resource-coordinator")
+	}
 	lock, err := newHostLock(config.LockDir)
 	if err != nil {
 		return nil, err
 	}
-	return &Coordinator{config: config, lock: lock, notify: make(chan struct{})}, nil
+	reservationLock, err := newPlatformHostLock(filepath.Join(config.LockDir, "reservations.lock"))
+	if err != nil {
+		return nil, err
+	}
+	return &Coordinator{
+		config: config, lock: lock, reservationLock: reservationLock,
+		reservationPath: filepath.Join(config.LockDir, "reservations.json"),
+		notify:          make(chan struct{}), reservations: make(map[string]persistedReservation),
+	}, nil
 }
 
 // ClassifyTool infers a class from a tool name. It is the fallback for names
@@ -220,20 +269,22 @@ func (c *Coordinator) AcquireClass(ctx context.Context, tool string, class Class
 	}
 }
 
-func (c *Coordinator) Snapshot() PressureSnapshot {
+func (c *Coordinator) Snapshot() CapacitySnapshot {
 	pressure := c.pressure()
 	c.mu.Lock()
 	pressure.NormalInFlight = c.normalActive
 	pressure.HeavyInFlight = c.heavyActive
 	pressure.Queued = c.queued
 	c.mu.Unlock()
-	return pressure
+	return c.capacitySnapshot(pressure)
 }
 
 // Metadata returns a JSON-safe snapshot for heartbeat and diagnostics.
 func (c *Coordinator) Metadata() map[string]any {
 	snapshot := c.Snapshot()
 	return map[string]any{
+		"policyRevision":       snapshot.PolicyRevision,
+		"enforcement":          snapshot.Enforcement,
 		"pressure":             snapshot.Pressure,
 		"reason":               snapshot.Reason,
 		"memoryAvailableBytes": snapshot.MemoryAvailableBytes,
@@ -243,11 +294,23 @@ func (c *Coordinator) Metadata() map[string]any {
 		"heavyInFlight":        snapshot.HeavyInFlight,
 		"queued":               snapshot.Queued,
 		"checkedAt":            snapshot.CheckedAt,
+		"effectiveLimits":      snapshot.EffectiveLimits,
+		"currentUsage":         snapshot.CurrentUsage,
+		"reservations":         snapshot.Reservations,
+		"queue":                snapshot.Queue,
+		"psi":                  snapshot.PressureStalls,
+		"memoryEvents":         snapshot.MemoryEvents,
 	}
 }
 
 func (c *Coordinator) pressure() PressureSnapshot {
 	stats := heartbeat.ReadHostSystemStatsForPaths(c.config.DiskPaths)
+	enforcement := stats.CgroupEnforcement
+	if c.config.EnforcementProbe != nil {
+		if probed := normalizeEnforcement(c.config.EnforcementProbe()); probed != "" {
+			enforcement = probed
+		}
+	}
 	pressure := "normal"
 	reason := ""
 	if stats.MemoryPressure == "critical" || (c.config.MinAvailableMemoryBytes > 0 && stats.MemoryAvailableBytes > 0 && stats.MemoryAvailableBytes < c.config.MinAvailableMemoryBytes) {
@@ -270,7 +333,26 @@ func (c *Coordinator) pressure() PressureSnapshot {
 		MemoryAvailableBytes: stats.MemoryAvailableBytes,
 		DiskAvailableBytes:   stats.DiskAvailableBytes,
 		DiskPressure:         stats.DiskPressure,
+		MemoryEvents:         stats.MemoryEvents,
+		PressureStalls:       stats.PressureStalls,
+		CgroupControllers:    stats.CgroupControllers,
+		CgroupEnforcement:    enforcement,
+		TasksCurrent:         stats.TasksCurrent,
+		TasksLimit:           stats.TasksLimit,
 		CheckedAt:            time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+func normalizeEnforcement(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case EnforcementEnforced:
+		return EnforcementEnforced
+	case EnforcementUnsupported:
+		return EnforcementUnsupported
+	case EnforcementUnknown:
+		return EnforcementUnknown
+	default:
+		return ""
 	}
 }
 

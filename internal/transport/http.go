@@ -21,28 +21,40 @@ import (
 
 // HTTPServer serves /health and /mcp for Streamable HTTP MCP 2026-07-28.
 type HTTPServer struct {
-	host                 *hostmcp.Server
-	mcpHandler           *mcp.StreamableHTTPHandler
-	authz                *authz.Service
-	instanceID           string
-	agentID              string
-	healthObserver       func() map[string]any
-	logger               *slog.Logger
-	httpServer           *http.Server
-	allowLegacyHandshake bool
-	mu                   sync.Mutex
+	host                        *hostmcp.Server
+	mcpHandler                  *mcp.StreamableHTTPHandler
+	authz                       *authz.Service
+	instanceID                  string
+	agentID                     string
+	physicalFingerprint         string
+	fingerprintVersion          string
+	fingerprintSource           string
+	executionContextID          string
+	executionContextKind        string
+	executionContextDisplayName string
+	healthObserver              func() map[string]any
+	logger                      *slog.Logger
+	httpServer                  *http.Server
+	allowLegacyHandshake        bool
+	mu                          sync.Mutex
 }
 
 type HTTPOptions struct {
-	HostServer           *hostmcp.Server
-	BindHost             string
-	Port                 int
-	Authz                *authz.Service
-	InstanceID           string
-	AgentID              string
-	HealthObserver       func() map[string]any
-	Logger               *slog.Logger
-	AllowLegacyHandshake bool
+	HostServer                  *hostmcp.Server
+	BindHost                    string
+	Port                        int
+	Authz                       *authz.Service
+	InstanceID                  string
+	AgentID                     string
+	PhysicalFingerprint         string
+	FingerprintVersion          string
+	FingerprintSource           string
+	ExecutionContextID          string
+	ExecutionContextKind        string
+	ExecutionContextDisplayName string
+	HealthObserver              func() map[string]any
+	Logger                      *slog.Logger
+	AllowLegacyHandshake        bool
 }
 
 const modernMCPVersion = "2026-07-28"
@@ -61,13 +73,19 @@ func NewHTTPServer(opts HTTPOptions) *HTTPServer {
 		logger = slog.Default()
 	}
 	h := &HTTPServer{
-		host:                 opts.HostServer,
-		authz:                opts.Authz,
-		instanceID:           opts.InstanceID,
-		agentID:              opts.AgentID,
-		healthObserver:       opts.HealthObserver,
-		logger:               logger,
-		allowLegacyHandshake: opts.AllowLegacyHandshake,
+		host:                        opts.HostServer,
+		authz:                       opts.Authz,
+		instanceID:                  opts.InstanceID,
+		agentID:                     opts.AgentID,
+		physicalFingerprint:         opts.PhysicalFingerprint,
+		fingerprintVersion:          opts.FingerprintVersion,
+		fingerprintSource:           opts.FingerprintSource,
+		executionContextID:          opts.ExecutionContextID,
+		executionContextKind:        opts.ExecutionContextKind,
+		executionContextDisplayName: opts.ExecutionContextDisplayName,
+		healthObserver:              opts.HealthObserver,
+		logger:                      logger,
+		allowLegacyHandshake:        opts.AllowLegacyHandshake,
 	}
 	h.mcpHandler = mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return opts.HostServer.MCP()
@@ -117,9 +135,29 @@ func (h *HTTPServer) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	if h.agentID != "" {
 		payload["agentId"] = h.agentID
 	}
+	if h.physicalFingerprint != "" {
+		payload["fingerprint"] = h.physicalFingerprint
+		payload["fingerprintVersion"] = h.fingerprintVersion
+		payload["fingerprintSource"] = h.fingerprintSource
+	}
+	if h.executionContextID != "" {
+		payload["executionContext"] = map[string]any{
+			"id": h.executionContextID, "kind": h.executionContextKind,
+			"displayName": h.executionContextDisplayName,
+		}
+	}
 	if h.healthObserver != nil {
 		if extra := h.healthObserver(); extra != nil {
-			payload["capacity"] = extra
+			// Keep capability evidence separate from volatile capacity metrics so
+			// registration consumers can promote it to capabilitySummary without
+			// confusing tested capabilities with resource measurements.
+			if capabilities, ok := extra["capabilities"]; ok {
+				payload["capabilities"] = capabilities
+				delete(extra, "capabilities")
+			}
+			if len(extra) > 0 {
+				payload["capacity"] = extra
+			}
 		}
 	}
 	_ = json.NewEncoder(w).Encode(payload)

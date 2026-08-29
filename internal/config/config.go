@@ -2,44 +2,60 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/wunderous/host-agents/internal/fingerprint"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 )
 
 // Config holds host agent runtime configuration from environment variables.
 type Config struct {
-	AgentMode                  string
-	TenantID                   string
-	InstanceID                 string
-	InstanceRoot               string
-	RelayConfigDir             string
-	OwnershipMode              string
-	SharedHostOwnerInstance    string
-	StandaloneStateDir         string
-	SQLiteDatabaseRoot         string
-	StandaloneAllowMutations   bool
-	StandaloneInstanceID       string
-	HostMCPPort                int
-	HostMCPBindHost            string
-	RemoteAgentID              string
-	MCPAuthToken               string
-	OputeClientSecret          string
-	ProviderID                 string
-	OnboardingToken            string
-	OnboardingSessionID        string
-	EnvFile                    string
-	TestMode                   bool
-	HostResourceLockDir        string
-	HostResourceMaxNormal      int
-	HostResourceMaxHeavy       int
-	HostResourceMaxQueued      int
-	HostResourceMinMemoryBytes int64
-	HostResourceMinDiskBytes   int64
-	HostResourceDiskPaths      []string
+	AgentMode                   string
+	TenantID                    string
+	InstanceID                  string
+	InstanceRoot                string
+	RelayConfigDir              string
+	OwnershipMode               string
+	SharedHostOwnerInstance     string
+	StandaloneStateDir          string
+	SQLiteDatabaseRoot          string
+	StandaloneAllowMutations    bool
+	StandaloneInstanceID        string
+	HostMCPPort                 int
+	HostMCPBindHost             string
+	RemoteAgentID               string
+	PhysicalFingerprint         string
+	FingerprintVersion          string
+	FingerprintSource           string
+	ExecutionContextID          string
+	ExecutionContextKind        string
+	ExecutionContextDisplayName string
+	IdentityError               string
+	IdentityAttested            bool
+	MCPAuthToken                string
+	OputeClientSecret           string
+	ProviderID                  string
+	OnboardingToken             string
+	OnboardingSessionID         string
+	EnvFile                     string
+	TestMode                    bool
+	HostResourceLockDir         string
+	HostResourceMaxNormal       int
+	HostResourceMaxHeavy        int
+	HostResourceMaxQueued       int
+	HostResourceMinMemoryBytes  int64
+	HostResourceMinDiskBytes    int64
+	HostResourceDiskPaths       []string
+	HostResourcePolicyRevision  string
+	HostResourceFailClosed      bool
+	HostResourceCPUCapacity     float64
+	HostResourceMemoryCapacity  int64
+	HostResourceDiskCapacity    int64
+	HostResourceTaskCapacity    int64
 	// AllowLegacyHandshake enables backwards-compatible support for standard MCP clients
 	// (e.g. Codex, Cursor IDE) that send initialize/notifications/initialized handshakes.
 	AllowLegacyHandshake bool
@@ -83,6 +99,7 @@ func Load() Config {
 		tenantID = "local"
 	}
 	agentID := strings.TrimSpace(envValue("OPUTE_REMOTE_AGENT_ID"))
+	identity, identityErr := fingerprint.ReadIdentity()
 	mcpAuth := strings.TrimSpace(envValue("MCP_AUTH_TOKEN"))
 	// Standalone stays loopback-only. Platform mode is intentionally reachable
 	// on the host bridge because Platform/MCP pods cannot address host loopback;
@@ -92,42 +109,66 @@ func Load() Config {
 		defaultBindHost = "0.0.0.0"
 	}
 	bindHost := envOr("HOST_MCP_BIND_HOST", defaultBindHost)
+	enforcementPolicy := strings.ToLower(envOr("OPUTE_HOST_RESOURCE_ENFORCEMENT", "fail-closed"))
 	return Config{
-		AgentMode:                  mode,
-		TenantID:                   tenantID,
-		InstanceID:                 instanceID,
-		InstanceRoot:               instanceRoot,
-		RelayConfigDir:             relayDir,
-		OwnershipMode:              normalizeOwnershipMode(envValue("OPUTE_INCUS_OWNERSHIP_MODE")),
-		SharedHostOwnerInstance:    strings.TrimSpace(envValue("OPUTE_SHARED_HOST_OWNER_INSTANCE")),
-		StandaloneStateDir:         stateDir,
-		SQLiteDatabaseRoot:         sqliteDatabaseRoot,
-		StandaloneAllowMutations:   os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
-		StandaloneInstanceID:       strings.TrimSpace(envValue("OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID")),
-		HostMCPPort:                port,
-		HostMCPBindHost:            bindHost,
-		RemoteAgentID:              agentID,
-		MCPAuthToken:               mcpAuth,
-		OputeClientSecret:          strings.TrimSpace(envValue("OPUTE_HOST_OAUTH_CLIENT_SECRET")),
-		ProviderID:                 providerID,
-		OnboardingToken:            strings.TrimSpace(envValue("OPUTE_ONBOARDING_TOKEN")),
-		OnboardingSessionID:        strings.TrimSpace(envValue("OPUTE_ONBOARDING_SESSION_ID")),
-		EnvFile:                    strings.TrimSpace(envValue("OPUTE_HOST_AGENT_ENV_FILE")),
-		TestMode:                   os.Getenv("OPUTE_TEST") == "true" || os.Getenv("NODE_ENV") == "test",
-		HostResourceLockDir:        envOr("OPUTE_HOST_RESOURCE_LOCK_DIR", filepath.Join(userConfigDir(), "host-resource-coordinator")),
-		HostResourceMaxNormal:      envIntOr("OPUTE_HOST_MAX_NORMAL_OPERATIONS", 2),
-		HostResourceMaxHeavy:       envIntOr("OPUTE_HOST_MAX_HEAVY_OPERATIONS", 1),
-		HostResourceMaxQueued:      envIntOr("OPUTE_HOST_MAX_QUEUED_OPERATIONS", 16),
-		HostResourceMinMemoryBytes: envInt64Or("OPUTE_HOST_MIN_AVAILABLE_MEMORY_BYTES", 0),
-		HostResourceMinDiskBytes:   envInt64Or("OPUTE_HOST_MIN_AVAILABLE_DISK_BYTES", 0),
-		HostResourceDiskPaths:      envPathsOr("OPUTE_HOST_RESOURCE_DISK_PATHS", []string{"/"}),
-		AllowLegacyHandshake:       os.Getenv("OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE") == "true",
+		AgentMode:                   mode,
+		TenantID:                    tenantID,
+		InstanceID:                  instanceID,
+		InstanceRoot:                instanceRoot,
+		RelayConfigDir:              relayDir,
+		OwnershipMode:               normalizeOwnershipMode(envValue("OPUTE_INCUS_OWNERSHIP_MODE")),
+		SharedHostOwnerInstance:     strings.TrimSpace(envValue("OPUTE_SHARED_HOST_OWNER_INSTANCE")),
+		StandaloneStateDir:          stateDir,
+		SQLiteDatabaseRoot:          sqliteDatabaseRoot,
+		StandaloneAllowMutations:    os.Getenv("OPUTE_STANDALONE_ALLOW_MUTATIONS") == "true",
+		StandaloneInstanceID:        strings.TrimSpace(envValue("OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID")),
+		HostMCPPort:                 port,
+		HostMCPBindHost:             bindHost,
+		RemoteAgentID:               agentID,
+		PhysicalFingerprint:         identity.Fingerprint,
+		FingerprintVersion:          identity.FingerprintVersion,
+		FingerprintSource:           string(identity.FingerprintSource),
+		ExecutionContextID:          identity.ExecutionContext.ID,
+		ExecutionContextKind:        string(identity.ExecutionContext.Kind),
+		ExecutionContextDisplayName: identity.ExecutionContext.DisplayName,
+		IdentityError:               errorString(identityErr),
+		IdentityAttested:            identityErr == nil,
+		MCPAuthToken:                mcpAuth,
+		OputeClientSecret:           strings.TrimSpace(envValue("OPUTE_HOST_OAUTH_CLIENT_SECRET")),
+		ProviderID:                  providerID,
+		OnboardingToken:             strings.TrimSpace(envValue("OPUTE_ONBOARDING_TOKEN")),
+		OnboardingSessionID:         strings.TrimSpace(envValue("OPUTE_ONBOARDING_SESSION_ID")),
+		EnvFile:                     strings.TrimSpace(envValue("OPUTE_HOST_AGENT_ENV_FILE")),
+		TestMode:                    os.Getenv("OPUTE_TEST") == "true" || os.Getenv("NODE_ENV") == "test",
+		HostResourceLockDir:         envOr("OPUTE_HOST_RESOURCE_LOCK_DIR", filepath.Join(userConfigDir(), "host-resource-coordinator")),
+		HostResourceMaxNormal:       envIntOr("OPUTE_HOST_MAX_NORMAL_OPERATIONS", 2),
+		HostResourceMaxHeavy:        envIntOr("OPUTE_HOST_MAX_HEAVY_OPERATIONS", 1),
+		HostResourceMaxQueued:       envIntOr("OPUTE_HOST_MAX_QUEUED_OPERATIONS", 16),
+		HostResourceMinMemoryBytes:  envInt64Or("OPUTE_HOST_MIN_AVAILABLE_MEMORY_BYTES", 0),
+		HostResourceMinDiskBytes:    envInt64Or("OPUTE_HOST_MIN_AVAILABLE_DISK_BYTES", 0),
+		HostResourceDiskPaths:       envPathsOr("OPUTE_HOST_RESOURCE_DISK_PATHS", []string{"/"}),
+		HostResourcePolicyRevision:  envOr("OPUTE_HOST_RESOURCE_POLICY_REVISION", "opute-host-resource-policy.v1"),
+		HostResourceFailClosed:      enforcementPolicy == "fail-closed" || os.Getenv("OPUTE_HOST_RESOURCE_FAIL_CLOSED") == "true",
+		HostResourceCPUCapacity:     envFloatOr("OPUTE_HOST_RESOURCE_CPU_CAPACITY_CORES", 6),
+		HostResourceMemoryCapacity:  envInt64Or("OPUTE_HOST_RESOURCE_MEMORY_CAPACITY_BYTES", 6<<30),
+		HostResourceDiskCapacity:    envInt64Or("OPUTE_HOST_RESOURCE_DISK_CAPACITY_BYTES", 0),
+		HostResourceTaskCapacity:    envInt64Or("OPUTE_HOST_RESOURCE_TASK_CAPACITY", 4096),
+		AllowLegacyHandshake:        os.Getenv("OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE") == "true",
 	}
 }
 
 // Validate rejects ambiguous profile combinations before the agent starts a
 // listener, emits MCP protocol output, or contacts the Opute control plane.
 func (c Config) Validate() error {
+	if c.IdentityError != "" {
+		return fmt.Errorf("host identity unavailable: %s", c.IdentityError)
+	}
+	if c.IdentityAttested && (strings.TrimSpace(c.PhysicalFingerprint) == "" || strings.TrimSpace(c.FingerprintVersion) == "" || strings.TrimSpace(c.FingerprintSource) == "") {
+		return fmt.Errorf("host identity is incomplete: physical fingerprint, version, and source are required")
+	}
+	if c.IdentityAttested && (strings.TrimSpace(c.ExecutionContextID) == "" || strings.TrimSpace(c.ExecutionContextKind) == "") {
+		return fmt.Errorf("execution context identity is required")
+	}
 	if c.TenantID != "" {
 		if err := validateTenantID(c.TenantID); err != nil {
 			return err
@@ -167,6 +208,18 @@ func (c Config) Validate() error {
 	if c.HostMCPPort <= 0 {
 		return fmt.Errorf("HOST_MCP_PORT must be positive")
 	}
+	// An empty value is the in-process zero-value form used by focused tests;
+	// Load and NewCoordinator both resolve it to the versioned default. If a
+	// caller supplies a value, retain it as an explicit policy identity.
+	if c.HostResourceMaxNormal < 0 || c.HostResourceMaxHeavy < 0 || c.HostResourceMaxQueued < 0 {
+		return fmt.Errorf("host resource operation limits cannot be negative")
+	}
+	if c.HostResourceMinMemoryBytes < 0 || c.HostResourceMinDiskBytes < 0 || c.HostResourceMemoryCapacity < 0 || c.HostResourceDiskCapacity < 0 || c.HostResourceTaskCapacity < 0 {
+		return fmt.Errorf("host resource byte, disk, and task limits cannot be negative")
+	}
+	if math.IsNaN(c.HostResourceCPUCapacity) || math.IsInf(c.HostResourceCPUCapacity, 0) || c.HostResourceCPUCapacity < 0 {
+		return fmt.Errorf("host resource CPU capacity must be finite and non-negative")
+	}
 	bindHost := strings.TrimSpace(c.HostMCPBindHost)
 	if bindHost == "" {
 		bindHost = "127.0.0.1"
@@ -202,6 +255,13 @@ func (c Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func validateTenantID(value string) error {
@@ -308,6 +368,18 @@ func envInt64Or(key string, fallback int64) int64 {
 	}
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || parsed < 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func envFloatOr(key string, fallback float64) float64 {
+	value := strings.TrimSpace(envValue(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || parsed <= 0 {
 		return fallback
 	}
 	return parsed

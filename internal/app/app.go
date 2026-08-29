@@ -8,6 +8,7 @@ import (
 
 	"github.com/wunderous/host-agents/internal/authz"
 	"github.com/wunderous/host-agents/internal/config"
+	"github.com/wunderous/host-agents/internal/fingerprint"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/state"
 	"github.com/wunderous/host-agents/internal/transport"
@@ -42,22 +43,32 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	defer authorizer.Close()
 
 	httpSrv := transport.NewHTTPServer(transport.HTTPOptions{
-		HostServer:           hostServer,
-		BindHost:             cfg.HostMCPBindHost,
-		Port:                 cfg.HostMCPPort,
-		Authz:                authorizer,
-		InstanceID:           cfg.StandaloneInstanceID,
-		AgentID:              cfg.RemoteAgentID,
-		AllowLegacyHandshake: cfg.AllowLegacyHandshake,
+		HostServer:                  hostServer,
+		BindHost:                    cfg.HostMCPBindHost,
+		Port:                        cfg.HostMCPPort,
+		Authz:                       authorizer,
+		InstanceID:                  cfg.InstanceID,
+		AgentID:                     cfg.RemoteAgentID,
+		PhysicalFingerprint:         cfg.PhysicalFingerprint,
+		FingerprintVersion:          cfg.FingerprintVersion,
+		FingerprintSource:           cfg.FingerprintSource,
+		ExecutionContextID:          cfg.ExecutionContextID,
+		ExecutionContextKind:        cfg.ExecutionContextKind,
+		ExecutionContextDisplayName: cfg.ExecutionContextDisplayName,
+		AllowLegacyHandshake:        cfg.AllowLegacyHandshake,
 		HealthObserver: func() map[string]any {
 			capacity, err := runtime.svc.Incus().VMInventoryCapacity()
-			if err != nil {
-				return nil
+			capabilities := fingerprint.DetectCapabilities()
+			result := map[string]any{
+				"capabilities": map[string]any{
+					"host": capabilities,
+				},
 			}
-			return map[string]any{
-				"runningVmCount": capacity.RunningVMCount,
-				"totalVmCount":   capacity.TotalVMCount,
+			if err == nil {
+				result["runningVmCount"] = capacity.RunningVMCount
+				result["totalVmCount"] = capacity.TotalVMCount
 			}
+			return result
 		},
 		Logger: logger,
 	})

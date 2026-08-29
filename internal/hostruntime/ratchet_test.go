@@ -36,7 +36,10 @@ import (
 // split is the point: parsing, the tenant check, and the registry lookup are
 // hostruntime's, while OBSERVING that a VM or a systemd unit exists is a domain
 // operation and is passed in as an Adopter. Rule 3 held; it just needed a seam.
-const budgetLines = 540
+// Raised 540 -> 620 for the bounded host-workload execution handle. It is
+// shared by host artifact builds and local-LLM builds, carries no domain type,
+// and keeps systemd ownership outside the Cordis/provider-neutral layer.
+const budgetLines = 620
 
 func TestHostruntimeStaysWithinBudget(t *testing.T) {
 	entries, err := os.ReadDir(".")

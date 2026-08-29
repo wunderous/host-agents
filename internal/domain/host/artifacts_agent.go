@@ -1,6 +1,7 @@
 package host
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -76,7 +77,7 @@ func (s *Service) PrepareHostAgentArtifacts(args PrepareHostAgentArtifactsArgs, 
 			textutil.ShellQuote("-s -w"),
 			textutil.ShellQuote(outputPath),
 		)
-		res, runErr := s.shared.HostCommandRunner([]string{"bash", "-lc", buildScript}, onData, 15*time.Minute)
+		res, runErr := s.shared.HostWorkloadRunnerContext(context.Background(), "prepare-host-agent-artifacts-"+arch, []string{"bash", "-lc", buildScript}, onData, 15*time.Minute)
 		if runErr != nil {
 			return nil, runErr
 		}

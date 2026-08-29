@@ -40,6 +40,7 @@ type Shared struct {
 	ResourceRegistry        ResourceRegistry
 	ResourceSnapshot        func() map[string]any
 	CommandRunnerFn         func(args []string, onData func(string), timeout time.Duration) (hostexec.Result, error)
+	HostCommandRunnerFn     func(command []string, onData func(string), timeout time.Duration) (hostexec.Result, error)
 	ContainerLookPathFn     func(string) (string, error)
 }
 
@@ -63,12 +64,32 @@ func (s *Shared) CommandRunner(args []string, onData func(string), timeout time.
 
 // HostCommandRunner runs an argv directly on the host.
 func (s *Shared) HostCommandRunner(command []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	if s != nil && s.HostCommandRunnerFn != nil {
+		return s.HostCommandRunnerFn(command, onData, timeout)
+	}
 	return s.Runtime.RunHost(command, onData, timeout)
 }
 
 // HostCommandRunnerContext is HostCommandRunner with caller-owned cancellation.
 func (s *Shared) HostCommandRunnerContext(ctx context.Context, command []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	if ctx != nil {
+		select {
+		case <-ctx.Done():
+			return hostexec.Result{}, ctx.Err()
+		default:
+		}
+	}
+	if s != nil && s.HostCommandRunnerFn != nil {
+		return s.HostCommandRunnerFn(command, onData, timeout)
+	}
 	return s.Runtime.RunHostContext(ctx, command, onData, timeout)
+}
+
+// HostWorkloadRunnerContext is the bounded, killable host-workload seam. It
+// is intentionally separate from HostCommandRunnerContext so lifecycle and
+// diagnostic commands do not accidentally move into a killable cgroup.
+func (s *Shared) HostWorkloadRunnerContext(ctx context.Context, scope string, command []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	return s.Runtime.RunHostWorkloadContext(ctx, scope, command, onData, timeout)
 }
 
 // VMExecArgv builds the provider argv that executes a guest command inside a VM.

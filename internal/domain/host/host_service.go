@@ -62,6 +62,25 @@ func (s *Service) RunAgentShellWithTimeout(command string, timeout time.Duration
 	return s.shared.Runtime.RunHost([]string{"bash", "-lc", command}, onData, timeout)
 }
 
+// RunWorkloadCommand executes an externally dispatched host command in an
+// operation-scoped, killable systemd cgroup. The command remains one opaque
+// shell argument for compatibility with the existing host-command contract;
+// the unit name is derived from a digest and never from command text.
+func (s *Service) RunWorkloadCommand(command, operationID string, timeout time.Duration, onData func(string)) (hostexec.Result, error) {
+	return s.RunWorkloadCommandContext(context.Background(), command, operationID, timeout, onData)
+}
+
+// RunWorkloadCommandContext preserves the caller's cancellation while keeping
+// the command inside the operation-scoped workload cgroup. A cancelled MCP
+// request must not leave its systemd workload behind.
+func (s *Service) RunWorkloadCommandContext(ctx context.Context, command, operationID string, timeout time.Duration, onData func(string)) (hostexec.Result, error) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return hostexec.Result{}, errors.New("command is required")
+	}
+	return s.shared.HostWorkloadRunnerContext(ctx, operationID, []string{"bash", "-lc", command}, onData, timeout)
+}
+
 func (s *Service) RestartHostService(args RestartHostServiceArgs, onData func(string)) (map[string]string, error) {
 	if err := s.shared.RequireSharedHostOwner("restart_host_service"); err != nil {
 		return nil, err

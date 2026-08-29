@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/wunderous/host-agents/internal/hostmcp"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resource"
+	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/internal/tools"
 	"github.com/wunderous/host-agents/internal/version"
 )
@@ -86,11 +88,23 @@ func buildHostRuntime(cfg config.Config, logger *slog.Logger) ([]string, *hostag
 		MinAvailableMemoryBytes: cfg.HostResourceMinMemoryBytes,
 		MinAvailableDiskBytes:   cfg.HostResourceMinDiskBytes,
 		DiskPaths:               cfg.HostResourceDiskPaths,
+		PolicyRevision:          cfg.HostResourcePolicyRevision,
+		FailClosedOnUnknown:     cfg.HostResourceFailClosed,
+		CPUCapacityCores:        cfg.HostResourceCPUCapacity,
+		MemoryCapacityBytes:     cfg.HostResourceMemoryCapacity,
+		DiskCapacityBytes:       cfg.HostResourceDiskCapacity,
+		TaskCapacity:            cfg.HostResourceTaskCapacity,
+		TenantID:                cfg.TenantID,
+		ReconcilePolicy: func(ctx context.Context, target resourceid.URI) error {
+			return svc.Host().ReconcileHostResourcePolicy(ctx, target)
+		},
+		EnforcementProbe: svc.Host().ObserveHostResourceEnforcement,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 	svc.SetResourceSnapshot(admission.Metadata)
+	svc.SetResourceService(admission)
 
 	host, err := hostmcp.NewServer(hostmcp.Options{
 		ProviderID:     cfg.ProviderID,
