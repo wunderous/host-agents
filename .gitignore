@@ -10,5 +10,8 @@ tmp/e2e-debug.log
 __pycache__/
 *.py[cod]
 
-# In-tree provider plugin builds
+# Compiled provider servers next to plugin.yaml. `*` matches the cmd package
+# directory name `opute-provider-cloudflare`, so un-ignore cmd sources.
 plugins/**/opute-provider-*
+!plugins/**/cmd/opute-provider-*/
+!plugins/**/cmd/opute-provider-*/**

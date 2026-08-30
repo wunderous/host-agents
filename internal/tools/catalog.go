@@ -700,7 +700,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Description:  "Execute an explicit generic host-plan.v1 document with durable idempotency, readiness validation, recovery, and resume state.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"plan"}, "properties": map[string]any{"plan": map[string]any{}, "resume": map[string]any{"type": "boolean"}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
-		Meta:         map[string]any{"resourceCost": map[string]any{"class": "normal", "cpuCores": 0.25, "memoryBytes": 268435456, "tasks": 1}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
 	}, ToolDefinition{
 		Name:         "get_host_plan_run",
 		Title:        "Get host plan run",

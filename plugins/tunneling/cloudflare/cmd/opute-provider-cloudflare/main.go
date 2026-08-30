@@ -48,7 +48,7 @@ func cloudflareManifest() providercontract.InstallManifest {
 			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:b665b9e50ebb64389dcca167d4b95b02f867fbb33d806d6254e6047fb8e9d9b3"}, Mode: "managed"},
 		},
 		Services:   []providercontract.ServiceDefinition{{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: cloudflareOperations()}},
-		Teardown:   &providercontract.Operation{ID: "opute.provider.teardown", Version: 1, InputSchema: teardownSchema(), OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "plan"}}, Effect: "destructive", ResourceKinds: []string{"service", "tunnel"}, Idempotent: true, SupportsReadiness: true, TaskSupport: "sync_only"},
+		Teardown:   &providercontract.Operation{ID: "opute.provider.teardown", Version: 1, InputSchema: teardownSchema(), OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "plan"}}, Effect: "destructive", ResourceKinds: []string{"service", "tunnel"}, Idempotent: true, SupportsReadiness: true, TaskSupport: "sync_only", ResourceCost: &providercontract.ResourceCost{Class: "control"}},
 		Validation: providercontract.ValidationRef{Capability: tunnelingCapability, Operation: "opute.capability.tunneling.validate"},
 	}
 }
@@ -85,14 +85,38 @@ func cloudflareOperations() []providercontract.Operation {
 }
 
 func providerOperation(id, effect string, input, output map[string]any, resources []string, requires []providercontract.ResourceBinding) providercontract.Operation {
-	return providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: output, Effect: effect, ResourceKinds: resources, Requires: requires, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: "sync_only"}
+	op := providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: output, Effect: effect, ResourceKinds: resources, Requires: requires, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: "sync_only"}
+	if effect != "read" {
+		// Host Agent admits mutating provider operations only when the
+		// manifest declares typed resourceCost. These calls are Cloudflare
+		// API plus optional host-file writes, not VM-class work.
+		op.ResourceCost = &providercontract.ResourceCost{Class: "control"}
+	}
+	return op
 }
 
 func validationSchema() map[string]any {
 	return map[string]any{"type": "object", "required": []string{"bindings"}, "properties": map[string]any{"bindings": map[string]any{"type": "array"}, "placement": map[string]any{"type": "string", "enum": []string{"host", "kubernetes", "container"}}}}
 }
 func tunnelSchema() map[string]any {
-	return map[string]any{"type": "object", "required": []string{"bindingId", "localTarget"}, "properties": map[string]any{"bindingId": map[string]any{"type": "string", "minLength": 1}, "hostname": map[string]any{"type": "string"}, "hostnames": map[string]any{"type": "array", "items": map[string]any{"type": "string", "minLength": 1}}, "localTarget": map[string]any{"type": "string"}, "runToken": map[string]any{"type": "string"}, "connector": map[string]any{"type": "string"}, "placement": map[string]any{"type": "string", "enum": []string{"host", "container", "kubernetes"}}, "targetUri": map[string]any{"type": "string"}, "artifactUri": map[string]any{"type": "string"}, "artifactSha256": map[string]any{"type": "string"}, "artifactPath": map[string]any{"type": "string"}, "serviceName": map[string]any{"type": "string"}, "serviceFile": map[string]any{"type": "string"}}}
+	return map[string]any{"type": "object", "required": []string{"bindingId", "localTarget"}, "properties": map[string]any{
+		"bindingId":           map[string]any{"type": "string", "minLength": 1},
+		"hostname":            map[string]any{"type": "string"},
+		"hostnames":           map[string]any{"type": "array", "items": map[string]any{"type": "string", "minLength": 1}},
+		"localTarget":         map[string]any{"type": "string"},
+		"runToken":            map[string]any{"type": "string", "writeOnly": true},
+		"tunnelName":          map[string]any{"type": "string"},
+		"tokenFile":           map[string]any{"type": "string"},
+		"manageHostConnector": map[string]any{"type": "boolean"},
+		"connector":           map[string]any{"type": "string"},
+		"placement":           map[string]any{"type": "string", "enum": []string{"host", "container", "kubernetes"}},
+		"targetUri":           map[string]any{"type": "string"},
+		"artifactUri":         map[string]any{"type": "string"},
+		"artifactSha256":      map[string]any{"type": "string"},
+		"artifactPath":        map[string]any{"type": "string"},
+		"serviceName":         map[string]any{"type": "string"},
+		"serviceFile":         map[string]any{"type": "string"},
+	}}
 }
 func connectorSchema() map[string]any {
 	return map[string]any{"type": "object", "required": []string{"token", "namespace"}, "properties": map[string]any{"token": map[string]any{"type": "string", "minLength": 1}, "namespace": map[string]any{"type": "string", "minLength": 1}, "name": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "replicas": map[string]any{"type": "integer", "minimum": 1}, "targetUri": map[string]any{"type": "string"}, "placement": map[string]any{"type": "string", "enum": []string{"kubernetes", "container"}}, "artifactUri": map[string]any{"type": "string"}, "artifactSha256": map[string]any{"type": "string"}, "localTargets": map[string]any{"type": "array"}}}
@@ -134,7 +158,18 @@ func teardownSchema() map[string]any {
 	}
 }
 func tunnelOutputSchema() map[string]any {
-	return map[string]any{"type": "object", "required": []string{"contractVersion", "ready", "bindingId", "placement"}}
+	return map[string]any{"type": "object", "required": []string{"contractVersion", "ready", "bindingId", "placement"}, "properties": map[string]any{
+		"contractVersion": map[string]any{"type": "string"},
+		"ready":           map[string]any{"type": "boolean"},
+		"bindingId":       map[string]any{"type": "string"},
+		"placement":       map[string]any{"type": "string"},
+		"hostname":        map[string]any{"type": "string"},
+		"hostnames":       map[string]any{"type": "array"},
+		"tunnelId":        map[string]any{"type": "string"},
+		"dnsRecordId":     map[string]any{"type": "string"},
+		"deleted":         map[string]any{"type": "boolean"},
+		"runToken":        map[string]any{"type": "string", "writeOnly": true},
+	}}
 }
 func connectorOutputSchema() map[string]any {
 	return map[string]any{"type": "object", "required": []string{"contractVersion", "ready", "placement"}}
@@ -208,6 +243,45 @@ func ensureTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 	if err := validateLocalTarget(stringInput(args, "localTarget", ""), stringInput(args, "connector", "")); err != nil {
 		return nil, err
 	}
+	hostname := stringInput(args, "hostname", "")
+	// A hostname without a caller-supplied run token is the dedicated-host
+	// path: mint Cloudflare tunnel+CNAME here so recipes do not need bun.
+	dedicated := hostname != "" && stringInput(args, "runToken", "") == ""
+	var provisioned *dedicatedTunnelResult
+	if dedicated {
+		provisioned, err = ensureDedicatedTunnel(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		args["runToken"] = provisioned.RunToken
+	}
+	manageConnector := boolInput(args, "manageHostConnector", !dedicated)
+	if tokenFile := stringInput(args, "tokenFile", ""); provisioned != nil && tokenFile != "" {
+		client, hostErr := connectHostAgent(ctx)
+		if hostErr != nil {
+			return nil, hostErr
+		}
+		defer client.Close()
+		if _, err := callHost(ctx, client, "ensure_host_file", map[string]any{"path": tokenFile, "content": provisioned.RunToken, "mode": 0600}); err != nil {
+			return nil, err
+		}
+	}
+	if !manageConnector {
+		out := map[string]any{
+			"contractVersion": tunnelingCapability,
+			"ready":           true,
+			"bindingId":       stringInput(args, "bindingId", ""),
+			"placement":       placement,
+			"hostname":        hostname,
+			"hostnames":       hostnamesFromArgs(args),
+		}
+		if provisioned != nil {
+			out["tunnelId"] = provisioned.TunnelID
+			out["dnsRecordId"] = provisioned.DNSRecordID
+			out["runToken"] = provisioned.RunToken
+		}
+		return structured(out)
+	}
 	client, err := connectHostAgent(ctx)
 	if err != nil {
 		return nil, err
@@ -224,7 +298,13 @@ func ensureTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 	if err != nil {
 		return nil, err
 	}
-	return structured(map[string]any{"contractVersion": tunnelingCapability, "ready": true, "bindingId": stringInput(args, "bindingId", ""), "placement": placement, "hostname": stringInput(args, "hostname", ""), "hostnames": hostnamesFromArgs(args)})
+	out := map[string]any{"contractVersion": tunnelingCapability, "ready": true, "bindingId": stringInput(args, "bindingId", ""), "placement": placement, "hostname": hostname, "hostnames": hostnamesFromArgs(args)}
+	if provisioned != nil {
+		out["tunnelId"] = provisioned.TunnelID
+		out["dnsRecordId"] = provisioned.DNSRecordID
+		out["runToken"] = provisioned.RunToken
+	}
+	return structured(out)
 }
 
 func reconcileHostTunnel(ctx context.Context, client *hostagentclient.Client, args map[string]any) error {
@@ -435,22 +515,31 @@ func authenticatedPublicToolsList(ctx context.Context, resourceURL string) (map[
 }
 
 func removeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	client, err := connectHostAgent(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer client.Close()
+	hostname := stringInput(args, "hostname", "")
+	dedicated := hostname != "" || stringInput(args, "tunnelName", "") != ""
 	serviceName := firstNonEmpty(stringInput(args, "serviceName", ""), "opute-cloudflare-tunnel.service")
 	serviceFile := firstNonEmpty(stringInput(args, "serviceFile", ""), "~/.config/systemd/user/"+serviceName)
-	for _, call := range []struct {
-		name string
-		args map[string]any
-	}{{"set_host_service_state", map[string]any{"uri": hostServiceURI(serviceName), "serviceName": serviceName, "state": "stop", "scope": "user"}}, {"set_host_service_state", map[string]any{"uri": hostServiceURI(serviceName), "serviceName": serviceName, "state": "disable", "scope": "user"}}, {"remove_host_file", map[string]any{"path": serviceFile, "confirm": true}}} {
-		if _, err := callHost(ctx, client, call.name, call.args); err != nil {
+	client, connectErr := connectHostAgent(ctx)
+	if connectErr != nil && !dedicated {
+		return nil, connectErr
+	}
+	if client != nil {
+		defer client.Close()
+		for _, call := range []struct {
+			name string
+			args map[string]any
+		}{{"set_host_service_state", map[string]any{"uri": hostServiceURI(serviceName), "serviceName": serviceName, "state": "stop", "scope": "user"}}, {"set_host_service_state", map[string]any{"uri": hostServiceURI(serviceName), "serviceName": serviceName, "state": "disable", "scope": "user"}}, {"remove_host_file", map[string]any{"path": serviceFile, "confirm": true}}} {
+			if _, err := callHost(ctx, client, call.name, call.args); err != nil && !dedicated {
+				return nil, err
+			}
+		}
+	}
+	if dedicated {
+		if err := unpublishDedicatedTunnel(ctx, args); err != nil {
 			return nil, err
 		}
 	}
-	return structured(map[string]any{"contractVersion": tunnelingCapability, "ready": true, "deleted": true, "bindingId": stringInput(args, "bindingId", ""), "placement": firstNonEmpty(stringInput(args, "placement", ""), "host")})
+	return structured(map[string]any{"contractVersion": tunnelingCapability, "ready": true, "deleted": true, "bindingId": stringInput(args, "bindingId", ""), "placement": firstNonEmpty(stringInput(args, "placement", ""), "host"), "hostname": hostname})
 }
 
 func hostServiceURI(serviceName string) string {
@@ -628,6 +717,13 @@ func validateLocalTarget(raw, connector string) error {
 	}
 	return nil
 }
+func boolInput(args map[string]any, key string, fallback bool) bool {
+	if value, ok := args[key].(bool); ok {
+		return value
+	}
+	return fallback
+}
+
 func intInput(args map[string]any, key string, fallback int) int {
 	if value, ok := args[key].(float64); ok {
 		return int(value)

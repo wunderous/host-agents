@@ -5359,7 +5359,14 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "effect": "mutation",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
     }
   },
   {
@@ -5719,6 +5726,16 @@
         "status",
         "catalogRevision"
       ]
+    },
+    "_meta": {
+      "effect": "mutation",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
     }
   },
   {
@@ -5879,6 +5896,16 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "effect": "mutation",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
     }
   },
   {
@@ -5905,6 +5932,12 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "effect": "read",
+      "resourceCost": {
+        "class": "control"
+      }
     }
   },
   {
@@ -5925,6 +5958,12 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "effect": "read",
+      "resourceCost": {
+        "class": "control"
+      }
     }
   },
   {
@@ -5971,6 +6010,16 @@
     },
     "outputSchema": {
       "type": "object"
+    },
+    "_meta": {
+      "effect": "mutation",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
     }
   },
   {
@@ -6264,6 +6313,16 @@
         "status",
         "catalogRevision"
       ]
+    },
+    "_meta": {
+      "effect": "destructive",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
     }
   },
   {

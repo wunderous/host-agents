@@ -27,6 +27,26 @@ func TestCloudflareManifestDeclaresDynamicCompatibilityOperations(t *testing.T) 
 	}
 }
 
+func TestCloudflareMutationsDeclareResourceCost(t *testing.T) {
+	manifest := cloudflareManifest()
+	check := func(operation providercontract.Operation) {
+		t.Helper()
+		if operation.Effect == "read" {
+			return
+		}
+		if operation.ResourceCost == nil || strings.TrimSpace(operation.ResourceCost.Class) == "" {
+			t.Fatalf("mutating operation %q must declare resourceCost.class", operation.ID)
+		}
+	}
+	for _, operation := range manifest.Services[0].Operations {
+		check(operation)
+	}
+	if manifest.Teardown == nil {
+		t.Fatal("manifest missing teardown")
+	}
+	check(*manifest.Teardown)
+}
+
 func TestCloudflareValidationPreservesDeclaredBindingsAndRejectsPlacement(t *testing.T) {
 	bindings := []any{map[string]any{"id": "binding-a", "targetUri": "container:tenant-a:edge"}}
 	result, err := dispatchCloudflareOperation(t.Context(), "opute.capability.tunneling.validate", map[string]any{"bindings": bindings, "placement": "container"})
