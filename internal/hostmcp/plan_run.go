@@ -275,6 +275,11 @@ func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc,
 		Capabilities:    planCapabilitiesFromSnapshot(snapshot),
 		CatalogRevision: snapshot.Revision,
 		Sink: func(value plan.RunState) error {
+			if recipeMetadata != nil && recipeBoolField(recipeMetadata, "activate") && value.Status == "completed" {
+				// Activation is committed atomically with the durable completed state
+				// below, so do not publish an intermediate completed status here.
+				value.Status = "running"
+			}
 			return s.state.UpdatePlan(runID, value.Status, s.marshalPlanState(value, &doc), value.Error)
 		},
 	}
