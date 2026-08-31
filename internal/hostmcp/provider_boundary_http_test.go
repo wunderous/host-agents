@@ -199,8 +199,14 @@ func TestProviderBoundaryOverStreamableHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
 	if err := db.QueryRow(`SELECT arguments_json FROM capability_invocations WHERE operation_id = ? ORDER BY created_at DESC LIMIT 1`, "opute.capability.boundary.secret").Scan(&argumentsJSON); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	// The inspection connection is separate from the server's state pool.
+	// Close it before the next activation so a retained read connection cannot
+	// contend with the following SQLite write on slower CI runners.
+	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(argumentsJSON, "wire-secret") || !strings.Contains(argumentsJSON, redactedEvidenceValue) {
@@ -226,6 +232,7 @@ func TestProviderBoundaryOverStreamableHTTP(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("provider did not observe cancellation over Streamable HTTP")
 	}
+	waitForCapabilityInvocation(t, stateDir, "opute.capability.boundary.cancel")
 
 	second := newBoundaryProvider(t, "2.0.0")
 	activateBoundaryProvider(t, server, second)
@@ -245,4 +252,29 @@ func containsMCPTool(tools []*mcp.Tool, name string) bool {
 		}
 	}
 	return false
+}
+
+func waitForCapabilityInvocation(t *testing.T, stateDir, operationID string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		db, err := sql.Open("sqlite", filepath.Join(stateDir, "state.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found int
+		err = db.QueryRow(`SELECT 1 FROM capability_invocations WHERE operation_id = ? LIMIT 1`, operationID).Scan(&found)
+		closeErr := db.Close()
+		if err == nil && closeErr == nil {
+			return
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = closeErr
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("capability invocation %q was not durably recorded: %v", operationID, lastErr)
 }
