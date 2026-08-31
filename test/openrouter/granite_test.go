@@ -14,7 +14,7 @@ import (
 
 const (
 	openRouterEndpoint = "https://openrouter.ai/api/v1"
-	granite41Model     = "ibm/granite4.1:3b"
+	granite41Model     = "ibm-granite/granite-4.1-8b"
 )
 
 func TestOpenRouterGranite41OpenAICompatibleProbe(t *testing.T) {
