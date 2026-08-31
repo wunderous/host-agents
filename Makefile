@@ -1,4 +1,4 @@
-.PHONY: build build-agent test test-all-modules standalone-smoke standalone-http-smoke standalone-lifecycle-gate provider-reset-chat-e2e published-npm-canary npm-test artifacts clean agent-work
+.PHONY: build build-agent test test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate provider-reset-chat-e2e published-npm-canary npm-test artifacts clean agent-work
 
 BINARY=opute-host-agent
 DIST=dist
@@ -16,9 +16,13 @@ test:
 	go test ./...
 
 test-all-modules: test
+	cd plugins/kubernetes/k3s && go test ./...
 	cd plugins/llm/ollama && go test ./...
 	cd plugins/tunneling/cloudflare && go test ./...
 	cd plugins/platform/hostos && go test ./...
+
+openrouter-llm-smoke:
+	go test -tags=openrouter ./test/openrouter -count=1 -timeout=2m -v
 
 npm-test:
 	cd npm/local-host-agent && npm test

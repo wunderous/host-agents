@@ -47,7 +47,15 @@ jobs:
           args: --timeout=5m
 
       - name: Test
-        run: go test ./...
+        run: make test-all-modules
+
+      # The normal suite is deterministic. This opt-in lane exercises the
+      # actual model-backed OpenAI-compatible probe when the repository secret
+      # is available; the test skips on fork PRs where secrets are withheld.
+      - name: OpenRouter Granite 4.1 smoke
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: make openrouter-llm-smoke
 
       - name: Test npm launcher
         working-directory: npm/local-host-agent

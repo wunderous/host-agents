@@ -29,7 +29,12 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test ./...
+        run: make test-all-modules
+
+      - name: OpenRouter Granite 4.1 smoke
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: make openrouter-llm-smoke
 
       - name: Build release artifacts
         id: release_version
