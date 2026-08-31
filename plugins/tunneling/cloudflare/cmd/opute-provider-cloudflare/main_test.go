@@ -20,9 +20,14 @@ func TestCloudflareManifestDeclaresDynamicCompatibilityOperations(t *testing.T) 
 	for _, operation := range manifest.Services[0].Operations {
 		seen[operation.ID] = true
 	}
-	for _, name := range []string{"opute.capability.tunneling.ensure-host-tunnel", "ensure_cloudflared_tunnel", "install_cloudflared_connector", "delete_cloudflared_connector"} {
+	for _, name := range []string{"opute.capability.tunneling.ensure-host-tunnel", "opute.capability.tunneling.remove-host-tunnel", "ensure_cloudflared_tunnel", "install_cloudflared_connector", "delete_cloudflared_connector"} {
 		if !seen[name] {
 			t.Fatalf("manifest missing provider operation %q", name)
+		}
+	}
+	for _, name := range []string{"create_cloudflare_tunnel", "delete_cloudflare_tunnel"} {
+		if seen[name] {
+			t.Fatalf("manifest must not publish retired catalog route %q", name)
 		}
 	}
 }

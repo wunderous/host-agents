@@ -59,6 +59,10 @@ type Config struct {
 	// AllowLegacyHandshake enables backwards-compatible support for standard MCP clients
 	// (e.g. Codex, Cursor IDE) that send initialize/notifications/initialized handshakes.
 	AllowLegacyHandshake bool
+	// PrefixToolNames publishes MCP tools/list names as {short}_{catalogName}
+	// derived from OPUTE_REMOTE_AGENT_ID. Default off so Platform-enrolled
+	// agents keep catalog wire names; Cursor/DSH multi-agent clients opt in.
+	PrefixToolNames bool
 }
 
 func Load() Config {
@@ -154,6 +158,7 @@ func Load() Config {
 		HostResourceDiskCapacity:    envInt64Or("OPUTE_HOST_RESOURCE_DISK_CAPACITY_BYTES", 0),
 		HostResourceTaskCapacity:    envInt64Or("OPUTE_HOST_RESOURCE_TASK_CAPACITY", 4096),
 		AllowLegacyHandshake:        os.Getenv("OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE") == "true",
+		PrefixToolNames:             os.Getenv("OPUTE_MCP_PREFIX_TOOL_NAMES") == "true",
 	}
 }
 

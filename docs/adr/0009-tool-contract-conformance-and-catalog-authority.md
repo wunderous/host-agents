@@ -15,7 +15,7 @@ The Host Agent MCP interface is the execution boundary for host operations, prov
 1. **Authoritative Capability Registry**:
    `internal/catalog` and `internal/tools` are the canonical source of truth for Host Agent capabilities. Sibling Opute and external MCP clients derive their projections from this catalog.
 2. **MCP / Catalog Dispatch Parity**:
-   MCP `tools/list` and `tools/call` are strictly derived from `s.CatalogSnapshot().Tools`. No secondary loading of internal or excluded tools is permitted. Wire names strictly match catalog snapshot names.
+   MCP `tools/list` and `tools/call` are strictly derived from `s.CatalogSnapshot().Tools`. No secondary loading of internal or excluded tools is permitted. Catalog names stay the dispatch authority. Public MCP names equal catalog snapshot names unless `OPUTE_MCP_PREFIX_TOOL_NAMES` is true, in which case public names are `{short}_{catalogName}` (see [ADR 0012](0012-mcp-tool-name-prefix.md)) and `tools/call` still dispatches on the catalog name. Unprefixed names are never advertised on `tools/list`.
 3. **Canonical Provider Operation Names**:
    Provider lifecycle operations use canonical dotted identifiers (`opute.provider.install`, `opute.provider.validate`, `opute.provider.status`, `opute.provider.reload`, `opute.provider.teardown`). Retired underscore aliases (`opute_provider_*`) are completely removed.
 4. **Explicit Capability Effects & Annotations**:
@@ -44,7 +44,7 @@ The Host Agent MCP interface is the execution boundary for host operations, prov
 - C-04: Tool-owned argument validation; orchestrator passes raw arguments and validates structured results against output schemas without semantic tampering.
 - C-16: Typed resource identity (`host-service` URIs emitted by discovery).
 - C-17: Type-derived capability edges (`list_host_services` -> `inspect_host_service`).
-- C-18: Public capability parity (`tools/list` equals `CatalogSnapshot`).
+- C-18: Public capability parity (`tools/list` equals `CatalogSnapshot` names by default; ADR 0012 is the opt-in wire projection).
 
 ## Validation Evidence
 

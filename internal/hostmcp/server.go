@@ -46,6 +46,9 @@ type Server struct {
 	planWG                     sync.WaitGroup
 	closed                     bool
 	planCancels                map[string]context.CancelFunc
+	agentID                    string
+	toolNamePrefix             string
+	implementationName         string
 	toolDefs                   []tools.ToolDefinition
 	catalog                    tools.CapabilityCatalogSnapshot
 	registry                   *capabilitycatalog.Registry
@@ -84,12 +87,25 @@ type Options struct {
 	Admission              resource.HostResourceService
 	AllowedImplementations map[string]bool
 	AuthorizedProviders    map[string]bool
+	// AgentID is OPUTE_REMOTE_AGENT_ID. Required when PrefixToolNames is set.
+	AgentID string
+	// PrefixToolNames publishes MCP tools/list names as {short}_{catalogName}.
+	// Dispatch and the catalog snapshot stay on the unprefixed catalog name.
+	PrefixToolNames bool
 }
 
 func NewServer(opts Options) (*Server, error) {
 	if opts.Ops == nil {
 		return nil, fmt.Errorf("host agent service is required")
 	}
+	if opts.PrefixToolNames && strings.TrimSpace(opts.AgentID) == "" {
+		return nil, fmt.Errorf("OPUTE_MCP_PREFIX_TOOL_NAMES requires OPUTE_REMOTE_AGENT_ID")
+	}
+	toolPrefix := ""
+	if opts.PrefixToolNames {
+		toolPrefix = ToolNamePrefix(opts.AgentID)
+	}
+	implementationName := implementationNameForPrefix(toolPrefix)
 	providerID := opts.ProviderID
 	if providerID == "" {
 		providerID = opts.Ops.ReadProviderID()
@@ -134,7 +150,7 @@ func NewServer(opts Options) (*Server, error) {
 	if serverVersion == "" {
 		serverVersion = version.Version
 	}
-	srv := mcp.NewServer(&mcp.Implementation{Name: "host-agent", Version: serverVersion}, &mcp.ServerOptions{
+	srv := mcp.NewServer(&mcp.Implementation{Name: implementationName, Version: serverVersion}, &mcp.ServerOptions{
 		Capabilities: capabilities,
 		Logger:       opts.Logger,
 	})
@@ -162,6 +178,9 @@ func NewServer(opts Options) (*Server, error) {
 		providerCandidates:         make(map[string]*provideradapter.Adapter),
 		providerCandidateManifests: make(map[string]providercontract.InstallManifest),
 		providerManifests:          make(map[string]providercontract.InstallManifest),
+		agentID:                    strings.TrimSpace(opts.AgentID),
+		toolNamePrefix:             toolPrefix,
+		implementationName:         implementationName,
 		registeredToolNames:        make(map[string]bool),
 		planCancels:                make(map[string]context.CancelFunc),
 	}
@@ -245,6 +264,41 @@ func (s *Server) Close() error {
 
 func (s *Server) MCP() *mcp.Server {
 	return s.mcpServer
+}
+
+func (s *Server) ToolNamePrefix() string {
+	if s == nil {
+		return ""
+	}
+	return s.toolNamePrefix
+}
+
+func (s *Server) ImplementationName() string {
+	if s == nil || s.implementationName == "" {
+		return "host-agent"
+	}
+	return s.implementationName
+}
+
+// ResolveIncomingToolCallName maps an unprefixed catalog name to the registered
+// wire name when prefixing is on, so Platform can keep calling catalog names.
+func (s *Server) ResolveIncomingToolCallName(name string) string {
+	if s == nil {
+		return name
+	}
+	name = strings.TrimSpace(name)
+	if s.toolNamePrefix == "" || name == "" {
+		return name
+	}
+	if strings.HasPrefix(name, s.toolNamePrefix+"_") {
+		return name
+	}
+	for _, descriptor := range s.CatalogSnapshot().Tools {
+		if descriptor.Name == name || descriptor.OperationID == name {
+			return WireToolName(s.toolNamePrefix, descriptor.Name)
+		}
+	}
+	return name
 }
 
 func (s *Server) Ops() *hostagent.Service {
@@ -343,8 +397,8 @@ func (s *Server) retireProviderCapabilities(providerID, generationID string) {
 // registerProviderServices publishes the operations declared by a validated
 // provider manifest only after its candidate generation has passed setup and
 // activation validation. The operation implementation remains a generic MCP
-// call through the currently active provider adapter; no provider-specific
-// symbols enter the Host Agent catalog.
+// call through the currently active provider adapter. Catalog names come from
+// the manifest; the Host Agent does not invent provider product operation IDs.
 func (s *Server) registerProviderServices(manifest providercontract.InstallManifest) error {
 	generationID := ""
 	if generation, ok := s.providerLifecycle.Active(manifest.Provider.ID); ok {
@@ -1100,8 +1154,9 @@ func (s *Server) addRegisteredCapability(descriptor tools.CapabilityDescriptor) 
 			break
 		}
 	}
+	wireName := WireToolName(s.toolNamePrefix, descriptor.Name)
 	tool := &mcp.Tool{
-		Name:        descriptor.Name,
+		Name:        wireName,
 		Description: descriptor.Description,
 		Meta: map[string]any{
 			"catalogRevision": snapshot.Revision,
@@ -1110,15 +1165,15 @@ func (s *Server) addRegisteredCapability(descriptor tools.CapabilityDescriptor) 
 		InputSchema:  descriptor.InputSchema,
 		OutputSchema: descriptor.OutputSchema,
 	}
-	name := descriptor.Name
+	catalogName := descriptor.Name
 	s.mcpServer.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return s.handleToolCall(ctx, req, name)
+		return s.handleToolCall(ctx, req, catalogName)
 	})
 	s.mu.Lock()
 	if s.registeredToolNames == nil {
 		s.registeredToolNames = make(map[string]bool)
 	}
-	s.registeredToolNames[name] = true
+	s.registeredToolNames[wireName] = true
 	s.mu.Unlock()
 }
 
@@ -1492,7 +1547,7 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 				"tools":      map[string]any{},
 				"extensions": map[string]any{"io.modelcontextprotocol/tasks": map[string]any{}},
 			},
-			"_meta": map[string]any{"io.modelcontextprotocol/serverInfo": map[string]any{"name": "host-agent", "version": version.Version}},
+			"_meta": map[string]any{"io.modelcontextprotocol/serverInfo": map[string]any{"name": s.ImplementationName(), "version": version.Version}},
 		}, nil
 	case "tasks/get":
 		var p struct {

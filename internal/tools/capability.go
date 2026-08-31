@@ -335,7 +335,6 @@ var capabilityEffects = map[string]string{
 	"uninstall_provider_tools":     "destructive",
 	"opute.provider.teardown":      "destructive",
 	"delete_cloudflared_connector": "destructive",
-	"delete_cloudflare_tunnel":     "destructive",
 	"remove_host_exposure":         "destructive",
 
 	// Mutation
@@ -353,7 +352,6 @@ var capabilityEffects = map[string]string{
 	"opute.provider.install":        "mutation",
 	"opute.provider.reload":         "mutation",
 	"install_cloudflared_connector": "mutation",
-	"create_cloudflare_tunnel":      "mutation",
 }
 
 func capabilityEffect(def ToolDefinition) string {

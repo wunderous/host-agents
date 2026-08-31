@@ -20,11 +20,16 @@ task-aware result, correlation, cancellation, and terminal state.
 
 For agentic E2E require the literal user request, parsed outbound model/tool
 trace, exact arguments, paired structured result, complete terminal SSE, and
-zero SSE errors.
+zero SSE errors. Browser proof of inventory is
+`https://harness.opute.io` plus `https://platform.opute.io/vms` (and `/chat`
+when the model is the pinned Granite Ollama profile, not OpenRouter Claude).
+`list_managed_*` hitting Postgres is not a missing-host failure.
 
 Cloudflare rejected Python `urllib`'s default `Python-urllib/*` User-Agent
 with HTTP 403 Error 1010. Use an explicit browser-like User-Agent for public
-E2E from WSL. Never print credentials.
+E2E from WSL. Never print credentials. Pass `Authorization` via a curl header
+file (`-H @file`), not argv. Public MCP `tools/list`/`tools/call` need protocol
+**2026-07-28** with `_meta` inside **params** (no initialize handshake).
 
 ## Relay and co-resident agents
 

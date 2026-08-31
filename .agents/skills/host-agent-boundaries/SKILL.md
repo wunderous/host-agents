@@ -1,6 +1,6 @@
 ---
 name: host-agent-boundaries
-description: Use when changing Host Agent identity, runtime kind (vm vs container), provider-neutral MCP publication, agentic E2E evidence, relay ownership, or recipe/runtime teardown. Complements cordis-go for dated patterns and anti-patterns.
+description: Use when changing Host Agent identity, omitting caller hostId on Host Agent MCP inventory, runtime kind (vm vs container), provider-neutral MCP publication, agentic E2E evidence, relay ownership, or recipe/runtime teardown. Complements cordis-go for dated patterns and anti-patterns.
 ---
 
 # Host Agent boundary patterns
@@ -20,6 +20,12 @@ Each running Host Agent has exactly one explicit, opaque, immutable
 session, inventory, and canonicalization key. Fingerprints, instance IDs,
 hostnames, provider IDs, and display names are admission evidence only.
 Missing, stale, conflicting, or ambiguous identity fails closed.
+
+Host Agent MCP commands do not take that id as a model-facing `hostId`
+argument. Call `host__list_vms` / `host__list_clusters` with `{}` (optional
+`fast`). Product `list_clusters` forwards to kernel `list_kubernetes_clusters`.
+Bridge `provision_vm` and Incus CLI `lxc_list` still take explicit `hostId`.
+Sibling Opute: `.agents/skills/host-agent/references/omit-caller-hostid.md`.
 
 ## Runtime kind
 
@@ -47,6 +53,12 @@ Require the literal user request, parsed outbound model/tool trace, exact
 arguments, paired structured result, complete terminal SSE, and zero SSE
 errors. Health, HTTP 200, assistant prose, or a successful Host Agent
 `tools/call` alone is not proof of chat closure.
+
+When the user asks for web proof, exercise both
+`https://harness.opute.io` and `https://platform.opute.io` in the browser
+(chat **and** `/vms` / Clusters). A DSH fallback that recommends
+`list_managed_vms { "hostId": "…" }` after Postgres `ECONNREFUSED` is a
+wrong-tool turn, not missing inventory.
 
 Keep CPC bearer, Host Agent host-issued tokens (`oha_*`), and public MCP user
 session (`opsess_*`) distinct. Do not forward public credentials to the local

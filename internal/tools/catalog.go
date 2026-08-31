@@ -31,8 +31,7 @@ var ProviderOwnedToolNames = map[string]bool{
 	"ensure_cloudflared_tunnel": true, "remove_local_llm_cloudflared_tunnel": true,
 	"probe_host_exposure": true, "remove_host_exposure": true,
 	"install_cloudflared_connector": true, "delete_cloudflared_connector": true,
-	"create_cloudflare_tunnel": true, "get_cloudflare_tunnel_status": true,
-	"delete_cloudflare_tunnel": true,
+	"get_cloudflare_tunnel_status": true,
 }
 
 func filterProviderOwnedDefinitions(defs []ToolDefinition) []ToolDefinition {

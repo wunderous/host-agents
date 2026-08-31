@@ -81,8 +81,10 @@ generated `dist/` artifacts, secrets, or unrelated formatting changes.
 ## Architecture & Safety
 
 Opute owns intent, authorization, and durable orchestration; this repository
-executes explicit typed host capabilities. Preserve standalone isolation and
-fail-closed validation. Shared WSL services, listeners, Incus capacity, and
+executes explicit typed host capabilities. Host MCP inventory tools
+(`list_vms`, `list_clusters` / `list_kubernetes_clusters`) omit caller
+`hostId` — identity is `OPUTE_REMOTE_AGENT_ID` or a wire prefix. Preserve
+standalone isolation and fail-closed validation. Shared WSL services, listeners, Incus capacity, and
 production-like rollouts may be used by other worktrees — load
 `shared-runtime-leases` before restarting or mutating shared runtime
 resources. Canonical new-resource profile is **2 vCPU / 2 GiB**.

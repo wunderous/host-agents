@@ -71,13 +71,11 @@ func cloudflareOperations() []providercontract.Operation {
 		providerOperation("opute.capability.tunneling.install-kubernetes-connector", "mutation", connectorTargetSchema(), connectorOutputSchema(), []string{"cluster", "tunnel"}, []providercontract.ResourceBinding{{Argument: "targetUri", ResourceType: "cluster", Required: true}}),
 		providerOperation("opute.capability.tunneling.delete-kubernetes-connector", "destructive", connectorDeleteSchema(), connectorOutputSchema(), []string{"cluster", "tunnel"}, []providercontract.ResourceBinding{{Argument: "targetUri", ResourceType: "cluster", Required: true}}),
 	}
-	for _, id := range []string{"ensure_cloudflared_tunnel", "create_cloudflare_tunnel"} {
-		ops = append(ops, mutation(id, tunnelSchema(), tunnelOutputSchema(), []string{"host", "tunnel"}))
-	}
+	ops = append(ops, mutation("ensure_cloudflared_tunnel", tunnelSchema(), tunnelOutputSchema(), []string{"host", "tunnel"}))
 	for _, id := range []string{"probe_host_exposure", "get_cloudflare_tunnel_status"} {
 		ops = append(ops, read(id, tunnelSchema(), tunnelOutputSchema(), []string{"host", "tunnel"}))
 	}
-	for _, id := range []string{"remove_local_llm_cloudflared_tunnel", "remove_host_exposure", "delete_cloudflare_tunnel"} {
+	for _, id := range []string{"remove_local_llm_cloudflared_tunnel", "remove_host_exposure"} {
 		ops = append(ops, destructive(id, tunnelSchema(), tunnelOutputSchema(), []string{"host", "tunnel"}))
 	}
 	ops = append(ops, mutation("install_cloudflared_connector", connectorSchema(), connectorOutputSchema(), []string{"cluster", "tunnel"}), destructive("delete_cloudflared_connector", connectorDeleteLegacySchema(), connectorOutputSchema(), []string{"cluster", "tunnel"}))
@@ -180,19 +178,14 @@ func addManifestTool(server *mcp.Server, manifest providercontract.InstallManife
 }
 
 func addCloudflareOperations(server *mcp.Server) {
-	declared := make(map[string]providercontract.Operation)
-	for _, operation := range cloudflareOperations() {
-		declared[operation.ID] = operation
-	}
-	for _, operation := range []string{"opute.capability.tunneling.validate", "opute.capability.tunneling.ensure-host-tunnel", "opute.capability.tunneling.probe-host-tunnel", "opute.capability.tunneling.remove-host-tunnel", "opute.capability.tunneling.install-kubernetes-connector", "opute.capability.tunneling.delete-kubernetes-connector", "ensure_cloudflared_tunnel", "remove_local_llm_cloudflared_tunnel", "probe_host_exposure", "remove_host_exposure", "create_cloudflare_tunnel", "get_cloudflare_tunnel_status", "delete_cloudflare_tunnel", "install_cloudflared_connector", "delete_cloudflared_connector"} {
-		operation := operation
-		schema := declared[operation]
-		server.AddTool(&mcp.Tool{Name: operation, Description: "Cloudflare tunneling provider operation", InputSchema: schema.InputSchema, OutputSchema: schema.OutputSchema}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	for _, schema := range cloudflareOperations() {
+		operation := schema
+		server.AddTool(&mcp.Tool{Name: operation.ID, Description: "Cloudflare tunneling provider operation", InputSchema: operation.InputSchema, OutputSchema: operation.OutputSchema}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			args, err := requestArguments(request)
 			if err != nil {
 				return nil, err
 			}
-			return dispatchCloudflareOperation(ctx, operation, args)
+			return dispatchCloudflareOperation(ctx, operation.ID, args)
 		})
 	}
 }
@@ -210,6 +203,9 @@ func dispatchCloudflareOperation(ctx context.Context, operation string, args map
 		}
 		return structured(map[string]any{"contractVersion": tunnelingCapability, "ready": true, "bindings": bindings, "placement": placement})
 	case "opute.capability.tunneling.ensure-host-tunnel", "ensure_cloudflared_tunnel", "create_cloudflare_tunnel":
+		// create_cloudflare_tunnel is not a catalog route (C-01). The arm stays so a
+		// leftover provider MCP tools/call still reaches ensureTunnel instead of a
+		// second handler.
 		return ensureTunnel(ctx, args)
 	case "opute.capability.tunneling.probe-host-tunnel", "probe_host_exposure", "get_cloudflare_tunnel_status":
 		return probeTunnel(ctx, args)

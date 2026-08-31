@@ -107,14 +107,16 @@ func buildHostRuntime(cfg config.Config, logger *slog.Logger) ([]string, *hostag
 	svc.SetResourceService(admission)
 
 	host, err := hostmcp.NewServer(hostmcp.Options{
-		ProviderID:     cfg.ProviderID,
-		Ops:            svc,
-		Logger:         logger,
-		Standalone:     cfg.AgentMode == "standalone",
-		AllowMutations: cfg.StandaloneAllowMutations,
-		StateDir:       cfg.StandaloneStateDir,
-		Version:        version.Version,
-		Admission:      admission,
+		ProviderID:      cfg.ProviderID,
+		Ops:             svc,
+		Logger:          logger,
+		Standalone:      cfg.AgentMode == "standalone",
+		AllowMutations:  cfg.StandaloneAllowMutations,
+		StateDir:        cfg.StandaloneStateDir,
+		Version:         version.Version,
+		Admission:       admission,
+		AgentID:         cfg.RemoteAgentID,
+		PrefixToolNames: cfg.PrefixToolNames,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err

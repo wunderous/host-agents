@@ -9,6 +9,17 @@ func TestLoadDefaultsTenantID(t *testing.T) {
 	}
 }
 
+func TestLoadPrefixToolNamesDefaultOff(t *testing.T) {
+	t.Setenv("OPUTE_MCP_PREFIX_TOOL_NAMES", "")
+	if Load().PrefixToolNames {
+		t.Fatal("prefix tool names must default off")
+	}
+	t.Setenv("OPUTE_MCP_PREFIX_TOOL_NAMES", "true")
+	if !Load().PrefixToolNames {
+		t.Fatal("OPUTE_MCP_PREFIX_TOOL_NAMES=true must enable prefixing")
+	}
+}
+
 func TestTenantIDValidation(t *testing.T) {
 	for _, value := range []string{"tenant-a", "a1", "local"} {
 		if err := validateTenantID(value); err != nil {

@@ -74,6 +74,8 @@ Claude Desktop and Cursor use this equivalent `mcpServers` entry:
 }
 ```
 
+To add two Host Agents to Cursor without colliding `provision_vm` / `list_vms` names, set `OPUTE_MCP_PREFIX_TOOL_NAMES=true` (and the existing `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE=true`) on each agent. `GET /health` then includes `mcpToolNamePrefix`; use a unique Cursor `mcp.json` key such as `host-agent-{prefix}`. Wire names become `{prefix}_{catalogName}` (single `_`). Dispatch stays on the catalog name. **Do not enable this flag on Platform-enrolled instances** — Opute's control plane calls unprefixed catalog names.
+
 Bootstrap helper (WSL, does not touch production `~/.config/opute/host-agent.env`):
 
 ```bash

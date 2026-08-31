@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -135,6 +136,11 @@ func (h *HTTPServer) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	if h.agentID != "" {
 		payload["agentId"] = h.agentID
 	}
+	if h.host != nil {
+		if prefix := h.host.ToolNamePrefix(); prefix != "" {
+			payload["mcpToolNamePrefix"] = prefix
+		}
+	}
 	if h.physicalFingerprint != "" {
 		payload["fingerprint"] = h.physicalFingerprint
 		payload["fingerprintVersion"] = h.fingerprintVersion
@@ -240,11 +246,20 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		writeJSONRPCResult(w, envelope.ID, result)
 		return
 	}
-	r.Body = io.NopCloser(strings.NewReader(string(body)))
-	if envelope.Method == "tools/call" {
+	if envelope.Method == "tools/call" && h.host != nil {
+		if rewritten, headerName, err := rewriteIncomingToolCallName(body, r.Header.Get("Mcp-Name"), h.host.ResolveIncomingToolCallName); err == nil {
+			body = rewritten
+			if headerName != "" {
+				r.Header.Set("Mcp-Name", headerName)
+			}
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		r.ContentLength = int64(len(body))
 		h.serveToolCall(w, r)
 		return
 	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
 	h.mcpHandler.ServeHTTP(w, r)
 }
 
@@ -253,6 +268,39 @@ func (h *HTTPServer) authorize(r *http.Request) authz.Decision {
 		return authz.Decision{Status: http.StatusUnauthorized}
 	}
 	return h.authz.Authorize(r)
+}
+
+func rewriteIncomingToolCallName(body []byte, headerName string, resolve func(string) string) ([]byte, string, error) {
+	if resolve == nil || len(body) == 0 {
+		return body, headerName, nil
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return body, headerName, nil
+	}
+	params, _ := envelope["params"].(map[string]any)
+	if params == nil {
+		return body, headerName, nil
+	}
+	name, _ := params["name"].(string)
+	if strings.TrimSpace(name) == "" {
+		return body, headerName, nil
+	}
+	resolved := resolve(name)
+	if resolved == "" || resolved == name {
+		return body, headerName, nil
+	}
+	params["name"] = resolved
+	envelope["params"] = params
+	out, err := json.Marshal(envelope)
+	if err != nil {
+		return body, headerName, err
+	}
+	nextHeader := headerName
+	if headerName == "" || headerName == name {
+		nextHeader = resolved
+	}
+	return out, nextHeader, nil
 }
 
 func (h *HTTPServer) serveToolCall(w http.ResponseWriter, r *http.Request) {

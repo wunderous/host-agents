@@ -372,6 +372,8 @@ rewrite is retired. Identity changes require explicit re-onboarding or a
 separately reviewed offline durable-state migration and a new boundary-matched
 verification record.
 
+An optional MCP `tools/list` prefix derived from that ID ([ADR 0012](adr/0012-mcp-tool-name-prefix.md)) is a publication projection for clients that flatten tools across servers. It is not a routing or identity key. The flag defaults off; Platform-enrolled instances must keep it off.
+
 ## Permanent invariant capture
 
 Every Host Agent plan, refactor, new capability, schema change, lifecycle
