@@ -403,11 +403,12 @@ func (c *Coordinator) fits(request AdmissionRequest, records map[string]persiste
 	c.mu.Lock()
 	heavyActive, normalActive, heavyQueued := c.heavyActive, c.normalActive, c.heavyQueued
 	c.mu.Unlock()
-	if request.Class == ClassHeavy {
+	switch request.Class {
+	case ClassHeavy:
 		if classCounts.heavy >= c.config.MaxHeavy || classCounts.normal > 0 || heavyActive > 0 || normalActive > 0 {
 			return false
 		}
-	} else if request.Class == ClassNormal {
+	case ClassNormal:
 		if classCounts.heavy > 0 || heavyActive > 0 || classCounts.normal+normalActive >= c.config.MaxNormal || heavyQueued > 0 {
 			return false
 		}
@@ -535,9 +536,10 @@ type classCounts struct{ normal, heavy int }
 func reservationClassCounts(records map[string]persistedReservation) classCounts {
 	counts := classCounts{}
 	for _, record := range records {
-		if record.Request.Class == ClassHeavy {
+		switch record.Request.Class {
+		case ClassHeavy:
 			counts.heavy++
-		} else if record.Request.Class == ClassNormal {
+		case ClassNormal:
 			counts.normal++
 		}
 	}

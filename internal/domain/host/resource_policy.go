@@ -43,9 +43,7 @@ func resourcePolicyTarget(target resourceid.URI) (scope, unit string, err error)
 		return "", "", fmt.Errorf("host resource target scope must be user or system")
 	}
 	name := strings.TrimSpace(parts[1])
-	if strings.HasSuffix(name, ".service") {
-		name = strings.TrimSuffix(name, ".service")
-	}
+	name = strings.TrimSuffix(name, ".service")
 	switch {
 	case name == "opute-host-agent":
 		return scope, name + ".service", nil

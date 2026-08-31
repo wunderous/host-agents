@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -37,7 +36,6 @@ type HTTPServer struct {
 	logger                      *slog.Logger
 	httpServer                  *http.Server
 	allowLegacyHandshake        bool
-	mu                          sync.Mutex
 }
 
 type HTTPOptions struct {

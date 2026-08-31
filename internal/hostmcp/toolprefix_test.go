@@ -30,7 +30,7 @@ func TestToolNamePrefixIsStableAndAgentScoped(t *testing.T) {
 }
 
 func TestToolNamePrefixTakesOnlyAgentID(t *testing.T) {
-	var _ func(string) string = ToolNamePrefix
+	var _ = ToolNamePrefix
 	left := ToolNamePrefix("host-zephyrus-ef47fbbf")
 	right := ToolNamePrefix("host-zephyrus-aaaaaaaa")
 	if left == right {
