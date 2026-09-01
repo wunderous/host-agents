@@ -1755,7 +1755,13 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "uri"
+        "uri",
+        "databases",
+        "consumerSecretName",
+        "consumerSecretLabel",
+        "serviceOwner",
+        "servicePartOf",
+        "consumerDatabaseKeys"
       ],
       "properties": {
         "clusterName": {
@@ -1811,6 +1817,35 @@
           "type": "string",
           "minLength": 1,
           "description": "Canonical Host Agent resource URI returned by discovery."
+        },
+        "databases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "consumerSecretName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumerSecretLabel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "serviceOwner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "servicePartOf": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumerDatabaseKeys": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       }
     },
@@ -2256,6 +2291,75 @@
     }
   },
   {
+    "name": "get_oci_registry_status",
+    "title": "Get OCI registry status",
+    "description": "Inspect the generic OCI registry deployment inside a VM-backed Kubernetes cluster.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "uri"
+      ],
+      "properties": {
+        "namespace": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "delete_oci_registry",
+    "title": "Delete OCI registry",
+    "description": "Delete the generic OCI registry namespace and its data resources.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "uri"
+      ],
+      "properties": {
+        "namespace": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery."
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
+    }
+  },
+  {
     "name": "install_provider_tools",
     "title": "Install Provider Tools",
     "description": "Validate provider readiness and switch the active infrastructure provider on this host (incus)",
@@ -2454,55 +2558,6 @@
       },
       "required": [
         "keys",
-        "uri"
-      ]
-    },
-    "_meta": {
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "cluster",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
-    "name": "list_configmaps",
-    "title": "List ConfigMaps",
-    "description": "List Kubernetes ConfigMaps inside a VM",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "namespace": {
-          "type": "string",
-          "description": "Optional namespace filter"
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "configmaps": {
-          "type": "array",
-          "items": {
-            "type": "object"
-          }
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "configmaps",
         "uri"
       ]
     },
@@ -2753,55 +2808,6 @@
     }
   },
   {
-    "name": "list_kubernetes_secrets",
-    "title": "List Kubernetes Secrets",
-    "description": "List Kubernetes secrets inside a VM",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "namespace": {
-          "type": "string",
-          "description": "Optional namespace filter"
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "secrets": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "secrets",
-        "uri"
-      ]
-    },
-    "_meta": {
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "cluster",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
     "name": "list_namespaces",
     "title": "List Namespaces",
     "description": "List Kubernetes namespaces inside a VM",
@@ -2833,55 +2839,6 @@
       },
       "required": [
         "namespaces",
-        "uri"
-      ]
-    },
-    "_meta": {
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "cluster",
-          "required": true
-        }
-      ]
-    }
-  },
-  {
-    "name": "list_persistent_volume_claims",
-    "title": "List Persistent Volume Claims",
-    "description": "List Kubernetes persistent volume claims inside a VM",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "namespace": {
-          "type": "string",
-          "description": "Optional namespace filter"
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "claims": {
-          "type": "array",
-          "items": {
-            "type": "object"
-          }
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "claims",
         "uri"
       ]
     },
@@ -3189,55 +3146,6 @@
       },
       "required": [
         "bindings"
-      ]
-    }
-  },
-  {
-    "name": "list_service_ports",
-    "title": "List Service Ports",
-    "description": "List exposed ports for a Kubernetes Service inside a VM",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "namespace": {
-          "type": "string",
-          "description": "Service namespace"
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
-        }
-      },
-      "required": [
-        "uri"
-      ]
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "ports": {
-          "type": "array",
-          "items": {
-            "type": "object"
-          }
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "ports",
-        "uri"
-      ]
-    },
-    "_meta": {
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "cluster",
-          "required": true
-        }
       ]
     }
   },
@@ -3754,7 +3662,13 @@
     "inputSchema": {
       "type": "object",
       "required": [
-        "uri"
+        "uri",
+        "databases",
+        "consumerSecretName",
+        "consumerSecretLabel",
+        "serviceOwner",
+        "servicePartOf",
+        "consumerDatabaseKeys"
       ],
       "properties": {
         "clusterName": {
@@ -3826,6 +3740,35 @@
           "type": "string",
           "minLength": 1,
           "description": "Canonical Host Agent resource URI returned by discovery."
+        },
+        "databases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "consumerSecretName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumerSecretLabel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "serviceOwner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "servicePartOf": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumerDatabaseKeys": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       }
     },
@@ -4133,7 +4076,13 @@
       "type": "object",
       "required": [
         "confirm",
-        "uri"
+        "uri",
+        "databases",
+        "consumerSecretName",
+        "consumerSecretLabel",
+        "serviceOwner",
+        "servicePartOf",
+        "consumerDatabaseKeys"
       ],
       "properties": {
         "clusterName": {
@@ -4196,6 +4145,35 @@
           "type": "string",
           "minLength": 1,
           "description": "Canonical Host Agent resource URI returned by discovery."
+        },
+        "databases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "consumerSecretName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumerSecretLabel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "serviceOwner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "servicePartOf": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumerDatabaseKeys": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       }
     },
@@ -4801,6 +4779,11 @@
           "argument": "uri",
           "resourceType": "vm",
           "required": true
+        },
+        {
+          "argument": "uri",
+          "resourceType": "container",
+          "required": true
         }
       ]
     }
@@ -4915,7 +4898,13 @@
           "resourceType": "container",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 1,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -6400,21 +6389,51 @@
     "description": "Terminate exactly one named WSL distribution through the tested Windows interop capability. Requires host approval.",
     "inputSchema": {
       "type": "object",
-      "required": ["distro"],
-      "properties": {"distro": {"type": "string", "minLength": 1}}
+      "required": [
+        "distro"
+      ],
+      "properties": {
+        "distro": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     },
     "outputSchema": {
       "type": "object",
-      "required": ["distro", "terminated"]
+      "required": [
+        "distro",
+        "terminated"
+      ]
     },
-    "_meta": {"effect": "mutation", "needsApproval": true, "resourceCost": {"class": "control"}}
+    "_meta": {
+      "effect": "mutation",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "control"
+      }
+    }
   },
   {
     "name": "shutdown_wsl",
     "title": "Shutdown WSL environment",
     "description": "Shutdown the complete WSL2 environment through the tested Windows lifecycle capability. Requires explicit destructive approval.",
-    "inputSchema": {"type": "object", "properties": {}},
-    "outputSchema": {"type": "object", "required": ["shutdown"]},
-    "_meta": {"effect": "destructive", "needsApproval": true, "resourceCost": {"class": "control"}}
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "shutdown"
+      ]
+    },
+    "_meta": {
+      "effect": "destructive",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "control"
+      }
+    }
   }
 ]

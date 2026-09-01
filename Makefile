@@ -22,6 +22,11 @@ test-all-modules: test
 	cd plugins/platform/hostos && go test ./...
 
 openrouter-llm-smoke:
+	for env_file in .env ../opute/.env; do \
+		if [ -z "$$OPENROUTER_API_KEY" ] && [ -f "$$env_file" ]; then \
+			set -a; . "$$env_file"; set +a; \
+		fi; \
+	done; \
 	go test -tags=openrouter ./test/openrouter -count=1 -timeout=2m -v
 
 npm-test:

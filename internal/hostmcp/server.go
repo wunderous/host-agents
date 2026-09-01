@@ -1264,7 +1264,22 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		}
 	}
 	if name == "stream_vm_console" {
-		vmName, _ := args["vmName"].(string)
+		binding, err := resolveExecutionBinding(s, name, args)
+		if err != nil {
+			return tools.ErrorResult(err), nil
+		}
+		if s.admission != nil {
+			reservation, err := s.admitInvocation(ctx, name, args, binding)
+			if err != nil {
+				return tools.ErrorResult(err), nil
+			}
+			if reservation != nil {
+				defer func() { _ = s.admission.Release(reservation) }()
+			}
+		}
+		// The canonical resource binding is the source of the provider-native
+		// instance name; raw vmName input is not an authority at this boundary.
+		vmName := binding.ProviderInstanceName()
 		opID, _ := args["operationId"].(string)
 		return s.console.StreamVMConsole(vmName, opID)
 	}

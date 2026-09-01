@@ -351,7 +351,9 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		out := map[string]any{"namespaces": namespaces}
+		// These list results feed subsequent cluster-scoped calls; preserve the
+		// canonical binding URI required by the output contract.
+		out := withBindingURI(map[string]any{"namespaces": namespaces}, binding, "cluster")
 		return structuredResult(out, ""), nil
 	})
 }
@@ -363,7 +365,7 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		out := map[string]any{"storageClasses": storageClasses}
+		out := withBindingURI(map[string]any{"storageClasses": storageClasses}, binding, "cluster")
 		return structuredResult(out, ""), nil
 	})
 }
@@ -375,7 +377,7 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(map[string]any{"classes": ingressClasses, "ingressClasses": ingressClasses}, ""), nil
+		return structuredResult(withBindingURI(map[string]any{"classes": ingressClasses, "ingressClasses": ingressClasses}, binding, "cluster"), ""), nil
 	})
 }
 
@@ -411,7 +413,7 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(map[string]any{"deployments": deployments}, ""), nil
+		return structuredResult(withBindingURI(map[string]any{"deployments": deployments}, binding, "cluster"), ""), nil
 	})
 }
 
