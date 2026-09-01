@@ -508,3 +508,189 @@ func TestRunnerCancellationMarksUnknownAndResumeReconciles(t *testing.T) {
 		t.Fatalf("resumed state = %#v err=%v", resumed, err)
 	}
 }
+
+func waitSpec(secret bool, expiresAt string) *WaitSpec {
+	return &WaitSpec{
+		Trigger:        WaitTrigger{Kind: "operator", Type: "approval"},
+		SchemaRevision: "approval.v1",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"decision": map[string]any{"type": "string"},
+			},
+			"required": []any{"decision"},
+		},
+		ExpiresAt: expiresAt,
+		ContextDelta: []ContextDelta{{
+			Name:       "decision",
+			Value:      "${input.decision}",
+			Schema:     map[string]any{"type": "string"},
+			Provenance: "operator",
+			Secret:     secret,
+		}},
+	}
+}
+
+func TestRunnerWaitResumePersistsFenceAndContextBeforeDependentDispatch(t *testing.T) {
+	caps := map[string]Capability{"record": testCapability("record", "read", "decision")}
+	doc := baseDocument(
+		Node{ID: "approval", Wait: waitSpec(false, "")},
+		Node{ID: "record", DependsOn: []string{"approval"}, Action: &Action{
+			Tool: "record", Args: map[string]any{"decision": "${context.decision}"},
+		}},
+	)
+	var snapshots []RunState
+	dispatches := 0
+	runner := Runner{
+		Capabilities: caps,
+		Dispatch: func(_ context.Context, _ string, args map[string]any, _ func(string)) (*mcp.CallToolResult, error) {
+			dispatches++
+			if args["decision"] != "approved" {
+				t.Fatalf("dependent action args = %#v", args)
+			}
+			return callResult(map[string]any{"recorded": true}), nil
+		},
+		Sink: func(state RunState) error {
+			snapshots = append(snapshots, state)
+			return nil
+		},
+	}
+	state, err := runner.Run(context.Background(), doc, RunState{RunID: "wait-run"})
+	if err != nil {
+		t.Fatalf("initial wait run: %v", err)
+	}
+	if state.Status != RunStatusWaiting || state.Wait == nil || state.Nodes["approval"].Status != StatusWaiting {
+		t.Fatalf("waiting state = %#v", state)
+	}
+	if dispatches != 0 {
+		t.Fatalf("dispatches before resume = %d, want 0", dispatches)
+	}
+	if len(snapshots) == 0 || snapshots[len(snapshots)-1].Status != RunStatusWaiting {
+		t.Fatalf("last durable snapshot = %#v", snapshots)
+	}
+
+	request := ResumeRequest{
+		WaitNodeID:     state.Wait.NodeID,
+		WaitRevision:   state.Wait.WaitRevision,
+		SchemaRevision: state.Wait.SchemaRevision,
+		Correlation:    state.Wait.Correlation,
+		Input:          map[string]any{"decision": "approved"},
+		Source:         "operator",
+	}
+	resumed, err := runner.Resume(context.Background(), doc, state, request)
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if resumed.Status != "completed" || resumed.Wait != nil || dispatches != 1 {
+		t.Fatalf("resumed state = %#v dispatches=%d", resumed, dispatches)
+	}
+	if resumed.Context["decision"].Value != "approved" {
+		t.Fatalf("context = %#v", resumed.Context)
+	}
+	if len(snapshots) < 2 || snapshots[len(snapshots)-2].Wait != nil {
+		t.Fatalf("consumed wait was not durably emitted before continuation: %#v", snapshots)
+	}
+}
+
+func TestRunnerWaitRedactsSecretContextInEventSink(t *testing.T) {
+	doc := baseDocument(Node{ID: "approval", Wait: waitSpec(true, "")})
+	var snapshot RunState
+	runner := Runner{Sink: func(state RunState) error {
+		if state.Status == RunStatusWaiting {
+			snapshot = state
+		}
+		return nil
+	}}
+	state, err := runner.Run(context.Background(), doc, RunState{RunID: "secret-wait"})
+	if err != nil {
+		t.Fatalf("initial wait run: %v", err)
+	}
+	resumed, err := runner.Resume(context.Background(), doc, state, ResumeRequest{
+		WaitNodeID:     state.Wait.NodeID,
+		WaitRevision:   state.Wait.WaitRevision,
+		SchemaRevision: state.Wait.SchemaRevision,
+		Correlation:    state.Wait.Correlation,
+		Input:          map[string]any{"decision": "secret-value"},
+		Source:         "operator",
+	})
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if resumed.Context["decision"].Value != "secret-value" {
+		t.Fatalf("transient context lost secret value: %#v", resumed.Context)
+	}
+	if len(snapshot.Context) != 0 {
+		t.Fatalf("secret context was persisted before resume: %#v", snapshot.Context)
+	}
+	if state.Wait == nil {
+		t.Fatal("initial state lost wait")
+	}
+}
+
+func TestRunnerRejectsStaleAndExpiredWaitResume(t *testing.T) {
+	cases := []struct {
+		name      string
+		expiresAt string
+		mutate    func(*ResumeRequest)
+		want      error
+	}{
+		{name: "stale revision", mutate: func(request *ResumeRequest) { request.WaitRevision++ }, want: ErrResumeConflict},
+		{name: "expired", expiresAt: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano), want: ErrWaitExpired},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			doc := baseDocument(Node{ID: "approval", Wait: waitSpec(false, test.expiresAt)})
+			runner := Runner{}
+			state, err := runner.Run(context.Background(), doc, RunState{RunID: test.name})
+			if err != nil {
+				t.Fatalf("initial wait run: %v", err)
+			}
+			request := ResumeRequest{
+				WaitNodeID:     state.Wait.NodeID,
+				WaitRevision:   state.Wait.WaitRevision,
+				SchemaRevision: state.Wait.SchemaRevision,
+				Correlation:    state.Wait.Correlation,
+				Input:          map[string]any{"decision": "approved"},
+				Source:         "operator",
+			}
+			if test.mutate != nil {
+				test.mutate(&request)
+			}
+			resumed, err := runner.Resume(context.Background(), doc, state, request)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("resume error = %v, want %v", err, test.want)
+			}
+			if test.want == ErrWaitExpired && (resumed.Status != RunStatusExpired || resumed.Nodes["approval"].Status != StatusExpired) {
+				t.Fatalf("expired state = %#v", resumed)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsTargetMismatchAndWaitCombination(t *testing.T) {
+	withAction := waitSpec(false, "")
+	doc := baseDocument(Node{ID: "bad", Wait: withAction, Action: &Action{Tool: "probe"}})
+	if err := Validate(doc, map[string]Capability{"probe": testCapability("probe", "read")}, ""); err == nil {
+		t.Fatal("wait/action combination was accepted")
+	}
+	doc = baseDocument(Node{ID: "targeted", Target: &TargetRef{HostRef: "host-b"}, Action: &Action{Tool: "probe"}})
+	runner := Runner{HostAgentID: "host-a", Capabilities: map[string]Capability{"probe": testCapability("probe", "read")}, Dispatch: func(context.Context, string, map[string]any, func(string)) (*mcp.CallToolResult, error) {
+		return callResult(map[string]any{"ok": true}), nil
+	}}
+	state, err := runner.Run(context.Background(), doc, RunState{RunID: "target"})
+	if err == nil || state.Nodes["targeted"].Status != StatusFailed {
+		t.Fatalf("target mismatch state=%#v err=%v", state, err)
+	}
+}
+
+func TestValidateJSONRejectsUnknownWaitInput(t *testing.T) {
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties":           map[string]any{"decision": map[string]any{"type": "string"}},
+	}
+	if err := ValidateJSON(schema, map[string]any{"unexpected": true}); err == nil {
+		t.Fatal("unknown input property was accepted")
+	}
+}

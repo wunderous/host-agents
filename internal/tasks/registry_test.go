@@ -85,3 +85,34 @@ func TestRestoreSnapshotKeepsTerminalTaskFindableAfterRestart(t *testing.T) {
 		t.Fatalf("interrupted task status = %#v, want failed", interrupted)
 	}
 }
+
+func TestRestoreSnapshotKeepsInputRequiredTaskResumable(t *testing.T) {
+	registry := NewRegistry()
+	restored, ok := registry.RestoreSnapshot(map[string]any{
+		"taskId":        "waiting-task-1",
+		"toolName":      "run_host_plan",
+		"status":        "input_required",
+		"statusMessage": "The task requires input before it can continue.",
+		"inputRequests": map[string]any{
+			"decision": map[string]any{"type": "string"},
+		},
+	})
+	if !ok || restored == nil || restored.Status != StatusInputRequired {
+		t.Fatalf("restored waiting task = %#v", restored)
+	}
+	resumed := make(chan map[string]any, 1)
+	if _, ok := registry.SetResume(restored.TaskID, func(input map[string]any) { resumed <- input }); !ok {
+		t.Fatal("could not attach waiting task continuation")
+	}
+	if _, ok := registry.Update(restored.TaskID, map[string]any{"decision": "approved"}); !ok {
+		t.Fatal("restored waiting task did not accept input")
+	}
+	select {
+	case input := <-resumed:
+		if input["decision"] != "approved" {
+			t.Fatalf("resumed input = %#v", input)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("restored waiting task continuation did not run")
+	}
+}

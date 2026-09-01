@@ -13,6 +13,8 @@ type EvalContext struct {
 	Variables  map[string]any
 	NodeOutput map[string]any
 	Item       map[string]any
+	Input      map[string]any
+	Context    map[string]any
 }
 
 func InterpolateArgs(args map[string]any, context EvalContext) (map[string]any, error) {
@@ -86,6 +88,10 @@ func resolveReference(reference string, context EvalContext) (any, error) {
 		root = context.Variables
 	case "item":
 		root = context.Item
+	case "input":
+		root = context.Input
+	case "context":
+		root = context.Context
 	case "nodes":
 		if len(parts) < 3 || parts[2] == "" {
 			return nil, fmt.Errorf("node interpolation must include output: %q", reference)

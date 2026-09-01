@@ -20,6 +20,7 @@ import (
 	"github.com/wunderous/host-agents/internal/cordis"
 	provideradapter "github.com/wunderous/host-agents/internal/cordis/mcp"
 	"github.com/wunderous/host-agents/internal/hostagent"
+	"github.com/wunderous/host-agents/internal/plan"
 	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/internal/state"
@@ -46,6 +47,7 @@ type Server struct {
 	planWG                     sync.WaitGroup
 	closed                     bool
 	planCancels                map[string]context.CancelFunc
+	planResumeRequests         map[string]plan.ResumeRequest
 	agentID                    string
 	toolNamePrefix             string
 	implementationName         string
@@ -183,6 +185,7 @@ func NewServer(opts Options) (*Server, error) {
 		implementationName:         implementationName,
 		registeredToolNames:        make(map[string]bool),
 		planCancels:                make(map[string]context.CancelFunc),
+		planResumeRequests:         make(map[string]plan.ResumeRequest),
 	}
 	// The lifecycle vocabulary is declared before anything can restore or
 	// mount a provider, so every emission and every listener registration is
@@ -1078,9 +1081,23 @@ func (s *Server) restoreTasks() error {
 		return err
 	}
 	for _, snapshot := range snapshots {
-		s.tasks.RestoreSnapshot(snapshot)
+		rec, restored := s.tasks.RestoreSnapshot(snapshot)
+		if restored && rec != nil && rec.Status == tasks.StatusInputRequired && isHostPlanTask(rec.ToolName) {
+			s.tasks.SetResume(rec.TaskID, func(input map[string]any) {
+				s.queueHostPlanResume(rec.TaskID, input)
+			})
+		}
 	}
 	return nil
+}
+
+func isHostPlanTask(toolName string) bool {
+	switch toolName {
+	case "run_host_plan", "run_runtime_recipe", "run_tunnel_recipe":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) AbortAllConsoleStreams() {
@@ -1583,6 +1600,14 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, err
 		}
+		if rec, ok := s.tasks.Get(p.TaskID); ok && isHostPlanTask(rec.ToolName) {
+			if _, isPlan := s.cancelHostPlan(p.TaskID); isPlan {
+				if updated, found := s.tasks.Get(p.TaskID); found {
+					s.persistTask(updated)
+				}
+				return map[string]any{"resultType": "complete"}, nil
+			}
+		}
 		rec, ok := s.tasks.Cancel(p.TaskID)
 		if !ok || rec == nil {
 			return nil, fmt.Errorf("cannot cancel task: %s", p.TaskID)
@@ -1596,6 +1621,11 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		var p struct {
 			TaskID         string         `json:"taskId"`
 			InputResponses map[string]any `json:"inputResponses"`
+			WaitNodeID     string         `json:"waitNodeId,omitempty"`
+			WaitRevision   int            `json:"waitRevision,omitempty"`
+			SchemaRevision string         `json:"schemaRevision,omitempty"`
+			Correlation    map[string]any `json:"correlation,omitempty"`
+			Source         string         `json:"source,omitempty"`
 		}
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, err
@@ -1606,8 +1636,18 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		if p.InputResponses == nil {
 			return nil, fmt.Errorf("tasks/update requires inputResponses")
 		}
-		if _, ok := s.tasks.Get(p.TaskID); !ok {
+		rec, ok := s.tasks.Get(p.TaskID)
+		if !ok {
 			return nil, fmt.Errorf("task not found: %s", p.TaskID)
+		}
+		if isHostPlanTask(rec.ToolName) && rec.Status == tasks.StatusInputRequired {
+			request, err := s.validateHostPlanTaskUpdate(p.TaskID, p.WaitNodeID, p.WaitRevision, p.SchemaRevision, p.Correlation, p.Source, p.InputResponses)
+			if err != nil {
+				return nil, err
+			}
+			s.planMu.Lock()
+			s.planResumeRequests[p.TaskID] = request
+			s.planMu.Unlock()
 		}
 		updated, ok := s.tasks.Update(p.TaskID, p.InputResponses)
 		if !ok {
@@ -1623,6 +1663,54 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		}
 		return nil, fmt.Errorf("unsupported extension method: %s", method)
 	}
+}
+
+func (s *Server) validateHostPlanTaskUpdate(taskID, waitNodeID string, waitRevision int, schemaRevision string, correlation map[string]any, source string, input map[string]any) (plan.ResumeRequest, error) {
+	record, found, err := s.state.GetPlan(taskID)
+	if err != nil {
+		return plan.ResumeRequest{}, fmt.Errorf("get waiting host plan: %w", err)
+	}
+	if !found {
+		return plan.ResumeRequest{}, fmt.Errorf("waiting host plan not found: %s", taskID)
+	}
+	doc, err := plan.Decode(record.PlanJSON)
+	if err != nil {
+		return plan.ResumeRequest{}, fmt.Errorf("decode waiting host plan: %w", err)
+	}
+	var stateValue plan.RunState
+	if err := json.Unmarshal([]byte(record.StateJSON), &stateValue); err != nil {
+		return plan.ResumeRequest{}, fmt.Errorf("decode waiting host plan state: %w", err)
+	}
+	if stateValue.Wait == nil {
+		return plan.ResumeRequest{}, fmt.Errorf("host plan %s has no active wait", taskID)
+	}
+	if waitNodeID == "" {
+		waitNodeID = stateValue.Wait.NodeID
+	}
+	if waitRevision == 0 {
+		waitRevision = stateValue.Wait.WaitRevision
+	}
+	if schemaRevision == "" {
+		schemaRevision = stateValue.Wait.SchemaRevision
+	}
+	if correlation == nil {
+		correlation = stateValue.Wait.Correlation
+	}
+	if strings.TrimSpace(source) == "" {
+		source = "operator"
+	}
+	request := plan.ResumeRequest{
+		WaitNodeID:     waitNodeID,
+		WaitRevision:   waitRevision,
+		SchemaRevision: schemaRevision,
+		Correlation:    correlation,
+		Input:          input,
+		Source:         source,
+	}
+	if err := plan.ValidateResume(doc, stateValue, request); err != nil {
+		return plan.ResumeRequest{}, fmt.Errorf("host plan wait cannot accept input: %w", err)
+	}
+	return request, nil
 }
 
 func (s *Server) readTaskResource(uri string) (map[string]any, error) {

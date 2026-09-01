@@ -232,5 +232,54 @@ func (s *Server) redactPlanRunState(value plan.RunState, doc *plan.Document) map
 			outputs[id] = map[string]any{"redacted": true}
 		}
 	}
+	contextProjection := map[string]any{}
+	for name, entry := range value.Context {
+		projected := map[string]any{
+			"name":           entry.Name,
+			"schema":         cloneEvidenceValue(entry.Schema),
+			"schemaRevision": entry.SchemaRevision,
+			"producerNode":   entry.ProducerNode,
+			"source":         entry.Source,
+			"secret":         entry.Secret,
+			"recordedAt":     entry.RecordedAt,
+		}
+		if !entry.Secret {
+			projected["value"] = cloneEvidenceValue(entry.Value)
+		}
+		contextProjection[name] = projected
+	}
+	result["context"] = contextProjection
+	if len(value.ContextHistory) > 0 {
+		history := make([]any, 0, len(value.ContextHistory))
+		for _, entry := range value.ContextHistory {
+			projected := map[string]any{
+				"name":           entry.Name,
+				"schema":         cloneEvidenceValue(entry.Schema),
+				"schemaRevision": entry.SchemaRevision,
+				"producerNode":   entry.ProducerNode,
+				"source":         entry.Source,
+				"secret":         entry.Secret,
+				"recordedAt":     entry.RecordedAt,
+			}
+			if !entry.Secret {
+				projected["value"] = cloneEvidenceValue(entry.Value)
+			}
+			history = append(history, projected)
+		}
+		result["contextHistory"] = history
+	}
+	if value.Wait != nil {
+		result["wait"] = map[string]any{
+			"nodeId":         value.Wait.NodeID,
+			"waitId":         value.Wait.WaitID,
+			"waitRevision":   value.Wait.WaitRevision,
+			"schemaRevision": value.Wait.SchemaRevision,
+			"trigger":        value.Wait.Trigger,
+			"correlation":    cloneEvidenceValue(value.Wait.Correlation),
+			"inputSchema":    cloneEvidenceValue(value.Wait.InputSchema),
+			"expiresAt":      value.Wait.ExpiresAt,
+			"status":         value.Wait.Status,
+		}
+	}
 	return result
 }

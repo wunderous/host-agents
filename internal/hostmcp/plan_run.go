@@ -143,7 +143,7 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 				return tools.ErrorResult(fmt.Errorf("idempotency key already belongs to a different runtime recipe: %s", record.RunID)), nil
 			}
 		}
-		if record.Status == "working" || record.Status == "running" {
+		if record.Status == "working" || record.Status == "running" || record.Status == plan.RunStatusWaiting {
 			return s.planRunResult(record), nil
 		}
 		if !resume {
@@ -186,7 +186,7 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 			return tools.ErrorResult(fmt.Errorf("idempotency key already belongs to a different plan document: %s", record.RunID)), nil
 		}
 		if !created {
-			if record.Status == "working" || record.Status == "running" || !resume {
+			if record.Status == "working" || record.Status == "running" || record.Status == plan.RunStatusWaiting || !resume {
 				if !resume && recipeMetadata != nil && recipeBoolField(recipeMetadata, "activate") && record.Status == "completed" {
 					record, err = s.ensureRecipeActivation(record, recipeMetadata)
 					if err != nil {
@@ -207,7 +207,7 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 		}
 	}
 
-	if existing, ok := s.tasks.Get(record.RunID); ok && existing.Status == tasks.StatusWorking {
+	if existing, ok := s.tasks.Get(record.RunID); ok && (existing.Status == tasks.StatusWorking || existing.Status == tasks.StatusInputRequired) {
 		return s.planRunResult(record), nil
 	}
 	stateValue := initialPlanState(record.RunID, doc)
@@ -248,7 +248,7 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 	s.planCancels[record.RunID] = cancel
 	s.planMu.Unlock()
 	launched = true
-	go s.executeHostPlan(taskCtx, cancel, rec.TaskID, doc, stateValue, snapshot, recipeMetadata)
+	go s.executeHostPlan(taskCtx, cancel, rec.TaskID, doc, stateValue, snapshot, recipeMetadata, nil)
 	return s.planRunResult(record), nil
 }
 
@@ -257,10 +257,115 @@ func initialPlanState(runID string, doc plan.Document) plan.RunState {
 	for _, node := range doc.Nodes {
 		nodes[node.ID] = plan.NodeRunState{ID: node.ID, Status: plan.StatusPending}
 	}
-	return plan.RunState{RunID: runID, PlanID: doc.PlanID, Generation: doc.Generation, Status: "pending", Nodes: nodes, Outputs: map[string]any{}}
+	return plan.RunState{RunID: runID, PlanID: doc.PlanID, Generation: doc.Generation, Status: "pending", Nodes: nodes, Outputs: map[string]any{}, Context: map[string]plan.ContextEntry{}}
 }
 
-func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc, runID string, doc plan.Document, stateValue plan.RunState, snapshot tools.CapabilityCatalogSnapshot, recipeMetadata map[string]any) {
+func waitInputRequests(schema map[string]any) map[string]any {
+	requests := map[string]any{}
+	properties, _ := schema["properties"].(map[string]any)
+	for name, property := range properties {
+		requests[name] = property
+	}
+	return requests
+}
+
+func (s *Server) resumeHostPlan(runID string) {
+	if s.state == nil {
+		return
+	}
+	record, found, err := s.state.GetPlan(runID)
+	if err != nil || !found {
+		return
+	}
+	doc, err := plan.Decode(record.PlanJSON)
+	if err != nil {
+		if failed, ok := s.tasks.Get(runID); ok {
+			s.tasks.Fail(runID, fmt.Sprintf("decode persisted host plan: %v", err))
+			s.persistTask(failed)
+		}
+		return
+	}
+	stateValue := initialPlanState(runID, doc)
+	if err := json.Unmarshal([]byte(record.StateJSON), &stateValue); err != nil {
+		if failed, ok := s.tasks.Get(runID); ok {
+			s.tasks.Fail(runID, fmt.Sprintf("decode persisted host plan state: %v", err))
+			s.persistTask(failed)
+		}
+		return
+	}
+	stateValue.RunID = runID
+	snapshot := s.CatalogSnapshot()
+	var recipeMetadata map[string]any
+	if strings.TrimSpace(record.RecipeJSON) != "" {
+		_ = json.Unmarshal([]byte(record.RecipeJSON), &recipeMetadata)
+	}
+
+	s.planMu.Lock()
+	if s.closed {
+		s.planMu.Unlock()
+		return
+	}
+	request, ok := s.planResumeRequests[runID]
+	delete(s.planResumeRequests, runID)
+	if !ok {
+		if stateValue.Wait == nil {
+			s.planMu.Unlock()
+			return
+		}
+		request = plan.ResumeRequest{
+			WaitNodeID:     stateValue.Wait.NodeID,
+			WaitRevision:   stateValue.Wait.WaitRevision,
+			SchemaRevision: stateValue.Wait.SchemaRevision,
+			Correlation:    stateValue.Wait.Correlation,
+			Source:         "operator",
+		}
+	}
+	taskCtx, cancel := context.WithCancel(context.Background())
+	s.planWG.Add(1)
+	s.planCancels[runID] = cancel
+	s.planMu.Unlock()
+	go s.executeHostPlan(taskCtx, cancel, runID, doc, stateValue, snapshot, recipeMetadata, &request)
+}
+
+func (s *Server) queueHostPlanResume(runID string, input map[string]any) {
+	if s.state == nil {
+		return
+	}
+	record, found, err := s.state.GetPlan(runID)
+	if err != nil || !found {
+		return
+	}
+	var stateValue plan.RunState
+	if err := json.Unmarshal([]byte(record.StateJSON), &stateValue); err != nil || stateValue.Wait == nil {
+		return
+	}
+	request := plan.ResumeRequest{
+		WaitNodeID:     stateValue.Wait.NodeID,
+		WaitRevision:   stateValue.Wait.WaitRevision,
+		SchemaRevision: stateValue.Wait.SchemaRevision,
+		Correlation:    stateValue.Wait.Correlation,
+		Input:          input,
+		Source:         "operator",
+	}
+	s.planMu.Lock()
+	if s.closed {
+		s.planMu.Unlock()
+		return
+	}
+	if pending, ok := s.planResumeRequests[runID]; ok && pending.Source != "" {
+		request.Source = pending.Source
+		request.Correlation = pending.Correlation
+		request.WaitNodeID = pending.WaitNodeID
+		request.WaitRevision = pending.WaitRevision
+		request.SchemaRevision = pending.SchemaRevision
+	}
+	request.Input = input
+	s.planResumeRequests[runID] = request
+	s.planMu.Unlock()
+	go s.resumeHostPlan(runID)
+}
+
+func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc, runID string, doc plan.Document, stateValue plan.RunState, snapshot tools.CapabilityCatalogSnapshot, recipeMetadata map[string]any, resumeRequest *plan.ResumeRequest) {
 	defer s.planWG.Done()
 	defer cancel()
 	defer func() {
@@ -274,6 +379,7 @@ func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc,
 		},
 		Capabilities:    planCapabilitiesFromSnapshot(snapshot),
 		CatalogRevision: snapshot.Revision,
+		HostAgentID:     s.agentID,
 		Sink: func(value plan.RunState) error {
 			if recipeMetadata != nil && recipeBoolField(recipeMetadata, "activate") && value.Status == "completed" {
 				// Activation is committed atomically with the durable completed state
@@ -283,8 +389,35 @@ func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc,
 			return s.state.UpdatePlan(runID, value.Status, s.marshalPlanState(value, &doc), value.Error)
 		},
 	}
-	final, runErr := runner.Run(ctx, doc, stateValue)
+	var final plan.RunState
+	var runErr error
+	if resumeRequest == nil {
+		final, runErr = runner.Run(ctx, doc, stateValue)
+	} else {
+		final, runErr = runner.Resume(ctx, doc, stateValue, *resumeRequest)
+	}
 	status := final.Status
+	if runErr == nil && status == plan.RunStatusWaiting && final.Wait != nil {
+		inputRequests := waitInputRequests(final.Wait.InputSchema)
+		inputRequest := map[string]any{
+			"waitId":         final.Wait.WaitID,
+			"waitNodeId":     final.Wait.NodeID,
+			"waitRevision":   final.Wait.WaitRevision,
+			"schemaRevision": final.Wait.SchemaRevision,
+			"trigger":        final.Wait.Trigger,
+			"correlation":    final.Wait.Correlation,
+			"inputSchema":    final.Wait.InputSchema,
+		}
+		if final.Wait.ExpiresAt != "" {
+			inputRequest["expiresAt"] = final.Wait.ExpiresAt
+		}
+		if resumed, ok := s.tasks.RequireInputWithMetadata(runID, inputRequests, inputRequest, func(input map[string]any) {
+			s.queueHostPlanResume(runID, input)
+		}); ok {
+			s.persistTask(resumed)
+		}
+		return
+	}
 	cancelled := false
 	if rec, ok := s.tasks.Get(runID); ok && rec.Status == tasks.StatusCancelled {
 		cancelled = true
@@ -664,7 +797,17 @@ func (s *Server) cancelHostPlan(runID string) (*mcp.CallToolResult, bool) {
 	if rec, ok := s.tasks.Get(runID); ok && rec.Status == tasks.StatusWorking {
 		s.tasks.Cancel(runID)
 	}
-	_ = s.state.UpdatePlan(runID, "cancelled", record.StateJSON, "cancelled by request")
+	stateJSON := record.StateJSON
+	if doc, decodeErr := plan.Decode(record.PlanJSON); decodeErr == nil {
+		stateValue := initialPlanState(runID, doc)
+		if json.Unmarshal([]byte(record.StateJSON), &stateValue) == nil {
+			stateValue.RunID = runID
+			stateValue.Status = "cancelled"
+			stateValue.Error = "cancelled by request"
+			stateJSON = s.marshalPlanState(stateValue, &doc)
+		}
+	}
+	_ = s.state.UpdatePlan(runID, "cancelled", stateJSON, "cancelled by request")
 	updated, _, getErr := s.state.GetPlan(runID)
 	if getErr == nil {
 		record = updated

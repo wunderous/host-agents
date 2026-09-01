@@ -9,6 +9,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.yaml.in/yaml/v3"
@@ -58,7 +59,9 @@ type Node struct {
 	ID                string      `json:"id" yaml:"id"`
 	DependsOn         []string    `json:"dependsOn,omitempty" yaml:"dependsOn,omitempty"`
 	When              []Assertion `json:"when,omitempty" yaml:"when,omitempty"`
+	Target            *TargetRef  `json:"target,omitempty" yaml:"target,omitempty"`
 	Action            *Action     `json:"action,omitempty" yaml:"action,omitempty"`
+	Wait              *WaitSpec   `json:"wait,omitempty" yaml:"wait,omitempty"`
 	Validate          *Validation `json:"validate,omitempty" yaml:"validate,omitempty"`
 	Recover           *Recovery   `json:"recover,omitempty" yaml:"recover,omitempty"`
 	Compensate        *Action     `json:"compensate,omitempty" yaml:"compensate,omitempty"`
@@ -66,6 +69,40 @@ type Node struct {
 	TimeoutMs         int         `json:"timeoutMs,omitempty" yaml:"timeoutMs,omitempty"`
 	ContinueOnFailure bool        `json:"continueOnFailure,omitempty" yaml:"continueOnFailure,omitempty"`
 	ForEach           *ForEach    `json:"forEach,omitempty" yaml:"forEach,omitempty"`
+}
+
+// TargetRef is an execution binding, not a network address. The hostRef is
+// resolved by the caller before dispatch and is checked again by a local
+// runner when an exact HostAgentID is configured.
+type TargetRef struct {
+	HostRef     string `json:"hostRef" yaml:"hostRef"`
+	ResourceRef string `json:"resourceRef,omitempty" yaml:"resourceRef,omitempty"`
+}
+
+type WaitTrigger struct {
+	Kind string `json:"kind" yaml:"kind"`
+	Type string `json:"type" yaml:"type"`
+}
+
+// WaitSpec describes a durable dependency barrier. It intentionally contains
+// no timer implementation or callback; the state store owns the pause and a
+// later authorized resume owns the transition out of it.
+type WaitSpec struct {
+	Trigger        WaitTrigger    `json:"trigger" yaml:"trigger"`
+	Correlation    map[string]any `json:"correlation,omitempty" yaml:"correlation,omitempty"`
+	InputSchema    map[string]any `json:"inputSchema,omitempty" yaml:"inputSchema,omitempty"`
+	SchemaRevision string         `json:"schemaRevision" yaml:"schemaRevision"`
+	ExpiresAt      string         `json:"expiresAt,omitempty" yaml:"expiresAt,omitempty"`
+	ExpiresInMs    int64          `json:"expiresInMs,omitempty" yaml:"expiresInMs,omitempty"`
+	ContextDelta   []ContextDelta `json:"contextDelta,omitempty" yaml:"contextDelta,omitempty"`
+}
+
+type ContextDelta struct {
+	Name       string         `json:"name" yaml:"name"`
+	Value      string         `json:"value" yaml:"value"`
+	Schema     map[string]any `json:"schema" yaml:"schema"`
+	Provenance string         `json:"provenance" yaml:"provenance"`
+	Secret     bool           `json:"secret,omitempty" yaml:"secret,omitempty"`
 }
 
 type Action struct {
@@ -119,6 +156,13 @@ const (
 	StatusUnknown            NodeStatus = "unknown"
 	StatusCompensated        NodeStatus = "compensated"
 	StatusCompensationFailed NodeStatus = "compensation_failed"
+	StatusWaiting            NodeStatus = "waiting"
+	StatusExpired            NodeStatus = "expired"
+)
+
+const (
+	RunStatusWaiting = "waiting"
+	RunStatusExpired = "expired"
 )
 
 type NodeRunState struct {
@@ -134,14 +178,54 @@ type NodeRunState struct {
 	CompletedAt string `json:"completedAt,omitempty"`
 }
 
+// WaitState is the durable resume fence. WaitRevision changes whenever a new
+// wait is reached; consuming a revision is therefore a one-shot operation.
+type WaitState struct {
+	NodeID         string         `json:"nodeId"`
+	WaitID         string         `json:"waitId"`
+	WaitRevision   int            `json:"waitRevision"`
+	SchemaRevision string         `json:"schemaRevision"`
+	Trigger        WaitTrigger    `json:"trigger"`
+	Correlation    map[string]any `json:"correlation,omitempty"`
+	InputSchema    map[string]any `json:"inputSchema,omitempty"`
+	ExpiresAt      string         `json:"expiresAt,omitempty"`
+	Status         string         `json:"status"`
+}
+
+// ContextEntry keeps the current value and its provenance. Secret values are
+// available only in process memory; hostmcp's durable projection removes them
+// before the EventSink reaches SQLite.
+type ContextEntry struct {
+	Name           string         `json:"name"`
+	Value          any            `json:"value,omitempty"`
+	Schema         map[string]any `json:"schema,omitempty"`
+	SchemaRevision string         `json:"schemaRevision,omitempty"`
+	ProducerNode   string         `json:"producerNode"`
+	Source         string         `json:"source"`
+	Secret         bool           `json:"secret,omitempty"`
+	RecordedAt     string         `json:"recordedAt"`
+}
+
+type ResumeRequest struct {
+	WaitNodeID     string         `json:"waitNodeId"`
+	WaitRevision   int            `json:"waitRevision"`
+	SchemaRevision string         `json:"schemaRevision"`
+	Correlation    map[string]any `json:"correlation,omitempty"`
+	Input          map[string]any `json:"input,omitempty"`
+	Source         string         `json:"source"`
+}
+
 type RunState struct {
-	RunID      string                  `json:"runId"`
-	PlanID     string                  `json:"planId"`
-	Generation int                     `json:"generation"`
-	Status     string                  `json:"status"`
-	Nodes      map[string]NodeRunState `json:"nodes"`
-	Outputs    map[string]any          `json:"outputs,omitempty"`
-	Error      string                  `json:"error,omitempty"`
+	RunID          string                  `json:"runId"`
+	PlanID         string                  `json:"planId"`
+	Generation     int                     `json:"generation"`
+	Status         string                  `json:"status"`
+	Nodes          map[string]NodeRunState `json:"nodes"`
+	Outputs        map[string]any          `json:"outputs,omitempty"`
+	Context        map[string]ContextEntry `json:"context,omitempty"`
+	ContextHistory []ContextEntry          `json:"contextHistory,omitempty"`
+	Wait           *WaitState              `json:"wait,omitempty"`
+	Error          string                  `json:"error,omitempty"`
 }
 
 type Dispatcher func(ctx context.Context, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error)
@@ -240,8 +324,32 @@ func Validate(doc Document, capabilities map[string]Capability, catalogRevision 
 		if strings.TrimSpace(node.ID) == "" {
 			return fmt.Errorf("node id is required")
 		}
-		if node.Action == nil && node.Validate == nil && node.ForEach == nil {
-			return fmt.Errorf("node %q must have an action, validation, or forEach", node.ID)
+		if node.Action == nil && node.Wait == nil && node.Validate == nil && node.ForEach == nil {
+			return fmt.Errorf("node %q must have an action, wait, validation, or forEach", node.ID)
+		}
+		if node.Wait != nil {
+			if node.Action != nil || node.Validate != nil || node.Recover != nil || node.Compensate != nil || node.ForEach != nil {
+				return fmt.Errorf("node %q wait cannot be combined with an action, validation, recovery, compensation, or forEach", node.ID)
+			}
+			if err := validateWaitSpec(node.Wait); err != nil {
+				return fmt.Errorf("node %q wait: %w", node.ID, err)
+			}
+			if err := validateInterpolations(node.Wait.Correlation, doc, node, ancestors); err != nil {
+				return fmt.Errorf("node %q wait correlation: %w", node.ID, err)
+			}
+			for _, delta := range node.Wait.ContextDelta {
+				if err := validateInterpolations(delta.Value, doc, node, ancestors); err != nil {
+					return fmt.Errorf("node %q context delta %q: %w", node.ID, delta.Name, err)
+				}
+			}
+		}
+		if node.Target != nil {
+			if strings.TrimSpace(node.Target.HostRef) == "" {
+				return fmt.Errorf("node %q target hostRef is required", node.ID)
+			}
+			if err := validateInterpolations(node.Target.HostRef, doc, node, ancestors); err != nil {
+				return fmt.Errorf("node %q target: %w", node.ID, err)
+			}
 		}
 		if node.Action != nil {
 			capability, ok := capabilities[node.Action.Tool]
@@ -367,6 +475,123 @@ func attemptsFor(node Node, doc Document) int {
 	return attempts
 }
 
+func validateWaitSpec(wait *WaitSpec) error {
+	if wait == nil {
+		return fmt.Errorf("wait specification is required")
+	}
+	if wait.Trigger.Kind != "operator" && wait.Trigger.Kind != "event-or-operator" {
+		return fmt.Errorf("trigger kind must be operator or event-or-operator")
+	}
+	if strings.TrimSpace(wait.Trigger.Type) == "" {
+		return fmt.Errorf("trigger type is required")
+	}
+	if strings.TrimSpace(wait.SchemaRevision) == "" {
+		return fmt.Errorf("schemaRevision is required")
+	}
+	if wait.ExpiresAt != "" {
+		if _, err := time.Parse(time.RFC3339Nano, wait.ExpiresAt); err != nil {
+			return fmt.Errorf("expiresAt must be RFC3339: %w", err)
+		}
+	}
+	if wait.ExpiresInMs < 0 {
+		return fmt.Errorf("expiresInMs cannot be negative")
+	}
+	if wait.ExpiresAt != "" && wait.ExpiresInMs != 0 {
+		return fmt.Errorf("expiresAt and expiresInMs are mutually exclusive")
+	}
+	if len(wait.InputSchema) == 0 {
+		return fmt.Errorf("inputSchema is required")
+	}
+	if err := validateBoundedInputSchema(wait.InputSchema, 0); err != nil {
+		return err
+	}
+	names := make(map[string]bool, len(wait.ContextDelta))
+	for _, delta := range wait.ContextDelta {
+		if strings.TrimSpace(delta.Name) == "" || names[delta.Name] {
+			return fmt.Errorf("contextDelta names must be unique and non-empty")
+		}
+		names[delta.Name] = true
+		if strings.TrimSpace(delta.Value) == "" || !isWholeReference(delta.Value) || !strings.HasPrefix(strings.TrimSpace(delta.Value), "${input.") {
+			return fmt.Errorf("contextDelta %q must be a whole input reference", delta.Name)
+		}
+		if len(delta.Schema) == 0 {
+			return fmt.Errorf("contextDelta %q schema is required", delta.Name)
+		}
+		if err := validateBoundedSchema(delta.Schema, 0); err != nil {
+			return fmt.Errorf("contextDelta %q schema: %w", delta.Name, err)
+		}
+		if delta.Provenance != "operator" && delta.Provenance != "authenticated-event" && delta.Provenance != "event-or-operator" {
+			return fmt.Errorf("contextDelta %q provenance is unsupported", delta.Name)
+		}
+	}
+	return nil
+}
+
+func validateBoundedInputSchema(schema map[string]any, depth int) error {
+	if err := validateBoundedSchema(schema, depth); err != nil {
+		return err
+	}
+	if schemaType(schema) != "object" {
+		return fmt.Errorf("schema must have type object")
+	}
+	additional, ok := schema["additionalProperties"].(bool)
+	if !ok || additional {
+		return fmt.Errorf("schema must set additionalProperties: false")
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("schema properties are required")
+	}
+	if len(properties) > 32 {
+		return fmt.Errorf("schema has too many properties")
+	}
+	for name, raw := range properties {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("schema property names must be non-empty")
+		}
+		property, ok := raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("schema property %q must be an object", name)
+		}
+		if nestedType := schemaType(property); nestedType == "object" {
+			if err := validateBoundedInputSchema(property, depth+1); err != nil {
+				return fmt.Errorf("property %q: %w", name, err)
+			}
+		}
+	}
+	for _, raw := range stringSlice(schema["required"]) {
+		if _, ok := properties[raw]; !ok {
+			return fmt.Errorf("required property %q is not declared", raw)
+		}
+	}
+	return nil
+}
+
+func validateBoundedSchema(schema map[string]any, depth int) error {
+	if depth > 8 {
+		return fmt.Errorf("schema nesting exceeds limit")
+	}
+	if schemaType(schema) == "" {
+		return fmt.Errorf("schema type is required")
+	}
+	return nil
+}
+
+func stringSlice(value any) []string {
+	result := []string{}
+	switch typed := value.(type) {
+	case []string:
+		return append(result, typed...)
+	case []any:
+		for _, item := range typed {
+			if text, ok := item.(string); ok {
+				result = append(result, text)
+			}
+		}
+	}
+	return result
+}
+
 // validateReferenceTypes checks the part of the producer/consumer contract
 // that is knowable before execution. Whole-value references are intentionally
 // deferred by ValidateJSON, but a prior node with a typed output schema must
@@ -398,7 +623,20 @@ func walkReferenceTypes(value any, schema map[string]any, doc Document, node Nod
 			return nil
 		}
 		match := referencePattern.FindStringSubmatch(typed)
-		if len(match) != 2 || !strings.HasPrefix(match[1], "nodes.") {
+		if len(match) != 2 {
+			return nil
+		}
+		if strings.HasPrefix(match[1], "input.") || strings.HasPrefix(match[1], "context.") {
+			producedSchema, ok := referenceSchema(match[1], doc, node)
+			if !ok {
+				return fmt.Errorf("reference %q has no declared input or context producer", typed)
+			}
+			if len(schema) > 0 && !schemasCompatible(producedSchema, schema) {
+				return fmt.Errorf("reference %q produces %s but target expects %s", typed, schemaType(producedSchema), schemaType(schema))
+			}
+			return nil
+		}
+		if !strings.HasPrefix(match[1], "nodes.") {
 			return nil
 		}
 		parts := strings.Split(match[1], ".")
@@ -552,6 +790,8 @@ func ValidateJSON(schema map[string]any, value any) error {
 				if err := ValidateJSON(property, child); err != nil {
 					return fmt.Errorf("property %q: %w", key, err)
 				}
+			} else if additional, declared := schema["additionalProperties"].(bool); declared && !additional {
+				return fmt.Errorf("unknown property %q", key)
 			}
 		}
 	case "array":
@@ -744,10 +984,56 @@ func validateReference(reference string, doc Document, node Node, ancestors map[
 		if len(parts) < 3 || ancestors[node.ID] == nil || !ancestors[node.ID][parts[1]] {
 			return fmt.Errorf("node reference %q must target a declared dependency", reference)
 		}
+	case "input":
+		if node.Wait == nil || len(parts) < 2 {
+			return fmt.Errorf("input reference %q is only valid in its wait context", reference)
+		}
+		if _, ok := schemaAt(node.Wait.InputSchema, parts[1:]); !ok {
+			return fmt.Errorf("input reference %q is not declared by the wait schema", reference)
+		}
+	case "context":
+		if _, ok := referenceSchema(reference, doc, node); !ok {
+			return fmt.Errorf("context reference %q has no declared dependency producer", reference)
+		}
 	default:
 		return fmt.Errorf("unknown interpolation root %q", parts[0])
 	}
 	return nil
+}
+
+func referenceSchema(reference string, doc Document, node Node) (map[string]any, bool) {
+	parts := strings.Split(reference, ".")
+	if len(parts) < 2 {
+		return nil, false
+	}
+	ancestors := graphAncestors(doc)[node.ID]
+	switch parts[0] {
+	case "input":
+		if node.Wait == nil {
+			return nil, false
+		}
+		return schemaAt(node.Wait.InputSchema, parts[1:])
+	case "context":
+		for _, candidate := range doc.Nodes {
+			if !ancestors[candidate.ID] || candidate.Wait == nil {
+				continue
+			}
+			for _, delta := range candidate.Wait.ContextDelta {
+				if delta.Name != parts[1] {
+					continue
+				}
+				return schemaAtOrSelf(delta.Schema, parts[2:])
+			}
+		}
+	}
+	return nil, false
+}
+
+func schemaAtOrSelf(schema map[string]any, path []string) (map[string]any, bool) {
+	if len(path) == 0 {
+		return schema, len(schema) > 0
+	}
+	return schemaAt(schema, path)
 }
 
 func number(value any) (float64, bool) {

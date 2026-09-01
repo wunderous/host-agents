@@ -18,6 +18,7 @@ import (
 	capabilitycatalog "github.com/wunderous/host-agents/internal/catalog"
 	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/hostruntime"
+	"github.com/wunderous/host-agents/internal/plan"
 	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
@@ -114,6 +115,127 @@ func TestInputRequiredTaskUsesTasksUpdate(t *testing.T) {
 	}
 	if updated.ToolResult == nil || updated.ToolResult.StructuredContent.(map[string]any)["response"] != true {
 		t.Fatalf("task result = %#v", updated.ToolResult)
+	}
+}
+
+func TestHostPlanWaitSurvivesRestartAndResumesThroughTasks(t *testing.T) {
+	stateDir := t.TempDir()
+	svc := hostagent.New(hostagent.Options{
+		ProviderID: "incus",
+		ToolsForProvider: func(providerID string) []string {
+			names, err := tools.HostToolNamesForProvider(providerID)
+			if err != nil {
+				return nil
+			}
+			return names
+		},
+	})
+	newServer := func() *Server {
+		server, err := NewServer(Options{
+			ProviderID:     "incus",
+			Ops:            svc,
+			Standalone:     true,
+			AllowMutations: true,
+			StateDir:       stateDir,
+		})
+		if err != nil {
+			t.Fatalf("NewServer: %v", err)
+		}
+		return server
+	}
+	server := newServer()
+	planDocument := map[string]any{
+		"contractVersion": "host-plan.v1",
+		"planId":          "restartable-wait",
+		"generation":      1,
+		"idempotencyKey":  "restartable-wait-1",
+		"nodes": []any{
+			map[string]any{
+				"id": "approval",
+				"wait": map[string]any{
+					"trigger":        map[string]any{"kind": "operator", "type": "approval"},
+					"schemaRevision": "approval.v1",
+					"inputSchema": map[string]any{
+						"type":                 "object",
+						"additionalProperties": false,
+						"properties": map[string]any{
+							"decision": map[string]any{"type": "string"},
+						},
+						"required": []any{"decision"},
+					},
+					"contextDelta": []any{map[string]any{
+						"name":       "decision",
+						"value":      "${input.decision}",
+						"schema":     map[string]any{"type": "string"},
+						"provenance": "operator",
+					}},
+				},
+			},
+			map[string]any{
+				"id":        "status",
+				"dependsOn": []any{"approval"},
+				"action":    map[string]any{"tool": "get_local_status", "args": map[string]any{}},
+			},
+		},
+	}
+	result, err := server.handleRunHostPlan(map[string]any{"plan": planDocument})
+	if err != nil {
+		t.Fatalf("run host plan: %v", err)
+	}
+	payload, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("run result = %#v", result.StructuredContent)
+	}
+	runID, _ := payload["runId"].(string)
+	if runID == "" {
+		t.Fatalf("run result omitted runId: %#v", payload)
+	}
+	waitForPlanStatus := func(current *Server, want string) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			record, found, getErr := current.state.GetPlan(runID)
+			if getErr != nil {
+				t.Fatalf("get plan: %v", getErr)
+			}
+			if found && record.Status == want {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		record, _, _ := current.state.GetPlan(runID)
+		t.Fatalf("plan status = %q, want %q", record.Status, want)
+	}
+	waitForPlanStatus(server, plan.RunStatusWaiting)
+	waiting, ok := server.Tasks().Get(runID)
+	if !ok || waiting.Status != tasks.StatusInputRequired {
+		t.Fatalf("waiting task = %#v", waiting)
+	}
+	if _, ok := server.Tasks().ToGetTaskResult(waiting)["inputRequests"]; !ok {
+		t.Fatalf("waiting task omitted input requests: %#v", waiting)
+	}
+	if err := server.Close(); err != nil {
+		t.Fatalf("close before restart: %v", err)
+	}
+
+	server = newServer()
+	t.Cleanup(func() { _ = server.Close() })
+	restored, ok := server.Tasks().Get(runID)
+	if !ok || restored.Status != tasks.StatusInputRequired {
+		t.Fatalf("restored waiting task = %#v", restored)
+	}
+	updateParams, _ := json.Marshal(map[string]any{
+		"taskId":         runID,
+		"inputResponses": map[string]any{"decision": "approved"},
+		"source":         "operator",
+	})
+	if _, err := server.HandleExtensionMethod("tasks/update", updateParams); err != nil {
+		t.Fatalf("resume waiting host plan: %v", err)
+	}
+	waitForPlanStatus(server, "completed")
+	completed, ok := server.Tasks().Get(runID)
+	if !ok || completed.Status != tasks.StatusCompleted {
+		t.Fatalf("completed task = %#v", completed)
 	}
 }
 

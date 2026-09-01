@@ -251,3 +251,77 @@ func TestRecipeRejectsNestedPlanRunsAndChecksCompatibility(t *testing.T) {
 		t.Fatalf("nested recipe plan error = %v", err)
 	}
 }
+
+func TestHostRecipeIsSeparateDistributedEnvelopeAndPinsTargetReferences(t *testing.T) {
+	doc := HostDocument{
+		ContractVersion: HostContractVersion,
+		RecipeID:        "distributed-test",
+		RecipeVersion:   "1.0.0",
+		Execution:       HostExecution{Coordinator: "platform", Mode: "distributed"},
+		Inputs: map[string]InputSpec{
+			"hostIds": {Schema: map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties": map[string]any{
+					"a": map[string]any{"type": "string"},
+				},
+				"required": []any{"a"},
+			}},
+		},
+		Plan: plan.Document{
+			ContractVersion: plan.ContractVersion,
+			PlanID:          "distributed-test",
+			Generation:      1,
+			IdempotencyKey:  "distributed-test",
+			Nodes: []plan.Node{{
+				ID:     "inspect",
+				Target: &plan.TargetRef{HostRef: "${vars.inputs.hostIds.a}"},
+				Action: &plan.Action{Tool: "probe", Args: map[string]any{}},
+			}},
+		},
+	}
+	loaded, err := ResolveHostInputs(doc, map[string]any{"hostIds": map[string]any{"a": "host-agent-a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.Validate(map[string]plan.Capability{"probe": {Name: "probe", InputSchema: map[string]any{"type": "object"}, Effect: "read"}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if loaded.RedactedInputs()["hostIds"].(map[string]any)["a"] != "host-agent-a" {
+		t.Fatalf("resolved host input = %#v", loaded.RedactedInputs())
+	}
+	hash, err := CanonicalHash(doc)
+	if err != nil || !strings.HasPrefix(hash, "sha256:") {
+		t.Fatalf("host recipe hash = %q err=%v", hash, err)
+	}
+}
+
+func TestHostRecipeRejectsMissingExactTargetAndWrongExecutionOwner(t *testing.T) {
+	doc := HostDocument{
+		ContractVersion: HostContractVersion,
+		RecipeID:        "invalid",
+		RecipeVersion:   "1.0.0",
+		Execution:       HostExecution{Coordinator: "host-agent", Mode: "local"},
+		Plan: plan.Document{
+			ContractVersion: plan.ContractVersion,
+			PlanID:          "invalid",
+			Generation:      1,
+			IdempotencyKey:  "invalid",
+			Nodes:           []plan.Node{{ID: "action", Action: &plan.Action{Tool: "probe"}}},
+		},
+	}
+	if err := ValidateHostEnvelope(doc); err == nil {
+		t.Fatal("wrong execution owner was accepted")
+	}
+	doc.Execution = HostExecution{Coordinator: "platform", Mode: "distributed"}
+	if err := ValidateHostEnvelope(doc); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := ResolveHostInputs(doc, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.Validate(map[string]plan.Capability{"probe": {Name: "probe", InputSchema: map[string]any{"type": "object"}, Effect: "read"}}, ""); err == nil || !strings.Contains(err.Error(), "exact target") {
+		t.Fatalf("missing target error = %v", err)
+	}
+}

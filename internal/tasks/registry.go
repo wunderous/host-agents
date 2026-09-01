@@ -43,6 +43,7 @@ type Record struct {
 	PollInterval  int            `json:"pollInterval"`
 	Logs          []string       `json:"logs,omitempty"`
 	InputRequests map[string]any `json:"inputRequests,omitempty"`
+	InputRequest  map[string]any `json:"inputRequest,omitempty"`
 	ToolResult    *ToolResult    `json:"-"`
 	resultCh      chan ToolResult
 	cancel        func()
@@ -95,9 +96,10 @@ func (r *Registry) CreateWithID(taskID, toolName string, toolArgs map[string]any
 	return rec
 }
 
-// RestoreSnapshot rehydrates a terminal task handle from durable state. Work
-// that was still executing when the process stopped is made failed because
-// the in-memory continuation is gone; the handle itself remains queryable.
+// RestoreSnapshot rehydrates a task handle from durable state. A waiting task
+// remains input_required so its owning adapter can attach a fresh continuation
+// after restart; work that was executing is made failed because its
+// in-memory continuation is gone.
 func (r *Registry) RestoreSnapshot(snapshot map[string]any) (*Record, bool) {
 	taskID, _ := snapshot["taskId"].(string)
 	toolName, _ := snapshot["toolName"].(string)
@@ -140,11 +142,57 @@ func (r *Registry) RestoreSnapshot(snapshot map[string]any) (*Record, bool) {
 		rec.Status = StatusCancelled
 	case StatusFailed:
 		rec.Status = StatusFailed
+	case StatusInputRequired:
+		rec.Status = StatusInputRequired
+		if inputRequests, ok := snapshot["inputRequests"].(map[string]any); ok {
+			rec.InputRequests = cloneMap(inputRequests)
+		}
+		if inputRequest, ok := snapshot["inputRequest"].(map[string]any); ok {
+			rec.InputRequest = cloneMap(inputRequest)
+		}
 	default:
 		rec.Status = StatusFailed
 		rec.StatusMessage = "The Host Agent restarted before the task completed."
 	}
 	r.tasks[taskID] = rec
+	return rec, true
+}
+
+// RequireInput durably changes a working task into an input barrier and
+// installs the in-process continuation that will be invoked after the
+// corresponding tasks/update response passes the owning contract's checks.
+func (r *Registry) RequireInput(taskID string, inputRequests map[string]any, resume func(map[string]any)) (*Record, bool) {
+	return r.RequireInputWithMetadata(taskID, inputRequests, nil, resume)
+}
+
+// RequireInputWithMetadata projects the typed wait envelope alongside the
+// field schema. The metadata is descriptive only; the durable plan record
+// remains the authority used to validate and resume the wait.
+func (r *Registry) RequireInputWithMetadata(taskID string, inputRequests, inputRequest map[string]any, resume func(map[string]any)) (*Record, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rec, ok := r.tasks[taskID]
+	if !ok || (rec.Status != StatusWorking && rec.Status != StatusInputRequired) {
+		return rec, ok
+	}
+	rec.Status = StatusInputRequired
+	rec.StatusMessage = "The task requires input before it can continue."
+	rec.InputRequests = cloneMap(inputRequests)
+	rec.InputRequest = cloneMap(inputRequest)
+	rec.resume = resume
+	rec.LastUpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	return rec, true
+}
+
+// SetResume attaches the continuation for a restored input_required task.
+func (r *Registry) SetResume(taskID string, resume func(map[string]any)) (*Record, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rec, ok := r.tasks[taskID]
+	if !ok || rec.Status != StatusInputRequired {
+		return rec, ok
+	}
+	rec.resume = resume
 	return rec, true
 }
 
@@ -234,7 +282,7 @@ func (r *Registry) Fail(taskID string, message string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	rec, ok := r.tasks[taskID]
-	if !ok || rec.Status != StatusWorking {
+	if !ok || (rec.Status != StatusWorking && rec.Status != StatusInputRequired) {
 		return
 	}
 	rec.Status = StatusFailed
@@ -285,9 +333,13 @@ func (r *Registry) Cancel(taskID string) (*Record, bool) {
 func (r *Registry) Update(taskID string, responses map[string]any) (*Record, bool) {
 	r.mu.Lock()
 	rec, ok := r.tasks[taskID]
-	if !ok || rec.Status != StatusInputRequired {
+	if !ok {
 		r.mu.Unlock()
-		return rec, ok
+		return nil, false
+	}
+	if rec.Status != StatusInputRequired {
+		r.mu.Unlock()
+		return rec, false
 	}
 	if rec.InputRequests == nil {
 		rec.InputRequests = map[string]any{}
@@ -307,6 +359,7 @@ func (r *Registry) Update(taskID string, responses map[string]any) (*Record, boo
 	}
 	rec.Status = StatusWorking
 	rec.StatusMessage = "Input received; resuming the task."
+	rec.InputRequest = nil
 	rec.LastUpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	resume := rec.resume
 	r.mu.Unlock()
@@ -331,6 +384,9 @@ func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
 	}
 	if len(rec.InputRequests) > 0 {
 		out["inputRequests"] = cloneMap(rec.InputRequests)
+	}
+	if rec.Status == StatusInputRequired && len(rec.InputRequest) > 0 {
+		out["inputRequest"] = cloneMap(rec.InputRequest)
 	}
 	if rec.Status == StatusFailed {
 		out["error"] = map[string]any{

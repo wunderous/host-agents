@@ -16,12 +16,22 @@ type Runner struct {
 	Dispatch        Dispatcher
 	Capabilities    map[string]Capability
 	CatalogRevision string
+	HostAgentID     string
 	Sink            EventSink
 }
+
+var (
+	ErrWaitReached    = errors.New("plan reached a durable wait")
+	ErrWaitExpired    = errors.New("plan wait expired")
+	ErrResumeConflict = errors.New("plan wait resume conflict")
+)
 
 func (r Runner) Run(ctx context.Context, doc Document, state RunState) (RunState, error) {
 	if err := Validate(doc, r.Capabilities, r.CatalogRevision); err != nil {
 		return state, err
+	}
+	if state.Status == RunStatusWaiting && state.Wait != nil && state.Wait.Status == RunStatusWaiting {
+		return state, nil
 	}
 	levels, err := TopologicalLevels(doc)
 	if err != nil {
@@ -32,6 +42,9 @@ func (r Runner) Run(ctx context.Context, doc Document, state RunState) (RunState
 	}
 	if state.Outputs == nil {
 		state.Outputs = make(map[string]any, len(doc.Nodes))
+	}
+	if state.Context == nil {
+		state.Context = make(map[string]ContextEntry)
 	}
 	state.PlanID = doc.PlanID
 	state.Generation = doc.Generation
@@ -50,6 +63,9 @@ func (r Runner) Run(ctx context.Context, doc Document, state RunState) (RunState
 	for pass := 1; pass <= maxPasses; pass++ {
 		for _, level := range levels {
 			if err := r.runLevel(ctx, doc, level, &state); err != nil {
+				if errors.Is(err, ErrWaitReached) {
+					return state, nil
+				}
 				return r.abortRun(ctx, doc, &state, err)
 			}
 		}
@@ -79,6 +95,125 @@ func (r Runner) Run(ctx context.Context, doc Document, state RunState) (RunState
 	return state, nil
 }
 
+// Resume consumes the currently persisted wait exactly once. The durable
+// state transition is emitted before Run is called again, so a process crash
+// cannot dispatch a dependent action without first recording the consumed
+// barrier and its context projection.
+func (r Runner) Resume(ctx context.Context, doc Document, state RunState, request ResumeRequest) (RunState, error) {
+	if err := Validate(doc, r.Capabilities, r.CatalogRevision); err != nil {
+		return state, err
+	}
+	if err := ValidateResume(doc, state, request); err != nil {
+		if errors.Is(err, ErrWaitExpired) {
+			state.Status = RunStatusExpired
+			if state.Wait != nil {
+				state.Wait.Status = RunStatusExpired
+			}
+			if node, ok := state.Nodes[request.WaitNodeID]; ok {
+				node.Status = StatusExpired
+				node.Error = err.Error()
+				node.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
+				state.Nodes[request.WaitNodeID] = node
+			}
+			state.Error = err.Error()
+			_ = r.emit(state)
+		}
+		return state, err
+	}
+
+	node, ok := nodeByID(doc, state.Wait.NodeID)
+	if !ok || node.Wait == nil {
+		return state, fmt.Errorf("%w: wait node %q is not declared", ErrResumeConflict, state.Wait.NodeID)
+	}
+	if state.Context == nil {
+		state.Context = make(map[string]ContextEntry)
+	}
+	for _, delta := range node.Wait.ContextDelta {
+		value, err := interpolateValue(delta.Value, EvalContext{
+			Variables:  doc.Variables,
+			NodeOutput: state.Outputs,
+			Input:      request.Input,
+			Context:    contextValues(state.Context),
+		})
+		if err != nil {
+			return state, fmt.Errorf("context delta %q: %w", delta.Name, err)
+		}
+		if err := ValidateJSON(delta.Schema, value); err != nil {
+			return state, fmt.Errorf("context delta %q: %w", delta.Name, err)
+		}
+		entry := ContextEntry{
+			Name:           delta.Name,
+			Value:          value,
+			Schema:         delta.Schema,
+			SchemaRevision: node.Wait.SchemaRevision,
+			ProducerNode:   node.ID,
+			Source:         request.Source,
+			Secret:         delta.Secret,
+			RecordedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		state.Context[delta.Name] = entry
+		state.ContextHistory = append(state.ContextHistory, entry)
+	}
+	state.Nodes[node.ID] = NodeRunState{
+		ID:          node.ID,
+		Status:      StatusSatisfied,
+		CompletedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	state.Wait = nil
+	state.Status = "running"
+	state.Error = ""
+	if err := r.emit(state); err != nil {
+		return state, err
+	}
+	return r.Run(ctx, doc, state)
+}
+
+// ValidateResume is the pure fence check used by both the runner and the MCP
+// task adapter before accepting an input response.
+func ValidateResume(doc Document, state RunState, request ResumeRequest) error {
+	if state.Status != RunStatusWaiting || state.Wait == nil || state.Wait.Status != RunStatusWaiting {
+		return fmt.Errorf("%w: run is not waiting", ErrResumeConflict)
+	}
+	wait := state.Wait
+	if request.WaitNodeID != wait.NodeID || request.WaitRevision != wait.WaitRevision || request.SchemaRevision != wait.SchemaRevision {
+		return fmt.Errorf("%w: wait revision, node, or schema does not match", ErrResumeConflict)
+	}
+	if !jsonEqual(request.Correlation, wait.Correlation) {
+		return fmt.Errorf("%w: wait correlation does not match", ErrResumeConflict)
+	}
+	if strings.TrimSpace(request.Source) == "" {
+		return fmt.Errorf("%w: resume source is required", ErrResumeConflict)
+	}
+	if request.Source != "operator" && request.Source != "authenticated-event" {
+		return fmt.Errorf("%w: unsupported resume source %q", ErrResumeConflict, request.Source)
+	}
+	node, ok := nodeByID(doc, wait.NodeID)
+	if !ok || node.Wait == nil {
+		return fmt.Errorf("%w: wait node %q is not declared", ErrResumeConflict, wait.NodeID)
+	}
+	if wait.Trigger.Kind == "operator" && request.Source != "operator" {
+		return fmt.Errorf("%w: this wait accepts operator input only", ErrResumeConflict)
+	}
+	for _, delta := range node.Wait.ContextDelta {
+		if delta.Provenance == "operator" && request.Source != "operator" {
+			return fmt.Errorf("%w: context %q accepts operator input only", ErrResumeConflict, delta.Name)
+		}
+		if delta.Provenance == "authenticated-event" && request.Source != "authenticated-event" {
+			return fmt.Errorf("%w: context %q requires an authenticated event", ErrResumeConflict, delta.Name)
+		}
+	}
+	if wait.ExpiresAt != "" {
+		expiresAt, err := time.Parse(time.RFC3339Nano, wait.ExpiresAt)
+		if err != nil || !time.Now().UTC().Before(expiresAt) {
+			return ErrWaitExpired
+		}
+	}
+	if err := ValidateJSON(wait.InputSchema, request.Input); err != nil {
+		return fmt.Errorf("%w: input: %v", ErrResumeConflict, err)
+	}
+	return nil
+}
+
 func (r Runner) abortRun(ctx context.Context, doc Document, state *RunState, runErr error) (RunState, error) {
 	state.Status = "failed"
 	if ctx.Err() != nil {
@@ -104,7 +239,7 @@ func (r Runner) checkConverged(ctx context.Context, doc Document, levels [][]Nod
 				if node.Validate == nil || current.Status == StatusSkipped {
 					continue
 				}
-				result, failure, err := r.validateNodeReady(ctx, doc, node, nil, state.Outputs)
+				result, failure, err := r.validateNodeReady(ctx, doc, node, nil, state.Outputs, state.Context)
 				if err != nil {
 					return false, err
 				}
@@ -132,6 +267,18 @@ func (r Runner) checkConverged(ctx context.Context, doc Document, levels [][]Nod
 }
 
 func (r Runner) runLevel(ctx context.Context, doc Document, level []Node, state *RunState) error {
+	for _, node := range level {
+		if node.Wait != nil {
+			// A wait is a graph barrier. Do not race siblings in the same level
+			// against the durable pause or leave them partially dispatched.
+			for _, serialNode := range level {
+				if err := r.runNodeWithPreconditions(ctx, doc, serialNode, state); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}
 	maxConcurrency := doc.Converge.MaxConcurrency
 	if maxConcurrency <= 0 {
 		maxConcurrency = len(level)
@@ -209,13 +356,13 @@ func (r Runner) runNodeWithPreconditions(ctx context.Context, doc Document, node
 		}
 		return nil
 	}
-	if failure, ok := EvaluateAssertions(map[string]any{"vars": doc.Variables, "nodes": state.Outputs}, node.When); !ok && len(node.When) > 0 {
+	if failure, ok := EvaluateAssertions(map[string]any{"vars": doc.Variables, "nodes": state.Outputs, "context": contextValues(state.Context)}, node.When); !ok && len(node.When) > 0 {
 		state.Nodes[node.ID] = NodeRunState{ID: node.ID, Status: StatusSkipped, Error: failure.Message}
 		return nil
 	}
 	if previous := state.Nodes[node.ID]; previous.Status == StatusApplied || previous.Status == StatusSatisfied {
 		if node.Validate != nil {
-			result, failure, validateErr := r.validateNodeReady(ctx, doc, node, nil, state.Outputs)
+			result, failure, validateErr := r.validateNodeReady(ctx, doc, node, nil, state.Outputs, state.Context)
 			if validateErr != nil {
 				return validateErr
 			}
@@ -248,6 +395,17 @@ func cloneRunState(value RunState) RunState {
 	for key, output := range value.Outputs {
 		clone.Outputs[key] = output
 	}
+	clone.Context = make(map[string]ContextEntry, len(value.Context))
+	for key, entry := range value.Context {
+		clone.Context[key] = entry
+	}
+	clone.ContextHistory = append([]ContextEntry(nil), value.ContextHistory...)
+	if value.Wait != nil {
+		wait := *value.Wait
+		wait.Correlation = cloneMap(value.Wait.Correlation)
+		wait.InputSchema = cloneMap(value.Wait.InputSchema)
+		clone.Wait = &wait
+	}
 	return clone
 }
 
@@ -267,6 +425,57 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 	state.Nodes[node.ID] = nodeState
 	if err := r.emit(*state); err != nil {
 		return err
+	}
+	if err := r.validateTarget(doc, node, state); err != nil {
+		state.Nodes[node.ID] = failedNode(nodeState, err)
+		_ = r.emit(*state)
+		return err
+	}
+	if node.Wait != nil {
+		waitRevision := 1
+		if state.Wait != nil && state.Wait.NodeID == node.ID {
+			waitRevision = state.Wait.WaitRevision + 1
+		}
+		expiresAt := node.Wait.ExpiresAt
+		if expiresAt == "" && node.Wait.ExpiresInMs > 0 {
+			expiresAt = time.Now().UTC().Add(time.Duration(node.Wait.ExpiresInMs) * time.Millisecond).Format(time.RFC3339Nano)
+		}
+		correlation, err := interpolateValue(node.Wait.Correlation, r.evalContext(doc, state, nil))
+		if err != nil {
+			state.Nodes[node.ID] = failedNode(nodeState, err)
+			_ = r.emit(*state)
+			return err
+		}
+		correlationMap, ok := correlation.(map[string]any)
+		if correlation == nil {
+			correlationMap = map[string]any{}
+			ok = true
+		}
+		if !ok {
+			err := fmt.Errorf("wait correlation must be an object")
+			state.Nodes[node.ID] = failedNode(nodeState, err)
+			_ = r.emit(*state)
+			return err
+		}
+		state.Wait = &WaitState{
+			NodeID:         node.ID,
+			WaitID:         fmt.Sprintf("%s:%s:%d", state.RunID, node.ID, waitRevision),
+			WaitRevision:   waitRevision,
+			SchemaRevision: node.Wait.SchemaRevision,
+			Trigger:        node.Wait.Trigger,
+			Correlation:    correlationMap,
+			InputSchema:    node.Wait.InputSchema,
+			ExpiresAt:      expiresAt,
+			Status:         RunStatusWaiting,
+		}
+		nodeState.Status = StatusWaiting
+		state.Nodes[node.ID] = nodeState
+		state.Status = RunStatusWaiting
+		state.Error = ""
+		if err := r.emit(*state); err != nil {
+			return err
+		}
+		return ErrWaitReached
 	}
 
 	if node.ForEach != nil {
@@ -291,9 +500,9 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 		// here would wait for a resource that this node is responsible for
 		// creating. A validation-only node has no action and may use bounded
 		// polling to observe external readiness.
-		result, failure, err := r.validateNode(nodeCtx, doc, node, nil, state.Outputs)
+		result, failure, err := r.validateNode(nodeCtx, doc, node, nil, state.Outputs, state.Context)
 		if node.Action == nil {
-			result, failure, err = r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs)
+			result, failure, err = r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs, state.Context)
 		}
 		if err != nil {
 			state.Nodes[node.ID] = failedNode(nodeState, err)
@@ -329,7 +538,7 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 		if err := r.emit(*state); err != nil {
 			return err
 		}
-		args, err := InterpolateArgs(node.Action.Args, EvalContext{Variables: doc.Variables, NodeOutput: state.Outputs})
+		args, err := InterpolateArgs(node.Action.Args, r.evalContext(doc, state, nil))
 		if err != nil {
 			return err
 		}
@@ -377,7 +586,7 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 			state.Nodes[node.ID] = nodeState
 			return r.emit(*state)
 		}
-		validationOutput, failure, validateErr := r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs)
+		validationOutput, failure, validateErr := r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs, state.Context)
 		if validateErr == nil && failure == nil {
 			nodeState.Observed = validationOutput
 			nodeState.Status = StatusApplied
@@ -391,7 +600,7 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 				recoveryAttempts = 1
 			}
 			for recoveryAttempt := 1; recoveryAttempt <= recoveryAttempts; recoveryAttempt++ {
-				recoverArgs, interpolationErr := InterpolateArgs(node.Recover.Args, EvalContext{Variables: doc.Variables, NodeOutput: state.Outputs})
+				recoverArgs, interpolationErr := InterpolateArgs(node.Recover.Args, r.evalContext(doc, state, nil))
 				if interpolationErr != nil {
 					validateErr = interpolationErr
 					break
@@ -415,7 +624,7 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 					}
 					continue
 				}
-				recoveryOutput, recoveryFailure, recoveryValidationErr := r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs)
+				recoveryOutput, recoveryFailure, recoveryValidationErr := r.validateNodeReady(nodeCtx, doc, node, nil, state.Outputs, state.Context)
 				if recoveryValidationErr == nil && recoveryFailure == nil {
 					nodeState.Observed = recoveryOutput
 					nodeState.Status = StatusApplied
@@ -488,7 +697,7 @@ func (r Runner) runForEach(ctx context.Context, doc Document, node Node, state *
 		if node.Action == nil {
 			return fmt.Errorf("forEach node %q requires an action", node.ID)
 		}
-		itemOutput, err := r.runForEachItem(ctx, doc, node, itemMap, state.Outputs)
+		itemOutput, err := r.runForEachItem(ctx, doc, node, itemMap, state.Outputs, state.Context)
 		if err != nil {
 			return err
 		}
@@ -499,7 +708,7 @@ func (r Runner) runForEach(ctx context.Context, doc Document, node Node, state *
 	return r.emit(*state)
 }
 
-func (r Runner) runForEachItem(ctx context.Context, doc Document, node Node, item map[string]any, outputs map[string]any) (any, error) {
+func (r Runner) runForEachItem(ctx context.Context, doc Document, node Node, item map[string]any, outputs map[string]any, contexts map[string]ContextEntry) (any, error) {
 	attempts := attemptsFor(node, doc)
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
@@ -507,7 +716,7 @@ func (r Runner) runForEachItem(ctx context.Context, doc Document, node Node, ite
 			return nil, err
 		}
 		if node.Validate != nil {
-			validated, failure, err := r.validateNodeReady(ctx, doc, node, item, outputs)
+			validated, failure, err := r.validateNodeReady(ctx, doc, node, item, outputs, contexts)
 			if err != nil {
 				lastErr = err
 			} else if failure == nil {
@@ -516,7 +725,7 @@ func (r Runner) runForEachItem(ctx context.Context, doc Document, node Node, ite
 				lastErr = fmt.Errorf("forEach node %q did not reach readiness: %s", node.ID, failure.Message)
 			}
 		}
-		args, err := InterpolateArgs(node.Action.Args, EvalContext{Variables: doc.Variables, NodeOutput: outputs, Item: item})
+		args, err := InterpolateArgs(node.Action.Args, evaluationContext(doc, outputs, contexts, item))
 		if err != nil {
 			return nil, err
 		}
@@ -534,7 +743,7 @@ func (r Runner) runForEachItem(ctx context.Context, doc Document, node Node, ite
 			if node.Validate == nil {
 				return itemOutput, nil
 			}
-			_, failure, validateErr := r.validateNodeReady(ctx, doc, node, item, outputs)
+			_, failure, validateErr := r.validateNodeReady(ctx, doc, node, item, outputs, contexts)
 			if validateErr == nil && failure == nil {
 				return itemOutput, nil
 			}
@@ -544,7 +753,7 @@ func (r Runner) runForEachItem(ctx context.Context, doc Document, node Node, ite
 				lastErr = fmt.Errorf("forEach node %q did not reach readiness: %s", node.ID, failure.Message)
 			}
 			if node.Recover != nil {
-				if recovered, recoveryErr := r.recoverForEachItem(ctx, doc, node, item, outputs); recoveryErr == nil && recovered {
+				if recovered, recoveryErr := r.recoverForEachItem(ctx, doc, node, item, outputs, contexts); recoveryErr == nil && recovered {
 					return itemOutput, nil
 				} else if recoveryErr != nil {
 					lastErr = recoveryErr
@@ -563,14 +772,14 @@ func (r Runner) runForEachItem(ctx context.Context, doc Document, node Node, ite
 	return nil, lastErr
 }
 
-func (r Runner) recoverForEachItem(ctx context.Context, doc Document, node Node, item map[string]any, outputs map[string]any) (bool, error) {
+func (r Runner) recoverForEachItem(ctx context.Context, doc Document, node Node, item map[string]any, outputs map[string]any, contexts map[string]ContextEntry) (bool, error) {
 	recoveryAttempts := node.Recover.MaxAttempts
 	if recoveryAttempts <= 0 {
 		recoveryAttempts = 1
 	}
 	var lastErr error
 	for attempt := 1; attempt <= recoveryAttempts; attempt++ {
-		args, err := InterpolateArgs(node.Recover.Args, EvalContext{Variables: doc.Variables, NodeOutput: outputs, Item: item})
+		args, err := InterpolateArgs(node.Recover.Args, evaluationContext(doc, outputs, contexts, item))
 		if err != nil {
 			return false, err
 		}
@@ -582,7 +791,7 @@ func (r Runner) recoverForEachItem(ctx context.Context, doc Document, node Node,
 			if outputErr := r.validateOutput(node.Recover.Tool, structuredContent(result)); outputErr != nil {
 				return false, outputErr
 			}
-			_, failure, validationErr := r.validateNodeReady(ctx, doc, node, item, outputs)
+			_, failure, validationErr := r.validateNodeReady(ctx, doc, node, item, outputs, contexts)
 			if validationErr == nil && failure == nil {
 				return true, nil
 			}
@@ -603,11 +812,11 @@ func (r Runner) recoverForEachItem(ctx context.Context, doc Document, node Node,
 	return false, lastErr
 }
 
-func (r Runner) validateNode(ctx context.Context, doc Document, node Node, item map[string]any, outputs map[string]any) (any, *AssertionFailure, error) {
+func (r Runner) validateNode(ctx context.Context, doc Document, node Node, item map[string]any, outputs map[string]any, contexts ...map[string]ContextEntry) (any, *AssertionFailure, error) {
 	if node.Validate == nil {
 		return nil, nil, nil
 	}
-	args, err := InterpolateArgs(node.Validate.Args, EvalContext{Variables: doc.Variables, NodeOutput: outputs, Item: item})
+	args, err := InterpolateArgs(node.Validate.Args, evaluationContext(doc, outputs, firstContext(contexts), item))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -633,11 +842,11 @@ func (r Runner) validateNode(ctx context.Context, doc Document, node Node, item 
 // the document explicitly supplies a validation timeout. A failed preflight
 // with no timeout is intentionally returned immediately so a mutation can be
 // applied; an action with a timeout gets honest, bounded readiness polling.
-func (r Runner) validateNodeReady(ctx context.Context, doc Document, node Node, item map[string]any, outputs map[string]any) (any, *AssertionFailure, error) {
+func (r Runner) validateNodeReady(ctx context.Context, doc Document, node Node, item map[string]any, outputs map[string]any, contexts ...map[string]ContextEntry) (any, *AssertionFailure, error) {
 	if node.Validate == nil {
 		return nil, nil, nil
 	}
-	result, failure, err := r.validateNode(ctx, doc, node, item, outputs)
+	result, failure, err := r.validateNode(ctx, doc, node, item, outputs, contexts...)
 	if err != nil || failure == nil || node.Validate.TimeoutMs <= 0 {
 		return result, failure, err
 	}
@@ -654,7 +863,7 @@ func (r Runner) validateNodeReady(ctx context.Context, doc Document, node Node, 
 		case <-validationCtx.Done():
 			return result, failure, nil
 		case <-ticker.C:
-			result, failure, err = r.validateNode(validationCtx, doc, node, item, outputs)
+			result, failure, err = r.validateNode(validationCtx, doc, node, item, outputs, contexts...)
 			if err != nil || failure == nil {
 				return result, failure, err
 			}
@@ -705,7 +914,7 @@ func (r Runner) compensate(node Node, doc Document, state *RunState) error {
 	if node.Compensate == nil {
 		return nil
 	}
-	args, err := InterpolateArgs(node.Compensate.Args, EvalContext{Variables: doc.Variables, NodeOutput: state.Outputs})
+	args, err := InterpolateArgs(node.Compensate.Args, r.evalContext(doc, state, nil))
 	if err != nil {
 		return err
 	}
@@ -755,13 +964,76 @@ func (r Runner) emit(state RunState) error {
 	if r.Sink == nil {
 		return nil
 	}
-	return r.Sink(state)
+	return r.Sink(redactedRunState(state))
+}
+
+func (r Runner) evalContext(doc Document, state *RunState, item map[string]any) EvalContext {
+	return evaluationContext(doc, state.Outputs, state.Context, item)
+}
+
+func evaluationContext(doc Document, outputs map[string]any, contexts map[string]ContextEntry, item map[string]any) EvalContext {
+	return EvalContext{
+		Variables:  doc.Variables,
+		NodeOutput: outputs,
+		Item:       item,
+		Context:    contextValues(contexts),
+	}
+}
+
+func firstContext(contexts []map[string]ContextEntry) map[string]ContextEntry {
+	if len(contexts) == 0 {
+		return nil
+	}
+	return contexts[0]
+}
+
+func contextValues(entries map[string]ContextEntry) map[string]any {
+	values := make(map[string]any, len(entries))
+	for name, entry := range entries {
+		values[name] = entry.Value
+	}
+	return values
+}
+
+func redactedRunState(state RunState) RunState {
+	redacted := cloneRunState(state)
+	for name, entry := range redacted.Context {
+		if entry.Secret {
+			entry.Value = nil
+			redacted.Context[name] = entry
+		}
+	}
+	for index, entry := range redacted.ContextHistory {
+		if entry.Secret {
+			entry.Value = nil
+			redacted.ContextHistory[index] = entry
+		}
+	}
+	return redacted
+}
+
+func (r Runner) validateTarget(doc Document, node Node, state *RunState) error {
+	if node.Target == nil || strings.TrimSpace(r.HostAgentID) == "" {
+		return nil
+	}
+	value, err := interpolateValue(node.Target.HostRef, r.evalContext(doc, state, nil))
+	if err != nil {
+		return fmt.Errorf("target hostRef: %w", err)
+	}
+	hostRef, ok := value.(string)
+	if !ok || strings.TrimSpace(hostRef) == "" {
+		return fmt.Errorf("target hostRef must resolve to a non-empty string")
+	}
+	if hostRef != r.HostAgentID {
+		return fmt.Errorf("target hostRef %q does not match Host Agent %q", hostRef, r.HostAgentID)
+	}
+	return nil
 }
 
 func blockedByDependency(node Node, states map[string]NodeRunState) bool {
 	for _, dependency := range node.DependsOn {
 		status := states[dependency].Status
-		if status == StatusFailed || status == StatusUnknown || status == StatusSkipped || status == StatusCompensationFailed {
+		if status == StatusFailed || status == StatusUnknown || status == StatusSkipped || status == StatusCompensationFailed || status == StatusWaiting || status == StatusExpired {
 			return true
 		}
 	}
@@ -840,7 +1112,7 @@ func resultText(result *mcp.CallToolResult) string {
 
 func resolveSource(source string, doc Document, state *RunState) (any, error) {
 	if strings.HasPrefix(source, "${") && strings.HasSuffix(source, "}") {
-		value, err := resolveReference(strings.TrimSuffix(strings.TrimPrefix(source, "${"), "}"), EvalContext{Variables: doc.Variables, NodeOutput: state.Outputs})
+		value, err := resolveReference(strings.TrimSuffix(strings.TrimPrefix(source, "${"), "}"), evaluationContext(doc, state.Outputs, state.Context, nil))
 		if err != nil {
 			return nil, err
 		}
