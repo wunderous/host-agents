@@ -208,13 +208,13 @@ statuses, host info…).
 
   The plan runner (`internal/plan/runner.go`, `schema.go` reference validation) injects
   `tenantId` as a reserved variable.
-- **TUI** (final client: sibling Opute `apps/opute-tui`): consumes the server-provided
+- **External client**: consumes the server-provided
   canonical `uri` and never fabricates identity. The former `clients/tui` module was only a
   migration source for this prerequisite and has now been retired after the Bun client
   passed parity. No `@vm` or name-based token becomes a normative wire binding.
 - **Tests**: `test/live/vm_lifecycle_test.go` + `reset_stack_test.go`
   (create→list→get→delete via uri), `test/modes/packaged_test.go`,
-  `test/tui/packaged_test.go`, `test/standalone/http_test.go`,
+  the interactive-client packaged tests, `test/standalone/http_test.go`,
   `test/compliance/mcp_test.go`, `internal/ops/*_test.go`,
   `internal/tools/dispatch_test.go`, `internal/hostmcp/server_test.go` + `session_test.go`,
   new registry/resolver tests.
@@ -238,7 +238,7 @@ statuses, host info…).
 4. ops resolver/adoption/registration + result `uri` fields
 5. dispatch migration + helper cleanup
 6. catalog/standalone/JSON schemas + contract tests
-7. recipes/fixtures/TUI
+7. recipes/fixtures/interactive client
 8. remaining tests
 9. ADR + AGENTS.md
 
@@ -247,7 +247,7 @@ statuses, host info…).
 `bd graph check`, `bd dep cycles`, `bd lint --status all`, shared launcher
 status, and `bd dolt test` must pass before implementation begins. Then run
 `gofmt -w .`, `go vet ./...`, `go test ./...`, `make standalone-smoke`,
-`make standalone-http-smoke`, TUI build + `test/tui` packaged tests. Historical plan docs
+`make standalone-http-smoke`, interactive-client build and packaged tests. Historical plan docs
 (`2026-08-22-*.md`) are records and are not rewritten.
 
 ## Risks / notes

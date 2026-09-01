@@ -18,9 +18,9 @@ edge set, input edges, output edges, and `argumentProducers` are generated from
 the immutable catalog snapshot; provider metadata cannot name a producer or
 consumer tool.
 
-The Go implementation is unaware of the TUI. It owns kind validation, tenant
+The Go implementation is unaware of external clients. It owns kind validation, tenant
 and URI parsing, resolver admission, descriptor validation, catalog revisions,
-and dynamic overlay rebuilding. The TUI consumes the derived catalog and
+and dynamic overlay rebuilding. External clients consume the derived catalog and
 preserves the selected URI as opaque data. It never parses a URI prefix or
 maintains a second producer table.
 
@@ -40,7 +40,7 @@ foreign tenants, and stale revisions fail closed.
   implementation genuinely accepts them, such as VM and system-container
   identities. Admission resolves one matching typed binding before dispatch.
 - Resource IDs remain opaque after parsing. Pod IDs include a host-issued
-  Kubernetes identity coordinate and are never reconstructed by the TUI.
+  Kubernetes identity coordinate and are never reconstructed by clients.
 - All accepted kinds are registered in one host-owned resource-kind registry;
   catalog registration rejects a kind that the URI resolver cannot validate.
 
@@ -54,7 +54,7 @@ The contract is verified at multiple boundaries:
   stale-revision rejection, and legacy producer metadata removal;
 - MCP Streamable HTTP tests prove discovery, `tools/list`, typed `tools/call`,
   structured output, compatibility text, and complete terminal streams;
-- TUI tests prove opaque URI propagation, provenance, incompatible-action
+- Interactive-client tests prove opaque URI propagation, provenance, incompatible-action
   suppression, and catalog-revision handling;
 - `/chat` evidence must include the literal request, parsed model tool call,
   exact arguments, paired result, complete SSE terminal event, and no SSE

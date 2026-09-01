@@ -41,7 +41,7 @@ func TestRunServerRejectsUnsupportedTransportFromEnvOverride(t *testing.T) {
 	}
 }
 
-func TestServerOnlyCommandBoundaryRejectsLegacyTUIRouting(t *testing.T) {
+func TestServerOnlyCommandBoundaryRejectsLegacyClientRouting(t *testing.T) {
 	if command, _ := splitCommand(nil); command != "serve" {
 		t.Fatalf("bare command = %q, want serve", command)
 	}
@@ -51,7 +51,7 @@ func TestServerOnlyCommandBoundaryRejectsLegacyTUIRouting(t *testing.T) {
 	if err := Run(context.Background(), []string{"--url", "http://127.0.0.1:3014/mcp"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
 		t.Fatalf("legacy --url result = %v, want an explicit unknown-flag error", err)
 	}
-	if err := Run(context.Background(), []string{"tui"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "unknown command") {
-		t.Fatalf("legacy tui result = %v, want an explicit unknown-command error", err)
+	if err := Run(context.Background(), []string{"legacy-client"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "unknown command") {
+		t.Fatalf("legacy client result = %v, want an explicit unknown-command error", err)
 	}
 }

@@ -60,8 +60,8 @@ owners or first introduce a contract and an ADR explaining a new owner.
 | `contracts/` | Versioned neutral capability, provider, operation, recipe, and observation schemas | Runtime state, UI behavior, or implementation loading |
 | Opute Platform / LLM | Intent, retrieval, stochastic planning, semantic outcomes, and authorized context | Direct host mutation or bypassing Host Agent admission |
 
-The TUI is a separate client in the sibling Opute repository. It consumes the
-public Host Agent MCP contract and must not reimplement this kernel.
+External clients consume the public Host Agent MCP contract and must not
+reimplement this kernel.
 
 ## Cordis semantics that are binding
 
@@ -350,13 +350,13 @@ and authority stores separate. An existing production cluster must not receive
 a second temporary agent identity or bridge projection merely to satisfy a
 localhost test.
 
-**C-19 — Opaque client identity.** The TUI and other clients preserve resource
+**C-19 — Opaque client identity.** Clients preserve resource
 URIs as opaque values. They do not parse kind prefixes, synthesize IDs, or
 maintain a second resource-type or producer authority.
 
 **C-20 — Typed boundary evidence.** A green unit test, health check, HTTP 200,
 or assistant sentence cannot close a typed-edge change. Applicable closure
-requires static catalog, dynamic registry, MCP wire, TUI, model/SSE, tenant,
+requires static catalog, dynamic registry, MCP wire, interactive-client, model/SSE, tenant,
 stale-revision, and external cleanup evidence.
 
 **C-21 — Canonical Host Agent identity.** A running Host Agent has one explicit
@@ -366,7 +366,7 @@ instance, hostname, provider, and display metadata are admission/provenance
 evidence only; different IDs remain distinct even when they share a machine.
 Missing, stale, conflicting, or ambiguous IDs fail closed. Runtime aliases,
 fuzzy identity matching, preferred-ID constants, first-connected fallbacks,
-silent operation reassignment, and provider/TUI identity resolution are
+silent operation reassignment, and provider/client identity resolution are
 forbidden. The one-time local alias-field cleanup is complete and its startup
 rewrite is retired. Identity changes require explicit re-onboarding or a
 separately reviewed offline durable-state migration and a new boundary-matched

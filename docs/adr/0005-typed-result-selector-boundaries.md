@@ -18,12 +18,12 @@ closed. Typed `Requires` and `Produces` remain the only capability-edge
 authority; a selector refines a produced value and does not create a new edge.
 
 Concrete providers may declare neutral result metadata in their operation
-manifest. They do not import the selector evaluator, Host Agent internals, TUI
-code, or Cordis code, and they never execute selector logic.
+manifest. They do not import the selector evaluator, Host Agent internals,
+client code, or Cordis code, and they never execute selector logic.
 
 ## Projection boundary
 
-The interactive TUI projection receives the full result type and selector
+The interactive-client projection receives the full result type and selector
 metadata from live MCP capability descriptors. The shared Opute chat catalog
 receives only sanitized typed bindings/edges plus an opaque Host Agent catalog
 revision. Selector IDs, paths, cardinality, provider identity,
@@ -51,7 +51,7 @@ continuation hidden in the chat kernel.
 
 Contract tests cover selector schema/cardinality validation, selector-only
 revision changes, stale resolution rejection, provider-boundary validation,
-TUI item-to-selector-to-follow-up interaction, repeated `^k` cycling, model
+client item-to-selector-to-follow-up interaction, repeated `^k` cycling, model
 schema redaction, selector-free retrieval fingerprints, bounded inspector
 snapshots, and tool-output `_meta` stripping. Release validation still
 requires Go tests/vet, live MCP initialize/discover/list/call evidence, real

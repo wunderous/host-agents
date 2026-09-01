@@ -1,6 +1,6 @@
 # ADR 0003: Tenant-scoped resource URIs
 
-Status: Accepted for the `2026-08-host-agent-tui-redesign` cutover
+Status: Accepted for the `2026-08` interactive-client cutover
 
 ## Decision
 
@@ -55,7 +55,7 @@ through the standard `tasks/get` response.
 - List/detail results carry `uri`, and entity-scoped operations resolve it
   through the tenant-checked registry before provider execution.
 - Existing name-based callers must migrate in the same breaking cutover; the
-  legacy Go TUI only receives the minimum binding/fixture update before its
+  legacy Go client only receives the minimum binding/fixture update before its
   scheduled retirement.
 - Kubernetes pod identities are first-class opaque resource URIs. They are
   issued from observed pod identity coordinates and are not parsed or

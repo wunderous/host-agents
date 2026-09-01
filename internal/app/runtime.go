@@ -18,8 +18,8 @@ import (
 
 // Runtime is the shared host execution runtime. It owns the typed MCP server
 // and the local operation services, but does not choose a transport. The same
-// runtime can therefore be exposed over HTTP or connected to the TUI through
-// an in-memory MCP transport.
+// runtime can therefore be exposed over HTTP or used through an in-memory MCP
+// transport.
 type Runtime struct {
 	cfg       config.Config
 	logger    *slog.Logger
@@ -31,7 +31,7 @@ type Runtime struct {
 
 // NewRuntime builds the host executor without opening a listener or contacting
 // the Platform control plane. Call Serve for the server process, or use Host
-// with an in-process MCP transport for the standalone TUI.
+// with an in-process MCP transport for a standalone client.
 func NewRuntime(logger *slog.Logger) (*Runtime, error) {
 	cfg := config.Load()
 	if err := validateConfig(cfg); err != nil {

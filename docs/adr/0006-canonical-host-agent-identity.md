@@ -18,7 +18,7 @@ connected.
 `OPUTE_REMOTE_AGENT_ID` is the single canonical Host Agent identity. It is an
 explicit opaque value, required at Host Agent configuration validation, and is
 preserved exactly through registration, heartbeat, MCP routing, durable
-operation ownership, session state, inventory canonicalization, and TUI
+operation ownership, session state, inventory canonicalization, and interactive
 selection.
 
 The following are evidence, not identity keys: machine fingerprint, runtime
@@ -30,7 +30,7 @@ closed. Retired values are not translated at runtime; migration is explicit
 re-onboarding or an offline durable-state rewrite.
 
 Concrete providers publish neutral descriptors and results. They do not import
-Host Agent internals, resolve aliases, or access TUI/platform state. Opute owns
+Host Agent internals, resolve aliases, or access client/platform state. Opute owns
 intent, authorization, and durable orchestration; the Host Agent executes the
 explicit typed assignment.
 
@@ -55,7 +55,7 @@ deployed database requires its own explicit operator migration and evidence.
 - The one-time local alias-field cleanup is complete and no runtime bootstrap
   migration remains. Future identity changes use explicit re-onboarding or an
   separately reviewed offline durable-state migration.
-- TUI, MCP, chat, and public inspector projections carry the selected exact ID
+- Interactive-client, MCP, chat, and public inspector projections carry the selected exact ID
   only. They do not expose identity-resolution metadata as a second authority.
 
 ## Verification

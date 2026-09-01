@@ -18,11 +18,9 @@ only a supervision and user-experience layer.
 
 > **Reclassification note (2026-08-23):** This document is an exploration of a
 > possible future desktop client, not an accepted direction. The active
-> terminal-client direction is the TUI v2 redesign
-> (`.agents/plans/2026-08-host-agent-tui-redesign.md` in the Opute repository,
-> authoritative per ADR 0002), implemented as the external Bun/TypeScript
-> `apps/opute-tui` client. The former `clients/tui` module was only a
-> migration source until parity is proven. Nothing in this
+> terminal-client direction was an external typed client explored in the
+> sibling Opute repository. That experiment has now been retired along with
+> the former `clients/tui` migration source. Nothing in this
 > RFC — including implementation phase 7's eventual TUI removal — gates or
 > redirects TUI work absent a future explicit decision that scopes and accepts
 > a desktop replacement.

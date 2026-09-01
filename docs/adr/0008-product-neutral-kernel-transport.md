@@ -9,7 +9,7 @@ Decision record: `../opute/.agents/decisions/product-neutral-host-mcp.json`
 ## Context
 
 The Host Agent is a product-neutral Cordis MCP kernel. Clients (Cursor, Claude,
-the Opute TUI, and Opute MCP Host) speak Streamable HTTP to **this** process.
+external MCP clients, and Opute MCP Host) speak Streamable HTTP to **this** process.
 Cloudflare is a provider for `opute.capability.tunneling.v1`. Reverse-tunnel
 phone-home, Host Worker Protocol, and CPC heartbeat were production exceptions
 that contradicted ADR 0001, ADR 0002 (I-25), ADR 0003, ADR 0006, and the generic

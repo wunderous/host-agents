@@ -514,7 +514,7 @@ identity.
 
 The implementation must follow the adjacent plan's order: add the typed URI
 package, session tenant plumbing, SQLite resource registry, resolver and
-registration hooks, dispatch/schema migration, recipe interpolation, TUI
+registration hooks, dispatch/schema migration, recipe interpolation, client
 bindings, and then conformance/E2E coverage. Add `service` to the canonical
 resource-kind constants and update the adjacent URI plan in the same change so
 the two plans cannot define different vocabularies.

@@ -18,9 +18,8 @@ Always-on index for the Go Host Agent. Domain procedures live in
 - `internal/tools`, `internal/provider`, `internal/plan`, and `internal/session`
   implement typed capabilities, plans, and durable session contracts.
 - `schemas/` stores versioned capability contracts; `test/` contains contract,
-  integration, standalone, and mode tests. The separate Bun TUI lives in the
-  sibling Opute repository under `apps/opute-tui/`. `npm/local-host-agent/` is
-  the release launcher.
+  integration, standalone, and mode tests. `npm/local-host-agent/` is the
+  release launcher.
 
 ## Build, Test, and Development Commands
 
@@ -35,10 +34,9 @@ make standalone-http-smoke # run packaged HTTP smoke tests
 make npm-test              # test the npm launcher
 ```
 
-For local TUI work, use the sibling Opute repository's `apps/opute-tui/`
-against the Host Agent MCP endpoint. This repository's binary is server-only;
-use `serve` (or the bare invocation) when an external MCP client needs the
-Host Agent.
+For local client work, connect an external MCP client to the Host Agent
+endpoint. This repository's binary is server-only; use `serve` (or the bare
+invocation) when an external MCP client needs the Host Agent.
 
 ## Skills
 
@@ -67,7 +65,7 @@ guessing.
 
 Name tests `Test<Behavior>` and keep focused tests beside the package under
 test. Preserve protocol and standalone tests for pipes and automation;
-interactive TUI coverage belongs in the sibling Opute application. Capability
+Interactive client coverage belongs in the owning client project. Capability
 changes should include contract and standalone coverage where applicable.
 
 ## Commit & Pull Request Guidelines
@@ -75,7 +73,7 @@ changes should include contract and standalone coverage where applicable.
 Use concise conventional prefixes reflected in history, such as `feat:`,
 `fix(host):`, and `docs:`. Pull requests should explain the behavior change,
 list validation commands, call out configuration or schema changes, and include
-terminal screenshots or recordings for significant TUI changes. Do not commit
+terminal screenshots or recordings for significant client changes. Do not commit
 generated `dist/` artifacts, secrets, or unrelated formatting changes.
 
 ## Architecture & Safety

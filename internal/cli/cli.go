@@ -18,9 +18,8 @@ import (
 	"github.com/wunderous/host-agents/internal/version"
 )
 
-// Run executes the server-only command surface. The deterministic TUI is a
-// separately released Bun application and is never launched or discovered by
-// this binary.
+// Run executes the server-only command surface. External clients connect to
+// the MCP endpoint and are never launched or discovered by this binary.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if stdout == nil {
 		stdout = os.Stdout

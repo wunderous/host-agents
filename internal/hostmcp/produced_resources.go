@@ -50,7 +50,7 @@ func materializeBoundResourceOutputs(
 // binding validation. A schema can prove that a field exists, but only the
 // returned value can prove that it is a canonical, tenant-local identity of
 // the declared kind. This keeps provider output admission fail-closed and
-// leaves the URI opaque to the TUI.
+// leaves the URI opaque to external clients.
 func validateProducedResources(descriptor tools.CapabilityDescriptor, structured any, tenantID string) error {
 	if len(descriptor.Produces) == 0 {
 		return nil
