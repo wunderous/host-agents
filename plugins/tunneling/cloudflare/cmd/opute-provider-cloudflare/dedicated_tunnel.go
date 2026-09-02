@@ -55,8 +55,9 @@ type cloudflareDNSRecord struct {
 }
 
 type cloudflareIngressRule struct {
-	Hostname string `json:"hostname,omitempty"`
-	Service  string `json:"service"`
+	Hostname      string         `json:"hostname,omitempty"`
+	Service       string         `json:"service"`
+	OriginRequest map[string]any `json:"originRequest,omitempty"`
 }
 
 func dedicatedTunnelName(args map[string]any) string {

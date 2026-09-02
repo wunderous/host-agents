@@ -7,6 +7,7 @@ import (
 
 	hostcapability "github.com/wunderous/host-agents/internal/capability"
 	"github.com/wunderous/host-agents/internal/plan"
+	"github.com/wunderous/host-agents/internal/state"
 )
 
 func TestRedactEvidenceBySchemaUsesWriteOnlyProjection(t *testing.T) {
@@ -92,5 +93,86 @@ func TestPlanEvidenceUsesCapabilitySchemas(t *testing.T) {
 	outputs := result["outputs"].(map[string]any)
 	if _, ok := outputs["activation"].(map[string]any); !ok {
 		t.Fatalf("unknown derived output was not fail-closed: %#v", outputs)
+	}
+}
+
+func TestPlanIdentityIgnoresRotatedRecipeSecrets(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	base := plan.Document{
+		ContractVersion: plan.ContractVersion,
+		PlanID:          "secret-identity-test",
+		Generation:      1,
+		IdempotencyKey:  "secret-identity-test",
+		Variables: map[string]any{
+			"inputs": map[string]any{"mcpToken": "token-a"},
+		},
+	}
+	rotated := base
+	rotated.Variables = map[string]any{
+		"inputs": map[string]any{"mcpToken": "token-b"},
+	}
+	metadata := map[string]any{"secretInputs": []any{"mcpToken"}}
+
+	firstHash, firstPlan, err := server.redactedPlanIdentity(base, metadata, server.CatalogSnapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondHash, secondPlan, err := server.redactedPlanIdentity(rotated, metadata, server.CatalogSnapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstHash != secondHash {
+		t.Fatalf("rotated recipe secret changed plan identity: %s != %s", firstHash, secondHash)
+	}
+	for _, projected := range []string{firstPlan, secondPlan} {
+		if strings.Contains(projected, "token-a") || strings.Contains(projected, "token-b") {
+			t.Fatalf("rotated recipe secret entered durable identity: %s", projected)
+		}
+	}
+}
+
+func TestPlanIdentityMigratesLegacySecretHashFromRedactedPlan(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	document := plan.Document{
+		ContractVersion: plan.ContractVersion,
+		PlanID:          "legacy-secret-identity-test",
+		Generation:      1,
+		IdempotencyKey:  "legacy-secret-identity-test",
+		Variables: map[string]any{
+			"inputs": map[string]any{"mcpToken": "rotated-token"},
+		},
+	}
+	metadata := map[string]any{"secretInputs": []any{"mcpToken"}}
+	expected, redacted, err := server.redactedPlanIdentity(document, metadata, server.CatalogSnapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyHash, _, err := plan.DocumentHash(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := state.PlanRecord{
+		RunID:           "legacy-secret-identity-run",
+		PlanID:          document.PlanID,
+		Generation:      document.Generation,
+		IdempotencyKey:  document.IdempotencyKey,
+		DocumentHash:    legacyHash,
+		CatalogRevision: server.CatalogSnapshot().Revision,
+		Status:          "completed",
+		PlanJSON:        redacted,
+		StateJSON:       "{}",
+	}
+	if _, created, err := server.state.CreatePlan(record); err != nil || !created {
+		t.Fatalf("create legacy plan: created=%v err=%v", created, err)
+	}
+	if err := server.ensurePlanDocumentHash(&record, expected); err != nil {
+		t.Fatal(err)
+	}
+	persisted, found, err := server.state.GetPlan(record.RunID)
+	if err != nil || !found {
+		t.Fatalf("read migrated plan: found=%v err=%v", found, err)
+	}
+	if persisted.DocumentHash != expected {
+		t.Fatalf("persisted hash = %s, want %s", persisted.DocumentHash, expected)
 	}
 }

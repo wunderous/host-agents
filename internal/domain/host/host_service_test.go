@@ -29,20 +29,16 @@ func TestRestartHostServiceRejectsUnsafeUnitNames(t *testing.T) {
 	}
 }
 
-func TestServiceStateRestartUsesDetachedUserSystemdJob(t *testing.T) {
-	want := []string{
-		defaultSystemdRunPath,
-		"--user",
-		"--unit=host-service-state-bootstrap-service",
-		"--collect",
-		"--no-block",
-		hostruntime.DefaultSystemctlPath,
-		"--user",
-		"--no-block",
-		"restart",
-		"bootstrap.service",
-	}
+func TestServiceStateRestartUsesUserManagerForNonAgentUnits(t *testing.T) {
+	want := []string{hostruntime.DefaultSystemctlPath, "--user", "restart", "bootstrap.service"}
 	if got := serviceStateCommand("bootstrap.service", "restart", "user"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
+	}
+}
+
+func TestServiceStateRestartWaitsForNonAgentUserUnit(t *testing.T) {
+	want := []string{hostruntime.DefaultSystemctlPath, "--user", "restart", "opute-harness-dsh.service"}
+	if got := serviceStateCommand("opute-harness-dsh.service", "restart", "user"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v, want %#v", got, want)
 	}
 }

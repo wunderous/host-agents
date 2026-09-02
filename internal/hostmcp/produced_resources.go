@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
 	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/internal/selectors"
 	"github.com/wunderous/host-agents/internal/tools"
@@ -84,6 +85,11 @@ func validateProducedResources(descriptor tools.CapabilityDescriptor, structured
 	for path, allowedKinds := range allowedByPath {
 		values, found := valuesAtPath(document, strings.Split(path, "."))
 		if selectorID := selectorByPath[path]; selectorID != "" {
+			// Selector evaluation describes cardinality and labels, but it must
+			// not turn an absent output field into a valid empty result.
+			if !found {
+				return fmt.Errorf("capability %q did not return declared resource output %q", descriptor.OperationID, path)
+			}
 			candidates, err := selectors.Evaluate(document, descriptor.OutputType, selectorID, descriptor.ResultTypes)
 			if err != nil {
 				return fmt.Errorf("capability %q selector %q failed: %w", descriptor.OperationID, selectorID, err)
@@ -94,7 +100,19 @@ func validateProducedResources(descriptor tools.CapabilityDescriptor, structured
 			}
 			found = true
 		}
-		if !found || len(values) == 0 {
+		if !found {
+			return fmt.Errorf("capability %q did not return declared resource output %q", descriptor.OperationID, path)
+		}
+		if len(values) == 0 {
+			// A many-cardinality result is allowed to be empty. Inventory
+			// capabilities such as list_vms must still return the declared array
+			// field when there are no resources; requiring one URI here made an
+			// empty, healthy Incus host fail closed before onboarding could finish.
+			if descriptor.OutputType != "" && selectorByPath[path] != "" {
+				if selector, ok := selectors.Find(descriptor.OutputType, selectorByPath[path], descriptor.ResultTypes); ok && selector.NormalizedCardinality() == capabilitycontract.CardinalityMany {
+					continue
+				}
+			}
 			return fmt.Errorf("capability %q did not return declared resource output %q", descriptor.OperationID, path)
 		}
 		for _, value := range values {

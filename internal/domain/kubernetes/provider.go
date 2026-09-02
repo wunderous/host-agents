@@ -32,6 +32,13 @@ const (
 	KubernetesListClustersOperation      = capabilitycontract.KubernetesListClustersOperation
 	KubernetesGetClusterInfoOperation    = capabilitycontract.KubernetesGetClusterInfoOperation
 	KubernetesExecCommandOperation       = capabilitycontract.KubernetesExecCommandOperation
+	KubernetesInspectMembershipOperation = capabilitycontract.KubernetesInspectMembershipOperation
+	KubernetesPrepareHAOperation         = capabilitycontract.KubernetesPrepareHAOperation
+	KubernetesPrepareJoinOperation       = capabilitycontract.KubernetesPrepareJoinOperation
+	KubernetesRedeemJoinOperation        = capabilitycontract.KubernetesRedeemJoinOperation
+	KubernetesJoinNodeOperation          = capabilitycontract.KubernetesJoinNodeOperation
+	KubernetesEnsureHAEndpointOperation  = capabilitycontract.KubernetesEnsureHAEndpointOperation
+	KubernetesRemoveNodeOperation        = capabilitycontract.KubernetesRemoveNodeOperation
 )
 
 // KubernetesProviderRequest is the neutral execution envelope passed from

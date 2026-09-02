@@ -494,6 +494,15 @@ func (s *Store) UpdatePlan(runID, status, stateJSON, errorMessage string) error 
 	return err
 }
 
+// UpdatePlanDocumentHash migrates the identity of a plan whose durable
+// document was already redacted before a newer runner began hashing only the
+// redacted projection. It never accepts a caller-supplied plan body here.
+func (s *Store) UpdatePlanDocumentHash(runID, documentHash string) error {
+	_, err := s.db.Exec(`UPDATE plan_runs SET document_hash = ?, updated_at = ? WHERE run_id = ?`,
+		documentHash, time.Now().UTC().Format(time.RFC3339Nano), runID)
+	return err
+}
+
 // UpdatePlanCatalogRevision records the catalog against which a resumed plan
 // was revalidated. A plan may be resumed after a compatible catalog change;
 // the host-plan validator and runner still validate every node against the

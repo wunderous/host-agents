@@ -37,6 +37,10 @@ func TestIncusCatalogMatchesExportMinusOmitted(t *testing.T) {
 		}
 		want = append(want, tool)
 	}
+	// This callback capability is declared by the Go catalog rather than the
+	// legacy exported Incus schema, and is intentionally public for trusted
+	// provider callbacks.
+	want = append(want, tools.ToolDefinition{Name: "run_instance_command"})
 	for _, name := range tools.IncusInventoryTools {
 		found := false
 		for _, tool := range want {

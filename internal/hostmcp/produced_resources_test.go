@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
@@ -56,12 +57,38 @@ func TestValidateProducedResourcesRejectsMismatchedKindAndTenant(t *testing.T) {
 	}
 }
 
+func TestValidateProducedResourcesAcceptsEmptyManyResult(t *testing.T) {
+	descriptor := tools.CapabilityDescriptor{
+		OperationID: "list_vms",
+		OutputType:  "vm.uri",
+		ResultTypes: []capabilitycontract.ResultType{{
+			ID:      "vm.uri",
+			Version: 1,
+			Selectors: []capabilitycontract.ResultSelector{{
+				ID: "uri", SourcePath: "items[].uri", Cardinality: capabilitycontract.CardinalityMany,
+			}},
+		}},
+		Produces: []tools.ResourceBinding{{SourcePath: "items[].uri", ResourceType: "vm", SelectorID: "uri"}},
+	}
+	if err := validateProducedResources(descriptor, map[string]any{"items": []any{}}, "tenant-a"); err != nil {
+		t.Fatalf("empty many result rejected: %v", err)
+	}
+}
+
 func TestValidateProducedResourcesRejectsMissingDeclaredOutput(t *testing.T) {
 	descriptor := tools.CapabilityDescriptor{
 		OperationID: "list_vms",
-		Produces:    []tools.ResourceBinding{{SourcePath: "items[].uri", ResourceType: "vm"}},
+		OutputType:  "vm.uri",
+		ResultTypes: []capabilitycontract.ResultType{{
+			ID:      "vm.uri",
+			Version: 1,
+			Selectors: []capabilitycontract.ResultSelector{{
+				ID: "uri", SourcePath: "items[].uri", Cardinality: capabilitycontract.CardinalityMany,
+			}},
+		}},
+		Produces: []tools.ResourceBinding{{SourcePath: "items[].uri", ResourceType: "vm", SelectorID: "uri"}},
 	}
-	if err := validateProducedResources(descriptor, map[string]any{"items": []any{}}, "tenant-a"); err == nil {
-		t.Fatal("expected missing output to fail closed")
+	if err := validateProducedResources(descriptor, map[string]any{}, "tenant-a"); err == nil {
+		t.Fatal("expected absent output to fail closed")
 	}
 }

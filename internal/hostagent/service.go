@@ -72,6 +72,8 @@ type Options struct {
 	OciStoragePolicyPath      string
 	SQLiteDatabaseRoot        string
 	SharedHostOwnerInstance   string
+	IncusNetworkName          string
+	IncusNetworkAddress       string
 	TenantID                  string
 	ResourceRegistry          ResourceRegistry
 	ResourceService           resource.HostResourceService
@@ -109,6 +111,8 @@ func New(opts Options) *Service {
 			AgentID:                 strings.TrimSpace(opts.AgentID),
 			OwnershipMode:           ownershipMode,
 			SharedHostOwnerInstance: strings.TrimSpace(opts.SharedHostOwnerInstance),
+			IncusNetworkName:        strings.TrimSpace(opts.IncusNetworkName),
+			IncusNetworkAddress:     strings.TrimSpace(opts.IncusNetworkAddress),
 		},
 		toolsFn:                toolsFn,
 		resetCheckpointPath:    resolveResetCheckpointPath(opts.ResetCheckpointPath, opts.RelayConfigDir),

@@ -135,6 +135,44 @@ func TestTypedAdmissionRejectsOwnerMismatchAndHonorsCancellationAndExpiry(t *tes
 	}
 }
 
+func TestTerminalTaskReservationsAreReclaimedAfterRestart(t *testing.T) {
+	config := testServiceConfig(t.TempDir())
+	config.MaxNormal = 2
+	coordinator, err := NewCoordinator(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := coordinator.Admit(context.Background(), zeroCostRequest("agent-a", "failed-operation", "task-terminal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	working, err := coordinator.Admit(context.Background(), AdmissionRequest{
+		Class: ClassNormal, Operation: "working-operation", AgentID: "agent-a",
+		OperationID: "working-operation", TaskID: "task-working",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := coordinator.ReclaimTerminalTaskReservations(map[string]struct{}{"task-terminal": {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 1 {
+		t.Fatalf("removed reservations = %d, want 1", removed)
+	}
+	if got := coordinator.Snapshot().Reservations.Count; got != 1 {
+		t.Fatalf("reservations after terminal reclaim = %d, want working reservation only", got)
+	}
+	if err := coordinator.Release(working); err != nil {
+		t.Fatal(err)
+	}
+	if got := coordinator.Snapshot().Reservations.Count; got != 0 {
+		t.Fatalf("reservations after working release = %d, want 0", got)
+	}
+	_ = terminal
+}
+
 func TestTypedAdmissionReconcileRequiresExactPolicyAndHostServiceTarget(t *testing.T) {
 	coordinator, err := NewCoordinator(testServiceConfig(t.TempDir()))
 	if err != nil {

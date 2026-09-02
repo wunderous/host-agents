@@ -284,11 +284,21 @@ func TestPostgreSQLServiceManifestsUseCloudNativePGAndNoHostService(t *testing.T
 		"kind: HelmChart",
 		"chart: cloudnative-pg",
 		"targetNamespace: cnpg-system",
+		"maxConcurrentReconciles: 1",
+		"memory: 128Mi",
 		"kind: Cluster",
 		"apiVersion: postgresql.cnpg.io/v1",
 		"instances: 3",
 		"storageClass: fast-local",
 		"host-agent.io/retention-policy: delete",
+		"host-agent.io/resource-profile: constrained-2GiB-v2",
+		"max_worker_processes: \"8\"",
+		"max_parallel_workers: \"4\"",
+		"shared_buffers: \"32MB\"",
+		"startDelay: 180",
+		"livenessProbeTimeout: 60",
+		"memory: 768Mi",
+		"failureThreshold: 6",
 	} {
 		if !strings.Contains(operator+cluster, value) {
 			t.Fatalf("manifest missing %q:\n%s\n%s", value, operator, cluster)
@@ -299,6 +309,15 @@ func TestPostgreSQLServiceManifestsUseCloudNativePGAndNoHostService(t *testing.T
 	}
 	if !strings.Contains(cluster, "createdb: true") {
 		t.Fatalf("CNPG application role must be allowed to create the secondary database:\n%s", cluster)
+	}
+	if strings.Contains(cluster, "isolationCheck:") {
+		t.Fatalf("multi-instance PostgreSQL must retain the default isolation check:\n%s", cluster)
+	}
+	single := spec
+	single.Instances = 1
+	singleCluster := renderPostgreSQLServiceClusterManifest(single)
+	if !strings.Contains(singleCluster, "isolationCheck:\n        enabled: false") {
+		t.Fatalf("single-instance constrained profile must disable only the peer/API isolation check:\n%s", singleCluster)
 	}
 }
 

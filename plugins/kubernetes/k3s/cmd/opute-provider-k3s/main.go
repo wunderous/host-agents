@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -77,6 +78,11 @@ func operations() []providercontract.Operation {
 		operation.Requires = []providercontract.ResourceBinding{clusterTargetBinding()}
 		return operation
 	}
+	vmTargetMutation := func(id string, input map[string]any) providercontract.Operation {
+		operation := mutation(id, input)
+		operation.Requires = []providercontract.ResourceBinding{vmTargetBinding()}
+		return operation
+	}
 	targetDestructive := func(id string, input map[string]any) providercontract.Operation {
 		operation := destructive(id, input)
 		operation.Requires = []providercontract.ResourceBinding{clusterTargetBinding()}
@@ -84,8 +90,13 @@ func operations() []providercontract.Operation {
 	}
 	return []providercontract.Operation{
 		read(capabilitycontract.KubernetesValidateOperation, map[string]any{"type": "object"}),
-		targetMutation(capabilitycontract.KubernetesProvisionOperation, targetSchema(map[string]any{
-			"version": map[string]any{"type": "string", "minLength": 1, "maxLength": 64},
+		vmTargetMutation(capabilitycontract.KubernetesProvisionOperation, vmTargetSchema(map[string]any{
+			"version":          map[string]any{"type": "string", "minLength": 1, "maxLength": 64},
+			"clusterInit":      map[string]any{"type": "boolean", "const": true},
+			"nodeIp":           map[string]any{"type": "string", "format": "ipv4"},
+			"advertiseAddress": map[string]any{"type": "string", "format": "ipv4"},
+			"flannelIface":     map[string]any{"type": "string", "minLength": 1, "maxLength": 15},
+			"tlsSan":           map[string]any{"type": "string", "format": "ipv4"},
 		}, "version")),
 		targetRead(capabilitycontract.KubernetesStatusOperation, targetSchema(map[string]any{})),
 		targetMutation(capabilitycontract.KubernetesConfigureRegistryOperation, targetSchema(map[string]any{
@@ -103,6 +114,40 @@ func operations() []providercontract.Operation {
 		targetRead(capabilitycontract.KubernetesListEventsOperation, targetSchema(map[string]any{"namespace": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 200}})),
 		read(capabilitycontract.KubernetesListClustersOperation, map[string]any{"type": "object", "properties": map[string]any{"source": map[string]any{"type": "string"}}}),
 		targetRead(capabilitycontract.KubernetesGetClusterInfoOperation, targetSchema(map[string]any{})),
+		targetRead(capabilitycontract.KubernetesInspectMembershipOperation, targetSchema(membershipExpectationSchema())),
+		targetMutation(capabilitycontract.KubernetesPrepareHAOperation, targetSchema(membershipExpectationSchema())),
+		targetMutation(capabilitycontract.KubernetesPrepareJoinOperation, targetSchema(map[string]any{
+			"destinationHostId":    map[string]any{"type": "string", "minLength": 1},
+			"destinationPublicKey": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+			"role":                 map[string]any{"type": "string", "enum": []string{"server"}},
+			"expiresInMs":          map[string]any{"type": "integer", "minimum": 1000, "maximum": 86_400_000},
+		}, "destinationHostId")),
+		targetRead(capabilitycontract.KubernetesGetJoinReceiverKeyOperation, targetSchema(map[string]any{})),
+		targetMutation(capabilitycontract.KubernetesRedeemJoinOperation, targetSchema(map[string]any{
+			"redemptionRef":      map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+			"destinationHostId":  map[string]any{"type": "string", "minLength": 1},
+			"sealedJoinMaterial": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+			"sourceTargetUri":    map[string]any{"type": "string", "minLength": 1},
+		}, "redemptionRef")),
+		targetMutation(capabilitycontract.KubernetesJoinNodeOperation, targetSchema(map[string]any{
+			"redemptionRef":    map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+			"serverAddress":    map[string]any{"type": "string", "minLength": 1},
+			"joinToken":        map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+			"version":          map[string]any{"type": "string", "minLength": 1, "maxLength": 64},
+			"clusterInit":      map[string]any{"type": "boolean", "const": false},
+			"role":             map[string]any{"type": "string", "enum": []string{"server"}},
+			"nodeIp":           map[string]any{"type": "string", "format": "ipv4"},
+			"advertiseAddress": map[string]any{"type": "string", "format": "ipv4"},
+			"flannelIface":     map[string]any{"type": "string", "minLength": 1, "maxLength": 15},
+			"tlsSan":           map[string]any{"type": "string", "format": "ipv4"},
+		}, "redemptionRef", "serverAddress", "clusterInit", "role")),
+		targetMutation(capabilitycontract.KubernetesEnsureHAEndpointOperation, targetSchema(map[string]any{
+			"endpoint": map[string]any{"type": "string", "minLength": 1, "maxLength": 512},
+		}, "endpoint")),
+		targetDestructive(capabilitycontract.KubernetesRemoveNodeOperation, targetSchema(map[string]any{
+			"nodeName": map[string]any{"type": "string", "minLength": 1},
+			"role":     map[string]any{"type": "string", "enum": []string{"server"}},
+		}, "nodeName", "role")),
 		targetRead(capabilitycontract.KubernetesExecCommandOperation, targetSchema(map[string]any{
 			"kubectlArgs": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string", "minLength": 1}},
 			"stdin":       map[string]any{"type": "string", "writeOnly": true},
@@ -114,13 +159,29 @@ func clusterTargetBinding() providercontract.ResourceBinding {
 	return providercontract.ResourceBinding{Argument: "targetUri", ResourceType: "cluster", Required: true}
 }
 
+func vmTargetBinding() providercontract.ResourceBinding {
+	return providercontract.ResourceBinding{Argument: "targetUri", ResourceType: "vm", Required: true}
+}
+
 func providerOperation(id, effect string, input map[string]any) providercontract.Operation {
-	return providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: map[string]any{"type": "object"}, Effect: effect, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: "sync_only"}
+	operation := providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: map[string]any{"type": "object"}, Effect: effect, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: "sync_only"}
+	if effect != "read" {
+		operation.ResourceCost = &providercontract.ResourceCost{Class: "control"}
+	}
+	return operation
 }
 
 func targetSchema(properties map[string]any, operationRequired ...string) map[string]any {
+	return targetSchemaFor("cluster", properties, operationRequired...)
+}
+
+func vmTargetSchema(properties map[string]any, operationRequired ...string) map[string]any {
+	return targetSchemaFor("vm", properties, operationRequired...)
+}
+
+func targetSchemaFor(resourceType string, properties map[string]any, operationRequired ...string) map[string]any {
 	properties = cloneMap(properties)
-	properties["targetUri"] = map[string]any{"type": "string", "pattern": "^cluster:[a-z][a-z0-9-]{0,31}:.+$"}
+	properties["targetUri"] = map[string]any{"type": "string", "pattern": "^" + resourceType + ":[a-z][a-z0-9-]{0,31}:.+$"}
 	properties["providerInstanceName"] = map[string]any{"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"}
 	properties["instanceType"] = map[string]any{"type": "string", "enum": []string{"vm", "container"}}
 	required := []string{"targetUri", "providerInstanceName"}
@@ -161,7 +222,7 @@ func dispatch(ctx context.Context, operation string, args map[string]any) (*mcp.
 	case capabilitycontract.KubernetesValidateOperation:
 		return structured(map[string]any{"contractVersion": kubernetesCapability, "ready": true})
 	case capabilitycontract.KubernetesProvisionOperation:
-		if err := requireTarget(args); err != nil {
+		if err := requireProvisionTarget(args); err != nil {
 			return nil, err
 		}
 		return provision(ctx, args)
@@ -244,6 +305,46 @@ func dispatch(ctx context.Context, operation string, args map[string]any) (*mcp.
 			return nil, err
 		}
 		return getClusterInfo(ctx, args)
+	case capabilitycontract.KubernetesInspectMembershipOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return inspectMembership(ctx, args)
+	case capabilitycontract.KubernetesPrepareHAOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return prepareHA(ctx, args)
+	case capabilitycontract.KubernetesPrepareJoinOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return prepareJoin(ctx, args)
+	case capabilitycontract.KubernetesGetJoinReceiverKeyOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return getJoinReceiverKey(ctx, args)
+	case capabilitycontract.KubernetesRedeemJoinOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return redeemJoin(ctx, args)
+	case capabilitycontract.KubernetesJoinNodeOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return joinNode(ctx, args)
+	case capabilitycontract.KubernetesEnsureHAEndpointOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return ensureHAEndpoint(ctx, args)
+	case capabilitycontract.KubernetesRemoveNodeOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return removeNode(ctx, args)
 	case capabilitycontract.KubernetesExecCommandOperation:
 		if err := requireTarget(args); err != nil {
 			return nil, err
@@ -279,13 +380,11 @@ func provision(ctx context.Context, args map[string]any) (*mcp.CallToolResult, e
 	if _, err := runCommand(ctx, []string{"start", instance}, nil); err != nil && !strings.Contains(strings.ToLower(err.Error()), "already running") {
 		return nil, fmt.Errorf("start Kubernetes target: %w", err)
 	}
-	install := fmt.Sprintf(
-		"%s && env INSTALL_K3S_VERSION=%s sh -c %s",
-		ensureCurlCommand,
-		shellQuote(version),
-		shellQuote("curl -sfL https://get.k3s.io | sh -"),
-	)
-	if _, err := runCommand(ctx, []string{"exec", instance, "--", "bash", "-lc", install}, nil); err != nil {
+	installExec, err := k3sServerInstallExec(args, boolInput(args, "clusterInit"))
+	if err != nil {
+		return nil, err
+	}
+	if err := installK3sServer(ctx, instance, version, installExec, "", ""); err != nil {
 		return nil, fmt.Errorf("provision Kubernetes runtime: %w", err)
 	}
 	result, err := getClusterInfo(ctx, args)
@@ -357,11 +456,42 @@ func remove(ctx context.Context, args map[string]any) (*mcp.CallToolResult, erro
 
 const (
 	defaultK3sVersion = "v1.31.8+k3s1"
-	ensureCurlCommand = "if ! command -v curl >/dev/null 2>&1; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y curl; fi"
 )
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\\"'\\\"'") + "'"
+}
+
+func k3sServerInstallExec(args map[string]any, clusterInit bool) (string, error) {
+	flags := []string{"server"}
+	if clusterInit {
+		flags = append(flags, "--cluster-init")
+	}
+	for _, field := range []struct {
+		name string
+		flag string
+	}{
+		{name: "nodeIp", flag: "--node-ip"},
+		{name: "advertiseAddress", flag: "--advertise-address"},
+		{name: "tlsSan", flag: "--tls-san"},
+	} {
+		value := stringInput(args, field.name)
+		if value == "" {
+			continue
+		}
+		parsed := net.ParseIP(value)
+		if parsed == nil || parsed.To4() == nil {
+			return "", fmt.Errorf("%s must be an IPv4 address", field.name)
+		}
+		flags = append(flags, field.flag, parsed.To4().String())
+	}
+	if iface := stringInput(args, "flannelIface"); iface != "" {
+		if len(iface) > 15 || strings.ContainsAny(iface, "\x00\r\n \t;&|`$()") {
+			return "", fmt.Errorf("flannelIface contains unsafe characters")
+		}
+		flags = append(flags, "--flannel-iface", iface)
+	}
+	return strings.Join(flags, " "), nil
 }
 
 func putSecret(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -547,9 +677,16 @@ func parseK3sVersion(output string) string {
 	first := strings.TrimSpace(strings.SplitN(output, "\n", 2)[0])
 	const prefix = "k3s version "
 	if strings.HasPrefix(strings.ToLower(first), prefix) {
-		return strings.TrimSpace(first[len(prefix):])
+		first = strings.TrimSpace(first[len(prefix):])
 	}
-	return first
+	// k3s --version appends a build revision in parentheses. Keep the
+	// installer-compatible release token as the canonical version observation;
+	// the revision is diagnostic text, not a valid INSTALL_K3S_VERSION value.
+	fields := strings.Fields(first)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
 }
 
 func parseClusterNodes(output string) []map[string]any {
@@ -604,6 +741,21 @@ func requireTarget(args map[string]any) error {
 	if !strings.HasPrefix(uri, "cluster:") {
 		return fmt.Errorf("targetUri must be a canonical cluster URI")
 	}
+	if instance == "" {
+		return fmt.Errorf("providerInstanceName is required")
+	}
+	if kind := stringInput(args, "instanceType"); kind != "" && kind != "vm" && kind != "container" {
+		return fmt.Errorf("unsupported instanceType %q", kind)
+	}
+	return nil
+}
+
+func requireProvisionTarget(args map[string]any) error {
+	uri := stringInput(args, "targetUri")
+	if !strings.HasPrefix(uri, "vm:") {
+		return fmt.Errorf("targetUri must be a canonical VM URI for Kubernetes provisioning")
+	}
+	instance := stringInput(args, "providerInstanceName")
 	if instance == "" {
 		return fmt.Errorf("providerInstanceName is required")
 	}

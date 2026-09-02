@@ -26,7 +26,7 @@ func (s *Server) loadTunnelRecipe(args map[string]any, requireHash bool) (recipe
 	if err := recipe.ValidateHostAgentVersion(loaded.Document.Compatibility.MinHostAgentVersion, version.Version); err != nil {
 		return recipe.LoadedTunnel{}, tools.CapabilityCatalogSnapshot{}, err
 	}
-	snapshot := s.CatalogSnapshot()
+	snapshot := s.catalogSnapshotForRecipe(recipeStringField(args, "providerGenerationId"))
 	if err := loaded.Validate(planCapabilitiesFromSnapshot(snapshot), snapshot.Revision); err != nil {
 		return recipe.LoadedTunnel{}, tools.CapabilityCatalogSnapshot{}, err
 	}

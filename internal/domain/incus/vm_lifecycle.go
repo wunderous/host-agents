@@ -1,6 +1,7 @@
 package incus
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -46,6 +47,16 @@ func (s *Service) RunVMExec(vmName string, guestArgv []string, onData func(strin
 		return hostexec.Result{}, err
 	}
 	return s.commandRunner(s.vmExecArgv(vmName, guestArgv), onData, timeout)
+}
+
+// RunVMExecWithStdin executes an ownership-checked guest command while keeping
+// transient input off the provider argv. Providers use this for enrollment
+// material that must not appear in process listings or task metadata.
+func (s *Service) RunVMExecWithStdin(vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	if err := s.assertIncusOwnership(vmName, "exec"); err != nil {
+		return hostexec.Result{}, err
+	}
+	return s.shared.Runtime.RunVMExecWithStdinContext(context.Background(), vmName, guestArgv, input, onData, timeout)
 }
 
 type VMListResult struct {

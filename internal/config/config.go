@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"math"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,6 +28,8 @@ type Config struct {
 	StandaloneInstanceID        string
 	HostMCPPort                 int
 	HostMCPBindHost             string
+	IncusNetworkName            string
+	IncusNetworkAddress         string
 	RemoteAgentID               string
 	PhysicalFingerprint         string
 	FingerprintVersion          string
@@ -113,6 +116,8 @@ func Load() Config {
 		defaultBindHost = "0.0.0.0"
 	}
 	bindHost := envOr("HOST_MCP_BIND_HOST", defaultBindHost)
+	incusNetworkName := envOr("OPUTE_INCUS_NETWORK_NAME", "incusbr0")
+	incusNetworkAddress := envOr("OPUTE_INCUS_NETWORK_ADDRESS", "10.0.100.1/24")
 	enforcementPolicy := strings.ToLower(envOr("OPUTE_HOST_RESOURCE_ENFORCEMENT", "fail-closed"))
 	return Config{
 		AgentMode:                   mode,
@@ -128,6 +133,8 @@ func Load() Config {
 		StandaloneInstanceID:        strings.TrimSpace(envValue("OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID")),
 		HostMCPPort:                 port,
 		HostMCPBindHost:             bindHost,
+		IncusNetworkName:            incusNetworkName,
+		IncusNetworkAddress:         incusNetworkAddress,
 		RemoteAgentID:               agentID,
 		PhysicalFingerprint:         identity.Fingerprint,
 		FingerprintVersion:          identity.FingerprintVersion,
@@ -212,6 +219,20 @@ func (c Config) Validate() error {
 	}
 	if c.HostMCPPort <= 0 {
 		return fmt.Errorf("HOST_MCP_PORT must be positive")
+	}
+	if strings.TrimSpace(c.IncusNetworkName) != "" {
+		if err := validateIncusNetworkName(c.IncusNetworkName); err != nil {
+			return err
+		}
+	}
+	if address := strings.TrimSpace(c.IncusNetworkAddress); address != "" {
+		ip, _, err := net.ParseCIDR(address)
+		if err != nil {
+			return fmt.Errorf("OPUTE_INCUS_NETWORK_ADDRESS must be an IPv4 CIDR: %w", err)
+		}
+		if ip.To4() == nil {
+			return fmt.Errorf("OPUTE_INCUS_NETWORK_ADDRESS must be an IPv4 CIDR")
+		}
 	}
 	// An empty value is the in-process zero-value form used by focused tests;
 	// Load and NewCoordinator both resolve it to the versioned default. If a
@@ -298,6 +319,23 @@ func normalizeOwnershipMode(raw string) string {
 		return "enforce"
 	}
 	return "audit"
+}
+
+func validateIncusNetworkName(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("OPUTE_INCUS_NETWORK_NAME must not be empty")
+	}
+	if len(value) > 63 {
+		return fmt.Errorf("OPUTE_INCUS_NETWORK_NAME must be at most 63 characters")
+	}
+	for _, ch := range value {
+		valid := ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '-'
+		if !valid {
+			return fmt.Errorf("OPUTE_INCUS_NETWORK_NAME %q is invalid: use letters, digits, and hyphens", value)
+		}
+	}
+	return nil
 }
 
 func validateInstanceID(value string) error {

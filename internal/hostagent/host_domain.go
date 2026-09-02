@@ -48,6 +48,9 @@ func (s *Service) Host() *host.Service {
 		RunVMExec: func(vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
 			return s.Incus().RunVMExec(vmName, guestArgv, onData, timeout)
 		},
+		RunVMExecWithStdin: func(vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+			return s.Incus().RunVMExecWithStdin(vmName, guestArgv, input, onData, timeout)
+		},
 		SupportedTools: s.toolsFn,
 	})
 }

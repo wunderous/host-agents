@@ -39,6 +39,11 @@ type HostResourceService interface {
 	Snapshot() CapacitySnapshot
 	Admit(context.Context, AdmissionRequest) (*Reservation, error)
 	Release(*Reservation) error
+	// ReclaimTerminalTaskReservations removes durable reservations whose owning
+	// task is known to be terminal after a process restart. Reservations for
+	// working or input_required tasks remain fenced until their owner releases
+	// them or their normal expiry is reached.
+	ReclaimTerminalTaskReservations(map[string]struct{}) (int, error)
 	Reconcile(context.Context, string, string) (CapacitySnapshot, error)
 }
 
@@ -319,6 +324,41 @@ func (c *Coordinator) Release(reservation *Reservation) error {
 	}
 	delete(records, reservation.ID)
 	return c.writeReservations(records)
+}
+
+// ReclaimTerminalTaskReservations repairs the restart boundary without
+// guessing from operation names or deleting live ownership. The task registry
+// is the authority for terminal state; this coordinator only removes the
+// matching durable reservation records.
+func (c *Coordinator) ReclaimTerminalTaskReservations(taskIDs map[string]struct{}) (int, error) {
+	if c == nil || len(taskIDs) == 0 {
+		return 0, nil
+	}
+	lockRelease, err := c.reservationLock.acquire(context.Background(), true)
+	if err != nil {
+		return 0, err
+	}
+	defer lockRelease()
+	records, err := c.readReservations()
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for id, record := range records {
+		taskID := strings.TrimSpace(record.Request.TaskID)
+		if taskID == "" {
+			continue
+		}
+		if _, ok := taskIDs[taskID]; !ok {
+			continue
+		}
+		delete(records, id)
+		removed++
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	return removed, c.writeReservations(records)
 }
 
 func (c *Coordinator) Reconcile(ctx context.Context, policyRevision, targetURI string) (CapacitySnapshot, error) {

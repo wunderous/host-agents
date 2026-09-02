@@ -2,7 +2,9 @@ package heartbeat
 
 import (
 	"net"
+	"os"
 	"runtime"
+	"strings"
 )
 
 // PrimaryLANIPv4 returns the primary non-loopback IPv4 address for heartbeat metadata.
@@ -16,8 +18,18 @@ func PrimaryLANIPv4() string {
 // IncusBridgeIPv4 returns the first usable address on the Incus bridge. It is
 // published as host metadata so a gateway VM can be admitted to the narrow
 // relay listener without binding the relay to every host interface.
-func IncusBridgeIPv4() string {
-	iface, err := net.InterfaceByName("incusbr0")
+func IncusBridgeIPv4(networkNames ...string) string {
+	networkName := ""
+	if len(networkNames) > 0 {
+		networkName = strings.TrimSpace(networkNames[0])
+	}
+	if networkName == "" {
+		networkName = strings.TrimSpace(os.Getenv("OPUTE_INCUS_NETWORK_NAME"))
+	}
+	if networkName == "" {
+		networkName = "incusbr0"
+	}
+	iface, err := net.InterfaceByName(networkName)
 	if err != nil || iface.Flags&net.FlagUp == 0 {
 		return ""
 	}

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
 	"github.com/wunderous/host-agents/internal/mcphttp"
 	"github.com/wunderous/host-agents/internal/resourceid"
@@ -42,12 +43,15 @@ func main() {
 func cloudflareManifest() providercontract.InstallManifest {
 	return providercontract.InstallManifest{
 		Schema: providercontract.InstallManifestVersion, Provider: providercontract.ProviderRef{ID: "com.opute.cloudflare", Version: "1.0.0"},
-		Provides: []providercontract.CapabilityRef{{ID: tunnelingCapability, Version: 1}},
+		Provides: []providercontract.CapabilityRef{{ID: tunnelingCapability, Version: 1}, {ID: capabilitycontract.NetworkOverlay, Version: 1}},
 		Recipes: []providercontract.RecipeRef{
 			{ID: "com.opute.cloudflare.tunneling", Source: providercontract.RecipeSource{URI: "recipes/tunneling.yaml", Revision: "working-tree", SHA256: "sha256:2f404972cbe5c463b8fe501973894c241341b2621e5941fad06af1434a958bc7"}, Mode: "tunnel"},
 			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:b665b9e50ebb64389dcca167d4b95b02f867fbb33d806d6254e6047fb8e9d9b3"}, Mode: "managed"},
 		},
-		Services:   []providercontract.ServiceDefinition{{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: cloudflareOperations()}},
+		Services: []providercontract.ServiceDefinition{
+			{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: cloudflareOperations()},
+			{ID: "opute.capability.network-overlay", CapabilityID: capabilitycontract.NetworkOverlay, Version: 1, Operations: networkOverlayOperations()},
+		},
 		Teardown:   &providercontract.Operation{ID: "opute.provider.teardown", Version: 1, InputSchema: teardownSchema(), OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "plan"}}, Effect: "destructive", ResourceKinds: []string{"service", "tunnel"}, Idempotent: true, SupportsReadiness: true, TaskSupport: "sync_only", ResourceCost: &providercontract.ResourceCost{Class: "control"}},
 		Validation: providercontract.ValidationRef{Capability: tunnelingCapability, Operation: "opute.capability.tunneling.validate"},
 	}
@@ -107,13 +111,17 @@ func tunnelSchema() map[string]any {
 		"tokenFile":           map[string]any{"type": "string"},
 		"manageHostConnector": map[string]any{"type": "boolean"},
 		"connector":           map[string]any{"type": "string"},
-		"placement":           map[string]any{"type": "string", "enum": []string{"host", "container", "kubernetes"}},
-		"targetUri":           map[string]any{"type": "string"},
-		"artifactUri":         map[string]any{"type": "string"},
-		"artifactSha256":      map[string]any{"type": "string"},
-		"artifactPath":        map[string]any{"type": "string"},
-		"serviceName":         map[string]any{"type": "string"},
-		"serviceFile":         map[string]any{"type": "string"},
+		// A host connector normally targets its own loopback. An explicitly
+		// declared origin host permits a typed overlay/private-network target
+		// when the connector and the exposed Host Agent are separate nodes.
+		"originHostId":   map[string]any{"type": "string", "minLength": 1},
+		"placement":      map[string]any{"type": "string", "enum": []string{"host", "container", "kubernetes"}},
+		"targetUri":      map[string]any{"type": "string"},
+		"artifactUri":    map[string]any{"type": "string"},
+		"artifactSha256": map[string]any{"type": "string"},
+		"artifactPath":   map[string]any{"type": "string"},
+		"serviceName":    map[string]any{"type": "string"},
+		"serviceFile":    map[string]any{"type": "string"},
 	}}
 }
 func connectorSchema() map[string]any {
@@ -178,7 +186,8 @@ func addManifestTool(server *mcp.Server, manifest providercontract.InstallManife
 }
 
 func addCloudflareOperations(server *mcp.Server) {
-	for _, schema := range cloudflareOperations() {
+	operations := append(cloudflareOperations(), networkOverlayOperations()...)
+	for _, schema := range operations {
 		operation := schema
 		server.AddTool(&mcp.Tool{Name: operation.ID, Description: "Cloudflare tunneling provider operation", InputSchema: operation.InputSchema, OutputSchema: operation.OutputSchema}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			args, err := requestArguments(request)
@@ -192,6 +201,14 @@ func addCloudflareOperations(server *mcp.Server) {
 
 func dispatchCloudflareOperation(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
 	switch operation {
+	case capabilitycontract.NetworkOverlayValidateOperation,
+		capabilitycontract.NetworkOverlayPrepareMembershipOperation,
+		capabilitycontract.NetworkOverlayAttachTargetOperation,
+		capabilitycontract.NetworkOverlayProbeReachabilityOperation,
+		capabilitycontract.NetworkOverlayEnsureHAEndpointOperation,
+		capabilitycontract.NetworkOverlayRemoveHAEndpointOperation,
+		capabilitycontract.NetworkOverlayRemoveMembershipOperation:
+		return dispatchNetworkOverlayOperation(ctx, operation, args)
 	case "opute.capability.tunneling.validate":
 		bindings, _ := args["bindings"].([]any)
 		if len(bindings) == 0 {
@@ -236,7 +253,7 @@ func ensureTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 	if stringInput(args, "bindingId", "") == "" || stringInput(args, "localTarget", "") == "" {
 		return nil, fmt.Errorf("bindingId and localTarget are required")
 	}
-	if err := validateLocalTarget(stringInput(args, "localTarget", ""), stringInput(args, "connector", "")); err != nil {
+	if err := validateLocalTarget(stringInput(args, "localTarget", ""), stringInput(args, "connector", ""), stringInput(args, "originHostId", "")); err != nil {
 		return nil, err
 	}
 	hostname := stringInput(args, "hostname", "")
@@ -339,7 +356,13 @@ func reconcileHostTunnel(ctx context.Context, client *hostagentclient.Client, ar
 		return err
 	}
 	if target := stringInput(args, "localTarget", ""); target != "" {
-		_, err := callHost(ctx, client, "probe_http_endpoint", map[string]any{"endpoint": target})
+		_, err := callHost(ctx, client, "probe_http_endpoint", map[string]any{
+			"endpoint": target,
+			// Host Agent MCP is bearer-protected by design. A 401/403 from the
+			// origin proves the connector can reach it; it is not a publication
+			// failure and the tunnel still preserves the public /mcp path.
+			"acceptAuthenticationChallenge": true,
+		})
 		return err
 	}
 	return nil
@@ -655,7 +678,8 @@ func connectHostAgent(ctx context.Context) (*hostagentclient.Client, error) {
 	if endpoint == "" {
 		return nil, errors.New("OPUTE_HOST_AGENT_ENDPOINT is required for Cloudflare provider callbacks")
 	}
-	return hostagentclient.Connect(ctx, endpoint, os.Getenv("OPUTE_HOST_AGENT_BEARER_TOKEN"))
+	bearerToken := firstNonEmpty(os.Getenv("OPUTE_HOST_AGENT_BEARER_TOKEN"), os.Getenv("MCP_AUTH_TOKEN"))
+	return hostagentclient.Connect(ctx, endpoint, bearerToken)
 }
 
 func typedTargetURI(raw, expectedType string) (resourceid.URI, error) {
@@ -674,8 +698,21 @@ func callHost(ctx context.Context, client *hostagentclient.Client, name string, 
 	if err != nil {
 		return nil, fmt.Errorf("host callback %s: %w", name, err)
 	}
-	if result == nil || result.IsError {
-		return nil, fmt.Errorf("host callback %s failed", name)
+	if result == nil {
+		return nil, fmt.Errorf("host callback %s returned no result", name)
+	}
+	if result.IsError {
+		detail := ""
+		for _, content := range result.Content {
+			if text, ok := content.(*mcp.TextContent); ok && strings.TrimSpace(text.Text) != "" {
+				detail = strings.TrimSpace(text.Text)
+				break
+			}
+		}
+		if detail == "" {
+			detail = "host callback returned an error result"
+		}
+		return nil, fmt.Errorf("host callback %s failed: %s", name, detail)
 	}
 	return result, nil
 }
@@ -699,7 +736,7 @@ func placementInput(args map[string]any) (string, error) {
 	}
 }
 
-func validateLocalTarget(raw, connector string) error {
+func validateLocalTarget(raw, connector, originHostID string) error {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "host-agent-mcp" {
 		trimmed = "http://127.0.0.1:3004/mcp"
@@ -708,8 +745,12 @@ func validateLocalTarget(raw, connector string) error {
 	if err != nil || target.Host == "" || (target.Scheme != "http" && target.Scheme != "https") || strings.ContainsAny(raw, "\r\n\x00") {
 		return fmt.Errorf("localTarget must be an HTTP(S) URL")
 	}
-	if connector == "host" && (target.Hostname() != "127.0.0.1" && target.Hostname() != "localhost" || target.Port() == "") {
+	isLoopback := target.Hostname() == "127.0.0.1" || target.Hostname() == "localhost"
+	if connector == "host" && target.Port() == "" {
 		return fmt.Errorf("host connector requires an explicit loopback localTarget port")
+	}
+	if connector == "host" && !isLoopback && strings.TrimSpace(originHostID) == "" {
+		return fmt.Errorf("remote host connector localTarget requires an explicit originHostId")
 	}
 	return nil
 }

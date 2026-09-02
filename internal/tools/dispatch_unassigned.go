@@ -297,7 +297,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.RestartHostService, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.RestartHostService, EffectMutation, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().RestartHostService(host.RestartHostServiceArgs{ServiceName: stringField(args, "serviceName")}, onData)
 		if err != nil {
 			return nil, err
@@ -307,7 +307,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.SetHostServiceState, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.SetHostServiceState, EffectMutation, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().SetHostServiceState(host.SetHostServiceStateArgs{ServiceName: serviceNameFromBinding(args, binding), State: stringField(args, "state"), Scope: serviceScopeFromBinding(args, binding)}, onData)
 		if err != nil {
 			return nil, err
@@ -317,7 +317,7 @@ func init() {
 }
 
 func init() {
-	register(toolname.EnsureHostServiceSupervisor, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+	register(toolname.EnsureHostServiceSupervisor, EffectMutation, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().EnsureHostServiceSupervisor(host.EnsureHostServiceSupervisorArgs{Scope: stringField(args, "scope")}, onData)
 		if err != nil {
 			return nil, err

@@ -99,7 +99,7 @@ func serviceStateUnit(serviceName string) string {
 }
 
 func serviceStateCommand(serviceName, state, scope string) []string {
-	if state == "restart" && scope == "user" {
+	if state == "restart" && scope == "user" && strings.HasPrefix(serviceName, "opute-host-agent") {
 		// A user-systemd transient job is outside the target service's cgroup.
 		// This matters when the target is the MCP process serving this request:
 		// systemctl can enqueue the restart and return a truthful scheduled
@@ -122,9 +122,6 @@ func serviceStateCommand(serviceName, state, scope string) []string {
 		command = append(command, "--user")
 	} else {
 		command = append([]string{"sudo", "-n"}, command...)
-	}
-	if state == "restart" {
-		command = append(command, "--no-block")
 	}
 	return append(command, state, serviceName)
 }

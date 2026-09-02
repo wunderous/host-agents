@@ -61,3 +61,58 @@ func TestClientUsesPublicMCPBoundaryAndReconnects(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCallToolWaitsForTaskBeforeReturning(t *testing.T) {
+	taskPolls := 0
+	httpServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var envelope struct {
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&envelope); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		var result map[string]any
+		switch envelope.Method {
+		case "server/discover":
+			result = map[string]any{"resultType": "complete"}
+		case "tools/call":
+			result = map[string]any{"resultType": "task", "taskId": "task-1", "pollIntervalMs": 1}
+		case "tasks/get":
+			taskPolls++
+			if taskPolls == 1 {
+				result = map[string]any{"resultType": "complete", "taskId": "task-1", "status": "working", "pollIntervalMs": 1}
+			} else {
+				result = map[string]any{
+					"resultType": "complete", "taskId": "task-1", "status": "completed",
+					"result": map[string]any{"structuredContent": map[string]any{"ready": true}},
+				}
+			}
+		default:
+			t.Fatalf("unexpected MCP method %q with params %#v", envelope.Method, envelope.Params)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": result})
+	}))
+	defer httpServer.Close()
+
+	client, err := Connect(context.Background(), httpServer.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	result, err := client.Call(context.Background(), "ensure_host_artifact", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("task result = %#v", result)
+	}
+	structured, ok := result.StructuredContent.(map[string]any)
+	if !ok || structured["ready"] != true {
+		t.Fatalf("structured result = %#v", result.StructuredContent)
+	}
+	if taskPolls != 2 {
+		t.Fatalf("tasks/get polls = %d, want 2", taskPolls)
+	}
+}

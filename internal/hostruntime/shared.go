@@ -37,6 +37,8 @@ type Shared struct {
 	AgentID                 string
 	OwnershipMode           string
 	SharedHostOwnerInstance string
+	IncusNetworkName        string
+	IncusNetworkAddress     string
 	ResourceRegistry        ResourceRegistry
 	ResourceSnapshot        func() map[string]any
 	CommandRunnerFn         func(args []string, onData func(string), timeout time.Duration) (hostexec.Result, error)

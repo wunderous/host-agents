@@ -5557,6 +5557,9 @@
         },
         "sha256": {
           "type": "string"
+        },
+        "inputs": {
+          "type": "object"
         }
       },
       "required": [
@@ -5658,6 +5661,9 @@
         },
         "sha256": {
           "type": "string"
+        },
+        "inputs": {
+          "type": "object"
         }
       },
       "required": [

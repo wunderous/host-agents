@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	hostexec "github.com/wunderous/host-agents/internal/exec"
 	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/internal/textutil"
 )
@@ -23,9 +24,13 @@ type ExecCommandArgs struct {
 // a display name, so a provider cannot accidentally fall back from a system
 // container to a VM with the same label.
 type RunInstanceCommandArgs struct {
-	URI       string
-	Command   string
-	Args      []string
+	URI     string
+	Command string
+	Args    []string
+	// Stdin is transient input and is never included in the provider argv or
+	// returned task observation. It is intended for provider-owned secret
+	// enrollment flows.
+	Stdin     string
 	TimeoutMs int
 }
 
@@ -49,7 +54,16 @@ func (s *Service) RunInstanceCommand(args RunInstanceCommandArgs, onData func(st
 	if args.TimeoutMs > 0 {
 		timeout = time.Duration(args.TimeoutMs) * time.Millisecond
 	}
-	res, err := s.deps.RunVMExec(providerName, append([]string{command}, args.Args...), onData, timeout)
+	argv := append([]string{command}, args.Args...)
+	var res hostexec.Result
+	if args.Stdin != "" {
+		if s.deps.RunVMExecWithStdin == nil {
+			return nil, fmt.Errorf("instance command stdin is unavailable")
+		}
+		res, err = s.deps.RunVMExecWithStdin(providerName, argv, []byte(args.Stdin), onData, timeout)
+	} else {
+		res, err = s.deps.RunVMExec(providerName, argv, onData, timeout)
+	}
 	if err != nil {
 		return nil, err
 	}

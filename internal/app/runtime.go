@@ -72,6 +72,8 @@ func buildHostRuntime(cfg config.Config, logger *slog.Logger) ([]string, *hostag
 		OciStoragePolicyPath:      filepath.Join(cfg.HostResourceLockDir, "oci-storage-policy.json"),
 		SQLiteDatabaseRoot:        cfg.SQLiteDatabaseRoot,
 		SharedHostOwnerInstance:   cfg.SharedHostOwnerInstance,
+		IncusNetworkName:          cfg.IncusNetworkName,
+		IncusNetworkAddress:       cfg.IncusNetworkAddress,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)
 			if err != nil {

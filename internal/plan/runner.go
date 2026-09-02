@@ -360,7 +360,12 @@ func (r Runner) runNodeWithPreconditions(ctx context.Context, doc Document, node
 		state.Nodes[node.ID] = NodeRunState{ID: node.ID, Status: StatusSkipped, Error: failure.Message}
 		return nil
 	}
-	if previous := state.Nodes[node.ID]; previous.Status == StatusApplied || previous.Status == StatusSatisfied {
+	// A dependency applied in this reconciliation pass invalidates this
+	// node's prior readiness observation. Carry that fact into runNode so a
+	// downstream action cannot be skipped merely because it still looks ready
+	// against the state that existed before the dependency changed.
+	forceAction := dependencyApplied(state.Nodes, node)
+	if previous := state.Nodes[node.ID]; (previous.Status == StatusApplied || previous.Status == StatusSatisfied) && !forceAction {
 		if node.Validate != nil {
 			result, failure, validateErr := r.validateNodeReady(ctx, doc, node, nil, state.Outputs, state.Context)
 			if validateErr != nil {
@@ -382,7 +387,7 @@ func (r Runner) runNodeWithPreconditions(ctx context.Context, doc Document, node
 			return nil
 		}
 	}
-	return r.runNode(ctx, doc, node, state)
+	return r.runNode(ctx, doc, node, state, forceAction)
 }
 
 func cloneRunState(value RunState) RunState {
@@ -409,7 +414,7 @@ func cloneRunState(value RunState) RunState {
 	return clone
 }
 
-func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *RunState) error {
+func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *RunState, forceAction ...bool) error {
 	nodeCtx := ctx
 	cancel := func() {}
 	timeoutMs := node.TimeoutMs
@@ -479,7 +484,7 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 	}
 
 	if node.ForEach != nil {
-		err := r.runForEach(nodeCtx, doc, node, state)
+		err := r.runForEach(nodeCtx, doc, node, state, len(forceAction) > 0 && forceAction[0])
 		if err != nil {
 			current := state.Nodes[node.ID]
 			current.ID = node.ID
@@ -495,7 +500,7 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 		}
 		return err
 	}
-	if node.Validate != nil {
+	if node.Validate != nil && (len(forceAction) == 0 || !forceAction[0]) {
 		// A failed preflight must yield to the node action immediately. Polling
 		// here would wait for a resource that this node is responsible for
 		// creating. A validation-only node has no action and may use bounded
@@ -666,7 +671,7 @@ func (r Runner) runNode(ctx context.Context, doc Document, node Node, state *Run
 	return err
 }
 
-func (r Runner) runForEach(ctx context.Context, doc Document, node Node, state *RunState) error {
+func (r Runner) runForEach(ctx context.Context, doc Document, node Node, state *RunState, forceAction bool) error {
 	value, err := resolveSource(node.ForEach.Source, doc, state)
 	if err != nil {
 		return err
@@ -697,7 +702,7 @@ func (r Runner) runForEach(ctx context.Context, doc Document, node Node, state *
 		if node.Action == nil {
 			return fmt.Errorf("forEach node %q requires an action", node.ID)
 		}
-		itemOutput, err := r.runForEachItem(ctx, doc, node, itemMap, state.Outputs, state.Context)
+		itemOutput, err := r.runForEachItem(ctx, doc, node, itemMap, state.Outputs, state.Context, forceAction)
 		if err != nil {
 			return err
 		}
@@ -708,14 +713,14 @@ func (r Runner) runForEach(ctx context.Context, doc Document, node Node, state *
 	return r.emit(*state)
 }
 
-func (r Runner) runForEachItem(ctx context.Context, doc Document, node Node, item map[string]any, outputs map[string]any, contexts map[string]ContextEntry) (any, error) {
+func (r Runner) runForEachItem(ctx context.Context, doc Document, node Node, item map[string]any, outputs map[string]any, contexts map[string]ContextEntry, forceAction bool) (any, error) {
 	attempts := attemptsFor(node, doc)
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if node.Validate != nil {
+		if node.Validate != nil && !forceAction {
 			validated, failure, err := r.validateNodeReady(ctx, doc, node, item, outputs, contexts)
 			if err != nil {
 				lastErr = err
@@ -1034,6 +1039,20 @@ func blockedByDependency(node Node, states map[string]NodeRunState) bool {
 	for _, dependency := range node.DependsOn {
 		status := states[dependency].Status
 		if status == StatusFailed || status == StatusUnknown || status == StatusSkipped || status == StatusCompensationFailed || status == StatusWaiting || status == StatusExpired {
+			return true
+		}
+	}
+	return false
+}
+
+// dependencyApplied reports whether a dependency executed its action during
+// the current reconciliation pass. StatusApplied is distinct from
+// StatusSatisfied: the latter means the existing observation was enough,
+// while the former means a mutation ran and downstream preflight observations
+// are no longer reusable.
+func dependencyApplied(states map[string]NodeRunState, node Node) bool {
+	for _, dependency := range node.DependsOn {
+		if states[dependency].Status == StatusApplied {
 			return true
 		}
 	}

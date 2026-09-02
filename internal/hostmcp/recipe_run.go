@@ -46,6 +46,13 @@ func recipeInputValues(args map[string]any) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
+func (s *Server) catalogSnapshotForRecipe(generationID string) tools.CapabilityCatalogSnapshot {
+	if snapshot, ok := s.providerCandidateSnapshot(generationID); ok {
+		return snapshot
+	}
+	return s.CatalogSnapshot()
+}
+
 func (s *Server) loadRuntimeRecipe(args map[string]any, requireHash bool) (recipe.Loaded, tools.CapabilityCatalogSnapshot, error) {
 	loaded, err := recipe.Load(recipeSourceRequest(args, requireHash))
 	if err != nil {
@@ -61,7 +68,7 @@ func (s *Server) loadRuntimeRecipe(args map[string]any, requireHash bool) (recip
 	if err := recipe.ValidateHostAgentVersion(loaded.Document.Compatibility.MinHostAgentVersion, version.Version); err != nil {
 		return recipe.Loaded{}, tools.CapabilityCatalogSnapshot{}, err
 	}
-	snapshot := s.CatalogSnapshot()
+	snapshot := s.catalogSnapshotForRecipe(recipeStringField(args, "providerGenerationId"))
 	if err := loaded.Validate(planCapabilitiesFromSnapshot(snapshot), snapshot.Revision); err != nil {
 		return recipe.Loaded{}, tools.CapabilityCatalogSnapshot{}, err
 	}

@@ -22,6 +22,9 @@ type Deps struct {
 	// RunVMExec executes a command inside a VM. It is an incus operation, not a
 	// hostruntime handle -- it performs an ownership check first.
 	RunVMExec func(vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error)
+	// RunVMExecWithStdin keeps credential-bearing input off the provider argv and
+	// task metadata while preserving the same ownership check as RunVMExec.
+	RunVMExecWithStdin func(vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error)
 	// SupportedTools lists the tool names this agent serves for a provider.
 	SupportedTools func(providerID string) []string
 }

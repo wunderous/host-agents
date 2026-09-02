@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opute.capability.network-overlay.v1",
+  "type": "object",
+  "required": ["contractVersion", "ready", "provider", "targetUri"],
+  "properties": {
+    "contractVersion": {"const": "opute.capability.network-overlay.v1"},
+    "ready": {"type": "boolean"},
+    "provider": {"type": "string"},
+    "targetUri": {"type": "string", "pattern": "^vm:[a-z][a-z0-9-]{0,31}:.+$"},
+    "membershipRef": {"type": "string"},
+    "nodeId": {"type": "string"},
+    "nodeName": {"type": "string"},
+    "meshIp": {"type": "string", "format": "ipv4"},
+    "meshInterface": {"type": "string"},
+    "peerMeshIp": {"type": "string", "format": "ipv4"},
+    "nodeCount": {"type": "integer", "minimum": 0},
+    "probe": {"type": "object"},
+    "deleted": {"type": "boolean"},
+    "error": {"type": "string"}
+  }
+}

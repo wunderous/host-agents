@@ -32,6 +32,44 @@ func TestCloudflareManifestDeclaresDynamicCompatibilityOperations(t *testing.T) 
 	}
 }
 
+func TestCloudflareManifestDeclaresNetworkOverlayService(t *testing.T) {
+	manifest := cloudflareManifest()
+	var overlay *providercontract.ServiceDefinition
+	for index := range manifest.Services {
+		if manifest.Services[index].CapabilityID == "opute.capability.network-overlay.v1" {
+			overlay = &manifest.Services[index]
+			break
+		}
+	}
+	if overlay == nil {
+		t.Fatal("manifest missing network-overlay service")
+	}
+	seen := map[string]bool{}
+	for _, operation := range overlay.Operations {
+		seen[operation.ID] = true
+		if operation.ID == "opute.capability.network-overlay.remove-ha-endpoint" {
+			if len(operation.Requires) != 0 {
+				t.Fatalf("opaque endpoint removal must not require targetUri: %#v", operation.Requires)
+			}
+			continue
+		}
+		if len(operation.Requires) != 1 || operation.Requires[0].Argument != "targetUri" || operation.Requires[0].ResourceType != "vm" || !operation.Requires[0].Required {
+			t.Fatalf("overlay operation %q is missing typed target binding: %#v", operation.ID, operation.Requires)
+		}
+	}
+	for _, operation := range []string{
+		"opute.capability.network-overlay.validate",
+		"opute.capability.network-overlay.prepare-membership",
+		"opute.capability.network-overlay.attach-target",
+		"opute.capability.network-overlay.probe-reachability",
+		"opute.capability.network-overlay.remove-membership",
+	} {
+		if !seen[operation] {
+			t.Fatalf("manifest missing network-overlay operation %q", operation)
+		}
+	}
+}
+
 func TestCloudflareMutationsDeclareResourceCost(t *testing.T) {
 	manifest := cloudflareManifest()
 	check := func(operation providercontract.Operation) {
@@ -43,8 +81,10 @@ func TestCloudflareMutationsDeclareResourceCost(t *testing.T) {
 			t.Fatalf("mutating operation %q must declare resourceCost.class", operation.ID)
 		}
 	}
-	for _, operation := range manifest.Services[0].Operations {
-		check(operation)
+	for _, service := range manifest.Services {
+		for _, operation := range service.Operations {
+			check(operation)
+		}
 	}
 	if manifest.Teardown == nil {
 		t.Fatal("manifest missing teardown")

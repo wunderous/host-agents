@@ -119,15 +119,14 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
-	snapshot := s.CatalogSnapshot()
+	snapshot := s.catalogSnapshotForRecipe(recipeStringField(recipeMetadata, "providerGenerationId"))
 	if _, err := s.validateHostPlanWithSnapshot(doc, snapshot); err != nil {
 		return tools.ErrorResult(err), nil
 	}
-	hash, encoded, err := plan.DocumentHash(doc)
+	hash, redactedPlan, err := s.redactedPlanIdentity(doc, recipeMetadata, snapshot)
 	if err != nil {
-		return tools.ErrorResult(err), nil
+		return tools.ErrorResult(fmt.Errorf("hash plan: %w", err)), nil
 	}
-	redactedPlan := s.redactPlanDocument(encoded, recipeMetadata, snapshot)
 	resume, _ := args["resume"].(bool)
 
 	record, found, err := s.state.FindPlan(doc.PlanID, doc.Generation, doc.IdempotencyKey)
@@ -135,8 +134,8 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 		return tools.ErrorResult(fmt.Errorf("find plan run: %w", err)), nil
 	}
 	if found {
-		if record.DocumentHash != hash {
-			return tools.ErrorResult(fmt.Errorf("idempotency key already belongs to a different plan document: %s", record.RunID)), nil
+		if err := s.ensurePlanDocumentHash(&record, hash); err != nil {
+			return tools.ErrorResult(err), nil
 		}
 		if recipeMetadata != nil {
 			if storedHash := persistedRecipeHash(record.RecipeJSON); storedHash != "" && storedHash != recipeHash(recipeMetadata) {
@@ -182,8 +181,8 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 		if err != nil {
 			return tools.ErrorResult(fmt.Errorf("persist plan run: %w", err)), nil
 		}
-		if record.DocumentHash != hash {
-			return tools.ErrorResult(fmt.Errorf("idempotency key already belongs to a different plan document: %s", record.RunID)), nil
+		if err := s.ensurePlanDocumentHash(&record, hash); err != nil {
+			return tools.ErrorResult(err), nil
 		}
 		if !created {
 			if record.Status == "working" || record.Status == "running" || record.Status == plan.RunStatusWaiting || !resume {
@@ -225,7 +224,7 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 	}
 
 	taskCtx, cancel := context.WithCancel(context.Background())
-	taskArgs := map[string]any{"plan": s.redactedPlanTaskValue(encoded, recipeMetadata, snapshot), "resume": resume}
+	taskArgs := map[string]any{"plan": s.redactedPlanTaskValue([]byte(redactedPlan), recipeMetadata, snapshot), "resume": resume}
 	if recipeMetadata != nil {
 		taskArgs["recipe"] = s.redactedMetadata(recipeMetadata)
 	}
@@ -294,11 +293,11 @@ func (s *Server) resumeHostPlan(runID string) {
 		return
 	}
 	stateValue.RunID = runID
-	snapshot := s.CatalogSnapshot()
 	var recipeMetadata map[string]any
 	if strings.TrimSpace(record.RecipeJSON) != "" {
 		_ = json.Unmarshal([]byte(record.RecipeJSON), &recipeMetadata)
 	}
+	snapshot := s.catalogSnapshotForRecipe(recipeStringField(recipeMetadata, "providerGenerationId"))
 
 	s.planMu.Lock()
 	if s.closed {
@@ -375,6 +374,11 @@ func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc,
 	}()
 	runner := plan.Runner{
 		Dispatch: func(ctx context.Context, name string, args map[string]any, onData func(string)) (*mcp.CallToolResult, error) {
+			if generationID := recipeStringField(recipeMetadata, "providerGenerationId"); generationID != "" {
+				if result, err, handled := s.dispatchCandidateTool(ctx, name, args, onData, generationID, snapshot); handled {
+					return result, err
+				}
+			}
 			return s.DispatchTool(ctx, name, args, onData)
 		},
 		Capabilities:    planCapabilitiesFromSnapshot(snapshot),
@@ -734,6 +738,53 @@ func (s *Server) redactPlanDocument(encoded []byte, metadata map[string]any, sna
 		return `{"redacted":true}`
 	}
 	return string(redacted)
+}
+
+// redactedPlanIdentity makes idempotency stable when a recipe refreshes a
+// secret input (for example a short-lived MCP bearer). Secret rotation must
+// not make the same declarative plan look like a different document, and the
+// unredacted value must never enter the durable document hash.
+func (s *Server) redactedPlanIdentity(
+	doc plan.Document,
+	metadata map[string]any,
+	snapshot tools.CapabilityCatalogSnapshot,
+) (string, string, error) {
+	_, encoded, err := plan.DocumentHash(doc)
+	if err != nil {
+		return "", "", err
+	}
+	redacted := s.redactPlanDocument(encoded, metadata, snapshot)
+	var redactedDocument plan.Document
+	if err := json.Unmarshal([]byte(redacted), &redactedDocument); err != nil {
+		return "", "", fmt.Errorf("decode redacted plan identity: %w", err)
+	}
+	hash, _, err := plan.DocumentHash(redactedDocument)
+	if err != nil {
+		return "", "", err
+	}
+	return hash, redacted, nil
+}
+
+// ensurePlanDocumentHash accepts one safe migration shape: an older record
+// whose persisted plan is already redacted and therefore recomputes to the
+// new identity hash. Any other mismatch remains a hard idempotency conflict.
+func (s *Server) ensurePlanDocumentHash(record *state.PlanRecord, expected string) error {
+	if record.DocumentHash == expected {
+		return nil
+	}
+	persisted, err := plan.Decode([]byte(record.PlanJSON))
+	if err != nil {
+		return fmt.Errorf("idempotency key already belongs to a different plan document: %s", record.RunID)
+	}
+	persistedHash, _, err := plan.DocumentHash(persisted)
+	if err != nil || persistedHash != expected {
+		return fmt.Errorf("idempotency key already belongs to a different plan document: %s", record.RunID)
+	}
+	if err := s.state.UpdatePlanDocumentHash(record.RunID, expected); err != nil {
+		return fmt.Errorf("migrate persisted plan document hash: %w", err)
+	}
+	record.DocumentHash = expected
+	return nil
 }
 
 func (s *Server) redactedPlanTaskValue(encoded []byte, metadata map[string]any, snapshot tools.CapabilityCatalogSnapshot) any {

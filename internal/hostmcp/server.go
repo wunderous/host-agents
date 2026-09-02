@@ -204,6 +204,10 @@ func NewServer(opts Options) (*Server, error) {
 			_ = store.Close()
 			return nil, fmt.Errorf("restore MCP tasks: %w", err)
 		}
+		if err := hs.reclaimTerminalTaskReservations(); err != nil {
+			_ = store.Close()
+			return nil, fmt.Errorf("reclaim terminal task reservations: %w", err)
+		}
 		if err := hs.restoreProviderGenerations(); err != nil {
 			_ = store.Close()
 			return nil, fmt.Errorf("restore provider generations: %w", err)
@@ -415,76 +419,7 @@ func (s *Server) registerProviderServicesForGeneration(manifest providercontract
 		return err
 	}
 	previousCatalog := s.registry.Snapshot()
-	implementation := "provider:" + manifest.Provider.ID
-	providerCapabilities := make([]hostcapability.Capability, 0)
-	providerDescriptors := make([]tools.CapabilityDescriptor, 0)
-	for _, service := range manifest.Services {
-		for _, operation := range service.Operations {
-			version := operation.Version
-			if version == 0 {
-				// Keep the in-process registration path compatible with older
-				// manifests while new manifests are required to declare it.
-				version = 1
-			}
-			description := strings.TrimSpace(operation.Description)
-			if description == "" {
-				description = "Provider service " + service.ID + " operation " + operation.ID
-			}
-			descriptor := tools.CapabilityDescriptor{
-				OperationID:       operation.ID,
-				Version:           version,
-				Name:              operation.ID,
-				Description:       description,
-				InputSchema:       operation.InputSchema,
-				OutputSchema:      operation.OutputSchema,
-				OutputType:        operation.OutputType,
-				ResultTypes:       operation.ResultTypes,
-				Effect:            operation.Effect,
-				Privilege:         operation.Effect,
-				RequiresApproval:  operation.Effect != "read",
-				Provider:          manifest.Provider.ID,
-				Implementation:    implementation,
-				GenerationID:      generationID,
-				ResourceKinds:     append([]string(nil), operation.ResourceKinds...),
-				RequiredFields:    requiredSchemaFields(operation.InputSchema),
-				ValidationSchema:  operation.ValidationSchema,
-				ObservationSchema: firstNonEmpty(operation.ObservationSchema, hostcapability.ObservationSchemaVersion),
-				Requires:          providerBindings(operation.Requires),
-				Produces:          providerBindings(operation.Produces),
-				Idempotent:        operation.Idempotent,
-				SupportsReadiness: operation.SupportsReadiness,
-			}
-			if operation.ResourceCost != nil {
-				descriptor.ResourceCost = &tools.ResourceCost{
-					CPUCores: operation.ResourceCost.CPUCores, MemoryBytes: operation.ResourceCost.MemoryBytes,
-					DiskBytes: operation.ResourceCost.DiskBytes, Tasks: operation.ResourceCost.Tasks,
-					Class: operation.ResourceCost.Class,
-				}
-			}
-			serviceID := service.ID
-			providerCapability := hostcapability.NewProviderAdapter(descriptor, func(ctx context.Context, args hostcapability.RawArguments, _ tools.ExecutionBinding, _ hostcapability.ExecutionSink) (*mcp.CallToolResult, error) {
-				// Every provider operation is affine to the generation that
-				// published it. The session is captured first and the mounted
-				// service is resolved through it, so a call can never check one
-				// generation and then execute against a newer adapter (C-08).
-				session, err := s.providerLifecycle.OpenSession(manifest.Provider.ID)
-				if err != nil || session.GenerationID() != descriptor.GenerationID {
-					if err == nil {
-						session.Close()
-					}
-					return tools.ErrorResult(fmt.Errorf("provider generation %q is no longer active", descriptor.GenerationID)), nil
-				}
-				defer session.Close()
-				value, ok := s.providerServiceValueFor(manifest.Provider.ID, serviceID, session.GenerationID())
-				if !ok || value.adapter == nil {
-					return tools.ErrorResult(fmt.Errorf("provider generation %q is not connected", descriptor.GenerationID)), nil
-				}
-				return value.adapter.CallSynchronousOnly(ctx, operation.ID, args)
-			})
-			providerCapabilities = append(providerCapabilities, providerCapability)
-			providerDescriptors = append(providerDescriptors, descriptor)
-		}
-	}
+	providerCapabilities, providerDescriptors := s.providerCapabilitiesForGeneration(manifest, generationID, false)
 	if generationID != "" {
 		if err := s.registry.ReplaceGeneration(generationID, providerCapabilities); err != nil {
 			return err
@@ -662,6 +597,11 @@ func (s *Server) invokeLifecycleTool(ctx context.Context, name string, args map[
 }
 
 func (s *Server) admitInvocation(ctx context.Context, name string, args map[string]any, binding tools.ExecutionBinding) (*resource.Reservation, error) {
+	descriptor, found := s.capabilityDescriptor(name)
+	return s.admitInvocationWithDescriptor(ctx, name, args, binding, descriptor, found, found && s.isProviderCapability(name))
+}
+
+func (s *Server) admitInvocationWithDescriptor(ctx context.Context, name string, args map[string]any, binding tools.ExecutionBinding, descriptor tools.CapabilityDescriptor, found, providerCapability bool) (*resource.Reservation, error) {
 	class, declared := tools.RegisteredAdmissionClass(name)
 	if !declared {
 		// Transport-owned lifecycle definitions carry their cost in the typed
@@ -670,7 +610,6 @@ func (s *Server) admitInvocation(ctx context.Context, name string, args map[stri
 		class = resource.ClassControl
 	}
 	cost := resource.DefaultCostForClass(class)
-	descriptor, found := s.capabilityDescriptor(name)
 	if found && descriptor.ResourceCost != nil {
 		declaredClass := class
 		if descriptor.ResourceCost.Class != "" {
@@ -685,9 +624,9 @@ func (s *Server) admitInvocation(ctx context.Context, name string, args map[stri
 			MemoryBytes: descriptor.ResourceCost.MemoryBytes, DiskBytes: descriptor.ResourceCost.DiskBytes,
 			Tasks: descriptor.ResourceCost.Tasks,
 		}
-	} else if found && s.isProviderCapability(name) && descriptor.Effect != string(tools.EffectRead) {
+	} else if found && providerCapability && descriptor.Effect != string(tools.EffectRead) {
 		return nil, fmt.Errorf("resource_declaration_required: provider workload capability %q must declare typed resourceCost metadata", name)
-	} else if found && s.isProviderCapability(name) {
+	} else if found && providerCapability {
 		// Read-only provider calls have no declared host workload. They do not
 		// take a permit, which preserves nested provider callbacks while still
 		// requiring typed cost metadata for every mutating provider operation.
@@ -789,6 +728,17 @@ func requiredSchemaFields(schema map[string]any) []string {
 // in the returned binding; the raw argument map is never rewritten, and
 // callers cannot smuggle a guessed provider instance name through arguments.
 func resolveExecutionBinding(server *Server, name string, args map[string]any) (tools.ExecutionBinding, error) {
+	if server == nil {
+		return tools.ExecutionBinding{
+			SchemaVersion: tools.ExecutionBindingSchemaVersion,
+			Admission:     "tenant-resource-registry",
+			Authorization: "admitted",
+		}, nil
+	}
+	return resolveExecutionBindingWithSnapshot(server, name, args, server.CatalogSnapshot())
+}
+
+func resolveExecutionBindingWithSnapshot(server *Server, name string, args map[string]any, snapshot tools.CapabilityCatalogSnapshot) (tools.ExecutionBinding, error) {
 	binding := tools.ExecutionBinding{
 		SchemaVersion: tools.ExecutionBindingSchemaVersion,
 		Admission:     "tenant-resource-registry",
@@ -802,8 +752,7 @@ func resolveExecutionBinding(server *Server, name string, args map[string]any) (
 	// resource contract until the capability declares its binding.
 	bindingByArgument := make(map[string][]tools.ResourceBinding)
 	var descriptor tools.CapabilityDescriptor
-	server.catalogMu.RLock()
-	for _, candidate := range server.catalog.Tools {
+	for _, candidate := range snapshot.Tools {
 		if candidate.Name == name {
 			descriptor = candidate
 			for _, require := range candidate.Requires {
@@ -814,9 +763,8 @@ func resolveExecutionBinding(server *Server, name string, args map[string]any) (
 			break
 		}
 	}
-	binding.CatalogRevision = server.catalog.Revision
+	binding.CatalogRevision = snapshot.Revision
 	binding.GenerationID = descriptor.GenerationID
-	server.catalogMu.RUnlock()
 	binding.TenantID = server.agent.TenantID()
 	arguments := make([]string, 0, len(bindingByArgument))
 	for argument := range bindingByArgument {
@@ -888,6 +836,10 @@ func (s *Server) dispatchRegisteredOrBuiltIn(ctx context.Context, name string, a
 	if capabilityValue == nil {
 		return nil, fmt.Errorf("capability %q is not registered", name)
 	}
+	return s.dispatchCapabilityValue(ctx, name, args, binding, onData, capabilityValue)
+}
+
+func (s *Server) dispatchCapabilityValue(ctx context.Context, name string, args map[string]any, binding tools.ExecutionBinding, onData func(string), capabilityValue hostcapability.Capability) (*mcp.CallToolResult, error) {
 	binding = s.completeProducedResourceBinding(capabilityValue.Definition(), args, binding)
 	result, err := capabilityValue.Invoke(ctx, hostcapability.RawArguments(args), binding, onData)
 	if err != nil {
@@ -1087,6 +1039,26 @@ func (s *Server) restoreTasks() error {
 				s.queueHostPlanResume(rec.TaskID, input)
 			})
 		}
+	}
+	return nil
+}
+
+func (s *Server) reclaimTerminalTaskReservations() error {
+	if s == nil || s.admission == nil {
+		return nil
+	}
+	terminal := make(map[string]struct{})
+	for _, task := range s.tasks.List() {
+		if task == nil {
+			continue
+		}
+		switch task.Status {
+		case tasks.StatusCompleted, tasks.StatusFailed, tasks.StatusCancelled:
+			terminal[task.TaskID] = struct{}{}
+		}
+	}
+	if _, err := s.admission.ReclaimTerminalTaskReservations(terminal); err != nil {
+		return err
 	}
 	return nil
 }

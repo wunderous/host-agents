@@ -133,6 +133,14 @@ func (s *Service) InstallIncusStack(args InstallIncusStackArgs, onData func(stri
 }
 
 func (s *Service) ensureIncusContainerRuntime(onData func(string)) error {
+	networkName := strings.TrimSpace(s.shared.IncusNetworkName)
+	if networkName == "" {
+		networkName = "incusbr0"
+	}
+	networkAddress := strings.TrimSpace(s.shared.IncusNetworkAddress)
+	if networkAddress == "" {
+		networkAddress = "10.0.100.1/24"
+	}
 	storage, err := s.shared.CommandRunner([]string{"storage", "list", "--format", "json"}, onData, 30*time.Second)
 	if err != nil || storage.ExitCode != 0 {
 		return fmt.Errorf("inspect storage pools: %s", textutil.FirstNonEmpty(storage.Stderr, storage.Stdout, textutil.ErrString(err, "incus storage list failed")))
@@ -147,8 +155,8 @@ func (s *Service) ensureIncusContainerRuntime(onData func(string)) error {
 	if err != nil || network.ExitCode != 0 {
 		return fmt.Errorf("inspect networks: %s", textutil.FirstNonEmpty(network.Stderr, network.Stdout, textutil.ErrString(err, "incus network list failed")))
 	}
-	if !strings.Contains(network.Stdout, `"name":"incusbr0"`) {
-		created, createErr := s.shared.CommandRunner([]string{"network", "create", "incusbr0", "ipv4.address=10.0.100.1/24", "ipv4.nat=true", "ipv6.address=none"}, onData, 2*time.Minute)
+	if !strings.Contains(network.Stdout, fmt.Sprintf(`"name":"%s"`, networkName)) {
+		created, createErr := s.shared.CommandRunner([]string{"network", "create", networkName, "ipv4.address=" + networkAddress, "ipv4.nat=true", "ipv6.address=none"}, onData, 2*time.Minute)
 		if createErr != nil || created.ExitCode != 0 {
 			return fmt.Errorf("create Incus container network: %s", textutil.FirstNonEmpty(created.Stderr, created.Stdout, textutil.ErrString(createErr, "incus network create failed")))
 		}
@@ -169,13 +177,13 @@ func (s *Service) ensureIncusContainerRuntime(onData func(string)) error {
 	if !incusProfileHasDevice(profile.Stdout, "eth0") {
 		added, addErr := s.shared.CommandRunner([]string{
 			"profile", "device", "add", "default", "eth0", "nic",
-			"nictype=bridged", "parent=incusbr0", "name=eth0",
+			"nictype=bridged", "parent=" + networkName, "name=eth0",
 		}, onData, 2*time.Minute)
 		if addErr != nil || added.ExitCode != 0 {
 			return fmt.Errorf("attach default container network: %s", textutil.FirstNonEmpty(added.Stderr, added.Stdout, textutil.ErrString(addErr, "incus profile network device add failed")))
 		}
 	} else {
-		for _, setting := range [][2]string{{"nictype", "bridged"}, {"parent", "incusbr0"}, {"name", "eth0"}} {
+		for _, setting := range [][2]string{{"nictype", "bridged"}, {"parent", networkName}, {"name", "eth0"}} {
 			updated, updateErr := s.shared.CommandRunner([]string{
 				"profile", "device", "set", "default", "eth0", setting[0], setting[1],
 			}, onData, 2*time.Minute)

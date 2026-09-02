@@ -51,9 +51,9 @@ var CatalogExcludedToolNames = map[string]bool{
 	"list_tasks":      true,
 	"get_task":        true,
 	"agent_shell":     true,
-	// Guest exec lives in the vm-exec static MCP for CPC-local cells, but tunnel hosts
+	// Generic host exec remains internal; typed instance exec is exposed as a
+	// provider callback capability and is guarded by canonical URI ownership.
 	"exec_command":                true,
-	"run_instance_command":        true,
 	"ensure_sql_connector":        true,
 	"get_sql_connector_status":    true,
 	"release_sql_connector":       true,
@@ -381,7 +381,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}, ToolDefinition{
 		Name: "provision_container", Title: "Provision Incus system container", Description: "Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.", InputSchema: map[string]any{"type": "object", "required": []string{"containerName"}, "properties": map[string]any{"containerName": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "disk": map[string]any{"type": "string"}, "gpu": map[string]any{"type": "boolean"}, "wslGpuLibs": map[string]any{"type": "boolean"}, "nesting": map[string]any{"type": "boolean"}, "port": map[string]any{"type": "integer"}, "modelVolume": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
-		Name: "run_instance_command", Title: "Run typed instance command", Description: "Execute a provider-declared argv on a resolved Incus VM or system container. The target must be a canonical tenant-scoped URI.", InputSchema: map[string]any{"type": "object", "required": []string{"uri", "command"}, "properties": map[string]any{"uri": map[string]any{"type": "string", "pattern": `^(vm|container):[a-z][a-z0-9-]{0,31}:.+$`}, "command": map[string]any{"type": "string", "minLength": 1}, "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "timeoutMs": map[string]any{"type": "integer", "minimum": 0, "maximum": 7200000}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"uri", "exitCode", "stdout", "stderr"}},
+		Name: "run_instance_command", Title: "Run typed instance command", Description: "Execute a provider-declared argv on a resolved Incus VM or system container. The target must be a canonical tenant-scoped URI.", InputSchema: map[string]any{"type": "object", "required": []string{"uri", "command"}, "properties": map[string]any{"uri": map[string]any{"type": "string", "pattern": `^(vm|container):[a-z][a-z0-9-]{0,31}:.+$`}, "command": map[string]any{"type": "string", "minLength": 1}, "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "stdin": map[string]any{"type": "string", "writeOnly": true}, "timeoutMs": map[string]any{"type": "integer", "minimum": 0, "maximum": 7200000}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"uri", "exitCode", "stdout", "stderr"}},
 	}, ToolDefinition{
 		Name: "probe_gpu_container", Title: "Probe system container GPU", Description: "Launch a disposable Incus system container, probe GPU visibility and NVML, then delete it.", InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
@@ -737,7 +737,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Name:         "validate_tunnel_recipe",
 		Title:        "Validate tunnel recipe",
 		Description:  "Resolve and validate an external tunnel-recipe.v1 source and its embedded host-plan.v1 without changing host state.",
-		InputSchema:  map[string]any{"type": "object", "required": []string{"source"}, "properties": map[string]any{"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}}},
+		InputSchema:  map[string]any{"type": "object", "required": []string{"source"}, "properties": map[string]any{"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"valid", "recipeId", "recipeVersion", "recipeHash", "rawSha256", "plan"}},
 		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{

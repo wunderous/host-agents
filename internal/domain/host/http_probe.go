@@ -12,7 +12,8 @@ import (
 )
 
 type ProbeHTTPEndpointArgs struct {
-	Endpoint string
+	Endpoint                      string
+	AcceptAuthenticationChallenge bool
 }
 
 // HTTPObservation is a provider-neutral readiness observation for an
@@ -54,5 +55,11 @@ func (s *Service) ProbeHTTPEndpoint(ctx context.Context, args ProbeHTTPEndpointA
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
-	return &HTTPObservation{Endpoint: endpoint, StatusCode: response.StatusCode, Ready: response.StatusCode >= 200 && response.StatusCode < 400}, nil
+	ready := response.StatusCode >= 200 && response.StatusCode < 400
+	if args.AcceptAuthenticationChallenge && (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden) {
+		// A protected origin has proved transport reachability even though an
+		// unauthenticated readiness GET is expected to challenge the caller.
+		ready = true
+	}
+	return &HTTPObservation{Endpoint: endpoint, StatusCode: response.StatusCode, Ready: ready}, nil
 }

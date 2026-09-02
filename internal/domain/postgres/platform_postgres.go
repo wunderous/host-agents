@@ -19,6 +19,11 @@ const (
 	postgresqlServiceStorageSize       = "10Gi"
 	postgresqlServicePort              = 5432
 	postgresqlServiceReadinessTimeout  = 15 * time.Minute
+	// The platform cell deliberately runs inside a 2 GiB system-container
+	// budget on constrained development hosts. Keep the database's process and
+	// probe budgets explicit so reclaim pressure cannot turn a transiently
+	// delayed health check into a clean-but-repeated primary shutdown.
+	postgresqlServiceResourceProfile = "constrained-2GiB-v2"
 )
 
 // PostgreSQLServiceArgs is the versioned host-agent input for the platform
@@ -250,12 +255,29 @@ spec:
   valuesContent: |
     monitoring:
       enabled: false
+    config:
+      maxConcurrentReconciles: 1
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 250m
+        memory: 128Mi
 `
 }
 
 func renderPostgreSQLServiceClusterManifest(spec postgresqlServiceSpec) string {
 	primaryDatabase := spec.Databases[0]
 	retentionAnnotation := "host-agent.io/retention-policy"
+	livenessIsolationCheck := ""
+	if spec.Instances == 1 {
+		// There is no peer to protect from a false isolation decision in the
+		// single-instance platform cell. The HTTP liveness probe remains active;
+		// disabling only this peer/API isolation check prevents a 1-second
+		// scheduler blip under the 2 GiB cap from restarting the primary.
+		livenessIsolationCheck = "      isolationCheck:\n        enabled: false\n"
+	}
 	return fmt.Sprintf(`apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -263,12 +285,48 @@ metadata:
   namespace: %s
   annotations:
     %s: %s
+    host-agent.io/resource-profile: %s
   labels:
     app.kubernetes.io/part-of: %s
     app.kubernetes.io/managed-by: host-agent
 spec:
   instances: %d
   imageName: ghcr.io/cloudnative-pg/postgresql:16
+  postgresql:
+    parameters:
+      max_connections: "40"
+      max_worker_processes: "8"
+      max_parallel_workers: "4"
+      max_parallel_workers_per_gather: "2"
+      max_replication_slots: "8"
+      max_wal_senders: "5"
+      shared_buffers: "32MB"
+      work_mem: "2MB"
+      maintenance_work_mem: "32MB"
+      autovacuum_max_workers: "2"
+      wal_keep_size: "128MB"
+  startDelay: 180
+  livenessProbeTimeout: 60
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+  probes:
+    startup:
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 18
+    liveness:
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 6
+%s    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 6
   managed:
     roles:
       - name: %s
@@ -286,7 +344,7 @@ spec:
       encoding: UTF8
       localeCType: C
       localeCollate: C
-`, spec.ClusterName, spec.Namespace, retentionAnnotation, spec.RetentionPolicy, spec.ServicePartOf, spec.Instances, spec.ServiceOwner, spec.StorageSize, spec.StorageClass, primaryDatabase, spec.ServiceOwner)
+`, spec.ClusterName, spec.Namespace, retentionAnnotation, spec.RetentionPolicy, postgresqlServiceResourceProfile, spec.ServicePartOf, spec.Instances, livenessIsolationCheck, spec.ServiceOwner, spec.StorageSize, spec.StorageClass, primaryDatabase, spec.ServiceOwner)
 }
 
 func (s *Service) applyPostgreSQLServiceManifest(ctx context.Context, spec postgresqlServiceSpec, manifest, label string) error {
@@ -418,6 +476,28 @@ func (s *Service) postgresqlServiceClusterReady(ctx context.Context, spec postgr
 	readyInstances := nestedInt(cluster, "status", "readyInstances")
 	instances := nestedInt(cluster, "spec", "instances")
 	return strings.Contains(phase, "healthy") && instances == spec.Instances && readyInstances >= spec.Instances, nil
+}
+
+func (s *Service) postgresqlServiceClusterConfigurationReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
+	cluster, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace}, "get PostgreSQL service Cluster configuration")
+	if err != nil {
+		return false, nil
+	}
+	metadata, _ := cluster["metadata"].(map[string]any)
+	annotations, _ := metadata["annotations"].(map[string]any)
+	return annotations["host-agent.io/resource-profile"] == postgresqlServiceResourceProfile, nil
+}
+
+func (s *Service) postgresqlServiceOperatorConfigurationReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
+	helmChart, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "helmchart.helm.cattle.io", postgresqlServiceOperatorRelease, "-n", "kube-system"}, "get CloudNativePG resource profile")
+	if err != nil {
+		return false, nil
+	}
+	helmSpec, _ := helmChart["spec"].(map[string]any)
+	valuesContent, _ := helmSpec["valuesContent"].(string)
+	return strings.Contains(valuesContent, "maxConcurrentReconciles: 1") &&
+		strings.Contains(valuesContent, "memory: 128Mi") &&
+		strings.Contains(valuesContent, "cpu: 250m"), nil
 }
 
 func (s *Service) postgresqlServiceReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
@@ -917,6 +997,30 @@ func (s *Service) ReconcilePostgreSQLService(ctx context.Context, args PostgreSQ
 		}
 		if probe, err = s.waitForPostgreSQLService(ctx, spec); err != nil {
 			return nil, err
+		}
+	} else {
+		// A ready legacy cluster can still be running the pre-budget manifest.
+		// Reconcile the operator and tenant declarative profiles in place.
+		// Updating the operator first is important under a hard 2 GiB guest cap:
+		// the legacy ten-way reconcile fan-out can starve its webhook while the
+		// tenant Cluster patch is being admitted.
+		operatorConfigured, _ := s.postgresqlServiceOperatorConfigurationReady(ctx, spec)
+		configured, _ := s.postgresqlServiceClusterConfigurationReady(ctx, spec)
+		if !operatorConfigured {
+			if err := s.applyPostgreSQLServiceManifest(ctx, spec, renderPostgreSQLServiceOperatorManifest(), "apply CloudNativePG resource profile"); err != nil {
+				return nil, err
+			}
+			if err := s.waitForPostgreSQLServiceCRD(ctx, spec); err != nil {
+				return nil, err
+			}
+		}
+		if !configured {
+			if err := s.applyPostgreSQLServiceManifest(ctx, spec, renderPostgreSQLServiceClusterManifest(spec), "apply PostgreSQL service resource profile"); err != nil {
+				return nil, err
+			}
+			if probe, err = s.waitForPostgreSQLService(ctx, spec); err != nil {
+				return nil, err
+			}
 		}
 	}
 	credentials := postgresqlServiceSecret{Username: probe.Username, Password: probe.Password}

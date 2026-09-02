@@ -44,6 +44,7 @@ func init() {
 			URI:       stringField(args, "uri"),
 			Command:   stringField(args, "command"),
 			Args:      stringSliceField(args, "args"),
+			Stdin:     stringField(args, "stdin"),
 			TimeoutMs: intField(args, "timeoutMs"),
 		}, onData)
 		if err != nil {
@@ -100,7 +101,10 @@ func init() {
 
 func init() {
 	register(toolname.ProbeHTTPEndpoint, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.Host().ProbeHTTPEndpoint(ctx, host.ProbeHTTPEndpointArgs{Endpoint: stringField(args, "endpoint")})
+		out, err := svc.Host().ProbeHTTPEndpoint(ctx, host.ProbeHTTPEndpointArgs{
+			Endpoint:                      stringField(args, "endpoint"),
+			AcceptAuthenticationChallenge: boolField(args, "acceptAuthenticationChallenge"),
+		})
 		if err != nil {
 			return nil, err
 		}

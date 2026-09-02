@@ -17,13 +17,16 @@ func TestHostnamesFromArgsAcceptsTwoZones(t *testing.T) {
 }
 
 func TestValidateLocalTargetAcceptsHostAgentMCP(t *testing.T) {
-	if err := validateLocalTarget("host-agent-mcp", "host"); err != nil {
+	if err := validateLocalTarget("host-agent-mcp", "host", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateLocalTarget("http://127.0.0.1:3004/mcp", "host"); err != nil {
+	if err := validateLocalTarget("http://127.0.0.1:3004/mcp", "host", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateLocalTarget("https://agent.example.test/mcp", "host"); err == nil {
+	if err := validateLocalTarget("https://agent.example.test/mcp", "host", ""); err == nil {
 		t.Fatal("expected non-loopback host connector to fail")
+	}
+	if err := validateLocalTarget("http://10.0.200.1:3005", "host", "host-opute-ha-b-b9234af4"); err != nil {
+		t.Fatalf("declared remote host target rejected: %v", err)
 	}
 }

@@ -64,12 +64,14 @@ func TestCatalogAndMCPToolsListParity(t *testing.T) {
 		"exec_command",
 		"get_operation",
 		"list_operations",
-		"run_instance_command",
 	}
 	for _, name := range leakedInternalTools {
 		if registeredNames[name] {
 			t.Fatalf("internal tool %q leaked into public catalog/mcp tools list", name)
 		}
+	}
+	if !registeredNames["run_instance_command"] {
+		t.Fatal("typed provider callback tool run_instance_command is missing from public catalog/mcp tools list")
 	}
 
 	// Ensure canonical provider names are dotted and no underscore aliases exist

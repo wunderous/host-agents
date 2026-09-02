@@ -93,6 +93,67 @@ func TestRunnerValidateFirstMakesSecondRunSatisfyWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestRunnerReconcilesDependentActionWhenDependencyApplied(t *testing.T) {
+	var dirty atomic.Bool
+	var parentMutations atomic.Int32
+	var childMutations atomic.Int32
+	dirty.Store(true)
+	caps := map[string]Capability{
+		"ensure": {Name: "ensure", InputSchema: map[string]any{
+			"type": "object", "required": []string{"kind"},
+			"properties": map[string]any{"kind": map[string]any{"type": "string"}},
+		}, Effect: "mutation"},
+		"check": {Name: "check", InputSchema: map[string]any{
+			"type": "object", "required": []string{"kind"},
+			"properties": map[string]any{"kind": map[string]any{"type": "string"}},
+		}, Effect: "read"},
+	}
+	doc := baseDocument(
+		Node{ID: "parent", Action: &Action{Tool: "ensure", Args: map[string]any{"kind": "parent"}}, Validate: &Validation{
+			Tool: "check", Args: map[string]any{"kind": "parent"}, Assert: []Assertion{{Path: "/ready", Op: "eq", Value: true}},
+		}},
+		Node{ID: "child", DependsOn: []string{"parent"}, Action: &Action{Tool: "ensure", Args: map[string]any{"kind": "child"}}, Validate: &Validation{
+			Tool: "check", Args: map[string]any{"kind": "child"}, Assert: []Assertion{{Path: "/ready", Op: "eq", Value: true}},
+		}},
+	)
+	dispatch := func(_ context.Context, name string, args map[string]any, _ func(string)) (*mcp.CallToolResult, error) {
+		kind, _ := args["kind"].(string)
+		switch name {
+		case "check":
+			if kind == "parent" {
+				return callResult(map[string]any{"ready": !dirty.Load()}), nil
+			}
+			return callResult(map[string]any{"ready": true}), nil
+		case "ensure":
+			if kind == "parent" {
+				parentMutations.Add(1)
+				dirty.Store(false)
+			} else {
+				childMutations.Add(1)
+			}
+			return callResult(map[string]any{"applied": true}), nil
+		default:
+			return nil, errors.New("unexpected tool")
+		}
+	}
+	runner := Runner{Dispatch: dispatch, Capabilities: caps}
+	state, err := runner.Run(context.Background(), doc, RunState{RunID: "dependency-reconcile"})
+	if err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if parentMutations.Load() != 1 || childMutations.Load() != 1 {
+		t.Fatalf("first run mutations = parent:%d child:%d, want 1:1", parentMutations.Load(), childMutations.Load())
+	}
+	dirty.Store(true)
+	state, err = runner.Run(context.Background(), doc, state)
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if parentMutations.Load() != 2 || childMutations.Load() != 2 {
+		t.Fatalf("second run mutations = parent:%d child:%d, want 2:2", parentMutations.Load(), childMutations.Load())
+	}
+}
+
 func TestRunnerRecordsFailedNodeAfterReadinessExhaustion(t *testing.T) {
 	caps := map[string]Capability{
 		"apply": testCapability("apply", "mutation"),

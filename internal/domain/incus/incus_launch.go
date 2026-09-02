@@ -262,11 +262,15 @@ func (s *Service) launchIncusVMViaAPI(vmName, image string, cpus int, memory, di
 		instanceDevices["root"] = rootDevice
 	}
 	if !profileHasNIC(profileDevices) {
+		networkName := strings.TrimSpace(s.shared.IncusNetworkName)
+		if networkName == "" {
+			networkName = "incusbr0"
+		}
 		instanceDevices["eth0"] = map[string]any{
 			"type":    "nic",
 			"name":    "eth0",
 			"nictype": "bridged",
-			"parent":  "incusbr0",
+			"parent":  networkName,
 		}
 	}
 	if len(instanceDevices) > 0 {

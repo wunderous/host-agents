@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -100,6 +101,12 @@ func (c Client) CallTool(ctx context.Context, name string, arguments map[string]
 	if err != nil {
 		return nil, err
 	}
+	if taskID, ok := taskHandle(result); ok {
+		result, err = c.waitTask(ctx, taskID, taskPollInterval(result))
+		if err != nil {
+			return nil, err
+		}
+	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return nil, err
@@ -114,6 +121,83 @@ func (c Client) CallTool(ctx context.Context, name string, arguments map[string]
 		}
 	}
 	return &toolResult, nil
+}
+
+// taskHandle recognizes the flat MCP Tasks response returned by a
+// task-capable Host Agent tool. Provider callbacks are ordinary MCP clients,
+// so they must not treat the task handle as the completed tool result: doing
+// so lets dependent callbacks race the reservation held by the task.
+func taskHandle(result map[string]any) (string, bool) {
+	if result == nil {
+		return "", false
+	}
+	resultType, _ := result["resultType"].(string)
+	taskID, _ := result["taskId"].(string)
+	return strings.TrimSpace(taskID), resultType == "task" && strings.TrimSpace(taskID) != ""
+}
+
+func taskPollInterval(result map[string]any) time.Duration {
+	if result != nil {
+		switch value := result["pollIntervalMs"].(type) {
+		case float64:
+			if value >= 1 && value <= 60_000 {
+				return time.Duration(value) * time.Millisecond
+			}
+		case int:
+			if value >= 1 && value <= 60_000 {
+				return time.Duration(value) * time.Millisecond
+			}
+		}
+	}
+	return 500 * time.Millisecond
+}
+
+func (c Client) waitTask(ctx context.Context, taskID string, pollInterval time.Duration) (map[string]any, error) {
+	for {
+		// The Host Agent's modern transport binds the task identifier to
+		// Mcp-Name for tasks/get, just as tools/call binds the tool name.
+		statusResult, err := c.Call(ctx, "tasks/get", taskID, map[string]any{"taskId": taskID})
+		if err != nil {
+			return nil, fmt.Errorf("get host task %s: %w", taskID, err)
+		}
+		status, _ := statusResult["status"].(string)
+		switch strings.ToLower(strings.TrimSpace(status)) {
+		case "completed":
+			result, ok := statusResult["result"].(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("host task %s completed without a tool result", taskID)
+			}
+			return result, nil
+		case "failed", "cancelled", "input_required":
+			return nil, fmt.Errorf("host task %s %s: %s", taskID, status, taskStatusMessage(statusResult))
+		}
+		if err := waitForTaskPoll(ctx, pollInterval); err != nil {
+			return nil, fmt.Errorf("wait for host task %s: %w", taskID, err)
+		}
+	}
+}
+
+func waitForTaskPoll(ctx context.Context, interval time.Duration) error {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func taskStatusMessage(result map[string]any) string {
+	if message, ok := result["statusMessage"].(string); ok && strings.TrimSpace(message) != "" {
+		return strings.TrimSpace(message)
+	}
+	if detail, ok := result["error"].(map[string]any); ok {
+		if message, ok := detail["message"].(string); ok && strings.TrimSpace(message) != "" {
+			return strings.TrimSpace(message)
+		}
+	}
+	return "no diagnostic"
 }
 
 func (c Client) version() string {

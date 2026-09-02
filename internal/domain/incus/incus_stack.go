@@ -135,7 +135,7 @@ func validateResetInventoryOwnership(inventory []ResetIncusInventoryItem, instan
 }
 
 // verifyResetIncusStack probes the post-reinstall Incus runtime state: the
-// default storage pool, the incusbr0 bridge, and the default-profile root
+// default storage pool, the owned bridge, and the default-profile root
 // disk. The reset is not evidence-complete until all three invariants hold.
 func (s *Service) verifyResetIncusStack() (map[string]any, error) {
 	storage, err := s.commandRunner([]string{"storage", "list", "--format", "json"}, nil, defaultDiscoveryTimeout)
@@ -147,7 +147,11 @@ func (s *Service) verifyResetIncusStack() (map[string]any, error) {
 	if err != nil || network.ExitCode != 0 {
 		return nil, errors.New(textutil.FirstNonEmpty(network.Stderr, network.Stdout, textutil.ErrString(err, "verify Incus networks failed")))
 	}
-	bridgeReady := strings.Contains(network.Stdout, `"name":"incusbr0"`)
+	networkName := strings.TrimSpace(s.shared.IncusNetworkName)
+	if networkName == "" {
+		networkName = "incusbr0"
+	}
+	bridgeReady := strings.Contains(network.Stdout, fmt.Sprintf(`"name":"%s"`, networkName))
 	profile, err := s.commandRunner([]string{"profile", "device", "show", "default"}, nil, defaultDiscoveryTimeout)
 	if err != nil || profile.ExitCode != 0 {
 		return nil, errors.New(textutil.FirstNonEmpty(profile.Stderr, profile.Stdout, textutil.ErrString(err, "verify Incus default profile failed")))
@@ -155,7 +159,7 @@ func (s *Service) verifyResetIncusStack() (map[string]any, error) {
 	profileReady := strings.Contains(profile.Stdout, "root:")
 	verified := poolReady && bridgeReady && profileReady
 	if !verified {
-		return nil, errors.New("Incus runtime verification failed after reset: default pool, incusbr0, or default-profile root disk missing")
+		return nil, fmt.Errorf("Incus runtime verification failed after reset: default pool, %s, or default-profile root disk missing", networkName)
 	}
 	return map[string]any{
 		"poolReady":    poolReady,
