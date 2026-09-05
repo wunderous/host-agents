@@ -13,9 +13,8 @@ import (
 )
 
 const (
-	defaultDedicatedTunnelName = "opute-harness-opute-io"
-	platformTunnelName         = "opute-platform-opute-io"
-	cloudflareAPIDefaultBase   = "https://api.cloudflare.com/client/v4"
+	platformTunnelName       = "opute-platform-opute-io"
+	cloudflareAPIDefaultBase = "https://api.cloudflare.com/client/v4"
 )
 
 var platformHostnames = map[string]struct{}{
@@ -60,8 +59,16 @@ type cloudflareIngressRule struct {
 	OriginRequest map[string]any `json:"originRequest,omitempty"`
 }
 
+// dedicatedTunnelName deliberately has no fallback. A dedicated tunnel owns
+// its whole ingress: ensureDedicatedTunnel replaces the rule list with the one
+// hostname it was asked for. A default name therefore does not produce a
+// harmless extra tunnel - it silently redirects the request at whichever
+// tunnel carries that name and evicts the hostname already published there.
+// That is how harness.opute.io lost its route to a host-exposure connector
+// call that omitted tunnelName. An absent name is a caller defect, and
+// refusePlatformTunnelName reports it as one.
 func dedicatedTunnelName(args map[string]any) string {
-	return firstNonEmpty(stringInput(args, "tunnelName", ""), defaultDedicatedTunnelName)
+	return strings.TrimSpace(stringInput(args, "tunnelName", ""))
 }
 
 func refusePlatformTunnelName(name string) error {
@@ -236,6 +243,49 @@ func unpublishDedicatedTunnel(ctx context.Context, args map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// probeTunnelRouting reports the hostnames the named tunnel actually serves.
+// Nothing else in this capability observes the route itself: a token file on
+// disk and a healthy local listener both stay perfectly green while the
+// tunnel's ingress has been rewritten to somebody else's hostname, which is
+// exactly the drift that took harness.opute.io down to the catch-all 404
+// while every other signal still read as ready. Confirmation is required -
+// a configuration this call cannot read reports routed=false rather than
+// assuming the route survived.
+func probeTunnelRouting(ctx context.Context, args map[string]any, hostnames []string) (routedHostnames []string, routed bool, tunnelID string) {
+	tunnelName := dedicatedTunnelName(args)
+	if tunnelName == "" || len(hostnames) == 0 {
+		return nil, false, ""
+	}
+	accountID, _, apiToken, err := cloudflareCreds()
+	if err != nil {
+		return nil, false, ""
+	}
+	tunnel, err := findCloudflareTunnelByName(ctx, apiToken, accountID, tunnelName)
+	if err != nil || tunnel == nil {
+		return nil, false, ""
+	}
+	rules, err := cloudflareTunnelIngress(ctx, apiToken, accountID, tunnel.ID)
+	if err != nil {
+		return nil, false, tunnel.ID
+	}
+	served := map[string]struct{}{}
+	for _, rule := range rules {
+		name := strings.ToLower(strings.TrimSpace(rule.Hostname))
+		if name == "" {
+			continue
+		}
+		served[name] = struct{}{}
+		routedHostnames = append(routedHostnames, name)
+	}
+	routed = true
+	for _, hostname := range hostnames {
+		if _, ok := served[strings.ToLower(strings.TrimSpace(hostname))]; !ok {
+			routed = false
+		}
+	}
+	return routedHostnames, routed, tunnel.ID
 }
 
 func refusePlatformIngressMustLoad(ctx context.Context, apiToken, accountID, tunnelID string) error {

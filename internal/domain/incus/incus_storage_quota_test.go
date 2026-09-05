@@ -96,6 +96,34 @@ func TestPoolEnforcesQuota(t *testing.T) {
 	}
 }
 
+// A caller must be able to learn that a root disk size would be refused
+// without provisioning a guest to find out.
+func TestDescribeRootDiskQuotaSupportIsReadableBeforeProvisioning(t *testing.T) {
+	withProcMounts(t, "/dev/sda1 / ext4 rw,relatime 0 0\n")
+	support, err := stubQuotaService(t, "dir", "/var/lib/incus/storage-pools/default").DescribeRootDiskQuotaSupport()
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	if support.Enforced {
+		t.Fatal("dir pool without project quotas must not be reported as enforcing")
+	}
+	if support.Pool != "default" || support.Driver != "dir" {
+		t.Fatalf("support must name the pool a guest would land on, got %+v", support)
+	}
+	if !strings.Contains(support.Reason, "prjquota") {
+		t.Fatalf("support must explain the refusal a provision would hit, got %q", support.Reason)
+	}
+
+	withProcMounts(t, "/dev/sda1 / ext4 rw,relatime 0 0\n/dev/sdb1 /quota ext4 rw,prjquota 0 0\n")
+	enforcing, err := stubQuotaService(t, "dir", "/quota/pools/default").DescribeRootDiskQuotaSupport()
+	if err != nil {
+		t.Fatalf("describe enforcing: %v", err)
+	}
+	if !enforcing.Enforced || enforcing.Reason != "" {
+		t.Fatalf("a quota-capable pool must report an enforceable bound, got %+v", enforcing)
+	}
+}
+
 // stubQuotaService answers the two Incus queries admission performs: the
 // default profile (for the root pool) and the pool record itself.
 func stubQuotaService(t *testing.T, driver, source string) *Service {

@@ -341,7 +341,6 @@ var capabilityEffects = map[string]string{
 	"register_kubernetes_cluster":   "mutation",
 	"configure_network":             "mutation",
 	"install_provider_tools":        "mutation",
-	"exec_kubernetes_command":       "mutation",
 	"stream_vm_console":             "mutation",
 	"send_console_input":            "mutation",
 	"resize_console":                "mutation",

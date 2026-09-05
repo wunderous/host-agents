@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/wunderous/host-agents/internal/contract/vminfo"
 	"github.com/wunderous/host-agents/internal/textutil"
 )
 
@@ -192,6 +193,29 @@ func (s *Service) resolveRootDiskPool() (string, error) {
 	return s.resolveDefaultStoragePool()
 }
 
+// RootDiskQuotaSupport lives in internal/contract/vminfo for the same reason
+// VMInventoryCapacity does: incus resolves it, and the host domain reports it.
+type RootDiskQuotaSupport = vminfo.RootDiskQuotaSupport
+
+// DescribeRootDiskQuotaSupport resolves the pool a new instance would land on
+// and reports whether a root disk size on it would be enforced.
+func (s *Service) DescribeRootDiskQuotaSupport() (*RootDiskQuotaSupport, error) {
+	poolName, err := s.resolveRootDiskPool()
+	if err != nil {
+		return nil, err
+	}
+	pool, err := s.readIncusStoragePool(poolName)
+	if err != nil {
+		return nil, err
+	}
+	var mounts []mountEntry
+	if data, readErr := os.ReadFile(procMountsPath); readErr == nil {
+		mounts = parseProcMounts(data)
+	}
+	enforced, reason := poolEnforcesQuota(pool, mounts)
+	return &RootDiskQuotaSupport{Pool: pool.Name, Driver: pool.Driver, Enforced: enforced, Reason: reason}, nil
+}
+
 // admitRootDiskQuota decides whether requested can be applied as a real bound.
 //
 // An explicitly requested quota that cannot be enforced fails closed: silently
@@ -203,20 +227,12 @@ func (s *Service) admitRootDiskQuota(requested string, explicit bool) (rootDiskQ
 	if requested == "" {
 		return rootDiskQuota{}, nil
 	}
-	poolName, err := s.resolveRootDiskPool()
+	support, err := s.DescribeRootDiskQuotaSupport()
 	if err != nil {
 		return rootDiskQuota{}, err
 	}
-	pool, err := s.readIncusStoragePool(poolName)
-	if err != nil {
-		return rootDiskQuota{}, err
-	}
-	var mounts []mountEntry
-	if data, readErr := os.ReadFile(procMountsPath); readErr == nil {
-		mounts = parseProcMounts(data)
-	}
-	enforced, reason := poolEnforcesQuota(pool, mounts)
-	quota := rootDiskQuota{Pool: pool.Name, Driver: pool.Driver, Enforced: enforced, Reason: reason}
+	enforced, reason := support.Enforced, support.Reason
+	quota := rootDiskQuota{Pool: support.Pool, Driver: support.Driver, Enforced: enforced, Reason: reason}
 	if enforced {
 		quota.Size = requested
 		return quota, nil

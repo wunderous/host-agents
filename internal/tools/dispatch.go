@@ -200,6 +200,11 @@ func stringField(args map[string]any, key string) string {
 	return strings.TrimSpace(v)
 }
 
+func rawStringField(args map[string]any, key string) string {
+	v, _ := args[key].(string)
+	return v
+}
+
 func postgresqlServiceRelayArgs(args map[string]any) *postgres.PostgreSQLServiceRelayArgs {
 	raw, ok := args["localRelay"].(map[string]any)
 	if !ok || raw == nil {

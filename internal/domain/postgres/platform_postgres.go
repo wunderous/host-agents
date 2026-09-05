@@ -16,14 +16,18 @@ import (
 const (
 	postgresqlServiceOperatorRelease   = "cloudnativepg"
 	postgresqlServiceOperatorNamespace = "cnpg-system"
-	postgresqlServiceStorageSize       = "10Gi"
-	postgresqlServicePort              = 5432
-	postgresqlServiceReadinessTimeout  = 15 * time.Minute
+	// The legacy :16 rolling tag is a Debian bullseye image. Bullseye left
+	// CloudNativePG's supported window on 2026-08-31, so a pod restart can
+	// otherwise turn an existing healthy database into a clean shutdown.
+	postgresqlOperandImageName        = "ghcr.io/cloudnative-pg/postgresql:16-minimal-trixie"
+	postgresqlServiceStorageSize      = "10Gi"
+	postgresqlServicePort             = 5432
+	postgresqlServiceReadinessTimeout = 15 * time.Minute
 	// The platform cell deliberately runs inside a 2 GiB system-container
 	// budget on constrained development hosts. Keep the database's process and
 	// probe budgets explicit so reclaim pressure cannot turn a transiently
 	// delayed health check into a clean-but-repeated primary shutdown.
-	postgresqlServiceResourceProfile = "constrained-2GiB-v2"
+	postgresqlServiceResourceProfile = "constrained-2GiB-v3"
 )
 
 // PostgreSQLServiceArgs is the versioned host-agent input for the platform
@@ -257,12 +261,20 @@ spec:
       enabled: false
     config:
       maxConcurrentReconciles: 1
+    webhook:
+      livenessProbe:
+        initialDelaySeconds: 30
+      readinessProbe:
+        initialDelaySeconds: 30
+      startupProbe:
+        failureThreshold: 24
+        periodSeconds: 5
     resources:
       requests:
-        cpu: 10m
+        cpu: 25m
         memory: 32Mi
       limits:
-        cpu: 250m
+        cpu: 500m
         memory: 128Mi
 `
 }
@@ -291,7 +303,7 @@ metadata:
     app.kubernetes.io/managed-by: host-agent
 spec:
   instances: %d
-  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  imageName: %s
   postgresql:
     parameters:
       max_connections: "40"
@@ -344,7 +356,7 @@ spec:
       encoding: UTF8
       localeCType: C
       localeCollate: C
-`, spec.ClusterName, spec.Namespace, retentionAnnotation, spec.RetentionPolicy, postgresqlServiceResourceProfile, spec.ServicePartOf, spec.Instances, livenessIsolationCheck, spec.ServiceOwner, spec.StorageSize, spec.StorageClass, primaryDatabase, spec.ServiceOwner)
+`, spec.ClusterName, spec.Namespace, retentionAnnotation, spec.RetentionPolicy, postgresqlServiceResourceProfile, spec.ServicePartOf, spec.Instances, postgresqlOperandImageName, livenessIsolationCheck, spec.ServiceOwner, spec.StorageSize, spec.StorageClass, primaryDatabase, spec.ServiceOwner)
 }
 
 func (s *Service) applyPostgreSQLServiceManifest(ctx context.Context, spec postgresqlServiceSpec, manifest, label string) error {
@@ -496,8 +508,11 @@ func (s *Service) postgresqlServiceOperatorConfigurationReady(ctx context.Contex
 	helmSpec, _ := helmChart["spec"].(map[string]any)
 	valuesContent, _ := helmSpec["valuesContent"].(string)
 	return strings.Contains(valuesContent, "maxConcurrentReconciles: 1") &&
+		strings.Contains(valuesContent, "initialDelaySeconds: 30") &&
+		strings.Contains(valuesContent, "failureThreshold: 24") &&
+		strings.Contains(valuesContent, "periodSeconds: 5") &&
 		strings.Contains(valuesContent, "memory: 128Mi") &&
-		strings.Contains(valuesContent, "cpu: 250m"), nil
+		strings.Contains(valuesContent, "cpu: 500m"), nil
 }
 
 func (s *Service) postgresqlServiceReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {

@@ -56,7 +56,19 @@ func ReadIdentity() (Identity, error) {
 		if context.Kind == ExecutionContextWSL {
 			guid, err := readWindowsMachineGUID()
 			if err != nil {
-				return Identity{}, fmt.Errorf("read Windows MachineGuid through WSL interop: %w", err)
+				// Interop is a per-session capability and a systemd user unit
+				// never holds a live WSL_INTEROP socket, so a permanent
+				// identity must not be lost with the session that first read
+				// it. A GUID acquired earlier under this same version and
+				// source is reused; with no such record the original
+				// fail-closed error still stands.
+				cached, ok := readCachedMachineGUID(SourceWindowsMachineGUIDViaWSL)
+				if !ok {
+					return Identity{}, fmt.Errorf("read Windows MachineGuid through WSL interop: %w", err)
+				}
+				guid = cached
+			} else {
+				writeCachedMachineGUID(SourceWindowsMachineGUIDViaWSL, guid)
 			}
 			identity := format(SourceWindowsMachineGUIDViaWSL, guid)
 			identity.ExecutionContext = context

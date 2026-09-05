@@ -64,6 +64,22 @@ func (s *Shared) CommandRunner(args []string, onData func(string), timeout time.
 	return s.Runtime.RunProvider(args, onData, timeout)
 }
 
+// CommandRunnerContext is CommandRunner with caller-owned cancellation. The
+// context crosses the typed host boundary into the provider process, allowing
+// admission to release promptly when an HTTP/MCP caller disconnects.
+func (s *Shared) CommandRunnerContext(ctx context.Context, args []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return hostexec.Result{}, err
+	}
+	if s.CommandRunnerFn != nil {
+		return s.CommandRunnerFn(args, onData, timeout)
+	}
+	return s.Runtime.RunProviderContext(ctx, args, onData, timeout)
+}
+
 // HostCommandRunner runs an argv directly on the host.
 func (s *Shared) HostCommandRunner(command []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
 	if s != nil && s.HostCommandRunnerFn != nil {

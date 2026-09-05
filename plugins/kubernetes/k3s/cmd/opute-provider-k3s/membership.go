@@ -429,26 +429,36 @@ func joinNode(ctx context.Context, args map[string]any) (*mcp.CallToolResult, er
 	if err != nil {
 		return nil, err
 	}
-	if err := installK3sServer(ctx, instance, version, installExec, address, token); err != nil {
-		return nil, fmt.Errorf("join K3s server: %w", err)
+	// The installer's exit status is a report about one attempt, not about the
+	// cluster. A first-start etcd join legitimately loses a race with the member
+	// list it has just been added to - K3s exits fatally with "member count is
+	// unequal" - and the k3s.service restart brings it straight back and
+	// completes the join. Treating that exit as terminal fails a join that in
+	// fact succeeded, so the authority for this operation is the membership
+	// observation below. That is still strictly fail-closed: a guest that never
+	// becomes a ready member reports the installer failure it started with.
+	installErr := installK3sServer(ctx, instance, version, installExec, address, token)
+	observation, err := awaitJoinedMembership(ctx, args)
+	if err != nil {
+		if installErr != nil {
+			return nil, fmt.Errorf("join K3s server: %w", installErr)
+		}
+		return nil, fmt.Errorf("verify joined K3s server: %w", err)
 	}
 	if invitationRef != "" {
 		joinInvitations.Lock()
 		delete(joinInvitations.items, invitationRef)
 		joinInvitations.Unlock()
 	}
-	observation, err := readMembership(ctx, args)
-	if err != nil {
-		return nil, fmt.Errorf("verify joined K3s server: %w", err)
-	}
 	return structured(map[string]any{
-		"targetUri":       observation.TargetURI,
-		"joined":          true,
-		"clusterIdentity": observation.ClusterIdentity,
-		"version":         observation.Version,
-		"datastoreMode":   observation.DatastoreMode,
-		"serverCount":     observation.ServerCount,
-		"readyServers":    observation.ReadyServers,
+		"targetUri":              observation.TargetURI,
+		"joined":                 true,
+		"clusterIdentity":        observation.ClusterIdentity,
+		"version":                observation.Version,
+		"datastoreMode":          observation.DatastoreMode,
+		"serverCount":            observation.ServerCount,
+		"readyServers":           observation.ReadyServers,
+		"installerExitedNonZero": installErr != nil,
 	})
 }
 
@@ -555,15 +565,107 @@ func endpointHTTPStatusAcceptable(statusCode int) bool {
 	return (statusCode >= 200 && statusCode < 400) || statusCode == 401 || statusCode == 403
 }
 
-func removeNode(_ context.Context, args map[string]any) (*mcp.CallToolResult, error) {
-	if stringInput(args, "nodeName") == "" || stringInput(args, "role") != "server" {
+// removeNode retires a server from the source cluster. Embedded etcd keeps a
+// member entry for every server that ever joined, including one whose guest was
+// destroyed mid-join, and a dead member still counts towards quorum: the next
+// join then stalls on "unhealthy cluster". The quorum proof this operation
+// demands is therefore computed against the membership that would remain, and
+// the removal itself is the native K3s one - deleting the node object makes the
+// K3s etcd controller retire the matching etcd member.
+func removeNode(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	nodeName := stringInput(args, "nodeName")
+	if nodeName == "" || stringInput(args, "role") != "server" {
 		return nil, fmt.Errorf("remove-node requires nodeName and role=server")
 	}
-	return nil, fmt.Errorf("refusing server removal without source-cluster quorum proof")
+	observation, err := readMembership(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	if observation.DatastoreMode != "embedded-etcd" {
+		return nil, fmt.Errorf("server removal requires embedded-etcd; observed %s", observation.DatastoreMode)
+	}
+	if observation.Hostname != "" && observation.Hostname == nodeName {
+		return nil, fmt.Errorf("refusing to remove %q: it is the server this operation is executing through", nodeName)
+	}
+	member, found := findMembershipNode(observation.Nodes, nodeName)
+	if !found {
+		return nil, fmt.Errorf("node %q is not a member of the cluster at %s", nodeName, observation.TargetURI)
+	}
+	remainingServers, remainingReady, err := quorumAfterRemoval(observation, member)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := runCommand(ctx, []string{
+		"exec", stringInput(args, "providerInstanceName"), "--",
+		"k3s", "kubectl", "delete", "node", nodeName, "--wait=true",
+	}, nil); err != nil {
+		return nil, fmt.Errorf("retire K3s server %q: %w", nodeName, err)
+	}
+	after, err := readMembership(ctx, args)
+	if err != nil {
+		return nil, fmt.Errorf("read membership after retiring %q: %w", nodeName, err)
+	}
+	if _, stillPresent := findMembershipNode(after.Nodes, nodeName); stillPresent {
+		return nil, fmt.Errorf("K3s server %q is still a member after removal", nodeName)
+	}
+	if after.ReadyServers*2 <= after.ServerCount {
+		return nil, fmt.Errorf("K3s cluster lost quorum after removing %q: %d ready of %d server(s)", nodeName, after.ReadyServers, after.ServerCount)
+	}
+	return structured(map[string]any{
+		"targetUri":             after.TargetURI,
+		"clusterIdentity":       after.ClusterIdentity,
+		"removedNode":           nodeName,
+		"removedNodeWasReady":   member["ready"] == true,
+		"datastoreMode":         after.DatastoreMode,
+		"serverCountBefore":     observation.ServerCount,
+		"readyServersBefore":    observation.ReadyServers,
+		"projectedServerCount":  remainingServers,
+		"projectedReadyServers": remainingReady,
+		"serverCount":           after.ServerCount,
+		"readyServers":          after.ReadyServers,
+		"quorumRetained":        true,
+	})
+}
+
+func findMembershipNode(nodes []map[string]any, name string) (map[string]any, bool) {
+	for _, node := range nodes {
+		if candidate, _ := node["name"].(string); candidate == name {
+			return node, true
+		}
+	}
+	return nil, false
+}
+
+// quorumAfterRemoval refuses the removal unless the servers that stay ready are
+// still a strict majority of the servers that stay members. Removing an already
+// dead member relaxes the arithmetic rather than tightening it, which is what
+// makes clearing a failed join possible without weakening the guard.
+func quorumAfterRemoval(observation membershipObservation, member map[string]any) (int, int, error) {
+	remainingServers := observation.ServerCount - 1
+	remainingReady := observation.ReadyServers
+	if member["ready"] == true {
+		remainingReady--
+	}
+	if remainingServers < 1 {
+		return 0, 0, fmt.Errorf("refusing server removal without source-cluster quorum proof: it is the last server of the cluster")
+	}
+	if remainingReady*2 <= remainingServers {
+		return 0, 0, fmt.Errorf(
+			"refusing server removal without source-cluster quorum proof: removal would leave %d ready of %d server(s)",
+			remainingReady, remainingServers)
+	}
+	return remainingServers, remainingReady, nil
 }
 
 func readMembership(ctx context.Context, args map[string]any) (membershipObservation, error) {
-	if err := requireTarget(args); err != nil {
+	return readMembershipForTarget(ctx, args, requireTarget)
+}
+
+// readMembershipForTarget reads the same observation under the target guard the
+// caller is entitled to: cluster-bound operations keep the canonical cluster
+// URI requirement, while join-node reads back the guest it just promoted.
+func readMembershipForTarget(ctx context.Context, args map[string]any, requireTargetShape func(map[string]any) error) (membershipObservation, error) {
+	if err := requireTargetShape(args); err != nil {
 		return membershipObservation{}, err
 	}
 	instance := stringInput(args, "providerInstanceName")
@@ -707,4 +809,227 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// Overridable so tests can exercise the polling loop without waiting on it.
+var (
+	joinMembershipTimeout      = 10 * time.Minute
+	joinMembershipPollInterval = 5 * time.Second
+)
+
+// awaitJoinedMembership holds join-node open until the server it just installed
+// is actually a ready member of the cluster it joined. The K3s installer returns
+// as soon as the unit is up, minutes before the new server has registered its
+// Node object and finished its first etcd sync, so an observation taken straight
+// afterwards can legitimately show the joining node absent - or show a
+// single-server cluster, because the local apiserver is answering from a
+// datastore it has not yet caught up with. Reporting joined=true at that point
+// pushes the failure onto whatever verifies membership next, which is where the
+// cause stops being visible.
+func awaitJoinedMembership(ctx context.Context, args map[string]any) (membershipObservation, error) {
+	deadline := time.Now().Add(joinMembershipTimeout)
+	var observation membershipObservation
+	var lastErr error
+	for {
+		observation, lastErr = readMembershipForTarget(ctx, args, requireProvisionTarget)
+		if lastErr == nil && joinedMembershipSettled(observation) {
+			return observation, nil
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return membershipObservation{}, ctx.Err()
+		case <-time.After(joinMembershipPollInterval):
+		}
+	}
+	if lastErr != nil {
+		return membershipObservation{}, fmt.Errorf("joined K3s server did not become a ready member within %s: %w", joinMembershipTimeout, lastErr)
+	}
+	return membershipObservation{}, fmt.Errorf(
+		"joined K3s server %q did not become a ready member within %s: %d ready of %d server(s)",
+		observation.Hostname, joinMembershipTimeout, observation.ReadyServers, observation.ServerCount,
+	)
+}
+
+// joinedMembershipSettled is deliberately expressed against the joining node
+// itself rather than a server count: a count can be satisfied by the servers
+// that were already there, which is exactly the observation a premature read
+// produces.
+func joinedMembershipSettled(observation membershipObservation) bool {
+	if observation.Hostname == "" || observation.ServerCount < 2 {
+		return false
+	}
+	node, found := findMembershipNode(observation.Nodes, observation.Hostname)
+	return found && node["ready"] == true
+}
+
+const (
+	quorumLossProbeWindow      = 90 * time.Second
+	quorumLossProbeInterval    = 10 * time.Second
+	quorumResetTimeout         = 15 * time.Minute
+	quorumRecoveryTimeout      = 10 * time.Minute
+	quorumRecoveryPollInterval = 5 * time.Second
+)
+
+// recoverQuorum restores a single-server etcd majority for a cluster whose
+// embedded etcd has permanently lost the peers it needs to elect a leader.
+//
+// remove-node is the operation that retires a departed server, and its own
+// documentation names this exact case. It cannot run here: it reads membership
+// through the API server first, and an embedded-etcd cluster without quorum
+// never serves that read. A two-server cluster whose second guest was destroyed
+// is therefore wedged behind the very repair that exists to unwedge it - the
+// surviving server restarts elections forever and every membership call fails
+// with ServiceUnavailable. K3s' supported recovery for that state is
+// `k3s server --cluster-reset`, which rewrites the member list to the local
+// member alone while keeping the datastore contents, after which remove-node,
+// prepare-ha and join-node all become reachable again.
+//
+// Collapsing the member list is irreversible, so this is fail-closed on proof
+// that the cluster is genuinely wedged rather than merely slow: the datastore
+// must be embedded etcd, observed from the guest filesystem because that is the
+// one membership fact still readable without an API server; the API server must
+// stay unreachable across a settling window rather than for a single probe; and
+// the caller must acknowledge the collapse to one member explicitly. A cluster
+// that answers even once during the window is left untouched and the caller is
+// pointed at remove-node, which is the non-destructive operation for a cluster
+// that still has a majority.
+func recoverQuorum(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	instance := stringInput(args, "providerInstanceName")
+	acknowledged := boolInput(args, "acknowledgeSingleMemberReset")
+
+	_, etcdErr := runCommand(ctx, []string{"exec", instance, "--", "test", "-d", "/var/lib/rancher/k3s/server/db/etcd/member"}, nil)
+	embeddedEtcd := etcdErr == nil
+
+	// Probe across a window rather than once: an API server that is merely
+	// starting, or a guest under momentary load, answers late but does answer,
+	// and resetting that cluster would destroy a healthy majority.
+	apiServerAnswered, probes, lastProbeErr := probeAPIServerDuringWindow(ctx, instance)
+
+	if err := quorumRecoveryAdmissible(embeddedEtcd, apiServerAnswered, acknowledged); err != nil {
+		return nil, err
+	}
+
+	hostnameOutput, _ := runCommand(ctx, []string{"exec", instance, "--", "hostname"}, nil)
+	survivor := strings.TrimSpace(string(hostnameOutput))
+
+	if _, err := runCommand(ctx, []string{"exec", instance, "--", "systemctl", "stop", "k3s"}, nil); err != nil {
+		return nil, fmt.Errorf("stop K3s before cluster reset on %q: %w", instance, err)
+	}
+	resetCtx, cancelReset := context.WithTimeout(ctx, quorumResetTimeout)
+	defer cancelReset()
+	if _, err := runCommand(resetCtx, []string{"exec", instance, "--", "k3s", "server", "--cluster-reset"}, nil); err != nil {
+		// Leave the unit stopped rather than starting a server whose datastore
+		// may be half-rewritten; the operator needs the original error, not a
+		// second failure layered on top of it.
+		return nil, fmt.Errorf("reset K3s etcd membership on %q: %w", instance, err)
+	}
+	if _, err := runCommand(ctx, []string{"exec", instance, "--", "systemctl", "start", "k3s"}, nil); err != nil {
+		return nil, fmt.Errorf("start K3s after cluster reset on %q: %w", instance, err)
+	}
+
+	observation, err := awaitRecoveredMembership(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	if observation.DatastoreMode != "embedded-etcd" {
+		return nil, fmt.Errorf("K3s datastore is %s after cluster reset; expected embedded-etcd", observation.DatastoreMode)
+	}
+	return structured(map[string]any{
+		"targetUri":         observation.TargetURI,
+		"clusterIdentity":   observation.ClusterIdentity,
+		"datastoreMode":     observation.DatastoreMode,
+		"recoveredServer":   survivor,
+		"serverCount":       observation.ServerCount,
+		"readyServers":      observation.ReadyServers,
+		"quorumRestored":    true,
+		"unreachableProbes": probes,
+		"lastProbeError":    lastProbeErr,
+		"nodes":             observation.Nodes,
+	})
+}
+
+// probeAPIServerDuringWindow reports whether the guest's API server served the
+// membership read at any point in the settling window. It issues the same
+// `kubectl get nodes` call readMembership depends on, so a false result means
+// precisely "membership is unreadable" rather than some weaker liveness signal.
+func probeAPIServerDuringWindow(ctx context.Context, instance string) (bool, int, string) {
+	deadline := time.Now().Add(quorumLossProbeWindow)
+	probes := 0
+	lastErr := ""
+	for {
+		probes++
+		if _, err := runCommand(ctx, []string{"exec", instance, "--", "k3s", "kubectl", "get", "nodes", "-o", "json"}, nil); err == nil {
+			return true, probes, ""
+		} else {
+			lastErr = truncateProbeError(err.Error())
+		}
+		if time.Now().After(deadline) {
+			return false, probes, lastErr
+		}
+		select {
+		case <-ctx.Done():
+			return false, probes, lastErr
+		case <-time.After(quorumLossProbeInterval):
+		}
+	}
+}
+
+func truncateProbeError(message string) string {
+	message = strings.TrimSpace(message)
+	if len(message) > 512 {
+		return message[:512]
+	}
+	return message
+}
+
+// quorumRecoveryAdmissible carries the whole admission policy for a cluster
+// reset so it can be exercised without a guest. Every condition is a refusal
+// rather than a warning: the operation destroys cluster topology, so an
+// unproven precondition has to fail closed.
+func quorumRecoveryAdmissible(embeddedEtcd bool, apiServerAnswered bool, acknowledged bool) error {
+	if !acknowledged {
+		return fmt.Errorf("recover-quorum requires acknowledgeSingleMemberReset=true: the reset collapses etcd membership to the surviving server")
+	}
+	if !embeddedEtcd {
+		return fmt.Errorf("recover-quorum requires embedded-etcd: no etcd member directory is present on the guest")
+	}
+	if apiServerAnswered {
+		return fmt.Errorf("refusing cluster reset: the K3s API server served membership within %s, so the cluster has quorum; use remove-node to retire a departed server", quorumLossProbeWindow)
+	}
+	return nil
+}
+
+// awaitRecoveredMembership holds the operation open until the reset server is a
+// ready member of its own restored cluster. A reset returns as soon as the unit
+// restarts, well before the API server has finished electing itself and
+// registering its Node object, so an observation taken straight afterwards would
+// report the same ServiceUnavailable this operation exists to clear.
+func awaitRecoveredMembership(ctx context.Context, args map[string]any) (membershipObservation, error) {
+	deadline := time.Now().Add(quorumRecoveryTimeout)
+	var observation membershipObservation
+	var lastErr error
+	for {
+		observation, lastErr = readMembership(ctx, args)
+		if lastErr == nil && observation.ServerCount >= 1 && observation.ReadyServers*2 > observation.ServerCount {
+			return observation, nil
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return membershipObservation{}, ctx.Err()
+		case <-time.After(quorumRecoveryPollInterval):
+		}
+	}
+	if lastErr != nil {
+		return membershipObservation{}, fmt.Errorf("K3s did not regain a readable majority within %s after cluster reset: %w", quorumRecoveryTimeout, lastErr)
+	}
+	return membershipObservation{}, fmt.Errorf(
+		"K3s did not regain a majority within %s after cluster reset: %d ready of %d server(s)",
+		quorumRecoveryTimeout, observation.ReadyServers, observation.ServerCount,
+	)
 }

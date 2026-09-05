@@ -26,8 +26,9 @@ type HostInfoResult struct {
 	LXCBinaryPath  string                      `json:"lxcBinaryPath"`
 	SystemctlPath  string                      `json:"systemctlPath"`
 	SupportedTools []string                    `json:"supportedTools"`
-	Capacity       *vminfo.VMInventoryCapacity `json:"capacity,omitempty"`
-	System         map[string]any              `json:"system,omitempty"`
+	Capacity       *vminfo.VMInventoryCapacity  `json:"capacity,omitempty"`
+	RootDiskQuota  *vminfo.RootDiskQuotaSupport `json:"rootDiskQuota,omitempty"`
+	System         map[string]any               `json:"system,omitempty"`
 }
 
 // BridgeDiagnosticResult is returned by DiagnoseBridge.

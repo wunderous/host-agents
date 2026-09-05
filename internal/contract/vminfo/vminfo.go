@@ -27,6 +27,18 @@ type VMInventoryCapacity struct {
 	TotalContainerCount       int   `json:"totalContainerCount"`
 }
 
+// RootDiskQuotaSupport reports whether a root disk size requested at
+// provisioning time would be a real bound on this host. Enforcement is a
+// property of the storage pool, so incus resolves it and the host description
+// carries it: a caller reads the constraint here instead of discovering it
+// from a rejected launch.
+type RootDiskQuotaSupport struct {
+	Pool     string `json:"pool"`
+	Driver   string `json:"driver"`
+	Enforced bool   `json:"enforced"`
+	Reason   string `json:"reason,omitempty"`
+}
+
 type VMInfo struct {
 	URI        string         `json:"uri"`
 	Kind       string         `json:"kind"`

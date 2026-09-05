@@ -216,6 +216,86 @@ func TestRefusePlatformTunnelNameAndHostname(t *testing.T) {
 	}
 }
 
+// A dedicated ensure replaces the target tunnel's whole ingress. When the
+// caller omits tunnelName there is no safe tunnel to pick: any default names
+// some other hostname's connector and evicts it. harness.opute.io was lost
+// exactly that way, so an absent name must fail before any Cloudflare
+// mutation runs, and no tunnel may be created for the request.
+func TestEnsureDedicatedTunnelRefusesAnAbsentTunnelName(t *testing.T) {
+	fake := newFakeCloudflare()
+	withFakeCloudflare(t, fake)
+	for _, name := range []any{nil, "", "   "} {
+		args := map[string]any{
+			"hostname":    "wsl-ha-example.opute.io",
+			"localTarget": "http://10.0.200.1:3005",
+		}
+		if name != nil {
+			args["tunnelName"] = name
+		}
+		if _, err := ensureDedicatedTunnel(t.Context(), args); err == nil || !strings.Contains(err.Error(), "tunnelName is required") {
+			t.Fatalf("expected tunnelName refusal for %#v, got %v", name, err)
+		}
+	}
+	fake.mu.Lock()
+	tunnels := len(fake.tunnels)
+	fake.mu.Unlock()
+	if tunnels != 0 {
+		t.Fatalf("expected no tunnel to be created, got %d", tunnels)
+	}
+	if err := unpublishDedicatedTunnel(t.Context(), map[string]any{
+		"hostname": "wsl-ha-example.opute.io",
+	}); err == nil || !strings.Contains(err.Error(), "tunnelName is required") {
+		t.Fatalf("expected tunnelName refusal during unpublish, got %v", err)
+	}
+}
+
+// The route is the only thing that goes wrong silently here. A local
+// listener, a token file and a connected cloudflared all stay healthy when
+// another binding rewrites the tunnel's ingress, so the capability has to
+// report the hostnames the tunnel actually serves.
+func TestProbeTunnelRoutingDetectsIngressTakeover(t *testing.T) {
+	fake := newFakeCloudflare()
+	withFakeCloudflare(t, fake)
+	harness := map[string]any{
+		"hostname":    "harness.opute.io",
+		"localTarget": "http://127.0.0.1:3080",
+		"tunnelName":  "opute-harness-opute-io",
+	}
+	if _, err := ensureDedicatedTunnel(t.Context(), harness); err != nil {
+		t.Fatalf("ensure harness tunnel: %v", err)
+	}
+	if _, routed, tunnelID := probeTunnelRouting(t.Context(), harness, []string{"harness.opute.io"}); !routed || tunnelID == "" {
+		t.Fatalf("expected the published hostname to read as routed, got routed=%v tunnelID=%q", routed, tunnelID)
+	}
+
+	// A second binding names the same tunnel and replaces its ingress.
+	if _, err := ensureDedicatedTunnel(t.Context(), map[string]any{
+		"hostname":    "wsl-ha-example.opute.io",
+		"localTarget": "http://10.0.200.1:3005",
+		"tunnelName":  "opute-harness-opute-io",
+	}); err != nil {
+		t.Fatalf("ensure second tunnel binding: %v", err)
+	}
+	routedHostnames, routed, tunnelID := probeTunnelRouting(t.Context(), harness, []string{"harness.opute.io"})
+	if routed {
+		t.Fatal("expected the evicted hostname to read as not routed")
+	}
+	if tunnelID == "" {
+		t.Fatal("expected the probe to still identify the tunnel")
+	}
+	if len(routedHostnames) != 1 || routedHostnames[0] != "wsl-ha-example.opute.io" {
+		t.Fatalf("expected the takeover hostname to be reported, got %v", routedHostnames)
+	}
+
+	// A tunnel that does not exist cannot be confirmed, so it is not routed.
+	if _, routed, _ := probeTunnelRouting(t.Context(), map[string]any{
+		"hostname":   "harness.opute.io",
+		"tunnelName": "opute-missing-tunnel",
+	}, []string{"harness.opute.io"}); routed {
+		t.Fatal("expected an unknown tunnel to read as not routed")
+	}
+}
+
 func TestRefuseCNAMEPointingAtPlatformTunnel(t *testing.T) {
 	fake := newFakeCloudflare()
 	withFakeCloudflare(t, fake)

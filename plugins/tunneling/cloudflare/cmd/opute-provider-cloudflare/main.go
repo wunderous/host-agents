@@ -458,6 +458,7 @@ func probeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 		return nil, err
 	}
 	hostnames := hostnamesFromArgs(args)
+	routedHostnames, routed, tunnelID := probeTunnelRouting(ctx, args, hostnames)
 	probes := []any{result.StructuredContent}
 	ready := !result.IsError
 	for _, hostname := range hostnames {
@@ -477,6 +478,12 @@ func probeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 		"placement":       firstNonEmpty(stringInput(args, "placement", ""), "host"),
 		"hostname":        stringInput(args, "hostname", ""),
 		"hostnames":       hostnames,
+		// routed is about the tunnel's configuration, not about whether the
+		// connector happens to be up, so a recipe can assert the route
+		// immediately after publishing it and before cloudflared reconnects.
+		"routed":          routed,
+		"routedHostnames": routedHostnames,
+		"tunnelId":        tunnelID,
 		"probe":           probes,
 	})
 }

@@ -1,6 +1,7 @@
 package host
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -35,6 +36,20 @@ type RunInstanceCommandArgs struct {
 }
 
 func (s *Service) RunInstanceCommand(args RunInstanceCommandArgs, onData func(string)) (map[string]any, error) {
+	return s.RunInstanceCommandContext(context.Background(), args, onData)
+}
+
+// RunInstanceCommandContext executes an instance command with the caller's
+// cancellation. This is important for request-scoped probes: the admission
+// reservation belongs to the provider operation and must be released when the
+// MCP request goes away, not only when the provider timeout expires.
+func (s *Service) RunInstanceCommandContext(ctx context.Context, args RunInstanceCommandArgs, onData func(string)) (map[string]any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	uri, err := s.deps.ResolveResource(strings.TrimSpace(args.URI), "")
 	if err != nil {
 		return nil, err
@@ -57,12 +72,21 @@ func (s *Service) RunInstanceCommand(args RunInstanceCommandArgs, onData func(st
 	argv := append([]string{command}, args.Args...)
 	var res hostexec.Result
 	if args.Stdin != "" {
-		if s.deps.RunVMExecWithStdin == nil {
+		if s.deps.RunVMExecWithStdinContext != nil {
+			res, err = s.deps.RunVMExecWithStdinContext(ctx, providerName, argv, []byte(args.Stdin), onData, timeout)
+		} else if s.deps.RunVMExecWithStdin != nil {
+			res, err = s.deps.RunVMExecWithStdin(providerName, argv, []byte(args.Stdin), onData, timeout)
+		} else {
 			return nil, fmt.Errorf("instance command stdin is unavailable")
 		}
-		res, err = s.deps.RunVMExecWithStdin(providerName, argv, []byte(args.Stdin), onData, timeout)
 	} else {
-		res, err = s.deps.RunVMExec(providerName, argv, onData, timeout)
+		if s.deps.RunVMExecContext != nil {
+			res, err = s.deps.RunVMExecContext(ctx, providerName, argv, onData, timeout)
+		} else if s.deps.RunVMExec != nil {
+			res, err = s.deps.RunVMExec(providerName, argv, onData, timeout)
+		} else {
+			return nil, fmt.Errorf("instance command execution is unavailable")
+		}
 	}
 	if err != nil {
 		return nil, err

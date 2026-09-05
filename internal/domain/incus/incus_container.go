@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wunderous/host-agents/internal/contract/vminfo"
 	"github.com/wunderous/host-agents/internal/fsutil"
 	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/internal/textutil"
@@ -38,6 +39,12 @@ type ContainerStatusResult struct {
 	Status        string `json:"status"`
 	InstanceType  string `json:"instanceType"`
 }
+
+// Overridable so tests can exercise the polling loop without waiting on it.
+var (
+	containerAddressTimeout      = 3 * time.Minute
+	containerAddressPollInterval = 3 * time.Second
+)
 
 func (s *Service) ProvisionContainer(args ProvisionContainerArgs, onData func(string)) (ContainerStatusResult, error) {
 	name := strings.TrimSpace(args.ContainerName)
@@ -113,6 +120,9 @@ func (s *Service) ProvisionContainer(args ProvisionContainerArgs, onData func(st
 				return ContainerStatusResult{}, err
 			}
 		}
+		if err := s.awaitContainerIPv4(name, onData); err != nil {
+			return ContainerStatusResult{}, err
+		}
 		return s.containerStatusResult(name, image, "running"), nil
 	}
 	requestedDisk := strings.TrimSpace(args.Disk)
@@ -160,7 +170,40 @@ func (s *Service) ProvisionContainer(args ProvisionContainerArgs, onData func(st
 			return ContainerStatusResult{}, err
 		}
 	}
+	if err := s.awaitContainerIPv4(name, onData); err != nil {
+		return ContainerStatusResult{}, err
+	}
 	return s.containerStatusResult(name, image, "running"), nil
+}
+
+// awaitContainerIPv4 holds provisioning open until the guest has actually been
+// given an address. incus reports a container as Running the moment its init
+// starts, well before DHCP completes, so a caller that reads the instance
+// straight after provisioning can legitimately observe an empty address list
+// and only discover the gap much later, when whatever it wired that address
+// into fails. Reporting a container as provisioned before it is addressable is
+// what makes that failure remote from its cause.
+func (s *Service) awaitContainerIPv4(name string, onData func(string)) error {
+	deadline := time.Now().Add(containerAddressTimeout)
+	var lastErr error
+	for {
+		addresses, err := s.readIncusInstanceIPv4(name)
+		if err == nil && len(vminfo.NormalizeClusterIPv4(addresses)) > 0 {
+			return nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			break
+		}
+		if onData != nil {
+			onData(fmt.Sprintf("Waiting for container %q to obtain an IPv4 address...", name))
+		}
+		time.Sleep(containerAddressPollInterval)
+	}
+	if lastErr != nil {
+		return fmt.Errorf("container %q did not obtain an IPv4 address within %s: %w", name, containerAddressTimeout, lastErr)
+	}
+	return fmt.Errorf("container %q did not obtain an IPv4 address within %s", name, containerAddressTimeout)
 }
 
 func (s *Service) containerStatusResult(name, image, status string) ContainerStatusResult {

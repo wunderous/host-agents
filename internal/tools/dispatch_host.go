@@ -40,11 +40,11 @@ func init() {
 
 func init() {
 	register(toolname.RunInstanceCommand, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.Host().RunInstanceCommand(host.RunInstanceCommandArgs{
+		out, err := svc.Host().RunInstanceCommandContext(ctx, host.RunInstanceCommandArgs{
 			URI:       stringField(args, "uri"),
 			Command:   stringField(args, "command"),
 			Args:      stringSliceField(args, "args"),
-			Stdin:     stringField(args, "stdin"),
+			Stdin:     rawStringField(args, "stdin"),
 			TimeoutMs: intField(args, "timeoutMs"),
 		}, onData)
 		if err != nil {
@@ -160,7 +160,7 @@ func init() {
 
 func init() {
 	register(toolname.EnsureHostFile, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.Host().EnsureHostFile(host.EnsureHostFileArgs{Path: stringField(args, "path"), Content: stringField(args, "content"), Mode: intField(args, "mode")})
+		out, err := svc.Host().EnsureHostFile(host.EnsureHostFileArgs{Path: stringField(args, "path"), Content: rawStringField(args, "content"), Mode: intField(args, "mode"), Scope: stringField(args, "scope")})
 		if err != nil {
 			return nil, err
 		}
@@ -200,7 +200,13 @@ func init() {
 
 func init() {
 	register(toolname.InspectHostFile, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.Host().InspectHostFile(host.InspectHostFileArgs{Path: stringField(args, "path"), ExpectedSHA256: stringField(args, "expectedSha256"), ExpectedContent: stringField(args, "expectedContent")})
+		// expectedContent is the exact bytes ensure_host_file was asked to
+		// write, and that writer takes them raw. Reading the expectation
+		// through the trimming accessor made the two disagree by construction:
+		// every managed env file, unit file and config ends in a newline, so
+		// the trimmed expectation could never hash to the file on disk and
+		// inspect_host_file reported matches:false for a byte-identical file.
+		out, err := svc.Host().InspectHostFile(host.InspectHostFileArgs{Path: stringField(args, "path"), ExpectedSHA256: stringField(args, "expectedSha256"), ExpectedContent: rawStringField(args, "expectedContent")})
 		if err != nil {
 			return nil, err
 		}

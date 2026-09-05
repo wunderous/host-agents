@@ -47,6 +47,7 @@ const (
 	EnsureSQLiteDatabase          = "ensure_sqlite_database"
 	ExecCommand                   = "exec_command"
 	ExtractHostArchive            = "extract_host_archive"
+	ExecKubernetesCommand         = "exec_kubernetes_command"
 	GetClusterDetails             = "get_cluster_details"
 	GetClusterRuntimeDetails      = "get_cluster_runtime_details"
 	GetHostInfo                   = "get_host_info"
@@ -64,6 +65,7 @@ const (
 	InspectHostFile               = "inspect_host_file"
 	InspectHostService            = "inspect_host_service"
 	InstallHelmChart              = "install_helm_chart"
+	InstallClusterAgent           = "install_cluster_agent"
 	InstallIncusStack             = "install_incus_stack"
 	InstallLocalLLMModel          = "install_local_llm_model"
 	InstallOCIRegistry            = "install_oci_registry"
@@ -159,6 +161,7 @@ func All() []string {
 		EnsureSqlConnector,
 		EnsureSQLiteDatabase,
 		ExecCommand,
+		ExecKubernetesCommand,
 		ExtractHostArchive,
 		GetClusterDetails,
 		GetClusterRuntimeDetails,
@@ -177,6 +180,7 @@ func All() []string {
 		InspectHostFile,
 		InspectHostService,
 		InstallHelmChart,
+		InstallClusterAgent,
 		InstallIncusStack,
 		InstallLocalLLMModel,
 		InstallOCIRegistry,

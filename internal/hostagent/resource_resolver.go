@@ -99,6 +99,38 @@ func (s *Service) adoptResource(parsed resourceid.URI) (map[string]any, error) {
 			"displayName":          info.Name,
 			"instanceType":         info.Type,
 		}, nil
+	case resourceid.TypeCluster:
+		// A cluster only ever became addressable as a side effect of inventory
+		// discovery: ListKubernetesClusters is the sole caller that registers a
+		// cluster URI. Provisioning one therefore produced a cluster that no
+		// later capability could bind to until some unrelated discovery call
+		// happened to run, so the poll that follows a provision failed with
+		// "resource not found" against a cluster that was up and Ready.
+		//
+		// Adoption is the same ASK the VM branch makes: the Kubernetes domain is
+		// asked whether the cluster really exists, and coordinates are recorded
+		// only for one it reports. A cluster the provider does not list stays
+		// unresolved, so this adds no fail-open path.
+		result, err := s.Kubernetes().ListKubernetesClusters("")
+		if err != nil {
+			return nil, fmt.Errorf("adopt cluster %s: %w", parsed, err)
+		}
+		for _, cluster := range result.Clusters {
+			if !strings.EqualFold(strings.TrimSpace(cluster.Name), parsed.ResourceID) {
+				continue
+			}
+			vmName := strings.TrimSpace(cluster.VMName)
+			if vmName == "" {
+				vmName = cluster.Name
+			}
+			return map[string]any{
+				"providerInstanceName": cluster.Name,
+				"displayName":          cluster.Name,
+				"instanceType":         cluster.InstanceType,
+				"vmName":               vmName,
+			}, nil
+		}
+		return nil, nil
 	case resourceid.TypeHostService:
 		parts := strings.SplitN(parsed.ResourceID, "/", 2)
 		if len(parts) != 2 || (parts[0] != "user" && parts[0] != "system") || strings.TrimSpace(parts[1]) == "" {

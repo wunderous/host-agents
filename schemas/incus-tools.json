@@ -275,7 +275,13 @@
           "resourceType": "container",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -711,7 +717,13 @@
           "resourceType": "cluster",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -1368,7 +1380,13 @@
           "resourceType": "cluster",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -1406,6 +1424,11 @@
         "capacity": {
           "type": "object",
           "description": "Declared Incus resource allocations and current VM/container mix on this host.",
+          "additionalProperties": true
+        },
+        "rootDiskQuota": {
+          "type": "object",
+          "description": "Whether the storage pool a new instance lands on can enforce a requested root disk size. Provisioning refuses an unenforceable explicit size.",
           "additionalProperties": true
         },
         "system": {
@@ -2169,6 +2192,66 @@
     }
   },
   {
+    "name": "install_cluster_agent",
+    "title": "Install Kubernetes cluster agent",
+    "description": "Install and start the Opute cluster agent inside a managed Kubernetes instance so the cluster can report readiness and accept lifecycle work.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Managed Incus instance name; required for VM- or container-backed clusters."
+        },
+        "clusterId": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "bridgeToken": {
+          "type": "string",
+          "writeOnly": true
+        },
+        "bridgeUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "bridgePort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "apiEndpoint": {
+          "type": "string",
+          "format": "uri"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "k3s-vm",
+            "k3s-host",
+            "external"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
     "name": "install_cloudflared_connector",
     "title": "Install Cloudflare connector",
     "description": "Deploy a token-backed Cloudflare connector inside Kubernetes.",
@@ -2214,7 +2297,13 @@
           "resourceType": "cluster",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -2398,7 +2487,13 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
     }
   },
   {
@@ -4041,6 +4136,14 @@
         "source",
         "connectionState"
       ]
+    },
+    "_meta": {
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -4313,7 +4416,13 @@
           "resourceType": "container",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -4406,6 +4515,11 @@
         "status",
         "operationId"
       ]
+    },
+    "_meta": {
+      "resourceCost": {
+        "class": "control"
+      }
     }
   },
   {
@@ -4649,6 +4763,11 @@
         "status",
         "operationId"
       ]
+    },
+    "_meta": {
+      "resourceCost": {
+        "class": "control"
+      }
     }
   },
   {
@@ -4988,7 +5107,13 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
     }
   },
   {
@@ -5479,7 +5604,7 @@
   {
     "name": "ensure_host_file",
     "title": "Ensure managed host file",
-    "description": "Atomically reconcile a caller-declared file beneath the current user's home directory.",
+    "description": "Atomically reconcile a caller-declared managed file; user scope is home-owned and system scope is limited to systemd service units.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5494,6 +5619,13 @@
           "type": "integer",
           "minimum": 384,
           "maximum": 493
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ]
         }
       },
       "required": [
@@ -5505,6 +5637,7 @@
       "type": "object",
       "required": [
         "path",
+        "scope",
         "changed",
         "contentSha256",
         "mode"
@@ -5617,6 +5750,14 @@
         "status",
         "catalogRevision"
       ]
+    },
+    "_meta": {
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
     }
   },
   {

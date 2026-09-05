@@ -534,48 +534,13 @@ func redactedActivationBindings(metadata map[string]any, bindings map[string]any
 	return result
 }
 
-func (s *Server) ensureRecipeActivation(record state.PlanRecord, metadata map[string]any) (state.PlanRecord, error) {
-	if !recipeBoolField(metadata, "activate") || record.Status != "completed" {
-		return record, nil
-	}
-	activation, ok := metadata["activation"].(map[string]any)
-	if !ok {
-		return state.PlanRecord{}, fmt.Errorf("runtime recipe activation metadata is incomplete")
-	}
-	capability := recipeStringField(activation, "capability")
-	if active, found, err := s.state.GetActiveRuntime(capability); err != nil {
-		return state.PlanRecord{}, err
-	} else if found && active.RunID == record.RunID {
-		return record, nil
-	}
-	var stateValue plan.RunState
-	if err := json.Unmarshal([]byte(record.StateJSON), &stateValue); err != nil {
-		return state.PlanRecord{}, fmt.Errorf("decode completed recipe state: %w", err)
-	}
-	active, observation, err := s.validateRuntimeActivation(context.Background(), record.RunID, metadata)
-	if err != nil {
-		return state.PlanRecord{}, err
-	}
-	if stateValue.Outputs == nil {
-		stateValue.Outputs = map[string]any{}
-	}
-	stateValue.Outputs["activation"] = observation
-	if err := s.state.CompletePlanWithActiveRuntime(record.RunID, s.marshalPlanState(stateValue, nil), active); err != nil {
-		return state.PlanRecord{}, err
-	}
-	updated, found, err := s.state.GetPlan(record.RunID)
-	if err != nil {
-		return state.PlanRecord{}, err
-	}
-	if !found {
-		return state.PlanRecord{}, fmt.Errorf("activated recipe run disappeared: %s", record.RunID)
-	}
-	return updated, nil
-}
-
-func (s *Server) ensureRuntimeRecipeActivation(record state.PlanRecord, metadata map[string]any) (state.PlanRecord, error) {
-	return s.ensureRecipeActivation(record, metadata)
-}
+// Recipe activation is validated by executeHostPlan on the run that produces
+// it. The replay-time variants that used to live here are gone: they returned
+// the stored activation whenever the capability's active runtime already
+// pointed at the same run, so a reconnect re-affirmed an activation without
+// ever re-probing the serving endpoint. Combined with the completed-run replay
+// in plan_run.go that is what let a 404 harness route keep reporting itself as
+// an active, healthy http-exposure.v1 runtime.
 
 // activateCompletedProviderCandidate covers reconnects after a restart. The
 // durable recipe run may already be completed, while the executable provider

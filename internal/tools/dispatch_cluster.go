@@ -7,10 +7,33 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wunderous/host-agents/internal/contract/toolname"
+	"github.com/wunderous/host-agents/internal/domain/cluster"
 	"github.com/wunderous/host-agents/internal/domain/host"
 	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/resource"
 )
+
+func init() {
+	register(toolname.InstallClusterAgent, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Cluster().InstallClusterAgent(cluster.InstallClusterAgentArgs{
+			VMName:      stringField(args, "vmName"),
+			ClusterID:   stringField(args, "clusterId"),
+			ClusterName: stringField(args, "clusterName"),
+			AgentID:     stringField(args, "agentId"),
+			BridgeToken: stringField(args, "bridgeToken"),
+			BridgeURL:   stringField(args, "bridgeUrl"),
+			BridgePort:  intField(args, "bridgePort"),
+			APIEndpoint: stringField(args, "apiEndpoint"),
+			ProviderID:  stringField(args, "providerId"),
+			ResourceID:  stringField(args, "resourceId"),
+			Source:      stringField(args, "source"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Kubernetes cluster agent installed."), nil
+	})
+}
 
 func init() {
 	register(toolname.ListClusters, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {

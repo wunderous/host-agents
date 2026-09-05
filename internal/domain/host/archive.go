@@ -38,7 +38,7 @@ func (s *Service) ExtractHostArchive(args ExtractHostArchiveArgs, onData func(st
 	if format != "tar.zst" {
 		return nil, fmt.Errorf("unsupported host archive format %q", format)
 	}
-	home, err := os.UserHomeDir()
+	home, err := hostHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve home directory: %w", err)
 	}

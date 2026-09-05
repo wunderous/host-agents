@@ -9,11 +9,12 @@ import (
 )
 
 type LocalPrerequisitesResult struct {
-	Provider       string            `json:"provider"`
-	ProviderBinary string            `json:"providerBinary"`
-	ProviderReady  bool              `json:"providerReady"`
-	Commands       map[string]bool   `json:"commands"`
-	Checks         map[string]string `json:"checks,omitempty"`
+	Provider       string                `json:"provider"`
+	ProviderBinary string                `json:"providerBinary"`
+	ProviderReady  bool                  `json:"providerReady"`
+	Commands       map[string]bool       `json:"commands"`
+	Checks         map[string]string     `json:"checks,omitempty"`
+	RootDiskQuota  *RootDiskQuotaSupport `json:"rootDiskQuota,omitempty"`
 }
 
 func (s *Service) CheckLocalPrerequisites() (*LocalPrerequisitesResult, error) {
@@ -33,12 +34,25 @@ func (s *Service) CheckLocalPrerequisites() (*LocalPrerequisitesResult, error) {
 	} else {
 		checks["incus"] = textutil.FirstNonEmpty(res.Stderr, res.Stdout, "incus check failed")
 	}
+	// Provisioning fails closed on a pool that cannot enforce a requested root
+	// disk size, so that constraint belongs with the other prerequisites: a
+	// caller reads it here instead of learning it from a rejected launch.
+	var quota *RootDiskQuotaSupport
+	if providerReady {
+		support, quotaErr := s.DescribeRootDiskQuotaSupport()
+		if quotaErr != nil {
+			checks["rootDiskQuota"] = quotaErr.Error()
+		} else {
+			quota = support
+		}
+	}
 	return &LocalPrerequisitesResult{
 		Provider:       string(s.shared.Runtime.ReadProviderID()),
 		ProviderBinary: s.shared.Runtime.ProviderBinary(),
 		ProviderReady:  providerReady,
 		Commands:       commands,
 		Checks:         checks,
+		RootDiskQuota:  quota,
 	}, nil
 }
 

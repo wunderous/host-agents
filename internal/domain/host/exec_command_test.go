@@ -1,6 +1,7 @@
 package host
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -63,5 +64,43 @@ func TestRunInstanceCommandRejectsForeignTenantAndWrongType(t *testing.T) {
 	}
 	if _, err := svc.RunInstanceCommand(RunInstanceCommandArgs{URI: "cluster:tenant-a:cell", Command: "true"}, nil); err == nil || !strings.Contains(err.Error(), "resource not found") {
 		t.Fatalf("expected no implicit cluster/VM fallback, got %v", err)
+	}
+}
+
+func TestRunInstanceCommandContextPropagatesCancellationToProvider(t *testing.T) {
+	registry := hostruntime.NewInMemoryResourceRegistry()
+	if err := registry.UpsertResource(resourceid.Record{
+		URI:          "container:tenant-a:connector",
+		ResourceType: resourceid.TypeContainer,
+		TenantID:     "tenant-a",
+		ResourceID:   "connector",
+		Coordinates:  map[string]any{"providerInstanceName": "connector", "instanceType": "container"},
+		Status:       "active",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := testService(hostruntime.Shared{TenantID: "tenant-a", ResourceRegistry: registry})
+	started := make(chan struct{})
+	svc.deps.RunVMExecContext = func(ctx context.Context, _ string, _ []string, _ func(string), _ time.Duration) (hostexec.Result, error) {
+		close(started)
+		<-ctx.Done()
+		return hostexec.Result{}, ctx.Err()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := svc.RunInstanceCommandContext(ctx, RunInstanceCommandArgs{URI: "container:tenant-a:connector", Command: "cloudflared"}, nil)
+		errCh <- err
+	}()
+	<-started
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != context.Canceled {
+			t.Fatalf("RunInstanceCommandContext error = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunInstanceCommandContext did not return after cancellation")
 	}
 }

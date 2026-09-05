@@ -4,6 +4,7 @@
 package host
 
 import (
+	"context"
 	"time"
 
 	"github.com/wunderous/host-agents/internal/contract/vminfo"
@@ -19,20 +20,31 @@ type Deps struct {
 	// VMInventoryCapacity reports what the incus inventory can still hold; the
 	// host description carries it (incus domain).
 	VMInventoryCapacity func() (vminfo.VMInventoryCapacity, error)
+	// RootDiskQuotaSupport reports whether the pool a new instance lands on can
+	// enforce a requested root disk size. Provisioning refuses an unenforceable
+	// bound, so the host description carries the precondition (incus domain).
+	RootDiskQuotaSupport func() (*vminfo.RootDiskQuotaSupport, error)
 	// RunVMExec executes a command inside a VM. It is an incus operation, not a
 	// hostruntime handle -- it performs an ownership check first.
 	RunVMExec func(vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error)
+	// RunVMExecContext is the cancellation-aware form used by request-scoped
+	// typed tools. The request context must reach the provider process so a
+	// disconnected downstream caller cannot retain admission indefinitely.
+	RunVMExecContext func(ctx context.Context, vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error)
 	// RunVMExecWithStdin keeps credential-bearing input off the provider argv and
 	// task metadata while preserving the same ownership check as RunVMExec.
 	RunVMExecWithStdin func(vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error)
+	// RunVMExecWithStdinContext is the cancellation-aware secret-safe form.
+	RunVMExecWithStdinContext func(ctx context.Context, vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error)
 	// SupportedTools lists the tool names this agent serves for a provider.
 	SupportedTools func(providerID string) []string
 }
 
 // Service is the host domain's entry point.
 type Service struct {
-	shared *hostruntime.Shared
-	deps   Deps
+	shared               *hostruntime.Shared
+	deps                 Deps
+	systemdSystemUnitDir string
 }
 
 // New builds the host domain over the shared runtime seam.

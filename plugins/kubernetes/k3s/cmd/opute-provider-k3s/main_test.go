@@ -123,6 +123,13 @@ func newTestServer() *mcp.Server {
 	return server
 }
 
+var guestBoundK3sOperations = map[string]bool{
+	capabilitycontract.KubernetesProvisionOperation:          true,
+	capabilitycontract.KubernetesGetJoinReceiverKeyOperation: true,
+	capabilitycontract.KubernetesRedeemJoinOperation:         true,
+	capabilitycontract.KubernetesJoinNodeOperation:           true,
+}
+
 func TestK3sTargetOperationsDeclareCanonicalClusterBinding(t *testing.T) {
 	for _, operation := range operations() {
 		if operation.ID == capabilitycontract.KubernetesValidateOperation || operation.ID == capabilitycontract.KubernetesListClustersOperation {
@@ -131,12 +138,17 @@ func TestK3sTargetOperationsDeclareCanonicalClusterBinding(t *testing.T) {
 			}
 			continue
 		}
-		wantType := "cluster"
-		if operation.ID == capabilitycontract.KubernetesProvisionOperation {
-			wantType = "vm"
+		// Provisioning and the destination side of a join both act on a guest
+		// that is deliberately not a cluster yet, so they bind to the VM or
+		// container resource instead of to a cluster that cannot exist.
+		if guestBoundK3sOperations[operation.ID] {
+			if len(operation.Requires) != 2 || operation.Requires[0].Argument != "targetUri" || operation.Requires[0].ResourceType != "vm" || operation.Requires[1].Argument != "targetUri" || operation.Requires[1].ResourceType != "container" || !operation.Requires[0].Required || !operation.Requires[1].Required {
+				t.Fatalf("operation %q is missing required canonical VM/container bindings: %#v", operation.ID, operation.Requires)
+			}
+			continue
 		}
-		if len(operation.Requires) != 1 || operation.Requires[0].Argument != "targetUri" || operation.Requires[0].ResourceType != wantType || !operation.Requires[0].Required {
-			t.Fatalf("operation %q is missing required canonical %s binding: %#v", operation.ID, wantType, operation.Requires)
+		if len(operation.Requires) != 1 || operation.Requires[0].Argument != "targetUri" || operation.Requires[0].ResourceType != "cluster" || !operation.Requires[0].Required {
+			t.Fatalf("operation %q is missing required canonical cluster binding: %#v", operation.ID, operation.Requires)
 		}
 	}
 }
@@ -176,6 +188,10 @@ func TestK3sInstallExecBindsNativeTrafficToDeclaredOverlay(t *testing.T) {
 	}
 	if _, err := k3sServerInstallExec(map[string]any{"nodeIp": "not-an-ip"}, false); err == nil {
 		t.Fatal("invalid overlay address was accepted")
+	}
+	containerInstall, err := k3sServerInstallExec(map[string]any{"instanceType": "container"}, false)
+	if err != nil || !strings.Contains(containerInstall, "--kubelet-arg=feature-gates=KubeletInUserNamespace=true") {
+		t.Fatalf("container install exec does not enable namespace-aware kubelet mode: %q %v", containerInstall, err)
 	}
 }
 
@@ -271,9 +287,12 @@ func TestK3sTargetValidationRejectsFallbackShapes(t *testing.T) {
 	}
 }
 
-func TestK3sProvisionTargetValidationRequiresCanonicalVM(t *testing.T) {
+func TestK3sProvisionTargetValidationRequiresCanonicalInstance(t *testing.T) {
 	if err := requireProvisionTarget(map[string]any{"targetUri": "vm:local:k3s", "providerInstanceName": "k3s"}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("valid VM target rejected: %v", err)
+	}
+	if err := requireProvisionTarget(map[string]any{"targetUri": "container:local:k3s", "providerInstanceName": "k3s"}); err != nil {
+		t.Fatalf("valid container target rejected: %v", err)
 	}
 	for _, args := range []map[string]any{
 		{"targetUri": "cluster:local:k3s", "providerInstanceName": "k3s"},
@@ -335,6 +354,94 @@ func TestEndpointHTTPStatusAcceptableIncludesKubernetesAuthChallenge(t *testing.
 	for _, status := range []int{404, 500, 502, 503} {
 		if endpointHTTPStatusAcceptable(status) {
 			t.Fatalf("endpointHTTPStatusAcceptable(%d) = true, want false", status)
+		}
+	}
+}
+
+// A join installs K3s on a guest that is deliberately not a cluster yet, so its
+// post-install verification must read that guest back. Reusing the cluster-bound
+// guard made every successful join report a failure.
+func TestJoinVerificationReadsTheGuestItPromoted(t *testing.T) {
+	args := map[string]any{
+		"targetUri":            "container:local:opute-ha-join-a",
+		"providerInstanceName": "opute-ha-join-a",
+		"instanceType":         "container",
+	}
+	if err := requireProvisionTarget(args); err != nil {
+		t.Fatalf("join verification must accept the guest target it just installed on: %v", err)
+	}
+	if err := requireTarget(args); err == nil {
+		t.Fatal("cluster-bound operations must still refuse a guest target URI")
+	}
+	if _, err := readMembershipForTarget(context.Background(), args, requireTarget); err == nil {
+		t.Fatal("readMembershipForTarget must honour the guard it is given")
+	}
+}
+
+// A failed join leaves a dead etcd member behind, and that member keeps
+// counting towards quorum until it is retired. The guard has to allow that
+// repair while still refusing a removal that would actually break quorum.
+func TestQuorumAfterRemovalAllowsRetiringADeadMemberButRefusesLosingQuorum(t *testing.T) {
+	dead := map[string]any{"name": "joined-and-failed", "ready": false}
+	live := map[string]any{"name": "healthy", "ready": true}
+
+	remaining, ready, err := quorumAfterRemoval(membershipObservation{ServerCount: 3, ReadyServers: 2}, dead)
+	if err != nil {
+		t.Fatalf("retiring a dead member from a 3-server cluster must be allowed: %v", err)
+	}
+	if remaining != 2 || ready != 2 {
+		t.Fatalf("projected membership = %d ready of %d, want 2 of 2", ready, remaining)
+	}
+
+	if _, _, err := quorumAfterRemoval(membershipObservation{ServerCount: 3, ReadyServers: 2}, live); err == nil {
+		t.Fatal("removing a healthy member that leaves 1 ready of 2 must be refused")
+	}
+
+	if _, _, err := quorumAfterRemoval(membershipObservation{ServerCount: 1, ReadyServers: 1}, live); err == nil {
+		t.Fatal("removing the last server must be refused")
+	}
+}
+
+func TestFindMembershipNodeMatchesByName(t *testing.T) {
+	nodes := []map[string]any{{"name": "a", "ready": true}, {"name": "b", "ready": false}}
+	node, found := findMembershipNode(nodes, "b")
+	if !found || node["ready"] != false {
+		t.Fatalf("findMembershipNode(b) = %v, %v", node, found)
+	}
+	if _, found := findMembershipNode(nodes, "c"); found {
+		t.Fatal("findMembershipNode must not invent members")
+	}
+}
+
+// The K3s installer returns before the joining server has registered, so the
+// settle condition has to be about that node, not about a server count the
+// pre-existing servers already satisfy.
+func TestJoinedMembershipSettledRequiresTheJoiningNodeItself(t *testing.T) {
+	source := []map[string]any{
+		{"name": "source-a", "ready": true, "roles": []string{"control-plane", "etcd"}},
+		{"name": "source-b", "ready": true, "roles": []string{"control-plane", "etcd"}},
+	}
+	joining := append(append([]map[string]any{}, source...), map[string]any{
+		"name": "joiner", "ready": true, "roles": []string{"control-plane", "etcd"},
+	})
+	notReady := append(append([]map[string]any{}, source...), map[string]any{
+		"name": "joiner", "ready": false, "roles": []string{"control-plane", "etcd"},
+	})
+
+	cases := []struct {
+		name  string
+		given membershipObservation
+		want  bool
+	}{
+		{"joining node ready", membershipObservation{Hostname: "joiner", Nodes: joining, ServerCount: 3, ReadyServers: 3}, true},
+		{"joining node absent", membershipObservation{Hostname: "joiner", Nodes: source, ServerCount: 2, ReadyServers: 2}, false},
+		{"joining node not ready", membershipObservation{Hostname: "joiner", Nodes: notReady, ServerCount: 3, ReadyServers: 2}, false},
+		{"local view still single-server", membershipObservation{Hostname: "joiner", Nodes: []map[string]any{{"name": "joiner", "ready": true, "roles": []string{"control-plane", "etcd"}}}, ServerCount: 1, ReadyServers: 1}, false},
+		{"hostname unknown", membershipObservation{Nodes: joining, ServerCount: 3, ReadyServers: 3}, false},
+	}
+	for _, testCase := range cases {
+		if got := joinedMembershipSettled(testCase.given); got != testCase.want {
+			t.Errorf("%s: joinedMembershipSettled = %v, want %v", testCase.name, got, testCase.want)
 		}
 	}
 }

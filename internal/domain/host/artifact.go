@@ -44,7 +44,7 @@ func (s *Service) EnsureHostArtifact(args EnsureHostArtifactArgs, onData func(st
 	if err != nil {
 		return nil, err
 	}
-	home, err := os.UserHomeDir()
+	home, err := hostHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve home directory: %w", err)
 	}

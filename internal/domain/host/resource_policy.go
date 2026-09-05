@@ -65,14 +65,28 @@ func renderHostResourceSliceUnits() map[string]string {
 	}
 }
 
-func (s *Service) ensureUserResourceSliceUnits() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("resolve host resource policy home: %w", err)
+func (s *Service) ensureResourceSliceUnits(scope string) error {
+	var unitDir string
+	switch scope {
+	case "user":
+		home, err := hostHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve host resource policy home: %w", err)
+		}
+		unitDir = filepath.Join(home, ".config", "systemd", "user")
+	case "system":
+		// Platform-mode Host Agents run as system services on the isolated WSL
+		// host. Their workload boundary is therefore the system manager's
+		// workload slice, not the invoking user's slice.
+		unitDir = s.systemdSystemUnitDir
+		if unitDir == "" {
+			unitDir = "/etc/systemd/system"
+		}
+	default:
+		return fmt.Errorf("unsupported host resource policy scope %q", scope)
 	}
-	unitDir := filepath.Join(home, ".config", "systemd", "user")
-	if err := os.MkdirAll(unitDir, 0o700); err != nil {
-		return fmt.Errorf("create user systemd unit directory: %w", err)
+	if err := os.MkdirAll(unitDir, 0o755); err != nil {
+		return fmt.Errorf("create %s systemd unit directory: %w", scope, err)
 	}
 	for name, contents := range renderHostResourceSliceUnits() {
 		path := filepath.Join(unitDir, name)
@@ -130,10 +144,8 @@ func (s *Service) ReconcileHostResourcePolicy(ctx context.Context, target resour
 	if err != nil {
 		return err
 	}
-	if scope == "user" {
-		if err := s.ensureUserResourceSliceUnits(); err != nil {
-			return err
-		}
+	if err := s.ensureResourceSliceUnits(scope); err != nil {
+		return err
 	}
 	base := []string{hostruntime.DefaultSystemctlPath}
 	if scope == "user" {
@@ -144,16 +156,14 @@ func (s *Service) ReconcileHostResourcePolicy(ctx context.Context, target resour
 	if result, err := s.shared.HostCommandRunnerContext(ctx, append(append([]string(nil), base...), "daemon-reload"), nil, 15*time.Second); err != nil || result.ExitCode != 0 {
 		return fmt.Errorf("reload %s systemd resource policy: %s", scope, firstHostResourceError(result.Stderr, result.Stdout, err))
 	}
-	if scope == "user" {
-		// A slice with no member processes may be garbage-collected by systemd,
-		// which removes its ControlGroup path even though the declarative limits
-		// remain installed. Materialize only the managed workload slice so the
-		// enforcement probe can verify the actual cgroup controllers before it
-		// admits work; this does not start a workload or the Host Agent service.
-		startArgs := append(append([]string(nil), base...), "start", hostWorkloadSlice)
-		if result, err := s.shared.HostCommandRunnerContext(ctx, startArgs, nil, 15*time.Second); err != nil || result.ExitCode != 0 {
-			return fmt.Errorf("materialize %s systemd workload slice: %s", scope, firstHostResourceError(result.Stderr, result.Stdout, err))
-		}
+	// A slice with no member processes may be garbage-collected by systemd,
+	// which removes its ControlGroup path even though the declarative limits
+	// remain installed. Materialize only the managed workload slice so the
+	// enforcement probe can verify the actual cgroup controllers before it
+	// admits work; this does not start a workload or the Host Agent service.
+	startArgs := append(append([]string(nil), base...), "start", hostWorkloadSlice)
+	if result, err := s.shared.HostCommandRunnerContext(ctx, startArgs, nil, 15*time.Second); err != nil || result.ExitCode != 0 {
+		return fmt.Errorf("materialize %s systemd workload slice: %s", scope, firstHostResourceError(result.Stderr, result.Stdout, err))
 	}
 	setArgs := append(append([]string(nil), base...), "set-property", unit,
 		"CPUWeight="+hostAgentCPUWeight,
@@ -202,11 +212,53 @@ func (s *Service) ObserveHostResourceEnforcement() string {
 			continue
 		}
 		properties := parseSystemdProperties(result.Stdout)
-		if workloadSystemdPropertiesEnforced(properties) && cgroupControlsAvailable(properties["ControlGroup"]) {
+		if !workloadSystemdPropertiesEnforced(properties) {
+			continue
+		}
+		if cgroupControlsAvailable(properties["ControlGroup"]) {
+			return "enforced"
+		}
+		if refreshed, ok := s.materializeWorkloadSliceCgroup(scope); ok && cgroupControlsAvailable(refreshed["ControlGroup"]) {
 			return "enforced"
 		}
 	}
 	return "unknown"
+}
+
+// materializeWorkloadSliceCgroup starts the workload slice so systemd creates
+// its cgroup, then re-reads the unit's ControlGroup.
+//
+// A slice that has never held a member is loaded but inactive, and systemd
+// reports an empty ControlGroup for it, so the probe above cannot find the
+// controls the slice already configures. On a freshly installed host that is a
+// deadlock rather than a missing limit: admission refuses every workload
+// because enforcement is unverified, and enforcement stays unverified because
+// no workload has ever run in the slice to bring its cgroup into existence.
+// The host can never run its first workload.
+//
+// Starting the slice is what breaks it -- systemd materialises the cgroup for
+// an explicitly started slice even with no processes in it -- and it is a
+// no-op once the slice is running. This does not relax the check: the caller
+// still has to find the concrete memory.max, cpu.max and pids.max files
+// afterwards, so the boundary is proven to exist rather than assumed from the
+// unit's configured properties.
+func (s *Service) materializeWorkloadSliceCgroup(scope string) (map[string]string, bool) {
+	systemctl := func(arguments ...string) (map[string]string, bool) {
+		command := []string{hostruntime.DefaultSystemctlPath}
+		if scope == "user" {
+			command = append(command, "--user")
+		}
+		command = append(command, arguments...)
+		result, err := s.shared.HostCommandRunner(command, nil, 5*time.Second)
+		if err != nil || result.ExitCode != 0 {
+			return nil, false
+		}
+		return parseSystemdProperties(result.Stdout), true
+	}
+	if _, ok := systemctl("start", hostWorkloadSlice); !ok {
+		return nil, false
+	}
+	return systemctl("show", hostWorkloadSlice, "--property=ControlGroup")
 }
 
 func hostResourceSystemdScopes() []string {

@@ -211,7 +211,12 @@
     {
       "name": "cancel_operation",
       "classification": "mutation",
-      "support": "stable"
+      "support": "stable",
+      "_meta": {
+        "resourceCost": {
+          "class": "control"
+        }
+      }
     },
     {
       "name": "validate_host_plan",
@@ -221,7 +226,15 @@
     {
       "name": "run_host_plan",
       "classification": "mutation",
-      "support": "experimental"
+      "support": "experimental",
+      "_meta": {
+        "resourceCost": {
+          "class": "heavy",
+          "cpuCores": 2,
+          "memoryBytes": 2147483648,
+          "tasks": 8
+        }
+      }
     },
     {
       "name": "get_host_plan_run",
@@ -236,7 +249,15 @@
     {
       "name": "run_runtime_recipe",
       "classification": "mutation",
-      "support": "experimental"
+      "support": "experimental",
+      "_meta": {
+        "resourceCost": {
+          "class": "heavy",
+          "cpuCores": 2,
+          "memoryBytes": 2147483648,
+          "tasks": 8
+        }
+      }
     },
     {
       "name": "get_runtime_recipe_run",
@@ -251,7 +272,15 @@
     {
       "name": "run_tunnel_recipe",
       "classification": "mutation",
-      "support": "experimental"
+      "support": "experimental",
+      "_meta": {
+        "resourceCost": {
+          "class": "heavy",
+          "cpuCores": 2,
+          "memoryBytes": 2147483648,
+          "tasks": 8
+        }
+      }
     },
     {
       "name": "get_tunnel_run",
@@ -261,7 +290,15 @@
     {
       "name": "opute.provider.install",
       "classification": "mutation",
-      "support": "experimental"
+      "support": "experimental",
+      "_meta": {
+        "resourceCost": {
+          "class": "heavy",
+          "cpuCores": 2,
+          "memoryBytes": 2147483648,
+          "tasks": 8
+        }
+      }
     },
     {
       "name": "opute.provider.validate",
@@ -276,12 +313,28 @@
     {
       "name": "opute.provider.reload",
       "classification": "mutation",
-      "support": "experimental"
+      "support": "experimental",
+      "_meta": {
+        "resourceCost": {
+          "class": "heavy",
+          "cpuCores": 2,
+          "memoryBytes": 2147483648,
+          "tasks": 8
+        }
+      }
     },
     {
       "name": "opute.provider.teardown",
       "classification": "destructive",
-      "support": "experimental"
+      "support": "experimental",
+      "_meta": {
+        "resourceCost": {
+          "class": "heavy",
+          "cpuCores": 2,
+          "memoryBytes": 2147483648,
+          "tasks": 8
+        }
+      }
     },
     {
       "name": "ensure_host_artifact",
@@ -452,7 +505,15 @@
     {
       "name": "install_cloudflared_connector",
       "classification": "credential_bearing",
-      "support": "experimental"
+      "support": "experimental",
+      "_meta": {
+        "resourceCost": {
+          "class": "normal",
+          "cpuCores": 0.25,
+          "memoryBytes": 268435456,
+          "tasks": 1
+        }
+      }
     },
     {
       "name": "ensure_oci_builder",
@@ -517,7 +578,15 @@
     {
       "name": "delete_cloudflared_connector",
       "classification": "destructive",
-      "support": "experimental"
+      "support": "experimental",
+      "_meta": {
+        "resourceCost": {
+          "class": "normal",
+          "cpuCores": 0.25,
+          "memoryBytes": 268435456,
+          "tasks": 1
+        }
+      }
     },
     {
       "name": "install_incus_stack",

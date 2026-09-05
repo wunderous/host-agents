@@ -14,6 +14,13 @@ func TestListClustersHonorsExplicitDetailMode(t *testing.T) {
 	}
 }
 
+func TestRawStringFieldPreservesManagedBytes(t *testing.T) {
+	content := "[Service]\nExecStart=/bin/true\n\n"
+	if got := rawStringField(map[string]any{"content": content}, "content"); got != content {
+		t.Fatalf("raw managed content = %q, want exact bytes %q", got, content)
+	}
+}
+
 func TestResolveLocalLLMModelArgUsesLFM26Default(t *testing.T) {
 	var modelRef string
 	var err error

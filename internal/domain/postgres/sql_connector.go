@@ -27,6 +27,13 @@ type EnsureSQLConnectorArgs struct {
 
 type SQLConnectorResult struct {
 	DatabaseID string `json:"databaseId"`
+	// URI is the canonical Host Agent resource URI for this connector. The
+	// declared outputSchema has always required it, and the `produces` binding
+	// on ensure_sql_connector registers the connector from it, but nothing
+	// populated it -- so the resource the capability creates was never named.
+	// The dispatch boundary fills it: identity is tenant-scoped and this
+	// supervisor has no tenant.
+	URI        string `json:"uri"`
 	SessionID  string `json:"sessionId"`
 	ListenHost string `json:"listenHost"`
 	ListenPort int    `json:"listenPort"`
@@ -76,6 +83,9 @@ func newSQLConnectorSupervisor() *sqlConnectorSupervisor {
 	}
 }
 
+// sessionIDForDatabase keys the relay session. It is deliberately not the
+// connector's canonical resource URI, which carries a tenant segment this
+// supervisor does not know.
 func (s *sqlConnectorSupervisor) sessionIDForDatabase(databaseID string) string {
 	return "sql-connector:" + strings.TrimSpace(databaseID)
 }

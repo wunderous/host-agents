@@ -155,7 +155,7 @@ metadata:
   namespace: %s
 spec:
   instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  imageName: %s
   storage:
     size: 2Gi
   bootstrap:
@@ -165,7 +165,7 @@ spec:
       encoding: UTF8
       localeCType: C
       localeCollate: C
-`, namespace, database)
+`, namespace, postgresqlOperandImageName, database)
 }
 
 func (s *Service) waitForStandalonePostgresCRD(ctx context.Context, vmName string) error {

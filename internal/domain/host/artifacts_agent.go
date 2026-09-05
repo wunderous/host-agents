@@ -106,7 +106,7 @@ func hostAgentArtifactDestAllowed(dest, source string) bool {
 			}
 		}
 	}
-	home, _ := os.UserHomeDir()
+	home, _ := hostHomeDir()
 	if home == "" {
 		return false
 	}

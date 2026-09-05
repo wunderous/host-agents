@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -15,6 +16,7 @@ type EnsureHostFileArgs struct {
 	Path    string
 	Content string
 	Mode    int
+	Scope   string
 }
 
 type InspectHostFileArgs struct {
@@ -29,18 +31,32 @@ type RemoveHostFileArgs struct {
 	Confirm        bool
 }
 
-// EnsureHostFile writes a caller-declared file beneath the current user's
-// home directory. It is intentionally a narrow, atomic primitive for managed
-// user configuration such as systemd units; recipes own the file contents.
+// EnsureHostFile writes a caller-declared managed file atomically. User-scoped
+// files remain below the current user's home directory; system scope is
+// limited to systemd service units so a typed lifecycle recipe can own a
+// system-scoped service without falling back to an untyped shell write.
 func (s *Service) EnsureHostFile(args EnsureHostFileArgs) (map[string]any, error) {
 	if err := s.shared.RequireSharedHostOwner("ensure_host_file"); err != nil {
 		return nil, err
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("resolve home directory: %w", err)
+	scope := strings.ToLower(strings.TrimSpace(args.Scope))
+	if scope == "" {
+		scope = "user"
 	}
-	path, err := hostOwnedPath(home, args.Path)
+	var path string
+	var err error
+	switch scope {
+	case "user":
+		home, homeErr := hostHomeDir()
+		if homeErr != nil {
+			return nil, fmt.Errorf("resolve home directory: %w", homeErr)
+		}
+		path, err = hostOwnedPath(home, args.Path)
+	case "system":
+		path, err = systemdUnitPath(args.Path)
+	default:
+		return nil, fmt.Errorf("scope must be user or system")
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -89,14 +105,27 @@ func (s *Service) EnsureHostFile(args EnsureHostFileArgs) (map[string]any, error
 	}
 	return map[string]any{
 		"path":          path,
+		"scope":         scope,
 		"changed":       changed,
 		"contentSha256": contentSHA256,
 		"mode":          strconv.FormatUint(uint64(mode.Perm()), 8),
 	}, nil
 }
 
+func systemdUnitPath(raw string) (string, error) {
+	path := filepath.Clean(strings.TrimSpace(raw))
+	if !strings.HasPrefix(path, "/etc/systemd/system/") {
+		return "", fmt.Errorf("system-scoped managed files must be systemd units beneath /etc/systemd/system")
+	}
+	unit := filepath.Base(path)
+	if !regexp.MustCompile(`^[A-Za-z0-9_.@:-]+\.service$`).MatchString(unit) {
+		return "", fmt.Errorf("system-scoped managed files must name a .service unit")
+	}
+	return path, nil
+}
+
 func (s *Service) InspectHostFile(args InspectHostFileArgs) (map[string]any, error) {
-	home, err := os.UserHomeDir()
+	home, err := hostHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve home directory: %w", err)
 	}
@@ -154,7 +183,7 @@ func (s *Service) RemoveHostFile(args RemoveHostFileArgs) (map[string]any, error
 	if !args.Confirm {
 		return nil, errors.New("remove_host_file requires confirm=true")
 	}
-	home, err := os.UserHomeDir()
+	home, err := hostHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve home directory: %w", err)
 	}

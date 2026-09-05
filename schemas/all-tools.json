@@ -274,7 +274,13 @@
           "resourceType": "vm",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -694,7 +700,13 @@
           "resourceType": "cluster",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -1249,17 +1261,21 @@
     "title": "Ensure SQL connector",
     "description": "Idempotent durable host TCP relay for a managed PostgreSQL database (keyed by databaseId)",
     "_meta": {
-      "requires": [
+      "produces": [
         {
-          "argument": "uri",
-          "resourceType": "sql-connector",
-          "required": true
+          "sourcePath": "uri",
+          "resourceType": "sql-connector"
         }
       ]
     },
     "inputSchema": {
       "type": "object",
       "properties": {
+        "databaseId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Managed database identifier the connector fronts. The connector's canonical resource URI is derived from it and returned as `uri`."
+        },
         "targetHost": {
           "type": "string"
         },
@@ -1278,17 +1294,12 @@
             "loopback",
             "public_allowlist"
           ]
-        },
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
         }
       },
       "required": [
+        "databaseId",
         "targetHost",
-        "targetPort",
-        "uri"
+        "targetPort"
       ]
     },
     "outputSchema": {
@@ -1461,7 +1472,13 @@
           "resourceType": "cluster",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -1496,6 +1513,11 @@
         "capacity": {
           "type": "object",
           "description": "Declared Incus resource allocations and current VM/container mix on this host.",
+          "additionalProperties": true
+        },
+        "rootDiskQuota": {
+          "type": "object",
+          "description": "Whether the storage pool a new instance lands on can enforce a requested root disk size. Provisioning refuses an unenforceable explicit size.",
           "additionalProperties": true
         },
         "system": {
@@ -2306,26 +2328,17 @@
     "name": "get_sql_connector_status",
     "title": "Get SQL connector status",
     "description": "Read durable SQL connector relay status without teardown",
-    "_meta": {
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "sql-connector",
-          "required": true
-        }
-      ]
-    },
     "inputSchema": {
       "type": "object",
       "properties": {
-        "uri": {
+        "databaseId": {
           "type": "string",
           "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
+          "description": "Managed database identifier the connector fronts. The connector's canonical resource URI is derived from it and returned as `uri`."
         }
       },
       "required": [
-        "uri"
+        "databaseId"
       ]
     },
     "outputSchema": {
@@ -2579,6 +2592,66 @@
     }
   },
   {
+    "name": "install_cluster_agent",
+    "title": "Install Kubernetes cluster agent",
+    "description": "Install and start the Opute cluster agent inside a managed Kubernetes instance so the cluster can report readiness and accept lifecycle work.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vmName": {
+          "type": "string",
+          "description": "Managed Incus instance name; required for VM- or container-backed clusters."
+        },
+        "clusterId": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "bridgeToken": {
+          "type": "string",
+          "writeOnly": true
+        },
+        "bridgeUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "bridgePort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "apiEndpoint": {
+          "type": "string",
+          "format": "uri"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "k3s-vm",
+            "k3s-host",
+            "external"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    },
+    "_meta": {
+      "needsApproval": true
+    }
+  },
+  {
     "name": "install_cloudflared_connector",
     "title": "Install Cloudflare connector",
     "description": "Deploy a token-backed Cloudflare connector inside Kubernetes.",
@@ -2636,7 +2709,13 @@
           "sourcePath": "uri",
           "resourceType": "cluster"
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -2853,7 +2932,13 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
     }
   },
   {
@@ -4480,6 +4565,14 @@
         "source",
         "connectionState"
       ]
+    },
+    "_meta": {
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -4520,29 +4613,20 @@
     "name": "release_sql_connector",
     "title": "Release SQL connector",
     "description": "Decrement refCount on a durable SQL connector; optional force drain",
-    "_meta": {
-      "requires": [
-        {
-          "argument": "uri",
-          "resourceType": "sql-connector",
-          "required": true
-        }
-      ]
-    },
     "inputSchema": {
       "type": "object",
       "properties": {
-        "force": {
-          "type": "boolean"
-        },
-        "uri": {
+        "databaseId": {
           "type": "string",
           "minLength": 1,
-          "description": "Canonical Host Agent resource URI returned by discovery."
+          "description": "Managed database identifier the connector fronts. The connector's canonical resource URI is derived from it and returned as `uri`."
+        },
+        "force": {
+          "type": "boolean"
         }
       },
       "required": [
-        "uri"
+        "databaseId"
       ]
     },
     "outputSchema": {
@@ -4576,7 +4660,13 @@
           "resourceType": "tunnel",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     },
     "inputSchema": {
       "type": "object",
@@ -4805,7 +4895,13 @@
           "resourceType": "container",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1
+      }
     }
   },
   {
@@ -4898,6 +4994,11 @@
         "status",
         "operationId"
       ]
+    },
+    "_meta": {
+      "resourceCost": {
+        "class": "control"
+      }
     }
   },
   {
@@ -5146,6 +5247,11 @@
         "status",
         "operationId"
       ]
+    },
+    "_meta": {
+      "resourceCost": {
+        "class": "control"
+      }
     }
   },
   {
@@ -5534,7 +5640,13 @@
       ]
     },
     "_meta": {
-      "needsApproval": true
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
     }
   },
   {

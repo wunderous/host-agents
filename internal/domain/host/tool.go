@@ -383,7 +383,7 @@ func (s *Service) EnsureHostTool(args EnsureHostToolArgs, onData func(string)) (
 }
 
 func (s *Service) ensureBunTool(onData func(string)) (map[string]any, error) {
-	home, err := os.UserHomeDir()
+	home, err := hostHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return nil, errors.New("bun is not installed and user home is unavailable for a user-local install")
 	}
@@ -418,7 +418,7 @@ func (s *Service) ensureHelmTool(onData func(string)) (map[string]any, error) {
 	if path, err := exec.LookPath("helm"); err == nil {
 		return map[string]any{"tool": "helm", "path": path, "available": true, "alreadyAvailable": true}, nil
 	}
-	home, err := os.UserHomeDir()
+	home, err := hostHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return nil, errors.New("helm is not installed and user home is unavailable for a user-local install")
 	}

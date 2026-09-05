@@ -31,6 +31,7 @@ const (
 	KubernetesJoinNodeOperation           = "opute.capability.kubernetes.join-node"
 	KubernetesEnsureHAEndpointOperation   = "opute.capability.kubernetes.ensure-ha-endpoint"
 	KubernetesRemoveNodeOperation         = "opute.capability.kubernetes.remove-node"
+	KubernetesRecoverQuorumOperation      = "opute.capability.kubernetes.recover-quorum"
 
 	NetworkOverlayValidateOperation          = "opute.capability.network-overlay.validate"
 	NetworkOverlayPrepareMembershipOperation = "opute.capability.network-overlay.prepare-membership"

@@ -43,20 +43,32 @@ func (s *Service) vmExecArgv(vmName string, guestArgv []string) []string {
 }
 
 func (s *Service) RunVMExec(vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	return s.RunVMExecContext(context.Background(), vmName, guestArgv, onData, timeout)
+}
+
+// RunVMExecContext is the ownership-checked, cancellation-aware guest
+// execution boundary used by request-scoped host tools.
+func (s *Service) RunVMExecContext(ctx context.Context, vmName string, guestArgv []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
 	if err := s.assertIncusOwnership(vmName, "exec"); err != nil {
 		return hostexec.Result{}, err
 	}
-	return s.commandRunner(s.vmExecArgv(vmName, guestArgv), onData, timeout)
+	return s.shared.CommandRunnerContext(ctx, s.vmExecArgv(vmName, guestArgv), onData, timeout)
 }
 
 // RunVMExecWithStdin executes an ownership-checked guest command while keeping
 // transient input off the provider argv. Providers use this for enrollment
 // material that must not appear in process listings or task metadata.
 func (s *Service) RunVMExecWithStdin(vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	return s.RunVMExecWithStdinContext(context.Background(), vmName, guestArgv, input, onData, timeout)
+}
+
+// RunVMExecWithStdinContext is the cancellation-aware secret-safe guest
+// execution boundary.
+func (s *Service) RunVMExecWithStdinContext(ctx context.Context, vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error) {
 	if err := s.assertIncusOwnership(vmName, "exec"); err != nil {
 		return hostexec.Result{}, err
 	}
-	return s.shared.Runtime.RunVMExecWithStdinContext(context.Background(), vmName, guestArgv, input, onData, timeout)
+	return s.shared.Runtime.RunVMExecWithStdinContext(ctx, vmName, guestArgv, input, onData, timeout)
 }
 
 type VMListResult struct {

@@ -64,7 +64,8 @@ func TestRenderHostResourceSliceUnitsPreservesPolicyValues(t *testing.T) {
 
 func TestReconcileHostResourcePolicyUsesExactSystemdUnit(t *testing.T) {
 	var calls [][]string
-	service := &Service{shared: &hostruntime.Shared{
+	unitDir := t.TempDir()
+	service := &Service{systemdSystemUnitDir: unitDir, shared: &hostruntime.Shared{
 		HostCommandRunnerFn: func(command []string, _ func(string), _ time.Duration) (exec.Result, error) {
 			calls = append(calls, append([]string(nil), command...))
 			if len(command) > 0 && command[len(command)-1] == "--property=Slice,CPUWeight,TasksMax,KillMode" {
@@ -80,16 +81,16 @@ func TestReconcileHostResourcePolicyUsesExactSystemdUnit(t *testing.T) {
 	if err := service.ReconcileHostResourcePolicy(context.Background(), target); err != nil {
 		t.Fatalf("reconcile failed: %v", err)
 	}
-	if len(calls) != 3 {
-		t.Fatalf("systemd calls = %d, want reload/set/show: %#v", len(calls), calls)
+	if len(calls) != 4 {
+		t.Fatalf("systemd calls = %d, want reload/start/set/show: %#v", len(calls), calls)
 	}
-	joined := strings.Join(calls[1], " ")
+	joined := strings.Join(calls[2], " ")
 	if !strings.Contains(joined, "set-property") || !strings.Contains(joined, "opute-host-agent@agent-a.service") {
-		t.Fatalf("set-property did not target the exact service: %#v", calls[1])
+		t.Fatalf("set-property did not target the exact service: %#v", calls[2])
 	}
 	for _, call := range calls {
 		joined = strings.Join(call, " ")
-		if strings.Contains(joined, " restart ") || strings.Contains(joined, " start ") || strings.Contains(joined, " stop ") {
+		if strings.Contains(joined, " restart ") || strings.Contains(joined, " stop ") {
 			t.Fatalf("reconciliation unexpectedly changed service lifecycle: %#v", call)
 		}
 	}
@@ -153,5 +154,70 @@ func TestPreservesOnlyStricterResourceUnits(t *testing.T) {
 	}
 	if preservesStricterResourceUnit(hostWorkloadSlice, strings.Replace(workload, "MemoryMax=5G", "MemoryMax=infinity", 1)) {
 		t.Fatal("unbounded workload memory must be repaired")
+	}
+}
+
+// A freshly installed host has the workload slice configured but never started,
+// so systemd reports no ControlGroup for it and the enforcement probe cannot see
+// the controls the slice already declares. Admission then refuses every workload
+// for want of verified enforcement, and no workload ever runs to materialise the
+// cgroup -- the host cannot run its first workload. The probe must break that
+// deadlock by starting the slice and looking again.
+func TestObserveHostResourceEnforcementMaterializesAnInactiveWorkloadSlice(t *testing.T) {
+	var calls [][]string
+	enforced := "ControlGroup=\nCPUWeight=100\nCPUQuotaPerSecUSec=6s\nMemoryHigh=5368709120\nMemoryMax=6442450944\nMemorySwapMax=1073741824\nTasksMax=4096\n"
+	service := &Service{shared: &hostruntime.Shared{
+		HostCommandRunnerFn: func(command []string, _ func(string), _ time.Duration) (exec.Result, error) {
+			calls = append(calls, append([]string(nil), command...))
+			return exec.Result{ExitCode: 0, Stdout: enforced}, nil
+		},
+	}}
+
+	// The stubbed re-read still reports no ControlGroup, so the probe must keep
+	// refusing: materialising the slice is an attempt to observe the boundary,
+	// never a substitute for observing it.
+	if got := service.ObserveHostResourceEnforcement(); got != "unknown" {
+		t.Fatalf("enforcement = %q, want %q when the cgroup is still not observable", got, "unknown")
+	}
+
+	started := false
+	reread := false
+	for _, call := range calls {
+		joined := strings.Join(call, " ")
+		if strings.Contains(joined, " start ") && strings.Contains(joined, hostWorkloadSlice) {
+			started = true
+		}
+		if started && strings.Contains(joined, " show ") && strings.Contains(joined, "--property=ControlGroup") {
+			reread = true
+		}
+	}
+	if !started {
+		t.Fatalf("probe did not start the workload slice: %#v", calls)
+	}
+	if !reread {
+		t.Fatalf("probe did not re-read ControlGroup after starting the slice: %#v", calls)
+	}
+}
+
+// Starting a slice is only justified when its declared policy is already the
+// bounded one; a slice with unbounded limits is a policy failure, not an
+// unmaterialised cgroup, and must not be brought up by a probe.
+func TestObserveHostResourceEnforcementLeavesAnUnboundedSliceAlone(t *testing.T) {
+	var calls [][]string
+	unbounded := "ControlGroup=\nCPUWeight=[not set]\nCPUQuotaPerSecUSec=infinity\nMemoryHigh=infinity\nMemoryMax=infinity\nMemorySwapMax=infinity\nTasksMax=infinity\n"
+	service := &Service{shared: &hostruntime.Shared{
+		HostCommandRunnerFn: func(command []string, _ func(string), _ time.Duration) (exec.Result, error) {
+			calls = append(calls, append([]string(nil), command...))
+			return exec.Result{ExitCode: 0, Stdout: unbounded}, nil
+		},
+	}}
+
+	if got := service.ObserveHostResourceEnforcement(); got != "unknown" {
+		t.Fatalf("enforcement = %q, want %q for an unbounded slice", got, "unknown")
+	}
+	for _, call := range calls {
+		if strings.Contains(strings.Join(call, " "), " start ") {
+			t.Fatalf("probe started a slice whose policy is unbounded: %#v", call)
+		}
 	}
 }

@@ -63,6 +63,7 @@ type Server struct {
 	providerCandidateManifests map[string]providercontract.InstallManifest
 	providerManifests          map[string]providercontract.InstallManifest
 	registeredToolNames        map[string]bool
+	internalToolNames          map[string]bool
 }
 
 func (s *Server) logProviderRestoreSkip(record state.ProviderGenerationRecord, stage string, err error) {
@@ -184,6 +185,7 @@ func NewServer(opts Options) (*Server, error) {
 		toolNamePrefix:             toolPrefix,
 		implementationName:         implementationName,
 		registeredToolNames:        make(map[string]bool),
+		internalToolNames:          make(map[string]bool),
 		planCancels:                make(map[string]context.CancelFunc),
 		planResumeRequests:         make(map[string]plan.ResumeRequest),
 	}
@@ -216,6 +218,15 @@ func NewServer(opts Options) (*Server, error) {
 	if _, err := hs.providerContext.Plugin(resourceServicesPlugin{registry: opts.Ops.ResourceRegistry(), resolver: opts.Ops, tenantID: opts.Ops.TenantID(), service: resourceService}); err != nil {
 		return nil, fmt.Errorf("mount resource services: %w", err)
 	}
+	srv.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			result, err := next(ctx, method, req)
+			if err != nil || method != "tools/list" {
+				return result, err
+			}
+			return hs.filterInternalToolsFromList(result), nil
+		}
+	})
 	hs.registerTools()
 	opts.Ops.Kubernetes().SetKubernetesProviderExecutor(&kubernetesProviderExecutor{server: hs})
 	return hs, nil
@@ -1116,6 +1127,112 @@ func (s *Server) registerTools() {
 		s.ensureLegacyCapabilityForDescriptor(descriptor)
 		s.addRegisteredCapability(descriptor)
 	}
+	s.registerInternalDispatchTools()
+}
+
+// registerInternalDispatchTools binds the catalog-excluded tools to tools/call.
+//
+// `CatalogExcludedToolNames` states two separate things about these tools:
+// they are omitted from the agent-facing tools/list, and they are still
+// dispatchable. Only the first half was implemented. The catalog projection
+// that drives registration is `HostToolDefinitionsForProvider`, which filters
+// them out, so `LoadCatalogExcludedDispatchToolDefinitions` — the loader
+// written for exactly this purpose, and whose doc comment says these tools
+// "must be registered on the MCP server (tools/call)" — had no caller outside
+// a contract test. The MCP server therefore never learned the names, and the
+// SDK answered every call with `unknown tool`. That is what broke the
+// platform's SQL hot path: `ensure_sql_connector` is dispatchable in-process
+// (see internal/tools/dispatch_unassigned.go) but was unreachable over the
+// wire. Registration happens here; the omission from tools/list is preserved
+// by filterInternalToolsFromList.
+func (s *Server) registerInternalDispatchTools() {
+	defs, err := tools.LoadCatalogExcludedDispatchToolDefinitions()
+	if err != nil {
+		// A malformed internal schema must not take down an agent that can
+		// still serve its catalog; the failure is reported and the hot path
+		// then fails loudly at call time rather than silently here.
+		logger := slog.Default()
+		if s.logger != nil {
+			logger = s.logger
+		}
+		logger.Error("load internal dispatch tool definitions", "error", err)
+		return
+	}
+	// Dispatch resolves a capability by catalog name, so the descriptor has to
+	// exist alongside the MCP registration. It is built from the internal
+	// definitions only and is deliberately not merged into s.catalog: that
+	// snapshot is the agent-facing projection, and adding them there would put
+	// the names back on tools/list and get_capability_catalog. Admission still
+	// applies — the typed cost comes from the in-process registration in
+	// internal/tools (RegisteredAdmissionClass), not from this descriptor.
+	internalCatalog := tools.BuildCapabilityCatalog(s.providerID, defs)
+	descriptorsByName := make(map[string]tools.CapabilityDescriptor, len(internalCatalog.Tools))
+	for _, descriptor := range internalCatalog.Tools {
+		descriptorsByName[descriptor.Name] = descriptor
+	}
+	for _, def := range defs {
+		if tools.IsOmittedToolName(def.Name) {
+			continue
+		}
+		wireName := WireToolName(s.toolNamePrefix, def.Name)
+		s.mu.Lock()
+		alreadyRegistered := s.registeredToolNames[wireName]
+		s.mu.Unlock()
+		if alreadyRegistered {
+			continue
+		}
+		if descriptor, ok := descriptorsByName[def.Name]; ok {
+			s.ensureLegacyCapabilityForDescriptor(descriptor)
+		}
+		catalogName := def.Name
+		s.mcpServer.AddTool(&mcp.Tool{
+			Name:         wireName,
+			Description:  def.Description,
+			InputSchema:  def.InputSchema,
+			OutputSchema: def.OutputSchema,
+		}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return s.handleToolCall(ctx, req, catalogName)
+		})
+		s.mu.Lock()
+		if s.registeredToolNames == nil {
+			s.registeredToolNames = make(map[string]bool)
+		}
+		if s.internalToolNames == nil {
+			s.internalToolNames = make(map[string]bool)
+		}
+		s.registeredToolNames[wireName] = true
+		s.internalToolNames[wireName] = true
+		s.mu.Unlock()
+	}
+}
+
+// filterInternalToolsFromList removes the internal dispatch tools from the
+// tools/list projection. They are registered so tools/call can reach them, and
+// hidden here so the agent-facing catalog stays exactly what
+// HostToolDefinitionsForProvider projects.
+func (s *Server) filterInternalToolsFromList(result mcp.Result) mcp.Result {
+	listed, ok := result.(*mcp.ListToolsResult)
+	if !ok || listed == nil {
+		return result
+	}
+	s.mu.Lock()
+	hidden := make(map[string]bool, len(s.internalToolNames))
+	for name := range s.internalToolNames {
+		hidden[name] = true
+	}
+	s.mu.Unlock()
+	if len(hidden) == 0 {
+		return result
+	}
+	visible := make([]*mcp.Tool, 0, len(listed.Tools))
+	for _, tool := range listed.Tools {
+		if tool != nil && hidden[tool.Name] {
+			continue
+		}
+		visible = append(visible, tool)
+	}
+	listed.Tools = visible
+	return listed
 }
 
 func (s *Server) ensureLegacyCapabilityForDescriptor(descriptor tools.CapabilityDescriptor) {
@@ -1177,6 +1294,7 @@ func (s *Server) refreshMCPTools() {
 		names = append(names, name)
 	}
 	s.registeredToolNames = make(map[string]bool)
+	s.internalToolNames = make(map[string]bool)
 	s.mu.Unlock()
 	if len(names) > 0 {
 		s.mcpServer.RemoveTools(names...)

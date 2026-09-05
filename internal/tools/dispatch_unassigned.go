@@ -14,6 +14,7 @@ import (
 	"github.com/wunderous/host-agents/internal/domain/postgres"
 	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/resource"
+	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
 // These tools call methods still defined on ops/service.go and ops/standalone.go --
@@ -132,6 +133,15 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
+		// The connector is the resource this capability produces, so naming it
+		// is part of the result, not something a caller has to supply. Identity
+		// is tenant-scoped and the relay supervisor has no tenant, so the URI is
+		// composed here.
+		uri, err := resourceid.SQLConnectorURI(svc.TenantID(), parsed.DatabaseID)
+		if err != nil {
+			return nil, err
+		}
+		out.URI = uri.String()
 		text := fmt.Sprintf("SQL connector %s listening on %s:%d", out.DatabaseID, out.ListenHost, out.ListenPort)
 		return structuredResult(out, text), nil
 	})
@@ -143,6 +153,9 @@ func init() {
 		out, err := svc.Postgres().GetSQLConnectorStatus(databaseID)
 		if err != nil {
 			return nil, err
+		}
+		if uri, uriErr := resourceid.SQLConnectorURI(svc.TenantID(), databaseID); uriErr == nil {
+			out["uri"] = uri.String()
 		}
 		active, _ := out["active"].(bool)
 		text := "SQL connector inactive"

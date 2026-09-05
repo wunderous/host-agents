@@ -42,6 +42,25 @@ func TestEnsureAndInspectHostFile(t *testing.T) {
 	}
 }
 
+func TestSystemdUnitPathRejectsNonServiceOrOutsideSystemDirectory(t *testing.T) {
+	path, err := systemdUnitPath("/etc/systemd/system/opute-provider-k3s.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/etc/systemd/system/opute-provider-k3s.service" {
+		t.Fatalf("path = %q", path)
+	}
+	for _, invalid := range []string{
+		"/etc/passwd",
+		"/etc/systemd/system/opute-provider-k3s.socket",
+		"/etc/systemd/system/../passwd.service",
+	} {
+		if _, err := systemdUnitPath(invalid); err == nil {
+			t.Fatalf("systemdUnitPath accepted %q", invalid)
+		}
+	}
+}
+
 func TestInspectHostFileMatchesExpectedContentWithoutReturningIt(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

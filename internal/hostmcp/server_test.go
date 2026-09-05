@@ -420,6 +420,99 @@ func TestHostPlanMCPValidationAndDurableRun(t *testing.T) {
 	}
 }
 
+// Re-running a completed plan has to reconcile, not replay. A cached
+// completed record is a report about the world at the moment that run
+// finished; returning it verbatim answers a reconcile request with an
+// observation that may be hours stale, which is how a harness route that had
+// been serving 404 for hours kept reporting a completed run whose endpoint
+// observation was an HTTP 200 recorded the day before.
+func TestCompletedHostPlanIsReconciledNotReplayed(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	// ensure_host_file refuses paths outside the invoking user's home
+	// directory, so the managed file lives under a temporary directory there.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("resolve home directory: %v", err)
+	}
+	dir, err := os.MkdirTemp(home, "hostmcp-reconcile-")
+	if err != nil {
+		t.Fatalf("create managed directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	managed := filepath.Join(dir, "managed.txt")
+	planDocument := map[string]any{
+		"contractVersion": "host-plan.v1",
+		"planId":          "hostmcp-reconcile",
+		"generation":      1,
+		"idempotencyKey":  "hostmcp-reconcile-1",
+		"nodes": []any{map[string]any{
+			"id":     "file",
+			"action": map[string]any{"tool": "ensure_host_file", "args": map[string]any{"path": managed, "content": "managed\n"}},
+			"validate": map[string]any{
+				"tool":   "inspect_host_file",
+				"args":   map[string]any{"path": managed},
+				"assert": []any{map[string]any{"path": "/exists", "op": "eq", "value": true}},
+			},
+		}},
+	}
+
+	runPlan := func(step string) string {
+		started, runErr := server.handleRunHostPlan(map[string]any{"plan": planDocument})
+		if runErr != nil || started == nil || started.IsError {
+			t.Fatalf("%s run host plan = %#v err=%v", step, started, runErr)
+		}
+		var startedValue map[string]any
+		encoded, _ := json.Marshal(started.StructuredContent)
+		if decodeErr := json.Unmarshal(encoded, &startedValue); decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		runID, _ := startedValue["runId"].(string)
+		if runID == "" {
+			t.Fatalf("%s run result has no runId: %#v", step, startedValue)
+		}
+		return runID
+	}
+
+	runID := runPlan("first")
+	waitForFile := func(step string) {
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, err := os.Stat(managed); err == nil {
+				return
+			}
+			if time.Now().After(deadline) {
+				record, _, _ := server.state.GetPlan(runID)
+				t.Fatalf("%s: managed file was not reconciled: %#v", step, record)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	waitForFile("first run")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		record, found, getErr := server.state.GetPlan(runID)
+		if getErr != nil || !found {
+			t.Fatalf("get durable plan: found=%v err=%v", found, getErr)
+		}
+		if record.Status == "completed" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("plan did not complete: %#v", record)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Drift the world out from under the completed record.
+	if removeErr := os.Remove(managed); removeErr != nil {
+		t.Fatalf("remove managed file: %v", removeErr)
+	}
+	if second := runPlan("second"); second != runID {
+		t.Fatalf("expected the same durable run id for the same idempotency key, got %q and %q", runID, second)
+	}
+	waitForFile("second run")
+}
+
 func TestRuntimeRecipeUsesDurableHostPlanRunner(t *testing.T) {
 	server := newStandaloneTestServer(t, true)
 	recipePath := filepath.Join(t.TempDir(), "runtime.yaml")

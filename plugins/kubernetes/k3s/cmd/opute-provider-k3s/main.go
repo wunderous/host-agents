@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
@@ -80,7 +81,15 @@ func operations() []providercontract.Operation {
 	}
 	vmTargetMutation := func(id string, input map[string]any) providercontract.Operation {
 		operation := mutation(id, input)
-		operation.Requires = []providercontract.ResourceBinding{vmTargetBinding()}
+		operation.Requires = instanceTargetBindings()
+		return operation
+	}
+	// The destination side of a join names a guest that is deliberately not a
+	// cluster yet, so its operations bind to the VM/container resource the same
+	// way provisioning does.
+	vmTargetRead := func(id string, input map[string]any) providercontract.Operation {
+		operation := read(id, input)
+		operation.Requires = instanceTargetBindings()
 		return operation
 	}
 	targetDestructive := func(id string, input map[string]any) providercontract.Operation {
@@ -122,14 +131,14 @@ func operations() []providercontract.Operation {
 			"role":                 map[string]any{"type": "string", "enum": []string{"server"}},
 			"expiresInMs":          map[string]any{"type": "integer", "minimum": 1000, "maximum": 86_400_000},
 		}, "destinationHostId")),
-		targetRead(capabilitycontract.KubernetesGetJoinReceiverKeyOperation, targetSchema(map[string]any{})),
-		targetMutation(capabilitycontract.KubernetesRedeemJoinOperation, targetSchema(map[string]any{
+		vmTargetRead(capabilitycontract.KubernetesGetJoinReceiverKeyOperation, vmTargetSchema(map[string]any{})),
+		vmTargetMutation(capabilitycontract.KubernetesRedeemJoinOperation, vmTargetSchema(map[string]any{
 			"redemptionRef":      map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
 			"destinationHostId":  map[string]any{"type": "string", "minLength": 1},
 			"sealedJoinMaterial": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
 			"sourceTargetUri":    map[string]any{"type": "string", "minLength": 1},
 		}, "redemptionRef")),
-		targetMutation(capabilitycontract.KubernetesJoinNodeOperation, targetSchema(map[string]any{
+		vmTargetMutation(capabilitycontract.KubernetesJoinNodeOperation, vmTargetSchema(map[string]any{
 			"redemptionRef":    map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
 			"serverAddress":    map[string]any{"type": "string", "minLength": 1},
 			"joinToken":        map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
@@ -148,6 +157,9 @@ func operations() []providercontract.Operation {
 			"nodeName": map[string]any{"type": "string", "minLength": 1},
 			"role":     map[string]any{"type": "string", "enum": []string{"server"}},
 		}, "nodeName", "role")),
+		targetDestructive(capabilitycontract.KubernetesRecoverQuorumOperation, targetSchema(map[string]any{
+			"acknowledgeSingleMemberReset": map[string]any{"type": "boolean", "const": true},
+		}, "acknowledgeSingleMemberReset")),
 		targetRead(capabilitycontract.KubernetesExecCommandOperation, targetSchema(map[string]any{
 			"kubectlArgs": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string", "minLength": 1}},
 			"stdin":       map[string]any{"type": "string", "writeOnly": true},
@@ -163,6 +175,13 @@ func vmTargetBinding() providercontract.ResourceBinding {
 	return providercontract.ResourceBinding{Argument: "targetUri", ResourceType: "vm", Required: true}
 }
 
+func instanceTargetBindings() []providercontract.ResourceBinding {
+	return []providercontract.ResourceBinding{
+		vmTargetBinding(),
+		{Argument: "targetUri", ResourceType: "container", Required: true},
+	}
+}
+
 func providerOperation(id, effect string, input map[string]any) providercontract.Operation {
 	operation := providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: map[string]any{"type": "object"}, Effect: effect, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: "sync_only"}
 	if effect != "read" {
@@ -176,7 +195,13 @@ func targetSchema(properties map[string]any, operationRequired ...string) map[st
 }
 
 func vmTargetSchema(properties map[string]any, operationRequired ...string) map[string]any {
-	return targetSchemaFor("vm", properties, operationRequired...)
+	properties = cloneMap(properties)
+	properties["targetUri"] = map[string]any{"type": "string", "pattern": "^(vm|container):[a-z][a-z0-9-]{0,31}:.+$"}
+	properties["providerInstanceName"] = map[string]any{"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"}
+	properties["instanceType"] = map[string]any{"type": "string", "enum": []string{"vm", "container"}}
+	required := []string{"targetUri", "providerInstanceName"}
+	required = append(required, operationRequired...)
+	return map[string]any{"type": "object", "required": required, "properties": properties}
 }
 
 func targetSchemaFor(resourceType string, properties map[string]any, operationRequired ...string) map[string]any {
@@ -321,17 +346,17 @@ func dispatch(ctx context.Context, operation string, args map[string]any) (*mcp.
 		}
 		return prepareJoin(ctx, args)
 	case capabilitycontract.KubernetesGetJoinReceiverKeyOperation:
-		if err := requireTarget(args); err != nil {
+		if err := requireProvisionTarget(args); err != nil {
 			return nil, err
 		}
 		return getJoinReceiverKey(ctx, args)
 	case capabilitycontract.KubernetesRedeemJoinOperation:
-		if err := requireTarget(args); err != nil {
+		if err := requireProvisionTarget(args); err != nil {
 			return nil, err
 		}
 		return redeemJoin(ctx, args)
 	case capabilitycontract.KubernetesJoinNodeOperation:
-		if err := requireTarget(args); err != nil {
+		if err := requireProvisionTarget(args); err != nil {
 			return nil, err
 		}
 		return joinNode(ctx, args)
@@ -345,6 +370,11 @@ func dispatch(ctx context.Context, operation string, args map[string]any) (*mcp.
 			return nil, err
 		}
 		return removeNode(ctx, args)
+	case capabilitycontract.KubernetesRecoverQuorumOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return recoverQuorum(ctx, args)
 	case capabilitycontract.KubernetesExecCommandOperation:
 		if err := requireTarget(args); err != nil {
 			return nil, err
@@ -373,12 +403,22 @@ func provision(ctx context.Context, args map[string]any) (*mcp.CallToolResult, e
 		return nil, fmt.Errorf("version contains unsafe characters")
 	}
 	if kind := stringInput(args, "instanceType"); kind == "container" {
-		if _, err := runCommand(ctx, []string{"config", "set", instance, "security.nesting=true"}, nil); err != nil {
-			return nil, fmt.Errorf("enable container nesting: %w", err)
+		if err := configureK3sContainer(ctx, instance); err != nil {
+			return nil, err
 		}
 	}
 	if _, err := runCommand(ctx, []string{"start", instance}, nil); err != nil && !strings.Contains(strings.ToLower(err.Error()), "already running") {
 		return nil, fmt.Errorf("start Kubernetes target: %w", err)
+	}
+	if k3sRuntimeInstalled(ctx, instance) {
+		result, err := waitForClusterInfo(ctx, args)
+		if err != nil {
+			return nil, fmt.Errorf("observe existing Kubernetes runtime: %w", err)
+		}
+		object, _ := result.StructuredContent.(map[string]any)
+		object["provisioned"] = true
+		object["version"] = version
+		return structured(object)
 	}
 	installExec, err := k3sServerInstallExec(args, boolInput(args, "clusterInit"))
 	if err != nil {
@@ -387,7 +427,7 @@ func provision(ctx context.Context, args map[string]any) (*mcp.CallToolResult, e
 	if err := installK3sServer(ctx, instance, version, installExec, "", ""); err != nil {
 		return nil, fmt.Errorf("provision Kubernetes runtime: %w", err)
 	}
-	result, err := getClusterInfo(ctx, args)
+	result, err := waitForClusterInfo(ctx, args)
 	if err != nil {
 		return nil, fmt.Errorf("verify Kubernetes runtime: %w", err)
 	}
@@ -395,6 +435,65 @@ func provision(ctx context.Context, args map[string]any) (*mcp.CallToolResult, e
 	object["provisioned"] = true
 	object["version"] = version
 	return structured(object)
+}
+
+func configureK3sContainer(ctx context.Context, instance string) error {
+	privileged, err := runCommand(ctx, []string{"config", "get", instance, "security.privileged"}, nil)
+	if err != nil {
+		return fmt.Errorf("inspect K3s container privilege: %w", err)
+	}
+	nesting, err := runCommand(ctx, []string{"config", "get", instance, "security.nesting"}, nil)
+	if err != nil {
+		return fmt.Errorf("inspect K3s container nesting: %w", err)
+	}
+	// K3s in a system container needs the container's user namespace so the
+	// KubeletInUserNamespace feature gate can ignore host-protected sysctls.
+	// Privileged Incus containers expose the WSL kernel directly and still fail
+	// ContainerManager startup when /proc/sys is read-only.
+	if strings.EqualFold(strings.TrimSpace(string(privileged)), "false") && strings.EqualFold(strings.TrimSpace(string(nesting)), "true") {
+		return nil
+	}
+	if _, err := runCommand(ctx, []string{"stop", instance}, nil); err != nil && !strings.Contains(strings.ToLower(err.Error()), "not running") {
+		return fmt.Errorf("stop K3s container before privilege configuration: %w", err)
+	}
+	if _, err := runCommand(ctx, []string{"config", "set", instance, "security.nesting=true", "security.privileged=false"}, nil); err != nil {
+		return fmt.Errorf("configure unprivileged nested K3s container: %w", err)
+	}
+	return nil
+}
+
+const provisionReadinessTimeout = 3 * time.Minute
+
+func k3sRuntimeInstalled(ctx context.Context, instance string) bool {
+	_, err := runCommand(ctx, []string{"exec", instance, "--", "test", "-x", "/usr/local/bin/k3s"}, nil)
+	return err == nil
+}
+
+func waitForClusterInfo(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	deadline := time.NewTimer(provisionReadinessTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	var lastErr error
+	for {
+		result, err := getClusterInfo(ctx, args)
+		if err == nil {
+			object, _ := result.StructuredContent.(map[string]any)
+			if ready, ok := object["ready"].(bool); ok && ready {
+				return result, nil
+			}
+			lastErr = fmt.Errorf("cluster has no ready nodes")
+		} else {
+			lastErr = err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline.C:
+			return nil, fmt.Errorf("timed out waiting for Kubernetes readiness: %w", lastErr)
+		case <-ticker.C:
+		}
+	}
 }
 
 func configureRegistry(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -490,6 +589,12 @@ func k3sServerInstallExec(args map[string]any, clusterInit bool) (string, error)
 			return "", fmt.Errorf("flannelIface contains unsafe characters")
 		}
 		flags = append(flags, "--flannel-iface", iface)
+	}
+	if stringInput(args, "instanceType") == "container" {
+		// WSL-backed Incus containers expose the host kernel's sysctls as
+		// read-only. Kubelet supports this namespace-aware mode and otherwise
+		// exits during ContainerManager initialization.
+		flags = append(flags, "--kubelet-arg=feature-gates=KubeletInUserNamespace=true")
 	}
 	return strings.Join(flags, " "), nil
 }
@@ -752,8 +857,8 @@ func requireTarget(args map[string]any) error {
 
 func requireProvisionTarget(args map[string]any) error {
 	uri := stringInput(args, "targetUri")
-	if !strings.HasPrefix(uri, "vm:") {
-		return fmt.Errorf("targetUri must be a canonical VM URI for Kubernetes provisioning")
+	if !strings.HasPrefix(uri, "vm:") && !strings.HasPrefix(uri, "container:") {
+		return fmt.Errorf("targetUri must be a canonical VM or container URI for Kubernetes provisioning")
 	}
 	instance := stringInput(args, "providerInstanceName")
 	if instance == "" {

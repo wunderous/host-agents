@@ -39,6 +39,7 @@ const (
 	KubernetesJoinNodeOperation          = capabilitycontract.KubernetesJoinNodeOperation
 	KubernetesEnsureHAEndpointOperation  = capabilitycontract.KubernetesEnsureHAEndpointOperation
 	KubernetesRemoveNodeOperation        = capabilitycontract.KubernetesRemoveNodeOperation
+	KubernetesRecoverQuorumOperation     = capabilitycontract.KubernetesRecoverQuorumOperation
 )
 
 // KubernetesProviderRequest is the neutral execution envelope passed from

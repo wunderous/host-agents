@@ -145,17 +145,23 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 		if record.Status == "working" || record.Status == "running" || record.Status == plan.RunStatusWaiting {
 			return s.planRunResult(record), nil
 		}
-		if !resume {
-			if recipeMetadata != nil && recipeBoolField(recipeMetadata, "activate") && record.Status == "completed" {
-				record, err = s.ensureRecipeActivation(record, recipeMetadata)
-				if err != nil {
-					return tools.ErrorResult(err), nil
-				}
+		// A terminal record - completed or failed - is a report about the world
+		// as it was when that run stopped, not an observation of it now.
+		// Answering a fresh execution request out of that cache replays history
+		// as if it were evidence: a stored success can name an endpoint probe
+		// recorded a day before the live route started serving 404s, and a
+		// stored failure can name a defect that has since been fixed and rolled,
+		// so the repaired plan never runs. Re-running is the honest answer and
+		// is not redundant work - every node revalidates before it acts and only
+		// re-applies what has actually drifted.
+		if record.Status == "completed" {
+			// The provider adapter is process-local, so a reconnect has to
+			// rebind it before the plan's capability nodes can dispatch.
+			if recipeMetadata != nil && recipeBoolField(recipeMetadata, "activate") {
 				if err := s.activateCompletedProviderCandidate(recipeMetadata); err != nil {
 					return tools.ErrorResult(err), nil
 				}
 			}
-			return s.planRunResult(record), nil
 		}
 		if record.CatalogRevision != "" && record.CatalogRevision != snapshot.Revision {
 			if err := s.state.UpdatePlanCatalogRevision(record.RunID, snapshot.Revision); err != nil {
@@ -185,17 +191,17 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 			return tools.ErrorResult(err), nil
 		}
 		if !created {
-			if record.Status == "working" || record.Status == "running" || record.Status == plan.RunStatusWaiting || !resume {
-				if !resume && recipeMetadata != nil && recipeBoolField(recipeMetadata, "activate") && record.Status == "completed" {
-					record, err = s.ensureRecipeActivation(record, recipeMetadata)
-					if err != nil {
-						return tools.ErrorResult(err), nil
-					}
+			if record.Status == "working" || record.Status == "running" || record.Status == plan.RunStatusWaiting {
+				return s.planRunResult(record), nil
+			}
+			// Same reconcile-do-not-replay rule as the found branch above: a
+			// terminal record is history, not an observation of the world now.
+			if record.Status == "completed" {
+				if recipeMetadata != nil && recipeBoolField(recipeMetadata, "activate") {
 					if err := s.activateCompletedProviderCandidate(recipeMetadata); err != nil {
 						return tools.ErrorResult(err), nil
 					}
 				}
-				return s.planRunResult(record), nil
 			}
 			if record.CatalogRevision != "" && record.CatalogRevision != snapshot.Revision {
 				if err := s.state.UpdatePlanCatalogRevision(record.RunID, snapshot.Revision); err != nil {

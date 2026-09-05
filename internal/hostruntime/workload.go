@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +36,6 @@ func (r *Runtime) RunHostWorkloadContext(ctx context.Context, scope string, comm
 	unit := workloadUnitName(scope, command)
 	argv := []string{
 		defaultWorkloadSystemdRunPath,
-		"--user",
 		"--unit=" + unit,
 		"--wait",
 		"--collect",
@@ -50,6 +50,13 @@ func (r *Runtime) RunHostWorkloadContext(ctx context.Context, scope string, comm
 		"--property=TasksMax=4096",
 		"--property=RuntimeMaxSec=" + formatSeconds(seconds),
 		"--property=TimeoutStopSec=30s",
+	}
+	// A system-scoped Host Agent runs as root under the system manager. Asking
+	// systemd-run for a user bus from that service fails with "No medium found"
+	// and leaves typed host commands unable to reach their declared workload
+	// boundary. Non-root agents retain the user-manager projection.
+	if os.Geteuid() != 0 {
+		argv = append(argv[:1], append([]string{"--user"}, argv[1:]...)...)
 	}
 	argv = append(argv, command...)
 	return hostexec.RunCommandContext(ctx, argv, onData, timeout+30*time.Second)

@@ -35,6 +35,11 @@ func (s *Service) DescribeHost() HostInfoResult {
 	if capacity, err := s.deps.VMInventoryCapacity(); err == nil {
 		result.Capacity = &capacity
 	}
+	if s.deps.RootDiskQuotaSupport != nil {
+		if quota, err := s.deps.RootDiskQuotaSupport(); err == nil {
+			result.RootDiskQuota = quota
+		}
+	}
 	result.System = heartbeat.ReadHostSystemMetadata()
 	if s.shared.ResourceSnapshot != nil {
 		if result.System == nil {

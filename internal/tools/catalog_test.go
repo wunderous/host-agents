@@ -306,6 +306,32 @@ func TestCanonicalKubernetesOperationsRequireClusterURIs(t *testing.T) {
 	}
 }
 
+func TestIncusCatalogAdvertisesHelmPrerequisiteOperation(t *testing.T) {
+	definitions, err := HostToolDefinitionsForProvider("incus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, definition := range definitions {
+		if definition.Name != "install_helm_chart" {
+			continue
+		}
+		if definition.InputSchema["required"] == nil {
+			t.Fatal("install_helm_chart must declare its input contract")
+		}
+		requires, ok := definition.Meta["requires"].([]map[string]any)
+		if !ok || len(requires) != 2 {
+			t.Fatalf("install_helm_chart must declare VM/container resource bindings: %#v", definition.Meta["requires"])
+		}
+		for _, required := range requires {
+			if required["argument"] != "uri" || required["required"] != true {
+				t.Fatalf("install_helm_chart binding is not canonical and required: %#v", required)
+			}
+		}
+		return
+	}
+	t.Fatal("install_helm_chart must be advertised by the Incus catalog")
+}
+
 func TestHostToolDefinitionsAlwaysExposeOutputSchemas(t *testing.T) {
 	definitions, err := HostToolDefinitionsForProvider("incus")
 	if err != nil {

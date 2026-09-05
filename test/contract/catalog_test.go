@@ -41,6 +41,10 @@ func TestIncusCatalogMatchesExportMinusOmitted(t *testing.T) {
 	// legacy exported Incus schema, and is intentionally public for trusted
 	// provider callbacks.
 	want = append(want, tools.ToolDefinition{Name: "run_instance_command"})
+	// Helm execution is a Host Agent-owned generic capability. It is appended
+	// by the Go catalog because the legacy Incus export does not carry its
+	// current execution binding contract.
+	want = append(want, tools.ToolDefinition{Name: "install_helm_chart"})
 	for _, name := range tools.IncusInventoryTools {
 		found := false
 		for _, tool := range want {

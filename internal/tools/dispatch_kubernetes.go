@@ -155,3 +155,22 @@ func init() {
 		return structuredResult(out, "Helm chart rendered."), nil
 	})
 }
+
+func init() {
+	// exec_kubernetes_command was published in the catalog with no handler
+	// behind it: tools/list advertised it and every call returned "tool not
+	// found". Registering it here also gives the capability a declared
+	// admission class, which is what the fail-closed cost guard requires.
+	register(toolname.ExecKubernetesCommand, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Kubernetes().ExecKubernetesCommand(kubernetes.ExecKubernetesCommandArgs{
+			URI:     resourceURIFromBinding(binding),
+			Command: stringField(args, "command"),
+			Args:    stringSliceField(args, "args"),
+			Stdin:   stringField(args, "stdin"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, ""), nil
+	})
+}
