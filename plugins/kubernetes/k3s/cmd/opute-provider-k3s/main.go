@@ -462,7 +462,12 @@ func configureK3sContainer(ctx context.Context, instance string) error {
 	return nil
 }
 
-const provisionReadinessTimeout = 3 * time.Minute
+var (
+	provisionReadinessTimeout      = 3 * time.Minute
+	provisionReadinessPollInterval = 2 * time.Second
+)
+
+type providerCommandRunner func(context.Context, []string, []byte) ([]byte, error)
 
 func k3sRuntimeInstalled(ctx context.Context, instance string) bool {
 	_, err := runCommand(ctx, []string{"exec", instance, "--", "test", "-x", "/usr/local/bin/k3s"}, nil)
@@ -470,13 +475,17 @@ func k3sRuntimeInstalled(ctx context.Context, instance string) bool {
 }
 
 func waitForClusterInfo(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	return waitForClusterInfoWithRunner(ctx, args, runCommand)
+}
+
+func waitForClusterInfoWithRunner(ctx context.Context, args map[string]any, run providerCommandRunner) (*mcp.CallToolResult, error) {
 	deadline := time.NewTimer(provisionReadinessTimeout)
 	defer deadline.Stop()
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(provisionReadinessPollInterval)
 	defer ticker.Stop()
 	var lastErr error
 	for {
-		result, err := getClusterInfo(ctx, args)
+		result, err := getClusterInfoWithRunner(ctx, args, run)
 		if err == nil {
 			object, _ := result.StructuredContent.(map[string]any)
 			if ready, ok := object["ready"].(bool); ok && ready {
@@ -497,6 +506,10 @@ func waitForClusterInfo(ctx context.Context, args map[string]any) (*mcp.CallTool
 }
 
 func configureRegistry(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	return configureRegistryWithRunner(ctx, args, runCommand)
+}
+
+func configureRegistryWithRunner(ctx context.Context, args map[string]any, run providerCommandRunner) (*mcp.CallToolResult, error) {
 	instance := stringInput(args, "providerInstanceName")
 	endpoint := strings.TrimRight(stringInput(args, "endpoint"), "/")
 	parsed, err := url.Parse(endpoint)
@@ -517,28 +530,40 @@ func configureRegistry(ctx context.Context, args map[string]any) (*mcp.CallToolR
 	config := fmt.Sprintf("mirrors:\n  %s:\n    endpoint:\n      - %s\nconfigs: {}\n", registry, protocol+"://"+parsed.Host)
 	encoded := base64.StdEncoding.EncodeToString([]byte(config))
 	write := fmt.Sprintf("mkdir -p /etc/rancher/k3s; printf '%%s' %s | base64 -d > /etc/rancher/k3s/registries.yaml", shellQuote(encoded))
-	if _, err := runCommand(ctx, []string{"exec", instance, "--", "bash", "-lc", write}, nil); err != nil {
+	if _, err := run(ctx, []string{"exec", instance, "--", "bash", "-lc", write}, nil); err != nil {
 		return nil, fmt.Errorf("configure Kubernetes registry: %w", err)
 	}
-	if _, err := runCommand(ctx, []string{"exec", instance, "--", "systemctl", "restart", "k3s"}, nil); err != nil {
+	if _, err := run(ctx, []string{"exec", instance, "--", "systemctl", "restart", "k3s"}, nil); err != nil {
 		return nil, fmt.Errorf("restart Kubernetes runtime after registry configuration: %w", err)
 	}
-	return structured(map[string]any{
-		"targetUri":  stringInput(args, "targetUri"),
-		"registry":   registry,
-		"endpoint":   protocol + "://" + parsed.Host,
-		"configured": true,
-	})
+	result, err := waitForClusterInfoWithRunner(ctx, args, run)
+	if err != nil {
+		return nil, fmt.Errorf("verify Kubernetes runtime after registry configuration: %w", err)
+	}
+	object, _ := result.StructuredContent.(map[string]any)
+	object["targetUri"] = stringInput(args, "targetUri")
+	object["registry"] = registry
+	object["endpoint"] = protocol + "://" + parsed.Host
+	object["configured"] = true
+	return structured(object)
 }
 
 func restart(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	return restartWithRunner(ctx, args, runCommand)
+}
+
+func restartWithRunner(ctx context.Context, args map[string]any, run providerCommandRunner) (*mcp.CallToolResult, error) {
 	instance := stringInput(args, "providerInstanceName")
-	if _, err := runCommand(ctx, []string{"exec", instance, "--", "systemctl", "restart", "k3s"}, nil); err != nil {
+	if _, err := run(ctx, []string{"exec", instance, "--", "systemctl", "restart", "k3s"}, nil); err != nil {
 		return nil, fmt.Errorf("restart Kubernetes runtime: %w", err)
 	}
-	result, err := getClusterInfo(ctx, args)
+	// Restarting systemd is not readiness evidence. During normal guest startup
+	// the API can return ServiceUnavailable for several seconds while the node
+	// and embedded etcd settle, so poll the same typed membership read used by
+	// provisioning before reporting the restart as complete.
+	result, err := waitForClusterInfoWithRunner(ctx, args, run)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("verify Kubernetes runtime after restart: %w", err)
 	}
 	object, _ := result.StructuredContent.(map[string]any)
 	object["restarted"] = true
@@ -759,12 +784,16 @@ func listClusters(ctx context.Context, _ map[string]any) (*mcp.CallToolResult, e
 }
 
 func getClusterInfo(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	return getClusterInfoWithRunner(ctx, args, runCommand)
+}
+
+func getClusterInfoWithRunner(ctx context.Context, args map[string]any, run providerCommandRunner) (*mcp.CallToolResult, error) {
 	instance := stringInput(args, "providerInstanceName")
-	versionOutput, err := runCommand(ctx, []string{"exec", instance, "--", "k3s", "--version"}, nil)
+	versionOutput, err := run(ctx, []string{"exec", instance, "--", "k3s", "--version"}, nil)
 	if err != nil {
 		return nil, err
 	}
-	nodesOutput, err := runCommand(ctx, []string{"exec", instance, "--", "k3s", "kubectl", "get", "nodes", "-o", "custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type,VERSION:.status.nodeInfo.kubeletVersion", "--no-headers"}, nil)
+	nodesOutput, err := run(ctx, []string{"exec", instance, "--", "k3s", "kubectl", "get", "nodes", "-o", "custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type,VERSION:.status.nodeInfo.kubeletVersion", "--no-headers"}, nil)
 	if err != nil {
 		return nil, err
 	}

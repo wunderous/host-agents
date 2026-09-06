@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -355,6 +356,103 @@ func TestEndpointHTTPStatusAcceptableIncludesKubernetesAuthChallenge(t *testing.
 		if endpointHTTPStatusAcceptable(status) {
 			t.Fatalf("endpointHTTPStatusAcceptable(%d) = true, want false", status)
 		}
+	}
+}
+
+func TestRestartWaitsForKubernetesApiAfterRestart(t *testing.T) {
+	originalTimeout := provisionReadinessTimeout
+	originalPollInterval := provisionReadinessPollInterval
+	provisionReadinessTimeout = time.Second
+	provisionReadinessPollInterval = time.Millisecond
+	t.Cleanup(func() {
+		provisionReadinessTimeout = originalTimeout
+		provisionReadinessPollInterval = originalPollInterval
+	})
+
+	args := map[string]any{
+		"targetUri":            "cluster:local:restart-test",
+		"providerInstanceName": "restart-test",
+		"instanceType":         "container",
+	}
+	nodeReads := 0
+	run := func(_ context.Context, command []string, _ []byte) ([]byte, error) {
+		joined := strings.Join(command, " ")
+		switch {
+		case strings.HasSuffix(joined, "systemctl restart k3s"):
+			return nil, nil
+		case strings.HasSuffix(joined, "k3s --version"):
+			return []byte("k3s version v1.31.8+k3s1 (test)"), nil
+		case strings.Contains(joined, "k3s kubectl get nodes"):
+			nodeReads++
+			if nodeReads == 1 {
+				return nil, fmt.Errorf("ServiceUnavailable")
+			}
+			return []byte("restart-test Ready v1.31.8+k3s1\n"), nil
+		default:
+			return nil, fmt.Errorf("unexpected command: %s", joined)
+		}
+	}
+
+	result, err := restartWithRunner(context.Background(), args, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, ok := result.StructuredContent.(map[string]any)
+	if !ok || object["restarted"] != true || object["ready"] != true {
+		t.Fatalf("restart result = %#v", result.StructuredContent)
+	}
+	if nodeReads != 2 {
+		t.Fatalf("node reads = %d, want one retry after ServiceUnavailable", nodeReads)
+	}
+}
+
+func TestConfigureRegistryWaitsForKubernetesApiAfterRestart(t *testing.T) {
+	originalTimeout := provisionReadinessTimeout
+	originalPollInterval := provisionReadinessPollInterval
+	provisionReadinessTimeout = time.Second
+	provisionReadinessPollInterval = time.Millisecond
+	t.Cleanup(func() {
+		provisionReadinessTimeout = originalTimeout
+		provisionReadinessPollInterval = originalPollInterval
+	})
+
+	args := map[string]any{
+		"targetUri":            "cluster:local:registry-test",
+		"providerInstanceName": "registry-test",
+		"instanceType":         "container",
+		"endpoint":             "http://registry.test:30500",
+	}
+	nodeReads := 0
+	run := func(_ context.Context, command []string, _ []byte) ([]byte, error) {
+		joined := strings.Join(command, " ")
+		switch {
+		case strings.Contains(joined, "bash -lc"):
+			return nil, nil
+		case strings.HasSuffix(joined, "systemctl restart k3s"):
+			return nil, nil
+		case strings.HasSuffix(joined, "k3s --version"):
+			return []byte("k3s version v1.31.8+k3s1 (test)"), nil
+		case strings.Contains(joined, "k3s kubectl get nodes"):
+			nodeReads++
+			if nodeReads == 1 {
+				return nil, fmt.Errorf("ServiceUnavailable")
+			}
+			return []byte("registry-test Ready v1.31.8+k3s1\n"), nil
+		default:
+			return nil, fmt.Errorf("unexpected command: %s", joined)
+		}
+	}
+
+	result, err := configureRegistryWithRunner(context.Background(), args, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, ok := result.StructuredContent.(map[string]any)
+	if !ok || object["configured"] != true || object["ready"] != true {
+		t.Fatalf("configure registry result = %#v", result.StructuredContent)
+	}
+	if nodeReads != 2 {
+		t.Fatalf("node reads = %d, want one retry after ServiceUnavailable", nodeReads)
 	}
 }
 
