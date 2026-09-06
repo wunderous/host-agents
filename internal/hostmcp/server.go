@@ -635,6 +635,18 @@ func (s *Server) admitInvocationWithDescriptor(ctx context.Context, name string,
 			MemoryBytes: descriptor.ResourceCost.MemoryBytes, DiskBytes: descriptor.ResourceCost.DiskBytes,
 			Tasks: descriptor.ResourceCost.Tasks,
 		}
+		if descriptor.ResourceCost.ArgumentBindings != nil {
+			resolved, err := resource.ResolveArgumentCost(cost, args, resource.CostArgumentBindings{
+				CPUCores:    descriptor.ResourceCost.ArgumentBindings.CPUCores,
+				MemoryBytes: descriptor.ResourceCost.ArgumentBindings.MemoryBytes,
+				DiskBytes:   descriptor.ResourceCost.ArgumentBindings.DiskBytes,
+				Tasks:       descriptor.ResourceCost.ArgumentBindings.Tasks,
+			})
+			if err != nil {
+				return nil, err
+			}
+			cost = resolved
+		}
 	} else if found && providerCapability && descriptor.Effect != string(tools.EffectRead) {
 		return nil, fmt.Errorf("resource_declaration_required: provider workload capability %q must declare typed resourceCost metadata", name)
 	} else if found && providerCapability {

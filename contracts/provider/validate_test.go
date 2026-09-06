@@ -100,6 +100,43 @@ func TestValidateOperationRequiresFiniteNonNegativeResourceCost(t *testing.T) {
 	}
 }
 
+func TestValidateOperationChecksDynamicResourceCostBindingsAgainstInputSchema(t *testing.T) {
+	operation := validService().Operations[0]
+	operation.InputSchema = map[string]any{"type": "object", "properties": map[string]any{
+		"cpus":   map[string]any{"type": "number"},
+		"memory": map[string]any{"type": "string"},
+		"disk":   map[string]any{"type": "string"},
+	}}
+	operation.ResourceCost = &ResourceCost{
+		Class: "heavy", CPUCores: 2, MemoryBytes: 2 << 30, Tasks: 8,
+		ArgumentBindings: &ResourceCostArgumentBindings{CPUCores: "cpus", MemoryBytes: "memory", DiskBytes: "disk"},
+	}
+	if err := validateOperation(operation, "test"); err != nil {
+		t.Fatalf("valid dynamic resource cost rejected: %v", err)
+	}
+	cases := []struct {
+		name   string
+		mutate func(*Operation)
+	}{
+		{name: "missing path", mutate: func(value *Operation) { value.ResourceCost.ArgumentBindings.MemoryBytes = "missing" }},
+		{name: "wrong type", mutate: func(value *Operation) { value.ResourceCost.ArgumentBindings.CPUCores = "memory" }},
+		{name: "missing static fallback", mutate: func(value *Operation) { value.ResourceCost.MemoryBytes = 0 }},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			candidate := operation
+			cost := *operation.ResourceCost
+			bindings := *operation.ResourceCost.ArgumentBindings
+			cost.ArgumentBindings = &bindings
+			candidate.ResourceCost = &cost
+			testCase.mutate(&candidate)
+			if err := validateOperation(candidate, "test"); err == nil {
+				t.Fatal("invalid dynamic resource cost was accepted")
+			}
+		})
+	}
+}
+
 // serviceManifest returns a manifest whose only variable is the service under
 // test, so a failure names the service rule rather than unrelated envelope
 // validation.

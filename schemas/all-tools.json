@@ -667,7 +667,18 @@
           "sourcePath": "uri",
           "resourceType": "vm"
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8,
+        "argumentBindings": {
+          "cpuCores": "cpus",
+          "memoryBytes": "memory",
+          "diskBytes": "disk"
+        }
+      }
     }
   },
   {
@@ -4226,7 +4237,18 @@
           "sourcePath": "uri",
           "resourceType": "container"
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8,
+        "argumentBindings": {
+          "cpuCores": "cpus",
+          "memoryBytes": "memory",
+          "diskBytes": "disk"
+        }
+      }
     }
   },
   {

@@ -143,7 +143,7 @@ func validateOperation(operation Operation, owner string) error {
 	if operation.TaskSupport != "" && operation.TaskSupport != "sync_only" && operation.TaskSupport != "bridged" {
 		return fmt.Errorf("provider operation %q has unsupported taskSupport %q", operation.ID, operation.TaskSupport)
 	}
-	if err := validateResourceCost(operation.ResourceCost, operation.ID); err != nil {
+	if err := validateResourceCost(operation.ResourceCost, operation.InputSchema, operation.ID); err != nil {
 		return err
 	}
 	for _, binding := range operation.Requires {
@@ -171,7 +171,7 @@ func validateOperation(operation Operation, owner string) error {
 	return nil
 }
 
-func validateResourceCost(cost *ResourceCost, operationID string) error {
+func validateResourceCost(cost *ResourceCost, inputSchema map[string]any, operationID string) error {
 	if cost == nil {
 		return nil
 	}
@@ -189,10 +189,61 @@ func validateResourceCost(cost *ResourceCost, operationID string) error {
 	}
 	switch strings.TrimSpace(cost.Class) {
 	case "", "control", "normal", "heavy":
-		return nil
 	default:
 		return fmt.Errorf("provider operation %q has unsupported resourceCost.class %q", operationID, cost.Class)
 	}
+	if bindings := cost.ArgumentBindings; bindings != nil {
+		for _, binding := range []struct {
+			field        string
+			path         string
+			allowedTypes map[string]bool
+			static       bool
+		}{
+			{field: "cpuCores", path: bindings.CPUCores, allowedTypes: map[string]bool{"number": true, "integer": true}, static: cost.CPUCores > 0},
+			{field: "memoryBytes", path: bindings.MemoryBytes, allowedTypes: map[string]bool{"string": true, "number": true, "integer": true}, static: cost.MemoryBytes > 0},
+			{field: "diskBytes", path: bindings.DiskBytes, allowedTypes: map[string]bool{"string": true, "number": true, "integer": true}, static: true},
+			{field: "tasks", path: bindings.Tasks, allowedTypes: map[string]bool{"number": true, "integer": true}, static: cost.Tasks > 0},
+		} {
+			path := strings.TrimSpace(binding.path)
+			if path == "" {
+				continue
+			}
+			if !binding.static {
+				return fmt.Errorf("provider operation %q resourceCost.%s requires a positive static fallback", operationID, binding.field)
+			}
+			property, ok := providerSchemaPath(inputSchema, path)
+			if !ok {
+				return fmt.Errorf("provider operation %q resourceCost.%s binding path %q is absent from inputSchema", operationID, binding.field, path)
+			}
+			typeName, _ := property["type"].(string)
+			if !binding.allowedTypes[typeName] {
+				return fmt.Errorf("provider operation %q resourceCost.%s binding path %q has unsupported type %q", operationID, binding.field, path, typeName)
+			}
+		}
+	}
+	return nil
+}
+
+func providerSchemaPath(schema map[string]any, path string) (map[string]any, bool) {
+	if strings.HasPrefix(path, ".") || strings.HasSuffix(path, ".") || strings.ContainsAny(path, "[]/") {
+		return nil, false
+	}
+	current := schema
+	for _, segment := range strings.Split(path, ".") {
+		if segment == "" {
+			return nil, false
+		}
+		properties, ok := current["properties"].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		child, ok := properties[segment].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current = child
+	}
+	return current, true
 }
 
 func validateResultTypes(operation Operation) error {

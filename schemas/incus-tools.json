@@ -684,7 +684,18 @@
           "resourceType": "vm",
           "selectorId": "uri"
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8,
+        "argumentBindings": {
+          "cpuCores": "cpus",
+          "memoryBytes": "memory",
+          "diskBytes": "disk"
+        }
+      }
     }
   },
   {
@@ -3597,7 +3608,19 @@
     "outputSchema": {
       "type": "object"
     },
-    "_meta": {}
+    "_meta": {
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8,
+        "argumentBindings": {
+          "cpuCores": "cpus",
+          "memoryBytes": "memory",
+          "diskBytes": "disk"
+        }
+      }
+    }
   },
   {
     "name": "provision_vm",
@@ -3702,7 +3725,18 @@
           "resourceType": "container",
           "selectorId": "uri"
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8,
+        "argumentBindings": {
+          "cpuCores": "cpus",
+          "memoryBytes": "memory",
+          "diskBytes": "disk"
+        }
+      }
     }
   },
   {

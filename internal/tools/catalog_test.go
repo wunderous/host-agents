@@ -230,6 +230,37 @@ func TestIncusCatalogPublishesVMInventoryContinuation(t *testing.T) {
 	t.Fatalf("VM inventory continuation missing from catalog edges: %#v", snapshot.Edges)
 }
 
+func TestIncusProvisioningCostsDeclareRequestedResourceBindings(t *testing.T) {
+	definitions, err := HostToolDefinitionsForProvider("incus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := BuildCapabilityCatalog("incus", definitions)
+	wanted := map[string]bool{"create_vm": true, "provision_vm": true, "provision_container": true}
+	seen := make(map[string]bool, len(wanted))
+	for _, descriptor := range snapshot.Tools {
+		if !wanted[descriptor.Name] {
+			continue
+		}
+		seen[descriptor.Name] = true
+		if descriptor.ResourceCost == nil || descriptor.ResourceCost.Class != "heavy" {
+			t.Fatalf("%s resource cost = %#v", descriptor.Name, descriptor.ResourceCost)
+		}
+		bindings := descriptor.ResourceCost.ArgumentBindings
+		if bindings == nil || bindings.CPUCores != "cpus" || bindings.MemoryBytes != "memory" || bindings.DiskBytes != "disk" {
+			t.Fatalf("%s dynamic resource bindings = %#v", descriptor.Name, bindings)
+		}
+		if descriptor.ResourceCost.CPUCores != 2 || descriptor.ResourceCost.MemoryBytes != 2<<30 || descriptor.ResourceCost.Tasks != 8 {
+			t.Fatalf("%s static resource fallback = %#v", descriptor.Name, descriptor.ResourceCost)
+		}
+	}
+	for name := range wanted {
+		if !seen[name] {
+			t.Fatalf("expected provisioning capability %q was not loaded", name)
+		}
+	}
+}
+
 func TestCanonicalBuiltInTargetsDeclareExecutionBindings(t *testing.T) {
 	definitions, err := LoadAllToolDefinitions("incus")
 	if err != nil {

@@ -320,6 +320,51 @@ func TestPolicyReconcileRemainsAdmissibleWhenWorkloadEnforcementIsUnknown(t *tes
 	}
 }
 
+func TestAdmissionUsesDescriptorDeclaredRequestedMemory(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	admission, err := resource.NewCoordinator(resource.Config{
+		LockDir:             t.TempDir(),
+		MaxNormal:           2,
+		MaxHeavy:            1,
+		MaxQueued:           2,
+		DiskPaths:           []string{t.TempDir()},
+		PolicyRevision:      resource.HostResourcePolicyRevision,
+		EnforcementMode:     resource.EnforcementEnforced,
+		FailClosedOnUnknown: false,
+		CPUCapacityCores:    64,
+		MemoryCapacityBytes: 1 << 50,
+		TaskCapacity:        1 << 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.admission = admission
+	descriptor := tools.CapabilityDescriptor{
+		OperationID: "provision_vm", Name: "provision_vm", Version: 1,
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"cpus":   map[string]any{"type": "number"},
+			"memory": map[string]any{"type": "string"},
+		}},
+		OutputSchema: map[string]any{"type": "object"}, Effect: "mutation",
+		ResourceCost: &tools.ResourceCost{
+			Class: "heavy", CPUCores: 2, MemoryBytes: 2 << 30, Tasks: 8,
+			ArgumentBindings: &tools.ResourceCostArgumentBindings{CPUCores: "cpus", MemoryBytes: "memory"},
+		},
+	}
+	reservation, err := server.admitInvocationWithDescriptor(context.Background(), descriptor.Name, map[string]any{
+		"cpus": float64(1), "memory": "1760MiB",
+	}, tools.ExecutionBinding{}, descriptor, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reservation == nil || reservation.Request.CPUCores != 1 || reservation.Request.MemoryBytes != 1760*(1<<20) {
+		t.Fatalf("reservation request = %#v", reservation)
+	}
+	if err := admission.Release(reservation); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTaskProjectionUsesDeclaredWriteOnlySchema(t *testing.T) {
 	server := newStandaloneTestServer(t, true)
 	projected := server.redactTaskArgs("put_k8s_secret", map[string]any{

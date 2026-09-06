@@ -3,6 +3,7 @@ package catalog
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -427,6 +428,9 @@ func (r *Registry) validateDescriptor(descriptor tools.CapabilityDescriptor) err
 	if err := validateJSONSchema(descriptor.OperationID+" output", descriptor.OutputSchema); err != nil {
 		return err
 	}
+	if err := validateResourceCost(descriptor); err != nil {
+		return err
+	}
 	if err := selectors.Validate(descriptor.OutputSchema, descriptor.OutputType, descriptor.ResultTypes); err != nil {
 		return fmt.Errorf("capability %q result selectors: %w", descriptor.OperationID, err)
 	}
@@ -451,6 +455,65 @@ func (r *Registry) validateDescriptor(descriptor tools.CapabilityDescriptor) err
 	for _, binding := range descriptor.Produces {
 		if err := r.validateBinding(descriptor, binding, descriptor.OutputSchema, "produces"); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateResourceCost(descriptor tools.CapabilityDescriptor) error {
+	cost := descriptor.ResourceCost
+	if cost == nil {
+		return nil
+	}
+	if math.IsNaN(cost.CPUCores) || math.IsInf(cost.CPUCores, 0) || cost.CPUCores < 0 {
+		return fmt.Errorf("capability %q has an invalid resourceCost.cpuCores", descriptor.OperationID)
+	}
+	for field, value := range map[string]int64{
+		"memoryBytes": cost.MemoryBytes,
+		"diskBytes":   cost.DiskBytes,
+		"tasks":       cost.Tasks,
+	} {
+		if value < 0 {
+			return fmt.Errorf("capability %q has a negative resourceCost.%s", descriptor.OperationID, field)
+		}
+	}
+	switch cost.Class {
+	case "", "control", "normal", "heavy":
+	default:
+		return fmt.Errorf("capability %q has unsupported resourceCost.class %q", descriptor.OperationID, cost.Class)
+	}
+	bindings := cost.ArgumentBindings
+	if bindings == nil {
+		return nil
+	}
+	for _, binding := range []struct {
+		field        string
+		path         string
+		allowedTypes map[string]bool
+		static       bool
+	}{
+		{field: "cpuCores", path: bindings.CPUCores, allowedTypes: map[string]bool{"number": true, "integer": true}, static: cost.CPUCores > 0},
+		{field: "memoryBytes", path: bindings.MemoryBytes, allowedTypes: map[string]bool{"string": true, "number": true, "integer": true}, static: cost.MemoryBytes > 0},
+		{field: "diskBytes", path: bindings.DiskBytes, allowedTypes: map[string]bool{"string": true, "number": true, "integer": true}, static: true},
+		{field: "tasks", path: bindings.Tasks, allowedTypes: map[string]bool{"number": true, "integer": true}, static: cost.Tasks > 0},
+	} {
+		path := strings.TrimSpace(binding.path)
+		if path == "" {
+			continue
+		}
+		if !binding.static {
+			return fmt.Errorf("capability %q resourceCost.%s requires a positive static fallback", descriptor.OperationID, binding.field)
+		}
+		if strings.HasPrefix(path, ".") || strings.HasSuffix(path, ".") || strings.ContainsAny(path, "[]/") {
+			return fmt.Errorf("capability %q resourceCost.%s binding path %q is not a supported object path", descriptor.OperationID, binding.field, path)
+		}
+		property, ok := schemaPath(descriptor.InputSchema, path)
+		if !ok {
+			return fmt.Errorf("capability %q resourceCost.%s binding path %q is absent from inputSchema", descriptor.OperationID, binding.field, path)
+		}
+		typeName, _ := property["type"].(string)
+		if !binding.allowedTypes[typeName] {
+			return fmt.Errorf("capability %q resourceCost.%s binding path %q has unsupported type %q", descriptor.OperationID, binding.field, path, typeName)
 		}
 	}
 	return nil

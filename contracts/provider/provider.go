@@ -110,11 +110,21 @@ type Operation struct {
 // ResourceCost is the provider-declared, provider-neutral admission cost for
 // one operation. The Host Agent owns admission; providers only declare cost.
 type ResourceCost struct {
-	CPUCores    float64 `json:"cpuCores,omitempty" yaml:"cpuCores,omitempty"`
-	MemoryBytes int64   `json:"memoryBytes,omitempty" yaml:"memoryBytes,omitempty"`
-	DiskBytes   int64   `json:"diskBytes,omitempty" yaml:"diskBytes,omitempty"`
-	Tasks       int64   `json:"tasks,omitempty" yaml:"tasks,omitempty"`
-	Class       string  `json:"class,omitempty" yaml:"class,omitempty"`
+	CPUCores         float64                       `json:"cpuCores,omitempty" yaml:"cpuCores,omitempty"`
+	MemoryBytes      int64                         `json:"memoryBytes,omitempty" yaml:"memoryBytes,omitempty"`
+	DiskBytes        int64                         `json:"diskBytes,omitempty" yaml:"diskBytes,omitempty"`
+	Tasks            int64                         `json:"tasks,omitempty" yaml:"tasks,omitempty"`
+	Class            string                        `json:"class,omitempty" yaml:"class,omitempty"`
+	ArgumentBindings *ResourceCostArgumentBindings `json:"argumentBindings,omitempty" yaml:"argumentBindings,omitempty"`
+}
+
+// ResourceCostArgumentBindings maps dimensions to paths in the operation's
+// declared input schema. The Host Agent resolves the paths generically.
+type ResourceCostArgumentBindings struct {
+	CPUCores    string `json:"cpuCores,omitempty" yaml:"cpuCores,omitempty"`
+	MemoryBytes string `json:"memoryBytes,omitempty" yaml:"memoryBytes,omitempty"`
+	DiskBytes   string `json:"diskBytes,omitempty" yaml:"diskBytes,omitempty"`
+	Tasks       string `json:"tasks,omitempty" yaml:"tasks,omitempty"`
 }
 
 // ResourceBinding is provider-declared metadata. The host validates its

@@ -26,6 +26,8 @@ The Host Agent MCP interface is the execution boundary for host operations, prov
    Tool executions validate structured outputs against the declared `OutputSchema`. Schema violations fail closed into typed capability errors (`invalid_result`) rather than recording malformed observations.
 7. **Model-Owned Intent Satisfaction**:
    The Host Agent never infers or sets semantic satisfaction on capability results (C-05).
+8. **Descriptor-Declared Admission Quantities**:
+   Mutating capabilities publish a provider-neutral static resource-cost fallback and may declare typed argument paths for requested CPU, memory, disk, and task quantities. Admission resolves those quantities from the unchanged typed argument object before execution; malformed bindings, invalid values, and missing required fallbacks fail closed. Operation names never select or infer resource costs.
 
 ## Invariant Delta
 
@@ -45,9 +47,11 @@ The Host Agent MCP interface is the execution boundary for host operations, prov
 - C-16: Typed resource identity (`host-service` URIs emitted by discovery).
 - C-17: Type-derived capability edges (`list_host_services` -> `inspect_host_service`).
 - C-18: Public capability parity (`tools/list` equals `CatalogSnapshot` names by default; ADR 0012 is the opt-in wire projection).
+- C-04: Resource admission uses descriptor-declared argument bindings and static fallbacks, preserving tool-owned input validation without operation-name heuristics.
 
 ## Validation Evidence
 
 - Automated contract tests: `test/contract/tool_contract_conformance_test.go` verifying 1:1 parity, explicit effects, edge derivation, and non-satisfaction assertions.
+- Admission contract tests: `internal/resource/cost_arguments_test.go`, `internal/hostmcp/server_test.go`, `internal/catalog/registry.go`, and `contracts/provider/validate_test.go` verify descriptor-declared quantities, capacity parsing, schema paths, and fail-closed validation.
 - Architecture tests: `test/contract/architecture_test.go` asserting boundary isolation and absence of product hostnames.
 - Standalone & E2E HTTP test: `test/standalone/codex_e2e_test.go` validating Streamable HTTP MCP discovery, listing, and execution under WSL.

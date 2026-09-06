@@ -60,6 +60,12 @@ func providerOperationDescriptor(
 			DiskBytes: operation.ResourceCost.DiskBytes, Tasks: operation.ResourceCost.Tasks,
 			Class: operation.ResourceCost.Class,
 		}
+		if bindings := operation.ResourceCost.ArgumentBindings; bindings != nil {
+			descriptor.ResourceCost.ArgumentBindings = &tools.ResourceCostArgumentBindings{
+				CPUCores: bindings.CPUCores, MemoryBytes: bindings.MemoryBytes,
+				DiskBytes: bindings.DiskBytes, Tasks: bindings.Tasks,
+			}
+		}
 	}
 	return descriptor
 }

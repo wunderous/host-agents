@@ -52,11 +52,22 @@ type CapabilityDescriptor struct {
 // ResourceCost is typed admission metadata published by a capability. It is
 // provider-neutral; dynamic workload capabilities must declare it explicitly.
 type ResourceCost struct {
-	CPUCores    float64 `json:"cpuCores,omitempty"`
-	MemoryBytes int64   `json:"memoryBytes,omitempty"`
-	DiskBytes   int64   `json:"diskBytes,omitempty"`
-	Tasks       int64   `json:"tasks,omitempty"`
-	Class       string  `json:"class,omitempty"`
+	CPUCores         float64                       `json:"cpuCores,omitempty"`
+	MemoryBytes      int64                         `json:"memoryBytes,omitempty"`
+	DiskBytes        int64                         `json:"diskBytes,omitempty"`
+	Tasks            int64                         `json:"tasks,omitempty"`
+	Class            string                        `json:"class,omitempty"`
+	ArgumentBindings *ResourceCostArgumentBindings `json:"argumentBindings,omitempty"`
+}
+
+// ResourceCostArgumentBindings maps resource dimensions to declared input
+// paths. The host resolves these paths generically; it never branches on a
+// capability name.
+type ResourceCostArgumentBindings struct {
+	CPUCores    string `json:"cpuCores,omitempty"`
+	MemoryBytes string `json:"memoryBytes,omitempty"`
+	DiskBytes   string `json:"diskBytes,omitempty"`
+	Tasks       string `json:"tasks,omitempty"`
 }
 
 // ResourceBinding is a declarative public relationship owned by the
@@ -432,6 +443,10 @@ func resourceCost(def ToolDefinition) *ResourceCost {
 					return &cost
 				}
 			}
+			// A declared but malformed cost must not silently turn into the
+			// registration fallback. The catalog validator will reject the
+			// resulting missing declaration for mutating capabilities.
+			return nil
 		}
 	}
 	if cost, ok := RegisteredResourceCost(def.Name); ok {
