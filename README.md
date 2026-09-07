@@ -146,10 +146,12 @@ GitHub Actions:
 
 The committed Go suite is deterministic and does not require Ollama, llama.cpp,
 or another local model process. The provider-backed lane is explicitly tagged
-and uses the `OPENROUTER_API_KEY` repository secret with the approved
-`ibm/granite4.1:3b` route. It skips when the secret is unavailable, such as on
-fork pull requests. Local-runtime lifecycle coverage remains unit coverage
-against fakes; live local-runtime provisioning is not part of CI.
+and uses the `OPENROUTER_API_KEY` repository secret with the exact
+`ibm-granite/granite-4.1-8b` route. It skips when the secret is unavailable,
+such as on fork pull requests. If OpenRouter does not advertise that exact
+model, the smoke is recorded as blocked while artifact generation continues.
+Local-runtime lifecycle coverage remains unit coverage against fakes; live
+local-runtime provisioning is not part of CI.
 
 Publish a release:
 

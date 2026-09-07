@@ -13,18 +13,14 @@ import (
 )
 
 const (
-	openRouterEndpoint  = "https://openrouter.ai/api/v1"
-	defaultGraniteModel = "ibm-granite/granite-4.2-8b"
+	openRouterEndpoint = "https://openrouter.ai/api/v1"
+	granite41Model     = "ibm-granite/granite-4.1-8b"
 )
 
-func TestOpenRouterGraniteOpenAICompatibleProbe(t *testing.T) {
+func TestOpenRouterGranite41OpenAICompatibleProbe(t *testing.T) {
 	apiKey := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
 	if apiKey == "" {
 		t.Skip("OPENROUTER_API_KEY is not configured")
-	}
-	modelRef := strings.TrimSpace(os.Getenv("OPENROUTER_GRANITE_MODEL"))
-	if modelRef == "" {
-		modelRef = defaultGraniteModel
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -32,7 +28,7 @@ func TestOpenRouterGraniteOpenAICompatibleProbe(t *testing.T) {
 
 	result, err := (&llm.Service{}).ProbeOpenAICompatibleServer(ctx, llm.ProbeOpenAICompatibleArgs{
 		Endpoint:    openRouterEndpoint,
-		ModelRef:    modelRef,
+		ModelRef:    granite41Model,
 		IncludeChat: true,
 		BearerToken: apiKey,
 	})
@@ -40,12 +36,12 @@ func TestOpenRouterGraniteOpenAICompatibleProbe(t *testing.T) {
 		t.Fatalf("probe OpenRouter: %v", err)
 	}
 	if !result.EndpointReady || !result.OpenAIModelsReady || !result.Ready {
-		t.Fatalf("OpenRouter did not advertise configured Granite model %q: %+v", modelRef, result)
+		t.Fatalf("OpenRouter did not advertise Granite 4.1 model %q: %+v", granite41Model, result)
 	}
-	if result.ModelRef != modelRef {
-		t.Fatalf("OpenRouter selected model %q, want %q", result.ModelRef, modelRef)
+	if result.ModelRef != granite41Model {
+		t.Fatalf("OpenRouter selected model %q, want %q", result.ModelRef, granite41Model)
 	}
 	if !result.ChatReady || !result.StreamingChatReady {
-		t.Fatalf("OpenRouter Granite model %q streaming chat is not ready: %+v", modelRef, result)
+		t.Fatalf("OpenRouter Granite 4.1 model %q streaming chat is not ready: %+v", granite41Model, result)
 	}
 }
