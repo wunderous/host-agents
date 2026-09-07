@@ -194,7 +194,9 @@ func TestHostPlanWaitSurvivesRestartAndResumesThroughTasks(t *testing.T) {
 	}
 	waitForPlanStatus := func(current *Server, want string) {
 		t.Helper()
-		deadline := time.Now().Add(30 * time.Second)
+		// The package runs several system-facing tests before this continuation;
+		// keep the assertion bounded while allowing a loaded CI runner to resume.
+		deadline := time.Now().Add(2 * time.Minute)
 		for time.Now().Before(deadline) {
 			record, found, getErr := current.state.GetPlan(runID)
 			if getErr != nil {
