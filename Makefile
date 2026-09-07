@@ -64,7 +64,7 @@ build-provider-linux-x64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go -C plugins/kubernetes/k3s build -a -ldflags='-s -w' -o $(CURDIR)/$(DIST)/opute-provider-k3s-linux-x64 ./cmd/opute-provider-k3s
 
 checksums:
-	sha256sum $(DIST)/host-agent-linux-x64.gz $(DIST)/host-agent-linux-arm64.gz $(DIST)/opute-provider-k3s-linux-x64 > $(DIST)/SHA256SUMS
+	(cd $(DIST) && sha256sum host-agent-linux-x64.gz host-agent-linux-arm64.gz opute-provider-k3s-linux-x64 > SHA256SUMS)
 
 clean:
 	rm -rf $(DIST)

@@ -82,8 +82,9 @@ jobs:
           gzip -t dist/host-agent-linux-x64.gz
           gzip -t dist/host-agent-linux-arm64.gz
           gzip -dc dist/host-agent-linux-x64.gz > dist/host-agent-linux-x64
-          sha256sum dist/host-agent-linux-x64.gz dist/host-agent-linux-arm64.gz dist/opute-provider-k3s-linux-x64 > dist/SHA256SUMS
+          (cd dist && sha256sum host-agent-linux-x64.gz host-agent-linux-arm64.gz opute-provider-k3s-linux-x64 > SHA256SUMS)
           test -s dist/SHA256SUMS
+          (cd dist && sha256sum -c SHA256SUMS)
 
       - name: Standalone Streamable HTTP smoke
         run: OPUTE_STANDALONE_BINARY="${{ github.workspace }}/dist/host-agent-linux-x64" go test ./test/standalone -count=1
