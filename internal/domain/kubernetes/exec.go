@@ -95,7 +95,7 @@ type ExecKubernetesCommandArgs struct {
 // and the argument contract, the provider owns the kubeconfig and the guest.
 func (s *Service) ExecKubernetesCommand(args ExecKubernetesCommandArgs) (map[string]any, error) {
 	if s.executor == nil {
-		return nil, errors.New("Kubernetes provider is required for kubectl execution")
+		return nil, errors.New("kubernetes provider is required for kubectl execution")
 	}
 	uri := strings.TrimSpace(args.URI)
 	if uri == "" {
@@ -107,16 +107,14 @@ func (s *Service) ExecKubernetesCommand(args ExecKubernetesCommandArgs) (map[str
 	}
 	kubectlArgs := make([]string, 0, len(args.Args)+1)
 	kubectlArgs = append(kubectlArgs, command)
-	for _, value := range args.Args {
-		kubectlArgs = append(kubectlArgs, value)
-	}
+	kubectlArgs = append(kubectlArgs, args.Args...)
 	payload := map[string]any{"kubectlArgs": stringsToAny(kubectlArgs)}
 	if args.Stdin != "" {
 		payload["stdin"] = args.Stdin
 	}
 	out, delegated, err := s.ExecuteProvider(KubernetesExecCommandOperation, uri, payload)
 	if !delegated {
-		return nil, errors.New("Kubernetes provider is required for kubectl execution")
+		return nil, errors.New("kubernetes provider is required for kubectl execution")
 	}
 	if err != nil {
 		return nil, err

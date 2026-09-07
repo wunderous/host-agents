@@ -145,7 +145,7 @@ func TestRunnerReconcilesDependentActionWhenDependencyApplied(t *testing.T) {
 		t.Fatalf("first run mutations = parent:%d child:%d, want 1:1", parentMutations.Load(), childMutations.Load())
 	}
 	dirty.Store(true)
-	state, err = runner.Run(context.Background(), doc, state)
+	_, err = runner.Run(context.Background(), doc, state)
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}

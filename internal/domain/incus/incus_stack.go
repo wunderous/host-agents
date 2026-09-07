@@ -159,7 +159,7 @@ func (s *Service) verifyResetIncusStack() (map[string]any, error) {
 	profileReady := strings.Contains(profile.Stdout, "root:")
 	verified := poolReady && bridgeReady && profileReady
 	if !verified {
-		return nil, fmt.Errorf("Incus runtime verification failed after reset: default pool, %s, or default-profile root disk missing", networkName)
+		return nil, fmt.Errorf("incus runtime verification failed after reset: default pool, %s, or default-profile root disk missing", networkName)
 	}
 	return map[string]any{
 		"poolReady":    poolReady,
