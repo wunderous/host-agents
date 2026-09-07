@@ -20,12 +20,12 @@ const defaultSystemdRunPath = "/usr/bin/systemd-run"
 
 // HostInfoResult mirrors the TypeScript describeHost payload.
 type HostInfoResult struct {
-	URI            string                      `json:"uri"`
-	HostName       string                      `json:"hostName"`
-	ProviderID     string                      `json:"providerId"`
-	LXCBinaryPath  string                      `json:"lxcBinaryPath"`
-	SystemctlPath  string                      `json:"systemctlPath"`
-	SupportedTools []string                    `json:"supportedTools"`
+	URI            string                       `json:"uri"`
+	HostName       string                       `json:"hostName"`
+	ProviderID     string                       `json:"providerId"`
+	LXCBinaryPath  string                       `json:"lxcBinaryPath"`
+	SystemctlPath  string                       `json:"systemctlPath"`
+	SupportedTools []string                     `json:"supportedTools"`
 	Capacity       *vminfo.VMInventoryCapacity  `json:"capacity,omitempty"`
 	RootDiskQuota  *vminfo.RootDiskQuotaSupport `json:"rootDiskQuota,omitempty"`
 	System         map[string]any               `json:"system,omitempty"`
