@@ -33,7 +33,7 @@ not a second schema.
   explicitly isolated host and a destructive-test authorization.
 * Local-LLM commands test the local runtime boundary only. They are not used
   to validate product chat. Product LLM tests use the configured
-  `OPENROUTER_API_KEY` and the `ibm-granite/granite-4.1-8b` model.
+  `OPENROUTER_API_KEY` and the `ibm-granite/granite-4.2-8b` model.
 
 ## Chain matrix
 
@@ -316,7 +316,7 @@ Each row below includes the standalone classification and support level from
 | Dispatch/contract coverage | PASS | `go test ./...` passes, including registry parity and standalone catalog validation. |
 | Packaged standalone HTTP smoke | PASS | CI builds the release binary and runs `go test ./test/standalone`. |
 | OpenRouter Granite smoke | PASS when secret is available | CI passes `OPENROUTER_API_KEY` to `make openrouter-llm-smoke`; missing secrets skip that opt-in test. |
-| Public `/chat` Granite model search and response | PASS | Verified separately with the live browser path using `ibm-granite/granite-4.1-8b`; see the task evidence, not this schema catalog. |
+| Public `/chat` Granite model search and response | PASS | Verified separately with the live browser path using `ibm-granite/granite-4.2-8b`; see the task evidence, not this schema catalog. |
 | Safe read-only command sweep | PASS for supported direct commands | Direct host inventory, VM, SQLite, host, HTTP, GPU/storage, OpenRouter, local-LLM, capability/session, host-service, and Kubernetes reads passed on 2026-08-31. Platform-only inventory and profile-specific commands remain route/profile scoped. |
 | Resource-backed lifecycle chains | PARTIAL, with boundaries documented | Minimal VM, SQLite, Kubernetes ConfigMap/Secret, host-file, PostgreSQL service, OCI builder/storage/registry, and console chains passed and cleaned on 2026-08-31. OCI context/push remains unverified; service-storage/domain families are platform/provider-owned and require a separate fixture/credential path. |
 | Shared-host destructive commands | Guarded | Do not run from GitHub CI or against the shared WSL host; require an isolated host authorization. |
@@ -332,7 +332,7 @@ or API key is written to this catalog.
   `get_capability_catalog`, `list_host_services`, `probe_http_endpoint`,
   `probe_incus_gpu`, `inspect_container_storage`,
   `check_local_llm_prerequisites`, and
-  `probe_openai_compatible_server` against OpenRouter Granite 4.1 8B.
+  `probe_openai_compatible_server` against OpenRouter Granite 4.2 8B.
 * Passed SQLite chain: `ensure_sqlite_database` ->
   `get_sqlite_database_status` -> `remove_sqlite_database`; the caller-scoped
   database was removed successfully.
