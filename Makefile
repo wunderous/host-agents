@@ -5,6 +5,7 @@ DIST=dist
 MODULE=github.com/wunderous/host-agents
 VERSION ?= 0.1.1
 LDFLAGS=-s -w -X $(MODULE)/internal/version.Version=$(VERSION)
+OPENROUTER_GRANITE_MODEL ?= ibm-granite/granite-4.2-8b
 
 build: build-agent
 
@@ -27,7 +28,7 @@ openrouter-llm-smoke:
 			set -a; . "$$env_file"; set +a; \
 		fi; \
 	done; \
-	go test -tags=openrouter ./test/openrouter -count=1 -timeout=2m -v
+	OPENROUTER_GRANITE_MODEL="$(OPENROUTER_GRANITE_MODEL)" go test -tags=openrouter ./test/openrouter -count=1 -timeout=2m -v
 
 npm-test:
 	cd npm/local-host-agent && npm test
