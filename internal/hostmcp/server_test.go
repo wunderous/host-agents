@@ -174,7 +174,9 @@ func TestHostPlanWaitSurvivesRestartAndResumesThroughTasks(t *testing.T) {
 			map[string]any{
 				"id":        "status",
 				"dependsOn": []any{"approval"},
-				"action":    map[string]any{"tool": "get_local_status", "args": map[string]any{}},
+				// Keep the restart/resume assertion independent of an Incus daemon;
+				// get_local_status is an integration probe that shells out to Incus.
+				"action": map[string]any{"tool": "get_host_info", "args": map[string]any{}},
 			},
 		},
 	}
