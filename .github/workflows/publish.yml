@@ -60,7 +60,7 @@ jobs:
           make artifacts VERSION="$version"
 
       - name: Generate release checksums
-        run: sha256sum dist/host-agent-linux-x64.gz dist/host-agent-linux-arm64.gz > dist/SHA256SUMS
+        run: sha256sum dist/host-agent-linux-x64.gz dist/host-agent-linux-arm64.gz dist/opute-provider-k3s-linux-x64 > dist/SHA256SUMS
 
       - name: Prepare x64 standalone smoke binary
         run: gzip -dc dist/host-agent-linux-x64.gz > dist/host-agent-linux-x64
@@ -83,6 +83,7 @@ jobs:
           path: |
             dist/host-agent-linux-x64.gz
             dist/host-agent-linux-arm64.gz
+            dist/opute-provider-k3s-linux-x64
             dist/SHA256SUMS
             dist/sbom.spdx.json
 
@@ -103,6 +104,7 @@ jobs:
           files: |
             dist/host-agent-linux-x64.gz
             dist/host-agent-linux-arm64.gz
+            dist/opute-provider-k3s-linux-x64
             dist/SHA256SUMS
             dist/sbom.spdx.json
           generate_release_notes: true

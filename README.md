@@ -125,15 +125,16 @@ Or from this directory:
 make build
 # builds the server-only dist/opute-host-agent
 make test
-make artifacts   # host-agent-linux-x64.gz, host-agent-linux-arm64.gz
+make artifacts   # host-agent-linux-x64.gz, host-agent-linux-arm64.gz, K3s provider
 make standalone-http-smoke
 make standalone-lifecycle-gate   # explicit Incus integration gate
 npm --prefix npm/local-host-agent test
 ```
 
 Release artifacts use the platform onboarding names
-`host-agent-linux-x64.gz` and `host-agent-linux-arm64.gz`. Each artifact
-contains only the canonical server binary.
+`host-agent-linux-x64.gz` and `host-agent-linux-arm64.gz`, plus the CI-built
+`opute-provider-k3s-linux-x64` provider used by the platform image. The two
+`.gz` files contain only the canonical server binary.
 
 ## CI and releases
 
@@ -160,7 +161,8 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-The release attaches the host-agent `.gz` binaries plus a `SHA256SUMS` manifest.
+The release attaches the host-agent `.gz` binaries, the K3s provider binary,
+and a `SHA256SUMS` manifest.
 Download from the public GitHub Release or use the npm launcher:
 
 ```bash

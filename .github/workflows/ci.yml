@@ -78,10 +78,11 @@ jobs:
         run: |
           test -f dist/host-agent-linux-x64.gz
           test -f dist/host-agent-linux-arm64.gz
+          test -f dist/opute-provider-k3s-linux-x64
           gzip -t dist/host-agent-linux-x64.gz
           gzip -t dist/host-agent-linux-arm64.gz
           gzip -dc dist/host-agent-linux-x64.gz > dist/host-agent-linux-x64
-          sha256sum dist/host-agent-linux-x64.gz dist/host-agent-linux-arm64.gz > dist/SHA256SUMS
+          sha256sum dist/host-agent-linux-x64.gz dist/host-agent-linux-arm64.gz dist/opute-provider-k3s-linux-x64 > dist/SHA256SUMS
           test -s dist/SHA256SUMS
 
       - name: Standalone Streamable HTTP smoke

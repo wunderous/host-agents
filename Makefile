@@ -1,4 +1,4 @@
-.PHONY: build build-agent test test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate provider-reset-chat-e2e published-npm-canary npm-test artifacts clean agent-work
+.PHONY: build build-agent test test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate provider-reset-chat-e2e published-npm-canary npm-test artifacts build-provider-linux-x64 clean agent-work
 
 BINARY=opute-host-agent
 DIST=dist
@@ -47,7 +47,7 @@ provider-reset-chat-e2e:
 published-npm-canary:
 	cd npm/local-host-agent && PUBLISHED_NPM_VERSION=$(VERSION) npm run test:published-canary
 
-artifacts: build-linux-x64 build-linux-arm64 checksums
+artifacts: build-linux-x64 build-linux-arm64 build-provider-linux-x64 checksums
 
 build-linux-x64:
 	mkdir -p $(DIST)
@@ -59,8 +59,12 @@ build-linux-arm64:
 	GOOS=linux GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o $(DIST)/host-agent-linux-arm64 ./cmd/opute-host-agent
 	gzip -9 -kf $(DIST)/host-agent-linux-arm64
 
+build-provider-linux-x64:
+	mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go -C plugins/kubernetes/k3s build -a -ldflags='-s -w' -o $(CURDIR)/$(DIST)/opute-provider-k3s-linux-x64 ./cmd/opute-provider-k3s
+
 checksums:
-	sha256sum $(DIST)/host-agent-linux-x64.gz $(DIST)/host-agent-linux-arm64.gz > $(DIST)/SHA256SUMS
+	sha256sum $(DIST)/host-agent-linux-x64.gz $(DIST)/host-agent-linux-arm64.gz $(DIST)/opute-provider-k3s-linux-x64 > $(DIST)/SHA256SUMS
 
 clean:
 	rm -rf $(DIST)
