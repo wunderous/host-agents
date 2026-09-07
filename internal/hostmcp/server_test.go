@@ -210,6 +210,19 @@ func TestHostPlanWaitSurvivesRestartAndResumesThroughTasks(t *testing.T) {
 		record, _, _ := current.state.GetPlan(runID)
 		t.Fatalf("plan status = %q, want %q", record.Status, want)
 	}
+	waitForTaskStatus := func(current *Server, want tasks.Status) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Minute)
+		for time.Now().Before(deadline) {
+			record, found := current.Tasks().Get(runID)
+			if found && record.Status == want {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		record, _ := current.Tasks().Get(runID)
+		t.Fatalf("task status = %q, want %q", record.Status, want)
+	}
 	waitForPlanStatus(server, plan.RunStatusWaiting)
 	waiting, ok := server.Tasks().Get(runID)
 	if !ok || waiting.Status != tasks.StatusInputRequired {
@@ -237,6 +250,7 @@ func TestHostPlanWaitSurvivesRestartAndResumesThroughTasks(t *testing.T) {
 		t.Fatalf("resume waiting host plan: %v", err)
 	}
 	waitForPlanStatus(server, "completed")
+	waitForTaskStatus(server, tasks.StatusCompleted)
 	completed, ok := server.Tasks().Get(runID)
 	if !ok || completed.Status != tasks.StatusCompleted {
 		t.Fatalf("completed task = %#v", completed)
