@@ -55,3 +55,26 @@ func TestServerOnlyCommandBoundaryRejectsLegacyClientRouting(t *testing.T) {
 		t.Fatalf("legacy client result = %v, want an explicit unknown-command error", err)
 	}
 }
+
+func TestSplitCommandRecognizesPublicMcpBootstrap(t *testing.T) {
+	command, args := splitCommand([]string{"public-mcp", "--binding-id", "binding-1"})
+	if command != "public-mcp" || len(args) != 2 || args[0] != "--binding-id" {
+		t.Fatalf("command = %q args = %#v", command, args)
+	}
+}
+
+func TestReadPublicMcpTunnelTokenRequiresPrivateManagedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tunnel.env")
+	if err := os.WriteFile(path, []byte("# Managed by Opute Host Agent: public MCP tunnel\nOPUTE_CLOUDFLARED_TUNNEL_TOKEN=secret-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if token, err := readPublicMcpTunnelToken(path); err != nil || token != "secret-token" {
+		t.Fatalf("token = %q err = %v", token, err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readPublicMcpTunnelToken(path); err == nil {
+		t.Fatal("world-readable token file was accepted")
+	}
+}

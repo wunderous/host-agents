@@ -316,6 +316,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"ensure_host_file":                 true,
 		"remove_host_file":                 true,
 		"ensure_host_artifact":             true,
+		"ensure_public_mcp_tunnel":         true,
 		"extract_host_archive":             true,
 		"inspect_host_file":                true,
 		"probe_openai_compatible_server":   true,
@@ -356,6 +357,20 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		return defs
 	}
 	defs = append(defs, ToolDefinition{
+		Name: "ensure_public_mcp_tunnel", Title: "Ensure authenticated public MCP tunnel", Description: "Install a pinned cloudflared connector for one provider-issued public MCP binding, store its token in an Opute-owned secret file, and prove authenticated tools/list at the stable HTTPS endpoint.", InputSchema: map[string]any{"type": "object", "required": []string{"bindingId", "endpoint", "localTarget", "tunnelToken"}, "properties": map[string]any{
+			"bindingId":      map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$`},
+			"endpoint":       map[string]any{"type": "string", "format": "uri"},
+			"localTarget":    map[string]any{"type": "string", "format": "uri"},
+			"tunnelToken":    map[string]any{"type": "string", "minLength": 32, "writeOnly": true},
+			"artifactUri":    map[string]any{"type": "string", "format": "uri"},
+			"artifactSha256": map[string]any{"type": "string", "pattern": `^(sha256:)?[0-9a-fA-F]{64}$`},
+			"artifactPath":   map[string]any{"type": "string", "minLength": 1},
+			"tokenFile":      map[string]any{"type": "string", "minLength": 1},
+			"serviceName":    map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_.@:-]+\.service$`},
+			"serviceFile":    map[string]any{"type": "string", "minLength": 1},
+			"scope":          map[string]any{"type": "string", "enum": []string{"user", "system"}},
+		}}, OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "ready", "bindingId", "endpoint", "localTarget", "scope", "serviceName", "serviceFile", "tokenFile", "artifact", "origin", "publicAuth"}}, Meta: map[string]any{"needsApproval": true, "resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
+	}, ToolDefinition{
 		Name: "ensure_sqlite_database", Title: "Ensure isolated SQLite database", Description: "Provision an isolated caller-scoped SQLite database file. The caller owns schema and migrations; the host agent owns only the file lifecycle.", InputSchema: map[string]any{"type": "object", "required": []string{"consumerId", "databaseName"}, "properties": map[string]any{"consumerId": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`}, "databaseName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"provider", "consumerId", "databaseName", "path", "exists"}},
 	}, ToolDefinition{
 		Name: "get_sqlite_database_status", Title: "Get SQLite database status", Description: "Inspect an isolated caller-scoped SQLite database file without changing its schema or data.", InputSchema: map[string]any{"type": "object", "required": []string{"consumerId", "databaseName"}, "properties": map[string]any{"consumerId": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`}, "databaseName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"provider", "consumerId", "databaseName", "path", "exists"}},

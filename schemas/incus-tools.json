@@ -6616,5 +6616,96 @@
         "class": "control"
       }
     }
+  },
+  {
+    "name": "ensure_public_mcp_tunnel",
+    "title": "Ensure authenticated public MCP tunnel",
+    "description": "Install a pinned cloudflared connector for one provider-issued public MCP binding, store its token in an Opute-owned secret file, and prove authenticated tools/list at the stable HTTPS endpoint.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "bindingId",
+        "endpoint",
+        "localTarget",
+        "tunnelToken"
+      ],
+      "properties": {
+        "bindingId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$"
+        },
+        "endpoint": {
+          "type": "string",
+          "format": "uri"
+        },
+        "localTarget": {
+          "type": "string",
+          "format": "uri"
+        },
+        "tunnelToken": {
+          "type": "string",
+          "minLength": 32,
+          "writeOnly": true
+        },
+        "artifactUri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "artifactSha256": {
+          "type": "string",
+          "pattern": "^(sha256:)?[0-9a-fA-F]{64}$"
+        },
+        "artifactPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tokenFile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "serviceName": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.@:-]+\\.service$"
+        },
+        "serviceFile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "contractVersion",
+        "ready",
+        "bindingId",
+        "endpoint",
+        "localTarget",
+        "scope",
+        "serviceName",
+        "serviceFile",
+        "tokenFile",
+        "artifact",
+        "origin",
+        "publicAuth"
+      ]
+    },
+    "_meta": {
+      "needsApproval": true,
+      "effect": "credential_bearing",
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
+    }
   }
 ]

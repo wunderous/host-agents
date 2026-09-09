@@ -47,7 +47,7 @@ func cloudflareManifest() providercontract.InstallManifest {
 		Provides: []providercontract.CapabilityRef{{ID: tunnelingCapability, Version: 1}, {ID: capabilitycontract.NetworkOverlay, Version: 1}},
 		Recipes: []providercontract.RecipeRef{
 			{ID: "com.opute.cloudflare.tunneling", Source: providercontract.RecipeSource{URI: "recipes/tunneling.yaml", Revision: "working-tree", SHA256: "sha256:2f404972cbe5c463b8fe501973894c241341b2621e5941fad06af1434a958bc7"}, Mode: "tunnel"},
-			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:8907706cf5d8a82ea18f87cd589c244d23070424707cc2e0fe9af2609665fda6"}, Mode: "managed"},
+			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:f3db298f17df52417a6dd8deb057a640c8f48326f3406665db7f32fad7243b4f"}, Mode: "managed"},
 		},
 		Services: []providercontract.ServiceDefinition{
 			{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: cloudflareOperations()},
@@ -104,6 +104,7 @@ func validationSchema() map[string]any {
 func tunnelSchema() map[string]any {
 	return map[string]any{"type": "object", "required": []string{"bindingId", "localTarget"}, "properties": map[string]any{
 		"bindingId":           map[string]any{"type": "string", "minLength": 1},
+		"endpoint":            map[string]any{"type": "string", "format": "uri"},
 		"hostname":            map[string]any{"type": "string"},
 		"hostnames":           map[string]any{"type": "array", "items": map[string]any{"type": "string", "minLength": 1}},
 		"localTarget":         map[string]any{"type": "string"},
@@ -328,22 +329,50 @@ func reconcileHostTunnel(ctx context.Context, client *hostagentclient.Client, ar
 	if err != nil {
 		return err
 	}
+	runToken := stringInput(args, "runToken", "")
+	if runToken == "" {
+		return fmt.Errorf("runToken is required for host tunnel placement")
+	}
+	// The public Host Agent onboarding path opts into the typed MCP connector
+	// by supplying its provider-created HTTPS endpoint. Existing host-native
+	// tunnel consumers (for example the local-LLM relay) expose another HTTP
+	// origin and retain their established service contract until they migrate.
+	if stringInput(args, "endpoint", "") == "" {
+		return reconcileLegacyHostTunnel(ctx, client, args, scope, runToken)
+	}
+	hostname := stringInput(args, "hostname", "")
+	endpoint := firstNonEmpty(stringInput(args, "endpoint", ""), "https://"+hostname+"/mcp")
+	if hostname == "" && stringInput(args, "endpoint", "") == "" {
+		return fmt.Errorf("hostname or endpoint is required for host tunnel placement")
+	}
+	callArgs := map[string]any{
+		"bindingId":   stringInput(args, "bindingId", ""),
+		"endpoint":    endpoint,
+		"localTarget": stringInput(args, "localTarget", ""),
+		"tunnelToken": runToken,
+		"scope":       scope,
+	}
+	for key := range map[string]bool{"artifactUri": true, "artifactSha256": true, "artifactPath": true, "tokenFile": true, "serviceName": true, "serviceFile": true} {
+		if value := stringInput(args, key, ""); value != "" {
+			callArgs[key] = value
+		}
+	}
+	if _, err := callHost(ctx, client, "ensure_public_mcp_tunnel", callArgs); err != nil {
+		return err
+	}
+	return nil
+}
+
+func reconcileLegacyHostTunnel(ctx context.Context, client *hostagentclient.Client, args map[string]any, scope, runToken string) error {
 	serviceName := firstNonEmpty(stringInput(args, "serviceName", ""), "opute-cloudflare-tunnel.service")
 	serviceFile := firstNonEmpty(stringInput(args, "serviceFile", ""), defaultHostServiceFile(scope, serviceName))
-	// Host exposure reconciliation is invoked from the neutral exposure
-	// lifecycle, which only carries the run token and target. Keep the
-	// cloudflared artifact choice provider-owned instead of requiring callers
-	// to know provider implementation details.
 	artifactPath := firstNonEmpty(stringInput(args, "artifactPath", ""), defaultCloudflaredArtifactPath(scope))
 	artifactURI := firstNonEmpty(stringInput(args, "artifactUri", ""), "https://github.com/cloudflare/cloudflared/releases/download/2026.8.2/cloudflared-linux-amd64")
 	artifactSHA := firstNonEmpty(stringInput(args, "artifactSha256", ""), "fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2")
 	if _, err := callHost(ctx, client, "ensure_host_artifact", map[string]any{"uri": artifactURI, "destination": artifactPath, "sha256": artifactSHA, "executable": true}); err != nil {
 		return err
 	}
-	if stringInput(args, "runToken", "") == "" {
-		return fmt.Errorf("runToken is required for host tunnel placement")
-	}
-	executable := firstNonEmpty(artifactPath, "cloudflared")
+	executable := artifactPath
 	if strings.HasPrefix(executable, "~") {
 		executable = "%h" + strings.TrimPrefix(executable, "~")
 	}
@@ -351,7 +380,7 @@ func reconcileHostTunnel(ctx context.Context, client *hostagentclient.Client, ar
 	if scope == "system" {
 		wantedBy = "multi-user.target"
 	}
-	unit := fmt.Sprintf("[Unit]\nDescription=Opute Cloudflare tunnel\nAfter=network-online.target\n\n[Service]\nExecStart=%s tunnel --no-autoupdate run --token %s\nRestart=on-failure\n\n[Install]\nWantedBy=%s\n", executable, shellQuote(stringInput(args, "runToken", "")), wantedBy)
+	unit := fmt.Sprintf("[Unit]\nDescription=Opute Cloudflare tunnel\nAfter=network-online.target\n\n[Service]\nExecStart=%s tunnel --no-autoupdate run --token %s\nRestart=on-failure\n\n[Install]\nWantedBy=%s\n", executable, shellQuote(runToken), wantedBy)
 	if _, err := callHost(ctx, client, "ensure_host_file", map[string]any{"path": serviceFile, "content": unit, "mode": 0600}); err != nil {
 		return err
 	}
@@ -368,10 +397,7 @@ func reconcileHostTunnel(ctx context.Context, client *hostagentclient.Client, ar
 	}
 	if target := stringInput(args, "localTarget", ""); target != "" {
 		_, err := callHost(ctx, client, "probe_http_endpoint", map[string]any{
-			"endpoint": target,
-			// Host Agent MCP is bearer-protected by design. A 401/403 from the
-			// origin proves the connector can reach it; it is not a publication
-			// failure and the tunnel still preserves the public /mcp path.
+			"endpoint":                      target,
 			"acceptAuthenticationChallenge": true,
 		})
 		return err

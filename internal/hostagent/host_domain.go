@@ -16,6 +16,7 @@ type (
 	ConfigureAgentConnectionArgs    = host.ConfigureAgentConnectionArgs
 	ExtractHostArchiveArgs          = host.ExtractHostArchiveArgs
 	EnsureHostArtifactArgs          = host.EnsureHostArtifactArgs
+	EnsurePublicMcpTunnelArgs       = host.EnsurePublicMcpTunnelArgs
 	ProbeHTTPEndpointArgs           = host.ProbeHTTPEndpointArgs
 	HTTPObservation                 = host.HTTPObservation
 	ExecCommandArgs                 = host.ExecCommandArgs

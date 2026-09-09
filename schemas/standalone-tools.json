@@ -672,6 +672,87 @@
       "name": "reconcile_host_resource_policy",
       "classification": "mutation",
       "support": "experimental"
+    },
+    {
+      "name": "ensure_public_mcp_tunnel",
+      "classification": "credential_bearing",
+      "support": "experimental",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "bindingId",
+          "endpoint",
+          "localTarget",
+          "tunnelToken"
+        ],
+        "properties": {
+          "bindingId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$"
+          },
+          "endpoint": {
+            "type": "string",
+            "format": "uri"
+          },
+          "localTarget": {
+            "type": "string",
+            "format": "uri"
+          },
+          "tunnelToken": {
+            "type": "string",
+            "minLength": 32,
+            "writeOnly": true
+          },
+          "artifactUri": {
+            "type": "string",
+            "format": "uri"
+          },
+          "artifactSha256": {
+            "type": "string",
+            "pattern": "^(sha256:)?[0-9a-fA-F]{64}$"
+          },
+          "artifactPath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tokenFile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "serviceName": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.@:-]+\\.service$"
+          },
+          "serviceFile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "user",
+              "system"
+            ]
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "ready",
+          "bindingId",
+          "endpoint",
+          "localTarget",
+          "scope",
+          "serviceName",
+          "serviceFile",
+          "tokenFile",
+          "artifact",
+          "origin",
+          "publicAuth"
+        ]
+      }
     }
   ]
 }

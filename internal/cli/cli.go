@@ -38,6 +38,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runStandalone(ctx, commandArgs, stdout, stderr)
 	case "serve":
 		return runServer(ctx, commandArgs, stdout, stderr)
+	case "public-mcp":
+		return runPublicMcp(ctx, commandArgs, stdout, stderr)
 	case "recipe":
 		return runRecipe(ctx, commandArgs, stdout, stderr)
 	case "provider":
@@ -46,7 +48,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		printUsage(stdout)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q; use standalone, serve, recipe, provider, or help", command)
+		return fmt.Errorf("unknown command %q; use standalone, serve, public-mcp, recipe, provider, or help", command)
 	}
 }
 
@@ -55,7 +57,7 @@ func splitCommand(args []string) (string, []string) {
 		return "serve", nil
 	}
 	first := strings.TrimSpace(args[0])
-	if first == "standalone" || first == "serve" || first == "recipe" || first == "provider" || first == "help" {
+	if first == "standalone" || first == "serve" || first == "public-mcp" || first == "recipe" || first == "provider" || first == "help" {
 		return first, args[1:]
 	}
 	// Flags retain the server's historical implicit command behavior. In
@@ -65,6 +67,113 @@ func splitCommand(args []string) (string, []string) {
 		return "serve", args
 	}
 	return first, args[1:]
+}
+
+func runPublicMcp(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("public-mcp", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	envFile := fs.String("env-file", "", "load Host Agent configuration from a file")
+	bindingID := fs.String("binding-id", "", "provider-issued public exposure binding ID")
+	endpoint := fs.String("endpoint", "", "stable HTTPS MCP endpoint, ending in /mcp")
+	localTarget := fs.String("local-target", "", "loopback Host Agent MCP origin, ending in /mcp")
+	tokenFile := fs.String("token-file", "", "0600 file containing OPUTE_CLOUDFLARED_TUNNEL_TOKEN")
+	artifactURI := fs.String("artifact-uri", "", "pinned cloudflared artifact URI override")
+	artifactSHA := fs.String("artifact-sha256", "", "pinned cloudflared artifact SHA-256 override")
+	artifactPath := fs.String("artifact-path", "", "Opute-owned cloudflared artifact path override")
+	serviceName := fs.String("service-name", "", "Opute-owned connector service name override")
+	serviceFile := fs.String("service-file", "", "Opute-owned connector service file override")
+	scope := fs.String("scope", "user", "systemd service scope: user or system")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	resolvedEnvFile := strings.TrimSpace(*envFile)
+	if resolvedEnvFile != "" {
+		if err := config.LoadEnvFile(resolvedEnvFile); err != nil {
+			return fmt.Errorf("load env file: %w", err)
+		}
+	}
+	if strings.TrimSpace(*bindingID) == "" || strings.TrimSpace(*endpoint) == "" || strings.TrimSpace(*localTarget) == "" || strings.TrimSpace(*tokenFile) == "" {
+		return fmt.Errorf("public-mcp requires --binding-id, --endpoint, --local-target, and --token-file")
+	}
+	tunnelToken, err := readPublicMcpTunnelToken(*tokenFile)
+	if err != nil {
+		return err
+	}
+	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	runtime, err := app.NewRuntime(logger)
+	if err != nil {
+		return err
+	}
+	defer runtime.Close()
+	client := hostToolCaller{host: runtime.Host()}
+	arguments := map[string]any{
+		"bindingId": *bindingID, "endpoint": *endpoint, "localTarget": *localTarget, "tunnelToken": tunnelToken, "scope": *scope,
+	}
+	if strings.TrimSpace(*artifactURI) != "" {
+		arguments["artifactUri"] = strings.TrimSpace(*artifactURI)
+	}
+	if strings.TrimSpace(*artifactSHA) != "" {
+		arguments["artifactSha256"] = strings.TrimSpace(*artifactSHA)
+	}
+	if strings.TrimSpace(*artifactPath) != "" {
+		arguments["artifactPath"] = strings.TrimSpace(*artifactPath)
+	}
+	if strings.TrimSpace(*serviceName) != "" {
+		arguments["serviceName"] = strings.TrimSpace(*serviceName)
+	}
+	if strings.TrimSpace(*serviceFile) != "" {
+		arguments["serviceFile"] = strings.TrimSpace(*serviceFile)
+	}
+	result, err := client.Call(ctx, "ensure_public_mcp_tunnel", arguments)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return fmt.Errorf("public MCP operation returned no result")
+	}
+	if result.IsError {
+		return fmt.Errorf("public MCP operation failed: %s", cliResultText(result))
+	}
+	encoded, err := json.MarshalIndent(result.StructuredContent, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode public MCP result: %w", err)
+	}
+	_, err = fmt.Fprintln(stdout, string(encoded))
+	return err
+}
+
+func readPublicMcpTunnelToken(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("token file is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("inspect public MCP token file: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("public MCP token file must be a regular 0600-or-more-restrictive file")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read public MCP token file: %w", err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") || line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if strings.TrimSpace(key) != "OPUTE_CLOUDFLARED_TUNNEL_TOKEN" || !ok {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return "", fmt.Errorf("public MCP token file contains an empty tunnel token")
+		}
+		return value, nil
+	}
+	return "", fmt.Errorf("public MCP token file did not contain OPUTE_CLOUDFLARED_TUNNEL_TOKEN")
 }
 
 func runRecipe(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -455,13 +564,14 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) err
 }
 
 func printUsage(out io.Writer) {
-	fmt.Fprintln(out, "Usage: opute-host-agent [standalone|serve|recipe|provider|help] [flags]")
+	fmt.Fprintln(out, "Usage: opute-host-agent [standalone|serve|public-mcp|recipe|provider|help] [flags]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "  opute-host-agent                   server-only standalone MCP profile (HTTP)")
 	fmt.Fprintln(out, "  opute-host-agent serve             MCP server only (HTTP)")
 	fmt.Fprintln(out, "  opute-host-agent recipe validate --source ./recipe.yaml")
 	fmt.Fprintln(out, "  opute-host-agent recipe apply --source ./recipe.yaml --activate --input model=hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M")
 	fmt.Fprintln(out, "  opute-host-agent recipe status --run-id RUN_ID")
+	fmt.Fprintln(out, "  opute-host-agent public-mcp --binding-id ID --endpoint https://host.example/mcp --local-target http://127.0.0.1:3004/mcp --token-file ~/.config/opute/tunnels/ID.env")
 	fmt.Fprintln(out, "  opute-host-agent provider install --source ./plugin.yaml --activate")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Standalone mode never requires Opute Platform.")

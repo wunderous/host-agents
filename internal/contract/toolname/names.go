@@ -36,6 +36,7 @@ const (
 	EnsureHostArtifact            = "ensure_host_artifact"
 	EnsureHostFile                = "ensure_host_file"
 	EnsureHostFirewallRule        = "ensure_host_firewall_rule"
+	EnsurePublicMcpTunnel         = "ensure_public_mcp_tunnel"
 	EnsureHostServiceSupervisor   = "ensure_host_service_supervisor"
 	EnsureHostTool                = "ensure_host_tool"
 	EnsureK3d                     = "ensure_k3d"
@@ -151,6 +152,7 @@ func All() []string {
 		EnsureHostArtifact,
 		EnsureHostFile,
 		EnsureHostFirewallRule,
+		EnsurePublicMcpTunnel,
 		EnsureHostServiceSupervisor,
 		EnsureHostTool,
 		EnsureK3d,

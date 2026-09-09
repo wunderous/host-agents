@@ -52,18 +52,25 @@ func (s *Service) EnsureHostArtifact(args EnsureHostArtifactArgs, onData func(st
 	if err != nil {
 		return nil, err
 	}
+	return s.ensureHostArtifactAt(uri, destination, expected, args.Executable, onData)
+}
+
+// ensureHostArtifactAt is shared by the generic home-scoped artifact tool and
+// the system-scoped public MCP connector. Callers must validate the destination
+// ownership boundary before reaching this helper.
+func (s *Service) ensureHostArtifactAt(uri, destination, expected string, executable bool, onData func(string)) (map[string]any, error) {
 	if info, statErr := os.Stat(destination); statErr == nil && info.Mode().IsRegular() {
 		observed, hashErr := hostArtifactFileSHA256(destination)
 		if hashErr != nil {
 			return nil, hashErr
 		}
 		if strings.EqualFold(observed, expected) {
-			if args.Executable && info.Mode().Perm()&0o111 == 0 {
+			if executable && info.Mode().Perm()&0o111 == 0 {
 				if chmodErr := os.Chmod(destination, info.Mode().Perm()|0o755); chmodErr != nil {
 					return nil, fmt.Errorf("make host artifact executable: %w", chmodErr)
 				}
 			}
-			return map[string]any{"uri": uri, "destination": destination, "sha256": observed, "changed": false, "executable": args.Executable}, nil
+			return map[string]any{"uri": uri, "destination": destination, "sha256": observed, "changed": false, "executable": executable}, nil
 		}
 	} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return nil, fmt.Errorf("inspect host artifact destination: %w", statErr)
@@ -115,7 +122,7 @@ func (s *Service) EnsureHostArtifact(args EnsureHostArtifactArgs, onData func(st
 		return nil, fmt.Errorf("host artifact sha256 mismatch: expected %s, got %s", expected, observed)
 	}
 	mode := os.FileMode(0o644)
-	if args.Executable {
+	if executable {
 		mode = 0o755
 	}
 	if err := os.Chmod(temporaryPath, mode); err != nil {
@@ -124,7 +131,7 @@ func (s *Service) EnsureHostArtifact(args EnsureHostArtifactArgs, onData func(st
 	if err := os.Rename(temporaryPath, destination); err != nil {
 		return nil, fmt.Errorf("install host artifact: %w", err)
 	}
-	return map[string]any{"uri": uri, "destination": destination, "sha256": observed, "changed": true, "executable": args.Executable}, nil
+	return map[string]any{"uri": uri, "destination": destination, "sha256": observed, "changed": true, "executable": executable}, nil
 }
 
 func validateHostArtifactURI(raw string) error {
