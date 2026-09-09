@@ -42,7 +42,7 @@ func TestManagedRecipeRequiresAuthenticatedPublicMCPProbe(t *testing.T) {
 	}
 	text := string(recipe)
 	for _, required := range []string{
-		"recipeVersion: 1.2.0",
+		"recipeVersion: 1.3.0",
 		"bindingId:",
 		"servingContract: mcp-exposure.v1",
 		"ensure_public_mcp_tunnel",

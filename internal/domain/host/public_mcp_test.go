@@ -92,6 +92,24 @@ func TestResolvePublicMCPPathsRejectsUnownedInputs(t *testing.T) {
 	}
 }
 
+func TestResolvePublicMCPPathsAllowsExplicitRemoteOrigin(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	args := EnsurePublicMcpTunnelArgs{
+		BindingID:    "binding-remote",
+		Endpoint:     "https://public.example/mcp",
+		LocalTarget:  "http://10.0.100.1:3005/mcp",
+		OriginHostID: "host-opute-ha-b-b9234af4",
+	}
+	_, _, localTarget, err := resolvePublicMCPPaths(args)
+	if err != nil {
+		t.Fatalf("explicit origin host should authorize a reachable remote target: %v", err)
+	}
+	if localTarget != args.LocalTarget {
+		t.Fatalf("local target = %q, want %q", localTarget, args.LocalTarget)
+	}
+}
+
 func TestRenderPublicMCPUnitKeepsTunnelTokenOutOfUnit(t *testing.T) {
 	unit := renderPublicMCPUnit(publicMCPPaths{
 		scope:         "user",

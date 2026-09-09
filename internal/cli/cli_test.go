@@ -63,6 +63,25 @@ func TestSplitCommandRecognizesPublicMcpBootstrap(t *testing.T) {
 	}
 }
 
+func TestBuildPublicMcpToolArgumentsPreservesExplicitOriginIdentity(t *testing.T) {
+	arguments := buildPublicMcpToolArguments(
+		"binding-1", "https://host.example/mcp", "http://10.0.0.8:3004/mcp", "  host-origin-1  ", "tunnel-token", "user",
+	)
+	if got := arguments["originHostId"]; got != "host-origin-1" {
+		t.Fatalf("originHostId = %#v, want trimmed identity", got)
+	}
+	if _, ok := arguments["tunnelToken"]; !ok {
+		t.Fatal("tunnelToken was omitted")
+	}
+}
+
+func TestBuildPublicMcpToolArgumentsOmitsEmptyOriginIdentity(t *testing.T) {
+	arguments := buildPublicMcpToolArguments("binding-1", "https://host.example/mcp", "http://127.0.0.1:3004/mcp", "  ", "tunnel-token", "user")
+	if _, ok := arguments["originHostId"]; ok {
+		t.Fatal("empty originHostId was sent")
+	}
+}
+
 func TestReadPublicMcpTunnelTokenRequiresPrivateManagedFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tunnel.env")
 	if err := os.WriteFile(path, []byte("# Managed by Opute Host Agent: public MCP tunnel\nOPUTE_CLOUDFLARED_TUNNEL_TOKEN=secret-token\n"), 0o600); err != nil {

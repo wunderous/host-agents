@@ -75,7 +75,8 @@ func runPublicMcp(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	envFile := fs.String("env-file", "", "load Host Agent configuration from a file")
 	bindingID := fs.String("binding-id", "", "provider-issued public exposure binding ID")
 	endpoint := fs.String("endpoint", "", "stable HTTPS MCP endpoint, ending in /mcp")
-	localTarget := fs.String("local-target", "", "loopback Host Agent MCP origin, ending in /mcp")
+	localTarget := fs.String("local-target", "", "Host Agent MCP origin, ending in /mcp; non-loopback targets require --origin-host-id")
+	originHostID := fs.String("origin-host-id", "", "exact enrolled origin Host Agent identity for a non-loopback MCP origin")
 	tokenFile := fs.String("token-file", "", "0600 file containing OPUTE_CLOUDFLARED_TUNNEL_TOKEN")
 	artifactURI := fs.String("artifact-uri", "", "pinned cloudflared artifact URI override")
 	artifactSHA := fs.String("artifact-sha256", "", "pinned cloudflared artifact SHA-256 override")
@@ -106,9 +107,7 @@ func runPublicMcp(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	defer runtime.Close()
 	client := hostToolCaller{host: runtime.Host()}
-	arguments := map[string]any{
-		"bindingId": *bindingID, "endpoint": *endpoint, "localTarget": *localTarget, "tunnelToken": tunnelToken, "scope": *scope,
-	}
+	arguments := buildPublicMcpToolArguments(*bindingID, *endpoint, *localTarget, *originHostID, tunnelToken, *scope)
 	if strings.TrimSpace(*artifactURI) != "" {
 		arguments["artifactUri"] = strings.TrimSpace(*artifactURI)
 	}
@@ -140,6 +139,16 @@ func runPublicMcp(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	_, err = fmt.Fprintln(stdout, string(encoded))
 	return err
+}
+
+func buildPublicMcpToolArguments(bindingID, endpoint, localTarget, originHostID, tunnelToken, scope string) map[string]any {
+	arguments := map[string]any{
+		"bindingId": bindingID, "endpoint": endpoint, "localTarget": localTarget, "tunnelToken": tunnelToken, "scope": scope,
+	}
+	if origin := strings.TrimSpace(originHostID); origin != "" {
+		arguments["originHostId"] = origin
+	}
+	return arguments
 }
 
 func readPublicMcpTunnelToken(path string) (string, error) {
@@ -571,7 +580,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  opute-host-agent recipe validate --source ./recipe.yaml")
 	fmt.Fprintln(out, "  opute-host-agent recipe apply --source ./recipe.yaml --activate --input model=hf.co/LiquidAI/LFM2-2.6B-GGUF:Q4_K_M")
 	fmt.Fprintln(out, "  opute-host-agent recipe status --run-id RUN_ID")
-	fmt.Fprintln(out, "  opute-host-agent public-mcp --binding-id ID --endpoint https://host.example/mcp --local-target http://127.0.0.1:3004/mcp --token-file ~/.config/opute/tunnels/ID.env")
+	fmt.Fprintln(out, "  opute-host-agent public-mcp --binding-id ID --endpoint https://host.example/mcp --local-target http://127.0.0.1:3004/mcp --token-file ~/.config/opute/tunnels/ID.env [--origin-host-id ID]")
 	fmt.Fprintln(out, "  opute-host-agent provider install --source ./plugin.yaml --activate")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Standalone mode never requires Opute Platform.")

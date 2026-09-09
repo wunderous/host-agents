@@ -6642,6 +6642,11 @@
           "type": "string",
           "format": "uri"
         },
+        "originHostId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact enrolled Host Agent identity for a non-loopback localTarget."
+        },
         "tunnelToken": {
           "type": "string",
           "minLength": 32,
@@ -6688,6 +6693,7 @@
         "bindingId",
         "endpoint",
         "localTarget",
+        "originHostId",
         "scope",
         "serviceName",
         "serviceFile",

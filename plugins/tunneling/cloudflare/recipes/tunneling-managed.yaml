@@ -1,6 +1,6 @@
 contractVersion: tunnel-recipe.v1
 recipeId: com.opute.cloudflare.tunneling.managed
-recipeVersion: 1.2.0
+recipeVersion: 1.3.0
 provider:
   id: com.opute.cloudflare
   capabilities: [tunneling]
@@ -21,6 +21,8 @@ inputs:
   localTarget:
     required: true
     schema: {type: string, format: uri}
+  originHostId:
+    schema: {type: string, minLength: 1}
   tunnelToken:
     required: true
     secret: true
@@ -35,7 +37,7 @@ inputs:
     default: user
     schema: {type: string, enum: [user, system]}
   recipeRevision:
-    default: 1.2.0
+    default: 1.3.0
     schema: {type: string, pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$'}
 compatibility:
   requiredTools: [ensure_public_mcp_tunnel, probe_http_endpoint, opute.capability.tunneling.probe-host-tunnel]
@@ -48,7 +50,7 @@ plan:
   contractVersion: host-plan.v1
   planId: com.opute.cloudflare.tunneling.managed
   generation: 1
-  idempotencyKey: com.opute.cloudflare.managed-${vars.inputs.recipeRevision}-${vars.inputs.artifactSha256}-${vars.inputs.endpoint}-${vars.inputs.hostname}-${vars.inputs.bindingId}
+  idempotencyKey: com.opute.cloudflare.managed-${vars.inputs.recipeRevision}-${vars.inputs.artifactSha256}-${vars.inputs.endpoint}-${vars.inputs.hostname}-${vars.inputs.bindingId}-${vars.inputs.originHostId}
   nodes:
     - id: public-mcp
       action:
@@ -57,6 +59,7 @@ plan:
           bindingId: "${vars.inputs.bindingId}"
           endpoint: "${vars.inputs.endpoint}"
           localTarget: "${vars.inputs.localTarget}"
+          originHostId: "${vars.inputs.originHostId}"
           tunnelToken: "${vars.inputs.tunnelToken}"
           artifactUri: "${vars.inputs.artifactUri}"
           artifactSha256: "${vars.inputs.artifactSha256}"

@@ -36,9 +36,13 @@ var (
 // exposure. The edge provider still owns DNS, TLS, and issuance of the tunnel
 // token; the token is consumed here only to configure the local connector.
 type EnsurePublicMcpTunnelArgs struct {
-	BindingID      string
-	Endpoint       string
-	LocalTarget    string
+	BindingID   string
+	Endpoint    string
+	LocalTarget string
+	// OriginHostID is required when LocalTarget is not loopback. It keeps the
+	// remote origin explicit at the Host Agent boundary instead of allowing a
+	// provider callback to turn an arbitrary URL into an implicit proxy.
+	OriginHostID   string
 	TunnelToken    string
 	ArtifactURI    string
 	ArtifactSHA256 string
@@ -138,6 +142,7 @@ func (s *Service) EnsurePublicMcpTunnel(ctx context.Context, args EnsurePublicMc
 		"bindingId":       paths.bindingID,
 		"endpoint":        endpoint,
 		"localTarget":     localTarget,
+		"originHostId":    strings.TrimSpace(args.OriginHostID),
 		"scope":           paths.scope,
 		"serviceName":     paths.serviceName,
 		"serviceFile":     paths.serviceFile,
@@ -162,7 +167,7 @@ func resolvePublicMCPPaths(args EnsurePublicMcpTunnelArgs) (publicMCPPaths, stri
 		return publicMCPPaths{}, "", "", fmt.Errorf("endpoint must be an absolute HTTPS URL ending in /mcp")
 	}
 	localTarget := strings.TrimSpace(args.LocalTarget)
-	if err := validatePublicMCPOrigin(localTarget); err != nil {
+	if err := validatePublicMCPOrigin(localTarget, args.OriginHostID); err != nil {
 		return publicMCPPaths{}, "", "", err
 	}
 	scope := strings.ToLower(strings.TrimSpace(args.Scope))
@@ -284,7 +289,7 @@ func pathsForUserArg(label string, paths publicMCPPaths) string {
 	}
 }
 
-func validatePublicMCPOrigin(raw string) error {
+func validatePublicMCPOrigin(raw, originHostID string) error {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return fmt.Errorf("localTarget must be an absolute HTTP(S) URL without credentials, query, or fragment")
@@ -294,10 +299,14 @@ func validatePublicMCPOrigin(raw string) error {
 		return fmt.Errorf("localTarget must end with /mcp")
 	}
 	hostname := strings.TrimSpace(parsed.Hostname())
-	if hostname != "localhost" && !strings.EqualFold(hostname, "ip6-localhost") {
-		if ip := net.ParseIP(hostname); ip == nil || !ip.IsLoopback() {
-			return fmt.Errorf("localTarget must resolve to the local host loopback interface")
-		}
+	if hostname == "localhost" || strings.EqualFold(hostname, "ip6-localhost") {
+		return nil
+	}
+	if ip := net.ParseIP(hostname); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	if strings.TrimSpace(originHostID) == "" {
+		return fmt.Errorf("non-loopback localTarget requires an explicit originHostId")
 	}
 	return nil
 }

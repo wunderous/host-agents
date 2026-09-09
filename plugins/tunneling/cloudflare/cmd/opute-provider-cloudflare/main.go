@@ -47,7 +47,7 @@ func cloudflareManifest() providercontract.InstallManifest {
 		Provides: []providercontract.CapabilityRef{{ID: tunnelingCapability, Version: 1}, {ID: capabilitycontract.NetworkOverlay, Version: 1}},
 		Recipes: []providercontract.RecipeRef{
 			{ID: "com.opute.cloudflare.tunneling", Source: providercontract.RecipeSource{URI: "recipes/tunneling.yaml", Revision: "working-tree", SHA256: "sha256:2f404972cbe5c463b8fe501973894c241341b2621e5941fad06af1434a958bc7"}, Mode: "tunnel"},
-			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:f3db298f17df52417a6dd8deb057a640c8f48326f3406665db7f32fad7243b4f"}, Mode: "managed"},
+			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:de45303f69256b664ec2e137f14e98ae3113ceb935c1fb6da34f85b54758fcae"}, Mode: "managed"},
 		},
 		Services: []providercontract.ServiceDefinition{
 			{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: cloudflareOperations()},
@@ -351,6 +351,12 @@ func reconcileHostTunnel(ctx context.Context, client *hostagentclient.Client, ar
 		"localTarget": stringInput(args, "localTarget", ""),
 		"tunnelToken": runToken,
 		"scope":       scope,
+	}
+	// Preserve the explicit origin identity across the provider-to-Host Agent
+	// boundary. A connector may run on one host while the authenticated MCP
+	// origin is another enrolled host reachable through the declared network.
+	if originHostID := stringInput(args, "originHostId", ""); originHostID != "" {
+		callArgs["originHostId"] = originHostID
 	}
 	for key := range map[string]bool{"artifactUri": true, "artifactSha256": true, "artifactPath": true, "tokenFile": true, "serviceName": true, "serviceFile": true} {
 		if value := stringInput(args, key, ""); value != "" {

@@ -192,7 +192,8 @@ func init() {
 	register(toolname.EnsurePublicMcpTunnel, EffectCredential, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().EnsurePublicMcpTunnel(ctx, host.EnsurePublicMcpTunnelArgs{
 			BindingID: stringField(args, "bindingId"), Endpoint: stringField(args, "endpoint"), LocalTarget: stringField(args, "localTarget"),
-			TunnelToken: stringField(args, "tunnelToken"), ArtifactURI: stringField(args, "artifactUri"), ArtifactSHA256: stringField(args, "artifactSha256"),
+			OriginHostID: stringField(args, "originHostId"),
+			TunnelToken:  stringField(args, "tunnelToken"), ArtifactURI: stringField(args, "artifactUri"), ArtifactSHA256: stringField(args, "artifactSha256"),
 			ArtifactPath: stringField(args, "artifactPath"), TokenFile: stringField(args, "tokenFile"), ServiceName: stringField(args, "serviceName"),
 			ServiceFile: stringField(args, "serviceFile"), Scope: stringField(args, "scope"),
 		}, onData)
