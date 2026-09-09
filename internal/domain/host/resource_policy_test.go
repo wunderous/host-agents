@@ -157,12 +157,12 @@ func TestPreservesOnlyStricterResourceUnits(t *testing.T) {
 	}
 }
 
-// A freshly installed host has the workload slice configured but never started,
-// so systemd reports no ControlGroup for it and the enforcement probe cannot see
-// the controls the slice already declares. Admission then refuses every workload
-// for want of verified enforcement, and no workload ever runs to materialise the
-// cgroup -- the host cannot run its first workload. The probe must break that
-// deadlock by starting the slice and looking again.
+// A freshly installed host has the workload slice configured but no member
+// process, so systemd may report a ControlGroup whose kernel controls are not
+// materialised yet. Admission then refuses every workload for want of verified
+// enforcement, and no workload ever runs to materialise the cgroup -- the host
+// cannot run its first workload. The probe must break that deadlock with a
+// one-shot member and look again.
 func TestObserveHostResourceEnforcementMaterializesAnInactiveWorkloadSlice(t *testing.T) {
 	var calls [][]string
 	enforced := "ControlGroup=\nCPUWeight=100\nCPUQuotaPerSecUSec=6s\nMemoryHigh=5368709120\nMemoryMax=6442450944\nMemorySwapMax=1073741824\nTasksMax=4096\n"
@@ -184,7 +184,7 @@ func TestObserveHostResourceEnforcementMaterializesAnInactiveWorkloadSlice(t *te
 	reread := false
 	for _, call := range calls {
 		joined := strings.Join(call, " ")
-		if strings.Contains(joined, " start ") && strings.Contains(joined, hostWorkloadSlice) {
+		if strings.Contains(joined, "systemd-run") && strings.Contains(joined, "--property=Slice="+hostWorkloadSlice) {
 			started = true
 		}
 		if started && strings.Contains(joined, " show ") && strings.Contains(joined, "--property=ControlGroup") {

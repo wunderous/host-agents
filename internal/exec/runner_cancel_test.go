@@ -63,3 +63,17 @@ func TestConfigureCommandEnvironmentPreservesExplicitUserSystemdBus(t *testing.T
 		t.Fatalf("explicit systemd environment was not preserved: %s", got)
 	}
 }
+
+func TestConfigureCommandEnvironmentAddsUserSystemdBusForSystemdRun(t *testing.T) {
+	cmd := exec.Command("/usr/bin/systemd-run", "--user", "--wait", "true")
+	cmd.Env = []string{"PATH=/usr/bin"}
+	configureCommandEnvironment(cmd)
+
+	uid := strconv.Itoa(os.Getuid())
+	if got := environmentValue(cmd.Env, "XDG_RUNTIME_DIR"); got != "/run/user/"+uid {
+		t.Fatalf("XDG_RUNTIME_DIR = %q, want /run/user/%s", got, uid)
+	}
+	if got := environmentValue(cmd.Env, "DBUS_SESSION_BUS_ADDRESS"); got != "unix:path=/run/user/"+uid+"/bus" {
+		t.Fatalf("DBUS_SESSION_BUS_ADDRESS = %q", got)
+	}
+}

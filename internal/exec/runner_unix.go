@@ -23,14 +23,15 @@ func killProcessGroup(cmd *exec.Cmd) {
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 }
 
-// configureCommandEnvironment restores the two variables systemctl --user
+// configureCommandEnvironment restores the two variables user-scoped systemd
 // needs when the host agent is launched as a standalone process. WSL's login
 // shell normally supplies them, but a recovered or boot-started agent can be
 // started directly by PID 1 and therefore has neither variable in its
-// environment. Without this, every user-systemd operation fails even though
-// the user bus is healthy.
+// environment. Without this, every user-systemd operation (including the
+// enforcement probe's transient systemd-run unit) fails even though the user
+// bus is healthy.
 func configureCommandEnvironment(cmd *exec.Cmd) {
-	if cmd == nil || !isUserSystemctl(cmd.Args) {
+	if cmd == nil || !needsUserSystemdBus(cmd.Args) {
 		return
 	}
 
@@ -52,9 +53,11 @@ func configureCommandEnvironment(cmd *exec.Cmd) {
 	cmd.Env = env
 }
 
-func isUserSystemctl(argv []string) bool {
+func needsUserSystemdBus(argv []string) bool {
 	if len(argv) < 2 || (argv[0] != "systemctl" && !strings.HasSuffix(argv[0], "/systemctl")) {
-		return false
+		if argv[0] != "systemd-run" && !strings.HasSuffix(argv[0], "/systemd-run") {
+			return false
+		}
 	}
 	for _, arg := range argv[1:] {
 		if arg == "--user" {

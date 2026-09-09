@@ -23,6 +23,7 @@ const (
 	hostWorkloadSlice       = "opute-workload.slice"
 	hostAgentCPUWeight      = "1000"
 	hostAgentTasksMax       = "1024"
+	hostResourceSystemdRun  = "/usr/bin/systemd-run"
 )
 
 var hostAgentInstancePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -255,7 +256,24 @@ func (s *Service) materializeWorkloadSliceCgroup(scope string) (map[string]strin
 		}
 		return parseSystemdProperties(result.Stdout), true
 	}
-	if _, ok := systemctl("start", hostWorkloadSlice); !ok {
+	// A user-manager slice can report ActiveState=active while its cgroup has
+	// not been materialised. Starting the slice alone therefore leaves the
+	// kernel controls at `max`; run a no-op member so systemd creates the
+	// concrete cgroup, then verify that cgroup below.
+	probe := []string{hostResourceSystemdRun}
+	if scope == "user" {
+		probe = append(probe, "--user")
+	}
+	probe = append(probe,
+		"--unit=opute-host-resource-probe-"+strconv.FormatInt(time.Now().UnixNano(), 10),
+		"--wait",
+		"--collect",
+		"--pipe",
+		"--property=Slice="+hostWorkloadSlice,
+		"/usr/bin/true",
+	)
+	result, err := s.shared.HostCommandRunner(probe, nil, 5*time.Second)
+	if err != nil || result.ExitCode != 0 {
 		return nil, false
 	}
 	return systemctl("show", hostWorkloadSlice, "--property=ControlGroup")
