@@ -23,6 +23,25 @@ resource server; it does not phone home or expose a reverse-tunnel callback
 listener. Inject credentials at process launch; never place them in a recipe,
 plan, or provider result.
 
+## CI-only artifacts for a clean host
+
+The clean-slate validation path consumes the Host Agent workflow artifact; it
+does not compile a binary from a workstation checkout. Use an explicit
+successful run so the artifact revision is reviewable:
+
+```bash
+OPUTE_HOST_AGENT_CI_RUN_ID=123456789 \
+OPUTE_HOST_AGENT_ARTIFACT_DIR="$HOME/.cache/opute/host-agent-ci/123456789" \
+bash ../opute/scripts/fetch-host-agent-ci-artifacts.sh
+```
+
+The download is checked against the CI-generated `SHA256SUMS` file and
+contains the Linux and Windows Host Agent archives plus the K3s and Cloudflare
+provider binaries. Platform image builds should set
+`OPUTE_CI_ARTIFACT_ONLY=1` and `OPUTE_HOST_AGENT_ARTIFACT_DIR` when consuming
+this directory; that mode fails closed instead of falling back to a local Go
+build.
+
 ## Stable public Host Agent MCP endpoint
 
 Public onboarding is intentionally two phase. Platform and the Cloudflare

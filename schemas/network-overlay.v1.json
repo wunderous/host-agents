@@ -7,7 +7,7 @@
     "contractVersion": {"const": "opute.capability.network-overlay.v1"},
     "ready": {"type": "boolean"},
     "provider": {"type": "string"},
-    "targetUri": {"type": "string", "pattern": "^vm:[a-z][a-z0-9-]{0,31}:.+$"},
+    "targetUri": {"type": "string", "pattern": "^(vm|container):[a-z][a-z0-9-]{0,31}:.+$"},
     "membershipRef": {"type": "string"},
     "nodeId": {"type": "string"},
     "nodeName": {"type": "string"},

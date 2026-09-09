@@ -139,11 +139,17 @@ func networkOverlayOperations() []providercontract.Operation {
 }
 
 func meshTargetBinding() []providercontract.ResourceBinding {
-	return []providercontract.ResourceBinding{{Argument: "targetUri", ResourceType: resourceid.TypeVM, Required: true}}
+	// Cloudflare Mesh runs in the target network namespace. Both Incus VMs and
+	// system containers can provide that namespace; the provider must keep the
+	// resource kind typed while accepting either canonical URI form.
+	return []providercontract.ResourceBinding{
+		{Argument: "targetUri", ResourceType: resourceid.TypeVM, Required: true},
+		{Argument: "targetUri", ResourceType: resourceid.TypeContainer, Required: true},
+	}
 }
 
 func targetURISchema() map[string]any {
-	return map[string]any{"type": "string", "pattern": "^vm:[a-z][a-z0-9-]{0,31}:.+$"}
+	return map[string]any{"type": "string", "pattern": "^(vm|container):[a-z][a-z0-9-]{0,31}:.+$"}
 }
 
 func dispatchNetworkOverlayOperation(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
@@ -856,10 +862,10 @@ func removeNetworkOverlay(ctx context.Context, args map[string]any) (*mcp.CallTo
 func parseTargetURI(args map[string]any) (resourceid.URI, error) {
 	instanceURI, err := resourceid.Parse(strings.TrimSpace(stringInput(args, "targetUri", "")))
 	if err != nil {
-		return resourceid.URI{}, fmt.Errorf("targetUri must be a canonical VM resource URI: %w", err)
+		return resourceid.URI{}, fmt.Errorf("targetUri must be a canonical VM or container resource URI: %w", err)
 	}
-	if instanceURI.ResourceType != resourceid.TypeVM {
-		return resourceid.URI{}, fmt.Errorf("targetUri requires resource type %q, got %q", resourceid.TypeVM, instanceURI.ResourceType)
+	if instanceURI.ResourceType != resourceid.TypeVM && instanceURI.ResourceType != resourceid.TypeContainer {
+		return resourceid.URI{}, fmt.Errorf("targetUri requires resource type %q or %q, got %q", resourceid.TypeVM, resourceid.TypeContainer, instanceURI.ResourceType)
 	}
 	return instanceURI, nil
 }

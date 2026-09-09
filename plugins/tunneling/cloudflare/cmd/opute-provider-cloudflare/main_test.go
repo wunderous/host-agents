@@ -76,7 +76,7 @@ func TestCloudflareManifestDeclaresNetworkOverlayService(t *testing.T) {
 			}
 			continue
 		}
-		if len(operation.Requires) != 1 || operation.Requires[0].Argument != "targetUri" || operation.Requires[0].ResourceType != "vm" || !operation.Requires[0].Required {
+		if len(operation.Requires) != 2 || operation.Requires[0].Argument != "targetUri" || operation.Requires[0].ResourceType != "vm" || !operation.Requires[0].Required || operation.Requires[1].Argument != "targetUri" || operation.Requires[1].ResourceType != "container" || !operation.Requires[1].Required {
 			t.Fatalf("overlay operation %q is missing typed target binding: %#v", operation.ID, operation.Requires)
 		}
 	}
@@ -164,6 +164,18 @@ func TestCloudflareTargetAdmissionUsesTypedResourceURIs(t *testing.T) {
 	}
 	if _, err := typedTargetURI("not-a-resource", resourceid.TypeCluster); err == nil {
 		t.Fatal("malformed resource URI was accepted")
+	}
+}
+
+func TestCloudflareMeshTargetAdmissionAcceptsVMsAndContainers(t *testing.T) {
+	for _, raw := range []string{"vm:tenant-a:edge-vm", "container:tenant-a:edge-container"} {
+		parsed, err := parseTargetURI(map[string]any{"targetUri": raw})
+		if err != nil || parsed.String() != raw {
+			t.Fatalf("mesh target %q rejected: %#v %v", raw, parsed, err)
+		}
+	}
+	if _, err := parseTargetURI(map[string]any{"targetUri": "cluster:tenant-a:edge"}); err == nil {
+		t.Fatal("mesh target accepted a cluster URI")
 	}
 }
 
