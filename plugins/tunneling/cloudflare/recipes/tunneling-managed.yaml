@@ -1,6 +1,6 @@
 contractVersion: tunnel-recipe.v1
 recipeId: com.opute.cloudflare.tunneling.managed
-recipeVersion: 1.0.9
+recipeVersion: 1.1.0
 provider:
   id: com.opute.cloudflare
   capabilities: [tunneling]
@@ -9,6 +9,9 @@ bindings:
     hostname: "${vars.inputs.hostname}"
     localTarget: "${vars.inputs.localTarget}"
 inputs:
+  bindingId:
+    required: true
+    schema: {type: string, minLength: 1}
   endpoint:
     required: true
     schema: {type: string, format: uri}
@@ -38,23 +41,23 @@ inputs:
     default: opute-cloudflare-tunnel.service
     schema: {type: string, pattern: '^[A-Za-z0-9_.@:-]+$'}
   recipeRevision:
-    default: 1.0.9
+    default: 1.1.0
     schema: {type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'}
   serviceArtifactPath:
     default: '%h/.local/share/opute/providers/com.opute.cloudflare/bin/cloudflared'
     schema: {type: string, minLength: 1}
 compatibility:
-  requiredTools: [ensure_host_artifact, ensure_host_file, ensure_host_service_supervisor, set_host_service_state, inspect_host_service, probe_http_endpoint]
+  requiredTools: [ensure_host_artifact, ensure_host_file, ensure_host_service_supervisor, set_host_service_state, inspect_host_service, probe_http_endpoint, opute.capability.tunneling.probe-host-tunnel]
 activation:
   capability: tunneling
-  servingContract: http-exposure.v1
+  servingContract: mcp-exposure.v1
   inputBindings:
     endpoint: endpoint
 plan:
   contractVersion: host-plan.v1
   planId: com.opute.cloudflare.tunneling.managed
   generation: 1
-  idempotencyKey: com.opute.cloudflare.managed-${vars.inputs.recipeRevision}-${vars.inputs.artifactSha256}-${vars.inputs.endpoint}-${vars.inputs.hostname}
+  idempotencyKey: com.opute.cloudflare.managed-${vars.inputs.recipeRevision}-${vars.inputs.artifactSha256}-${vars.inputs.endpoint}-${vars.inputs.hostname}-${vars.inputs.bindingId}
   nodes:
     - id: artifact
       action:
@@ -139,8 +142,25 @@ plan:
       dependsOn: [start]
       action:
         tool: probe_http_endpoint
-        args: {endpoint: "${vars.inputs.endpoint}"}
+        args: {endpoint: "${vars.inputs.endpoint}", acceptAuthenticationChallenge: true}
       validate:
         tool: probe_http_endpoint
-        args: {endpoint: "${vars.inputs.endpoint}"}
+        args: {endpoint: "${vars.inputs.endpoint}", acceptAuthenticationChallenge: true}
+        assert: [{path: /ready, op: eq, value: true}]
+    - id: public-mcp
+      dependsOn: [endpoint]
+      action:
+        tool: opute.capability.tunneling.probe-host-tunnel
+        args:
+          bindingId: "${vars.inputs.bindingId}"
+          hostname: "${vars.inputs.hostname}"
+          localTarget: "${vars.inputs.localTarget}"
+          placement: host
+      validate:
+        tool: opute.capability.tunneling.probe-host-tunnel
+        args:
+          bindingId: "${vars.inputs.bindingId}"
+          hostname: "${vars.inputs.hostname}"
+          localTarget: "${vars.inputs.localTarget}"
+          placement: host
         assert: [{path: /ready, op: eq, value: true}]

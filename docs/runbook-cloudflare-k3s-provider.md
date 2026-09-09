@@ -23,6 +23,27 @@ resource server; it does not phone home or expose a reverse-tunnel callback
 listener. Inject credentials at process launch; never place them in a recipe,
 plan, or provider result.
 
+## Stable public Host Agent MCP endpoint
+
+Public onboarding is intentionally two phase. Platform and the Cloudflare
+provider own the stable hostname, DNS record, tunnel credential, and the
+first-contact onboarding session. The signed installer is required once to
+start a fresh Host Agent and register its exact `OPUTE_REMOTE_AGENT_ID`; a
+Host Agent cannot receive an MCP operation before that first contact exists.
+
+After registration, the connector is reconciled through the typed Host Agent
+plan and provider operation. The managed tunnel recipe first proves transport
+reachability, then requires an authenticated OAuth `tools/list` against the
+public `/mcp` URL before activation. The Host Agent core stays provider-neutral:
+it executes the connector and validates the MCP serving contract, while the
+provider remains responsible for Cloudflare DNS and tunnel resources.
+
+Run `bun scripts/platform-opute-onboard-public.ts upsert` from Opute to prepare
+a fresh public onboarding session. When the installer has completed, the
+script records a credential-free state file and verifies both the unauthenticated
+challenge and authenticated public `tools/list`. Use the same script with
+`cleanup` to remove only that recorded host-exposure binding.
+
 ## Target requirements
 
 Kubernetes operations invoked through Host Agent require a registered,

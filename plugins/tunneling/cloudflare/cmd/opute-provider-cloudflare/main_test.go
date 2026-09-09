@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -20,7 +22,7 @@ func TestCloudflareManifestDeclaresDynamicCompatibilityOperations(t *testing.T) 
 	for _, operation := range manifest.Services[0].Operations {
 		seen[operation.ID] = true
 	}
-	for _, name := range []string{"opute.capability.tunneling.ensure-host-tunnel", "opute.capability.tunneling.remove-host-tunnel", "ensure_cloudflared_tunnel", "install_cloudflared_connector", "delete_cloudflared_connector"} {
+	for _, name := range []string{"opute.capability.tunneling.ensure-host-tunnel", "opute.capability.tunneling.probe-host-tunnel", "opute.capability.tunneling.remove-host-tunnel", "ensure_cloudflared_tunnel", "install_cloudflared_connector", "delete_cloudflared_connector"} {
 		if !seen[name] {
 			t.Fatalf("manifest missing provider operation %q", name)
 		}
@@ -28,6 +30,26 @@ func TestCloudflareManifestDeclaresDynamicCompatibilityOperations(t *testing.T) 
 	for _, name := range []string{"create_cloudflare_tunnel", "delete_cloudflare_tunnel"} {
 		if seen[name] {
 			t.Fatalf("manifest must not publish retired catalog route %q", name)
+		}
+	}
+}
+
+func TestManagedRecipeRequiresAuthenticatedPublicMCPProbe(t *testing.T) {
+	recipePath := filepath.Join("..", "..", "recipes", "tunneling-managed.yaml")
+	recipe, err := os.ReadFile(recipePath)
+	if err != nil {
+		t.Fatalf("read managed tunnel recipe: %v", err)
+	}
+	text := string(recipe)
+	for _, required := range []string{
+		"recipeVersion: 1.1.0",
+		"bindingId:",
+		"servingContract: mcp-exposure.v1",
+		"opute.capability.tunneling.probe-host-tunnel",
+		"acceptAuthenticationChallenge: true",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("managed recipe missing authenticated public MCP contract %q", required)
 		}
 	}
 }

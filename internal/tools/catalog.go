@@ -526,7 +526,8 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Title:       "Probe HTTP endpoint",
 		Description: "Probe a caller-declared HTTP(S) endpoint for provider-neutral reachability evidence.",
 		InputSchema: map[string]any{"type": "object", "required": []string{"endpoint"}, "properties": map[string]any{
-			"endpoint": map[string]any{"type": "string", "format": "uri"},
+			"endpoint":                      map[string]any{"type": "string", "format": "uri"},
+			"acceptAuthenticationChallenge": map[string]any{"type": "boolean"},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"endpoint", "ready"}},
 	}, ToolDefinition{

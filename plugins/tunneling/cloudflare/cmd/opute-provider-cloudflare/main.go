@@ -12,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
@@ -46,7 +47,7 @@ func cloudflareManifest() providercontract.InstallManifest {
 		Provides: []providercontract.CapabilityRef{{ID: tunnelingCapability, Version: 1}, {ID: capabilitycontract.NetworkOverlay, Version: 1}},
 		Recipes: []providercontract.RecipeRef{
 			{ID: "com.opute.cloudflare.tunneling", Source: providercontract.RecipeSource{URI: "recipes/tunneling.yaml", Revision: "working-tree", SHA256: "sha256:2f404972cbe5c463b8fe501973894c241341b2621e5941fad06af1434a958bc7"}, Mode: "tunnel"},
-			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:b665b9e50ebb64389dcca167d4b95b02f867fbb33d806d6254e6047fb8e9d9b3"}, Mode: "managed"},
+			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:8907706cf5d8a82ea18f87cd589c244d23070424707cc2e0fe9af2609665fda6"}, Mode: "managed"},
 		},
 		Services: []providercontract.ServiceDefinition{
 			{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: cloudflareOperations()},
@@ -463,7 +464,10 @@ func probeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 	if endpoint == "" {
 		return nil, fmt.Errorf("localTarget is required")
 	}
-	result, err := callHost(ctx, client, "probe_http_endpoint", map[string]any{"endpoint": endpoint})
+	result, err := callHost(ctx, client, "probe_http_endpoint", map[string]any{
+		"endpoint":                      endpoint,
+		"acceptAuthenticationChallenge": true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -499,12 +503,13 @@ func probeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 }
 
 func authenticatedPublicToolsList(ctx context.Context, resourceURL string) (map[string]any, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
 	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(resourceURL, "/mcp")+"/oauth/token", strings.NewReader("grant_type=client_credentials&client_id=opute-mcp-host&resource="+url.QueryEscape(resourceURL)))
 	if err != nil {
 		return nil, err
 	}
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	tokenRes, err := http.DefaultClient.Do(tokenReq)
+	tokenRes, err := client.Do(tokenReq)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +520,7 @@ func authenticatedPublicToolsList(ctx context.Context, resourceURL string) (map[
 	var tokenBody struct {
 		AccessToken string `json:"access_token"`
 	}
-	if err := json.NewDecoder(tokenRes.Body).Decode(&tokenBody); err != nil || tokenBody.AccessToken == "" {
+	if err := json.NewDecoder(io.LimitReader(tokenRes.Body, 64*1024)).Decode(&tokenBody); err != nil || tokenBody.AccessToken == "" {
 		return nil, fmt.Errorf("public token mint missing access_token")
 	}
 	body := `{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"cloudflare-tunnel-probe","version":"1.0.0"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
@@ -525,9 +530,10 @@ func authenticatedPublicToolsList(ctx context.Context, resourceURL string) (map[
 	}
 	listReq.Header.Set("Authorization", "Bearer "+tokenBody.AccessToken)
 	listReq.Header.Set("Content-Type", "application/json")
+	listReq.Header.Set("Accept", "application/json, text/event-stream")
 	listReq.Header.Set("MCP-Protocol-Version", "2026-07-28")
 	listReq.Header.Set("Mcp-Method", "tools/list")
-	listRes, err := http.DefaultClient.Do(listReq)
+	listRes, err := client.Do(listReq)
 	if err != nil {
 		return nil, err
 	}
@@ -541,7 +547,7 @@ func authenticatedPublicToolsList(ctx context.Context, resourceURL string) (map[
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.NewDecoder(listRes.Body).Decode(&rpc); err != nil {
+	if err := json.NewDecoder(io.LimitReader(listRes.Body, 1<<20)).Decode(&rpc); err != nil {
 		return nil, err
 	}
 	if rpc.Error != nil {

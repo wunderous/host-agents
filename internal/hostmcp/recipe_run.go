@@ -496,6 +496,13 @@ func (s *Server) activationValidationFlows() map[string]func(context.Context, ma
 			}
 			return map[string]any{"servingContract": "http-exposure.v1", "ready": true, "checks": checks}, nil
 		},
+		"mcp-exposure.v1": func(ctx context.Context, bindings map[string]any, _ string) (map[string]any, error) {
+			endpoint := recipeStringField(bindings, "endpoint")
+			if endpoint == "" {
+				return nil, fmt.Errorf("mcp-exposure.v1 activation requires input binding endpoint")
+			}
+			return probeAuthenticatedMCPEndpoint(ctx, endpoint, recipeStringField(bindings, "bearerToken"))
+		},
 	}
 }
 
