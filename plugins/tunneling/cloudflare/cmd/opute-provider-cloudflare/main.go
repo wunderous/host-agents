@@ -122,6 +122,7 @@ func tunnelSchema() map[string]any {
 		"artifactPath":   map[string]any{"type": "string"},
 		"serviceName":    map[string]any{"type": "string"},
 		"serviceFile":    map[string]any{"type": "string"},
+		"scope":          map[string]any{"type": "string", "enum": []string{"user", "system"}},
 	}}
 }
 func connectorSchema() map[string]any {
@@ -156,6 +157,7 @@ func teardownSchema() map[string]any {
 					"phase":        map[string]any{"type": "string", "enum": []string{"prepare", "finalize"}},
 					"serviceName":  map[string]any{"type": "string"},
 					"serviceFile":  map[string]any{"type": "string"},
+					"scope":        map[string]any{"type": "string", "enum": []string{"user", "system"}},
 					"tunnelId":     map[string]any{"type": "string", "pattern": "^[A-Za-z0-9_-]+$"},
 					"dnsRecordIds": map[string]any{"type": "array", "items": map[string]any{"type": "string", "pattern": "^[A-Za-z0-9_-]+$"}},
 				},
@@ -321,13 +323,17 @@ func ensureTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 }
 
 func reconcileHostTunnel(ctx context.Context, client *hostagentclient.Client, args map[string]any) error {
+	scope, err := hostServiceScope(args)
+	if err != nil {
+		return err
+	}
 	serviceName := firstNonEmpty(stringInput(args, "serviceName", ""), "opute-cloudflare-tunnel.service")
-	serviceFile := firstNonEmpty(stringInput(args, "serviceFile", ""), "~/.config/systemd/user/"+serviceName)
+	serviceFile := firstNonEmpty(stringInput(args, "serviceFile", ""), defaultHostServiceFile(scope, serviceName))
 	// Host exposure reconciliation is invoked from the neutral exposure
 	// lifecycle, which only carries the run token and target. Keep the
 	// cloudflared artifact choice provider-owned instead of requiring callers
 	// to know provider implementation details.
-	artifactPath := firstNonEmpty(stringInput(args, "artifactPath", ""), "~/.local/share/opute/providers/com.opute.cloudflare/bin/cloudflared")
+	artifactPath := firstNonEmpty(stringInput(args, "artifactPath", ""), defaultCloudflaredArtifactPath(scope))
 	artifactURI := firstNonEmpty(stringInput(args, "artifactUri", ""), "https://github.com/cloudflare/cloudflared/releases/download/2026.8.2/cloudflared-linux-amd64")
 	artifactSHA := firstNonEmpty(stringInput(args, "artifactSha256", ""), "fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2")
 	if _, err := callHost(ctx, client, "ensure_host_artifact", map[string]any{"uri": artifactURI, "destination": artifactPath, "sha256": artifactSHA, "executable": true}); err != nil {
@@ -340,18 +346,22 @@ func reconcileHostTunnel(ctx context.Context, client *hostagentclient.Client, ar
 	if strings.HasPrefix(executable, "~") {
 		executable = "%h" + strings.TrimPrefix(executable, "~")
 	}
-	unit := fmt.Sprintf("[Unit]\nDescription=Opute Cloudflare tunnel\nAfter=network-online.target\n\n[Service]\nExecStart=%s tunnel --no-autoupdate run --token %s\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n", executable, shellQuote(stringInput(args, "runToken", "")))
+	wantedBy := "default.target"
+	if scope == "system" {
+		wantedBy = "multi-user.target"
+	}
+	unit := fmt.Sprintf("[Unit]\nDescription=Opute Cloudflare tunnel\nAfter=network-online.target\n\n[Service]\nExecStart=%s tunnel --no-autoupdate run --token %s\nRestart=on-failure\n\n[Install]\nWantedBy=%s\n", executable, shellQuote(stringInput(args, "runToken", "")), wantedBy)
 	if _, err := callHost(ctx, client, "ensure_host_file", map[string]any{"path": serviceFile, "content": unit, "mode": 0600}); err != nil {
 		return err
 	}
-	if _, err := callHost(ctx, client, "ensure_host_service_supervisor", map[string]any{"scope": "user"}); err != nil {
+	if _, err := callHost(ctx, client, "ensure_host_service_supervisor", map[string]any{"scope": scope}); err != nil {
 		return err
 	}
 	if _, err := callHost(ctx, client, "set_host_service_state", map[string]any{
-		"uri":         hostServiceURI(serviceName),
+		"uri":         hostServiceURIForScope(scope, serviceName),
 		"serviceName": serviceName,
 		"state":       "start",
-		"scope":       "user",
+		"scope":       scope,
 	}); err != nil {
 		return err
 	}
@@ -541,10 +551,14 @@ func authenticatedPublicToolsList(ctx context.Context, resourceURL string) (map[
 }
 
 func removeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	scope, err := hostServiceScope(args)
+	if err != nil {
+		return nil, err
+	}
 	hostname := stringInput(args, "hostname", "")
 	dedicated := hostname != "" || stringInput(args, "tunnelName", "") != ""
 	serviceName := firstNonEmpty(stringInput(args, "serviceName", ""), "opute-cloudflare-tunnel.service")
-	serviceFile := firstNonEmpty(stringInput(args, "serviceFile", ""), "~/.config/systemd/user/"+serviceName)
+	serviceFile := firstNonEmpty(stringInput(args, "serviceFile", ""), defaultHostServiceFile(scope, serviceName))
 	client, connectErr := connectHostAgent(ctx)
 	if connectErr != nil && !dedicated {
 		return nil, connectErr
@@ -554,7 +568,7 @@ func removeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 		for _, call := range []struct {
 			name string
 			args map[string]any
-		}{{"set_host_service_state", map[string]any{"uri": hostServiceURI(serviceName), "serviceName": serviceName, "state": "stop", "scope": "user"}}, {"set_host_service_state", map[string]any{"uri": hostServiceURI(serviceName), "serviceName": serviceName, "state": "disable", "scope": "user"}}, {"remove_host_file", map[string]any{"path": serviceFile, "confirm": true}}} {
+		}{{"set_host_service_state", map[string]any{"uri": hostServiceURIForScope(scope, serviceName), "serviceName": serviceName, "state": "stop", "scope": scope}}, {"set_host_service_state", map[string]any{"uri": hostServiceURIForScope(scope, serviceName), "serviceName": serviceName, "state": "disable", "scope": scope}}, {"remove_host_file", map[string]any{"path": serviceFile, "confirm": true}}} {
 			if _, err := callHost(ctx, client, call.name, call.args); err != nil && !dedicated {
 				return nil, err
 			}
@@ -569,7 +583,33 @@ func removeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 }
 
 func hostServiceURI(serviceName string) string {
-	return "host-service:local:user/" + strings.TrimSpace(serviceName)
+	return hostServiceURIForScope("user", serviceName)
+}
+
+func hostServiceURIForScope(scope, serviceName string) string {
+	return "host-service:local:" + strings.TrimSpace(scope) + "/" + strings.TrimSpace(serviceName)
+}
+
+func hostServiceScope(args map[string]any) (string, error) {
+	scope := firstNonEmpty(stringInput(args, "scope", ""), "user")
+	if scope != "user" && scope != "system" {
+		return "", fmt.Errorf("unsupported host service scope %q", scope)
+	}
+	return scope, nil
+}
+
+func defaultHostServiceFile(scope, serviceName string) string {
+	if scope == "system" {
+		return "/etc/systemd/system/" + serviceName
+	}
+	return "~/.config/systemd/user/" + serviceName
+}
+
+func defaultCloudflaredArtifactPath(scope string) string {
+	if scope == "system" {
+		return "/opt/opute/cloudflared"
+	}
+	return "~/.local/share/opute/providers/com.opute.cloudflare/bin/cloudflared"
 }
 
 func cloudflaredManifest(namespace, name, image string, replicas int, token string, localTargets any) string {
@@ -642,10 +682,14 @@ func addTeardownTool(server *mcp.Server) {
 			return structured(map[string]any{"completed": true})
 		}
 		serviceName := firstNonEmpty(stringInput(input.Inputs, "serviceName", ""), "opute-cloudflare-tunnel.service")
-		serviceFile := firstNonEmpty(stringInput(input.Inputs, "serviceFile", ""), "~/.config/systemd/user/"+serviceName)
-		serviceURI := firstNonEmpty(stringInput(input.Inputs, "serviceUri", ""), hostServiceURI(serviceName))
+		scope, err := hostServiceScope(input.Inputs)
+		if err != nil {
+			return nil, err
+		}
+		serviceFile := firstNonEmpty(stringInput(input.Inputs, "serviceFile", ""), defaultHostServiceFile(scope, serviceName))
+		serviceURI := firstNonEmpty(stringInput(input.Inputs, "serviceUri", ""), hostServiceURIForScope(scope, serviceName))
 		cleanupKey := stringInput(input.Inputs, "tunnelId", "") + "-" + strings.Join(stringSliceInput(input.Inputs, "dnsRecordIds"), ",")
-		return structured(map[string]any{"contractVersion": "host-plan.v1", "plan": teardownPlan("com.opute.cloudflare.teardown", serviceName, serviceFile, serviceURI, cleanupKey)})
+		return structured(map[string]any{"contractVersion": "host-plan.v1", "plan": teardownPlan("com.opute.cloudflare.teardown", serviceName, serviceFile, serviceURI, scope, cleanupKey)})
 	})
 }
 
@@ -870,10 +914,10 @@ func cloudflareDelete(ctx context.Context, token, endpoint string) error {
 	}
 	return nil
 }
-func teardownPlan(planID, serviceName, serviceFile, serviceURI, cleanupKey string) map[string]any {
-	serviceArgs := map[string]any{"uri": serviceURI, "state": "stop", "scope": "user"}
-	inspectArgs := map[string]any{"uri": serviceURI, "scope": "user"}
-	return map[string]any{"contractVersion": "host-plan.v1", "planId": planID, "generation": 1, "idempotencyKey": planID + "-" + serviceName + "-" + serviceFile + "-" + cleanupKey, "nodes": []any{map[string]any{"id": "stop", "action": map[string]any{"tool": "set_host_service_state", "args": serviceArgs}, "validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/active", "op": "eq", "value": false}}}}, map[string]any{"id": "disable", "dependsOn": []string{"stop"}, "action": map[string]any{"tool": "set_host_service_state", "args": map[string]any{"uri": serviceURI, "state": "disable", "scope": "user"}}, "validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/enabled", "op": "eq", "value": false}}}}, map[string]any{"id": "remove-service-file", "dependsOn": []string{"disable"}, "action": map[string]any{"tool": "remove_host_file", "args": map[string]any{"path": serviceFile, "confirm": true}}, "validate": map[string]any{"tool": "inspect_host_file", "args": map[string]any{"path": serviceFile}, "assert": []any{map[string]any{"path": "/exists", "value": false, "op": "eq"}}}}}}
+func teardownPlan(planID, serviceName, serviceFile, serviceURI, scope, cleanupKey string) map[string]any {
+	serviceArgs := map[string]any{"uri": serviceURI, "state": "stop", "scope": scope}
+	inspectArgs := map[string]any{"uri": serviceURI, "scope": scope}
+	return map[string]any{"contractVersion": "host-plan.v1", "planId": planID, "generation": 1, "idempotencyKey": planID + "-" + serviceName + "-" + serviceFile + "-" + cleanupKey, "nodes": []any{map[string]any{"id": "stop", "action": map[string]any{"tool": "set_host_service_state", "args": serviceArgs}, "validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/active", "op": "eq", "value": false}}}}, map[string]any{"id": "disable", "dependsOn": []string{"stop"}, "action": map[string]any{"tool": "set_host_service_state", "args": map[string]any{"uri": serviceURI, "state": "disable", "scope": scope}}, "validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/enabled", "op": "eq", "value": false}}}}, map[string]any{"id": "remove-service-file", "dependsOn": []string{"disable"}, "action": map[string]any{"tool": "remove_host_file", "args": map[string]any{"path": serviceFile, "confirm": true}}, "validate": map[string]any{"tool": "inspect_host_file", "args": map[string]any{"path": serviceFile}, "assert": []any{map[string]any{"path": "/exists", "value": false, "op": "eq"}}}}}}
 }
 func structured(value any) (*mcp.CallToolResult, error) {
 	encoded, err := json.Marshal(value)

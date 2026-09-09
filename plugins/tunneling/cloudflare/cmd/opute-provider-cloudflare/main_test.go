@@ -110,6 +110,24 @@ func TestCloudflareValidationPreservesDeclaredBindingsAndRejectsPlacement(t *tes
 	}
 }
 
+func TestCloudflareHostServiceScopeUsesTypedURIAndDefaults(t *testing.T) {
+	if got := hostServiceURIForScope("system", "opute-cloudflared-host.service"); got != "host-service:local:system/opute-cloudflared-host.service" {
+		t.Fatalf("unexpected system service URI: %q", got)
+	}
+	if got := defaultHostServiceFile("system", "opute-cloudflared-host.service"); got != "/etc/systemd/system/opute-cloudflared-host.service" {
+		t.Fatalf("unexpected system service file: %q", got)
+	}
+	if got := defaultHostServiceFile("user", "opute-cloudflared-host.service"); got != "~/.config/systemd/user/opute-cloudflared-host.service" {
+		t.Fatalf("unexpected user service file: %q", got)
+	}
+	if scope, err := hostServiceScope(map[string]any{"scope": "system"}); err != nil || scope != "system" {
+		t.Fatalf("system scope rejected: %q %v", scope, err)
+	}
+	if _, err := hostServiceScope(map[string]any{"scope": "container"}); err == nil {
+		t.Fatal("unsupported host service scope was accepted")
+	}
+}
+
 func TestCloudflareTargetAdmissionUsesTypedResourceURIs(t *testing.T) {
 	target, err := typedTargetURI("container:tenant-a:edge", resourceid.TypeContainer)
 	if err != nil || target.ResourceID != "edge" {
