@@ -225,6 +225,73 @@ func TestMCPAllowsPublicHostWhenLocalhostProtectionIsExplicitlyEnabled(t *testin
 	}
 }
 
+func TestMCPAllowsAuthenticatedPublicHostWithoutGlobalProtectionDisable(t *testing.T) {
+	hs := newTransportTestServer(t)
+	authorizer := testAuthorizer(t, "host-bootstrap")
+	httpSrv := NewHTTPServer(HTTPOptions{
+		HostServer: hs,
+		BindHost:   "127.0.0.1",
+		Port:       0,
+		Authz:      authorizer,
+	})
+	ts := httptest.NewServer(httpSrv.Handler())
+	defer ts.Close()
+
+	form := strings.NewReader("grant_type=client_credentials&client_id=opute-mcp-host&resource=https%3A%2F%2Fpublic.example%2Fmcp")
+	tokenRequest, err := http.NewRequest(http.MethodPost, ts.URL+"/oauth/token", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	tokenResponse, err := http.DefaultClient.Do(tokenRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tokenResponse.Body.Close()
+	var tokenBody map[string]any
+	if err := json.NewDecoder(tokenResponse.Body).Decode(&tokenBody); err != nil {
+		t.Fatal(err)
+	}
+	token, _ := tokenBody["access_token"].(string)
+	if token == "" {
+		t.Fatalf("token response did not contain access_token: %#v", tokenBody)
+	}
+
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/list",
+		"params":  map[string]any{"_meta": mustMeta()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Host = "public.example"
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-Forwarded-Proto", "https")
+	if err := mcphttp.ApplyStreamableHTTPRequestHeaders(request); err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Mcp-Method", "tools/list")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	payload, _ := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("authenticated public host status = %d body=%s", response.StatusCode, string(payload))
+	}
+	if !strings.Contains(string(payload), "tools") {
+		t.Fatalf("tools/list response = %s, want tools", string(payload))
+	}
+}
+
 func newTransportTestServer(t *testing.T) *hostmcp.Server {
 	t.Helper()
 	svc := hostagent.New(hostagent.Options{

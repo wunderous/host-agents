@@ -23,6 +23,7 @@ import (
 type HTTPServer struct {
 	host                        *hostmcp.Server
 	mcpHandler                  *mcp.StreamableHTTPHandler
+	publicMCPHandler            *mcp.StreamableHTTPHandler
 	authz                       *authz.Service
 	instanceID                  string
 	agentID                     string
@@ -87,14 +88,28 @@ func NewHTTPServer(opts HTTPOptions) *HTTPServer {
 		logger:                      logger,
 		allowLegacyHandshake:        opts.AllowLegacyHandshake,
 	}
-	h.mcpHandler = mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
-		return opts.HostServer.MCP()
-	}, &mcp.StreamableHTTPOptions{
-		Stateless:                    true,
-		JSONResponse:                 true,
-		PropagateRequestCancellation: true,
-		DisableLocalhostProtection:   opts.DisableLocalhostProtection,
-	})
+	newMCPHandler := func(disableLocalhostProtection bool) *mcp.StreamableHTTPHandler {
+		return mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+			return opts.HostServer.MCP()
+		}, &mcp.StreamableHTTPOptions{
+			Stateless:                    true,
+			JSONResponse:                 true,
+			PropagateRequestCancellation: true,
+			DisableLocalhostProtection:   disableLocalhostProtection,
+		})
+	}
+	h.mcpHandler = newMCPHandler(opts.DisableLocalhostProtection)
+	// Cloudflared (and other authenticated public connectors) dials this
+	// listener through loopback while preserving the public Host header. The
+	// SDK's DNS-rebinding guard would reject that request after Opute has
+	// already authenticated and audience-bound it. Keep the normal handler for
+	// local/unauthenticated traffic and use this scoped handler only after
+	// authz.Authorize has accepted a non-local Host.
+	if opts.DisableLocalhostProtection {
+		h.publicMCPHandler = h.mcpHandler
+	} else {
+		h.publicMCPHandler = newMCPHandler(true)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.handleHealth)
 	mux.HandleFunc("/mcp", h.handleMCP)
@@ -264,7 +279,7 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
-	h.mcpHandler.ServeHTTP(w, r)
+	h.mcpHandlerForRequest(r).ServeHTTP(w, r)
 }
 
 func (h *HTTPServer) authorize(r *http.Request) authz.Decision {
@@ -309,7 +324,7 @@ func rewriteIncomingToolCallName(body []byte, headerName string, resolve func(st
 
 func (h *HTTPServer) serveToolCall(w http.ResponseWriter, r *http.Request) {
 	recorder := httptest.NewRecorder()
-	h.mcpHandler.ServeHTTP(recorder, r)
+	h.mcpHandlerForRequest(r).ServeHTTP(recorder, r)
 	body := normalizeTaskCreationResponse(recorder.Body.Bytes())
 	for key, values := range recorder.Header() {
 		w.Header()[key] = append([]string(nil), values...)
@@ -317,6 +332,13 @@ func (h *HTTPServer) serveToolCall(w http.ResponseWriter, r *http.Request) {
 	w.Header().Del("Content-Length")
 	w.WriteHeader(recorder.Code)
 	_, _ = w.Write(body)
+}
+
+func (h *HTTPServer) mcpHandlerForRequest(r *http.Request) *mcp.StreamableHTTPHandler {
+	if h != nil && h.publicMCPHandler != nil && r != nil && !authz.IsLocalHostAddress(strings.TrimSpace(r.Host)) {
+		return h.publicMCPHandler
+	}
+	return h.mcpHandler
 }
 
 func normalizeTaskCreationResponse(body []byte) []byte {
