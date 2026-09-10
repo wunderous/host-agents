@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFindMeshIPAcceptsIPCommandCIDR(t *testing.T) {
 	output := "2: enp5s0    inet 10.0.100.56/24 scope global enp5s0\n4: CloudflareWARP    inet 100.96.0.2/32 scope global CloudflareWARP"
@@ -12,6 +15,24 @@ func TestFindMeshIPAcceptsIPCommandCIDR(t *testing.T) {
 func TestFindMeshIPRejectsNonMeshAddress(t *testing.T) {
 	if got := findMeshIP("2: enp5s0 inet 10.0.100.56/24 scope global enp5s0"); got != "" {
 		t.Fatalf("findMeshIP() = %q, want empty result", got)
+	}
+}
+
+func TestCloudflareMeshInstallScriptRequiresIPv6AndBoundsWARPSetup(t *testing.T) {
+	script := cloudflareMeshInstallScript()
+	for _, required := range []string{
+		"set -euo pipefail",
+		"/proc/net/if_inet6",
+		"/proc/sys/net/ipv6/conf/all/disable_ipv6",
+		"Cloudflare Mesh requires an IPv6-capable guest kernel",
+		"exit 78",
+		"timeout 45s warp-cli --accept-tos connector new",
+		"timeout 45s warp-cli --accept-tos connect",
+		"bounded wait",
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("Cloudflare Mesh install script missing %q", required)
+		}
 	}
 }
 

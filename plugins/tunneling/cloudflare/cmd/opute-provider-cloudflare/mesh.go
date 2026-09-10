@@ -277,53 +277,7 @@ func attachNetworkOverlay(ctx context.Context, args map[string]any) (*mcp.CallTo
 	if err := waitForGuestExec(ctx, client, instanceURI); err != nil {
 		return nil, err
 	}
-	installScript := `set -eu
-IFS= read -r mesh_token || true
-if [ -z "$mesh_token" ]; then
-  echo 'Cloudflare Mesh connector token was not received on stdin' >&2
-  exit 1
-fi
-if ! command -v warp-cli >/dev/null 2>&1; then
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y -qq ca-certificates curl gnupg
-  install -d -m 0755 /usr/share/keyrings
-  curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-  . /etc/os-release
-  printf 'deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ %s main\n' "$VERSION_CODENAME" > /etc/apt/sources.list.d/cloudflare-client.list
-  apt-get update -qq
-  apt-get install -y -qq cloudflare-warp
-fi
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl enable --now warp-svc.service >/dev/null 2>&1 || true
-fi
-printf 'net.ipv4.ip_forward = 1\nnet.ipv6.conf.all.forwarding = 1\nnet.ipv6.conf.all.accept_ra = 2\n' > /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
-sysctl --system >/dev/null 2>&1 || true
-if ! warp-cli --accept-tos status 2>/dev/null | grep -q 'Connected'; then
-  warp-cli --accept-tos connector new "$mesh_token"
-  warp-cli --accept-tos connect
-fi
-for attempt in $(seq 1 60); do
-  status="$(warp-cli --accept-tos status 2>/dev/null || true)"
-  addresses="$(ip -4 -o addr show scope global 2>/dev/null || true)"
-  if printf '%s\n' "$status" | grep -q 'Connected' && printf '%s\n' "$addresses" | grep -q '100\.'; then
-    break
-  fi
-  sleep 2
-done
-mesh_iface="$(ip -4 -o addr show scope global 2>/dev/null | awk '$4 ~ /^100\./ {print $2; exit}' | sed 's/:$//' )"
-if [ -z "$mesh_iface" ]; then
-  echo 'Cloudflare Mesh interface could not be identified for the main-table route' >&2
-  exit 1
-fi
-# WARP normally installs its broad routes in a policy table selected by a
-# firewall mark. Native daemons such as k3s do not inherit that mark, so their
-# ordinary TCP sockets otherwise resolve a Mesh peer through the Incus bridge.
-# Publish the provider-owned Mesh CIDR in the main table as well; this is the
-# declared overlay route that makes the endpoint usable by k3s and etcd.
-ip route replace 100.96.0.0/12 dev "$mesh_iface"
-warp-cli --accept-tos status
-ip -4 -o addr show scope global`
+	installScript := cloudflareMeshInstallScript()
 	result, err := callHost(ctx, client, "run_instance_command", map[string]any{
 		"uri":       instanceURI.String(),
 		"command":   "bash",
@@ -361,6 +315,74 @@ ip -4 -o addr show scope global`
 		"meshIp":          meshIP,
 		"meshInterface":   meshInterface,
 	})
+}
+
+// cloudflareMeshInstallScript is kept as a separately testable value because
+// it is the provider's guest-runtime contract. Cloudflare WARP requires an
+// IPv6-capable guest kernel even when the resulting Mesh address is IPv4. A
+// WSL system container inherits the host kernel and can have IPv6 disabled;
+// admitting that target would only make warp-cli wait until the operation
+// deadline. Full Incus VMs have their own kernel and pass this check.
+func cloudflareMeshInstallScript() string {
+	return `set -euo pipefail
+IFS= read -r mesh_token || true
+if [ -z "$mesh_token" ]; then
+  echo 'Cloudflare Mesh connector token was not received on stdin' >&2
+  exit 1
+fi
+ipv6_disabled="$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || printf 1)"
+if [ ! -r /proc/net/if_inet6 ] || [ "$ipv6_disabled" != "0" ]; then
+  echo 'Cloudflare Mesh requires an IPv6-capable guest kernel; this target has IPv6 disabled' >&2
+  exit 78
+fi
+if ! command -v warp-cli >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  timeout 180s apt-get update -qq
+  timeout 180s apt-get install -y -qq ca-certificates curl gnupg
+  install -d -m 0755 /usr/share/keyrings
+  timeout 60s curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+  . /etc/os-release
+  printf 'deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ %s main\n' "$VERSION_CODENAME" > /etc/apt/sources.list.d/cloudflare-client.list
+  timeout 180s apt-get update -qq
+  timeout 180s apt-get install -y -qq cloudflare-warp
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  timeout 30s systemctl enable --now warp-svc.service >/dev/null 2>&1 || true
+fi
+printf 'net.ipv4.ip_forward = 1\nnet.ipv6.conf.all.forwarding = 1\nnet.ipv6.conf.all.accept_ra = 2\n' > /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
+sysctl --system >/dev/null 2>&1 || true
+if ! warp-cli --accept-tos status 2>/dev/null | grep -q 'Connected'; then
+  timeout 45s warp-cli --accept-tos connector new "$mesh_token"
+  timeout 45s warp-cli --accept-tos connect
+fi
+connected=0
+for attempt in $(seq 1 60); do
+  status="$(warp-cli --accept-tos status 2>/dev/null || true)"
+  addresses="$(ip -4 -o addr show scope global 2>/dev/null || true)"
+  if printf '%s\n' "$status" | grep -q 'Connected' && printf '%s\n' "$addresses" | grep -q '100\.'; then
+    connected=1
+    break
+  fi
+  sleep 2
+done
+if [ "$connected" -ne 1 ]; then
+  echo 'Cloudflare Mesh connector did not reach Connected state before the bounded wait' >&2
+  warp-cli --accept-tos status 2>&1 || true
+  exit 1
+fi
+mesh_iface="$(ip -4 -o addr show scope global 2>/dev/null | awk '$4 ~ /^100\./ {print $2; exit}' | sed 's/:$//' )"
+if [ -z "$mesh_iface" ]; then
+  echo 'Cloudflare Mesh interface could not be identified for the main-table route' >&2
+  exit 1
+fi
+# WARP normally installs its broad routes in a policy table selected by a
+# firewall mark. Native daemons such as k3s do not inherit that mark, so their
+# ordinary TCP sockets otherwise resolve a Mesh peer through the Incus bridge.
+# Publish the provider-owned Mesh CIDR in the main table as well; this is the
+# declared overlay route that makes the endpoint usable by k3s and etcd.
+ip route replace 100.96.0.0/12 dev "$mesh_iface"
+warp-cli --accept-tos status
+ip -4 -o addr show scope global`
 }
 
 func ensureNetworkOverlayHAEndpoint(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
