@@ -2,7 +2,9 @@ dist/
 *.exe
 *.test
 *.out
-tmp/e2e-debug.log
+tmp/
+.zcode/
+.cursor/
 .idea/
 .vscode/
 *.swp

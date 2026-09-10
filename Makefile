@@ -1,4 +1,4 @@
-.PHONY: build build-agent test test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate provider-reset-chat-e2e published-npm-canary npm-test artifacts build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-windows-x64 clean agent-work
+.PHONY: build build-agent test test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary npm-test artifacts build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-windows-x64 clean agent-work
 
 BINARY=opute-host-agent
 DIST=dist
@@ -41,9 +41,6 @@ standalone-http-smoke: build-agent
 standalone-lifecycle-gate: build-linux-x64
 	go test -tags=integration ./test/live -count=1
 
-provider-reset-chat-e2e:
-	./scripts/provider-reset-chat-e2e.sh
-
 published-npm-canary:
 	cd npm/local-host-agent && PUBLISHED_NPM_VERSION=$(VERSION) npm run test:published-canary
 
@@ -83,7 +80,9 @@ export-schemas:
 	cd ../opute && bun scripts/export-host-agent-schemas.ts ../opute-host-agent/schemas
 
 # The shared adapter lives in the TypeScript control-plane repo so both
-# repositories use one Beads database and one metadata convention.
+# repositories use one Beads database and one metadata convention. The
+# launcher is intentionally kept in the control-plane checkout; this repo
+# does not carry a second copy of the coordination script.
 # Example: make agent-work ARGS="status" or
 #         make agent-work ARGS="start --title=... --touches=..."
 AGENT_WORK_REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
@@ -97,4 +96,4 @@ BUN := $(HOME)/.bun/bin/bun
 endif
 
 agent-work:
-	OPUTE_BUN_PATH="$(BUN)" "$(AGENT_WORK_REPO_ROOT)/scripts/agent-work" $(ARGS)
+	OPUTE_BUN_PATH="$(BUN)" "$(OPUTE_ROOT)/scripts/agent-work" $(ARGS)

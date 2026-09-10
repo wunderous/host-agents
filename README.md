@@ -73,10 +73,12 @@ Claude Desktop and Cursor use this equivalent `mcpServers` entry:
 
 To add two Host Agents to Cursor without colliding `provision_vm` / `list_vms` names, set `OPUTE_MCP_PREFIX_TOOL_NAMES=true` (and the existing `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE=true`) on each agent. `GET /health` then includes `mcpToolNamePrefix`; use a unique Cursor `mcp.json` key such as `host-agent-{prefix}`. Wire names become `{prefix}_{catalogName}` (single `_`). Dispatch stays on the catalog name. **Do not enable this flag on Platform-enrolled instances** — Opute's control plane calls unprefixed catalog names.
 
-Bootstrap helper (WSL, does not touch production `~/.config/opute/host-agent.env`):
+The standalone bootstrap helper is maintained in the sibling Opute checkout
+(WSL, and it does not touch production `~/.config/opute/host-agent.env`):
 
 ```bash
-# from opute checkout
+# from the opute checkout
+cd ../opute
 ./scripts/start-standalone-bootstrap-agent.sh
 # then from Windows Cursor, point MCP at http://127.0.0.1:3014/mcp
 # (enable localhostForwarding / WSL portproxy if needed)
@@ -173,12 +175,17 @@ Unauthenticated `curl` to GitHub release URLs returns **404**.
 
 ### Verify a release install
 
+The release workflow verifies checksums, starts the packaged binary, and runs
+the standalone Streamable HTTP smoke before publishing artifacts. For a local
+artifact produced by `make build`, run the same protocol smoke directly:
+
 ```bash
-export RELEASE_TAG=v0.1.1          # optional; defaults to v0.1.1
-bash scripts/verify-release-install.sh
+OPUTE_STANDALONE_BINARY="$PWD/dist/opute-host-agent" \
+  go test ./test/standalone -count=1
 ```
 
-Downloads the release artifact, verifies its checksum, installs to a temp path, starts the agent, checks `/health`, MCP `server/discover` / `tools/list`, and confirms unauthenticated `/mcp` returns **401**.
+There is no release-verification helper in this repository; release downloads
+and CI evidence are the supported verification path.
 
 ## Run (HTTP mode — Phase 1 local testing)
 
