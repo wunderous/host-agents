@@ -66,6 +66,12 @@ type Config struct {
 	// derived from OPUTE_REMOTE_AGENT_ID. Default off so Platform-enrolled
 	// agents keep catalog wire names; Cursor/DSH multi-agent clients opt in.
 	PrefixToolNames bool
+	// DisableLocalhostProtection is an explicit opt-in for a Host Agent that is
+	// fronted by an authenticated public MCP tunnel. The MCP SDK's default DNS
+	// rebinding guard rejects a public Host header when cloudflared dials the
+	// loopback origin; the public exposure flow enables this only in its
+	// Opute-owned service environment.
+	DisableLocalhostProtection bool
 }
 
 func Load() Config {
@@ -166,6 +172,7 @@ func Load() Config {
 		HostResourceTaskCapacity:    envInt64Or("OPUTE_HOST_RESOURCE_TASK_CAPACITY", 4096),
 		AllowLegacyHandshake:        os.Getenv("OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE") == "true",
 		PrefixToolNames:             os.Getenv("OPUTE_MCP_PREFIX_TOOL_NAMES") == "true",
+		DisableLocalhostProtection:  os.Getenv("OPUTE_MCP_DISABLE_LOCALHOST_PROTECTION") == "true",
 	}
 }
 

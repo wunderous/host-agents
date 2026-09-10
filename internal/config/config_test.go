@@ -20,6 +20,17 @@ func TestLoadPrefixToolNamesDefaultOff(t *testing.T) {
 	}
 }
 
+func TestLoadPublicMCPDisablesLocalhostProtectionOnlyWhenOptedIn(t *testing.T) {
+	t.Setenv("OPUTE_MCP_DISABLE_LOCALHOST_PROTECTION", "")
+	if Load().DisableLocalhostProtection {
+		t.Fatal("localhost protection must remain enabled by default")
+	}
+	t.Setenv("OPUTE_MCP_DISABLE_LOCALHOST_PROTECTION", "true")
+	if !Load().DisableLocalhostProtection {
+		t.Fatal("OPUTE_MCP_DISABLE_LOCALHOST_PROTECTION=true must enable the public exposure setting")
+	}
+}
+
 func TestTenantIDValidation(t *testing.T) {
 	for _, value := range []string{"tenant-a", "a1", "local"} {
 		if err := validateTenantID(value); err != nil {

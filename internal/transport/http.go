@@ -54,6 +54,7 @@ type HTTPOptions struct {
 	HealthObserver              func() map[string]any
 	Logger                      *slog.Logger
 	AllowLegacyHandshake        bool
+	DisableLocalhostProtection  bool
 }
 
 const modernMCPVersion = "2026-07-28"
@@ -88,7 +89,12 @@ func NewHTTPServer(opts HTTPOptions) *HTTPServer {
 	}
 	h.mcpHandler = mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return opts.HostServer.MCP()
-	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true})
+	}, &mcp.StreamableHTTPOptions{
+		Stateless:                    true,
+		JSONResponse:                 true,
+		PropagateRequestCancellation: true,
+		DisableLocalhostProtection:   opts.DisableLocalhostProtection,
+	})
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.handleHealth)
 	mux.HandleFunc("/mcp", h.handleMCP)

@@ -56,6 +56,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		ExecutionContextKind:        cfg.ExecutionContextKind,
 		ExecutionContextDisplayName: cfg.ExecutionContextDisplayName,
 		AllowLegacyHandshake:        cfg.AllowLegacyHandshake,
+		DisableLocalhostProtection:  cfg.DisableLocalhostProtection,
 		HealthObserver: func() map[string]any {
 			capacity, err := runtime.svc.Incus().VMInventoryCapacity()
 			capabilities := fingerprint.DetectCapabilities()
