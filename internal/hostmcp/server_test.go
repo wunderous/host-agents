@@ -175,8 +175,9 @@ func TestHostPlanWaitSurvivesRestartAndResumesThroughTasks(t *testing.T) {
 				"id":        "status",
 				"dependsOn": []any{"approval"},
 				// Keep the restart/resume assertion independent of an Incus daemon;
-				// get_local_status is an integration probe that shells out to Incus.
-				"action": map[string]any{"tool": "get_host_info", "args": map[string]any{}},
+				// host inventory reads can consume the provider discovery timeout on
+				// CI runners where no Incus daemon is available.
+				"action": map[string]any{"tool": "detect_host_platform", "args": map[string]any{}},
 			},
 		},
 	}
