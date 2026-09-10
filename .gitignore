@@ -5,6 +5,7 @@ dist/
 tmp/
 .zcode/
 .cursor/
+/*-plan.md
 .idea/
 .vscode/
 *.swp
