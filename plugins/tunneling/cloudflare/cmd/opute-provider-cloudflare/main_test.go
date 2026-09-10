@@ -18,6 +18,19 @@ func TestCloudflareManifestDeclaresDynamicCompatibilityOperations(t *testing.T) 
 	if err := providercontract.ValidateInstallManifest(manifest, manifest.Provider); err != nil {
 		t.Fatal(err)
 	}
+	var publicHostRecipe *providercontract.RecipeRef
+	for index := range manifest.Recipes {
+		if manifest.Recipes[index].ID == "com.opute.cloudflare.tunneling.public-host" {
+			publicHostRecipe = &manifest.Recipes[index]
+			break
+		}
+	}
+	if publicHostRecipe == nil {
+		t.Fatal("manifest missing public-host recipe")
+	}
+	if publicHostRecipe.Source.URI != "recipes/tunneling-public-host.yaml" || publicHostRecipe.Mode != "public-host" || !strings.HasPrefix(publicHostRecipe.Source.SHA256, "sha256:") {
+		t.Fatalf("manifest public-host recipe reference is incomplete: %#v", *publicHostRecipe)
+	}
 	seen := map[string]bool{}
 	for _, operation := range manifest.Services[0].Operations {
 		seen[operation.ID] = true
@@ -51,6 +64,26 @@ func TestManagedRecipeRequiresAuthenticatedPublicMCPProbe(t *testing.T) {
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("managed recipe missing authenticated public MCP contract %q", required)
+		}
+	}
+}
+
+func TestPublicHostRecipeDeclaresProviderOwnedPublicMCPFlow(t *testing.T) {
+	recipePath := filepath.Join("..", "..", "recipes", "tunneling-public-host.yaml")
+	recipe, err := os.ReadFile(recipePath)
+	if err != nil {
+		t.Fatalf("read public host recipe: %v", err)
+	}
+	text := string(recipe)
+	for _, required := range []string{
+		"recipeId: com.opute.cloudflare.tunneling.public-host",
+		"servingContract: mcp-exposure.v1",
+		"opute.capability.tunneling.ensure-host-tunnel",
+		"manageHostConnector: true",
+		"opute.capability.tunneling.probe-host-tunnel",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("public host recipe missing provider-owned MCP flow %q", required)
 		}
 	}
 }
@@ -214,6 +247,22 @@ func TestCloudflareLegacyHostAliasDerivesHostConnector(t *testing.T) {
 	_, err := ensureTunnel(t.Context(), args)
 	if err == nil || !strings.Contains(err.Error(), "OPUTE_HOST_AGENT_ENDPOINT is required") {
 		t.Fatalf("legacy host alias should derive connector before callback, got %v", err)
+	}
+}
+
+func TestDedicatedPublicMcpEnsureManagesHostConnectorByDefault(t *testing.T) {
+	fake := newFakeCloudflare()
+	withFakeCloudflare(t, fake)
+	t.Setenv("OPUTE_HOST_AGENT_ENDPOINT", "")
+	_, err := ensureTunnel(t.Context(), map[string]any{
+		"bindingId":   "public-host-agent",
+		"hostname":    "host.example.com",
+		"endpoint":    "https://host.example.com/mcp",
+		"localTarget": "http://127.0.0.1:3004/mcp",
+		"tunnelName":  "opute-public-host-agent",
+	})
+	if err == nil || !strings.Contains(err.Error(), "OPUTE_HOST_AGENT_ENDPOINT is required") {
+		t.Fatalf("public MCP endpoint should invoke the typed Host Agent connector by default, got %v", err)
 	}
 }
 

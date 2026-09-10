@@ -57,6 +57,24 @@ public `/mcp` URL before activation. The Host Agent core stays provider-neutral:
 it executes the connector and validates the MCP serving contract, while the
 provider remains responsible for Cloudflare DNS and tunnel resources.
 
+The `com.opute.cloudflare.tunneling.public-host` recipe packages those two
+responsibilities into one orchestrated run. It calls the Cloudflare provider to
+create or reconcile the dedicated tunnel, hostname, DNS CNAME, and connector
+token, then calls the typed Host Agent `ensure_public_mcp_tunnel` operation and
+proves authenticated `tools/list`. The recipe is therefore a one-command user
+flow, but it is not a Host Agent-only capability: a provider account and its
+credentialed provider process are still required to issue DNS/TLS and tunnel
+credentials. Keep the recipe source and provider binary pinned when invoking it
+from a release or CI environment; a workstation checkout is not an acceptable
+artifact source for a clean-host run.
+
+Once the authenticated endpoint is ready, a separate desktop needs only normal
+Internet access to the stable `https://<hostname>/mcp` URL and its MCP
+authentication. Cloudflare Tunnel uses an outbound connector, so the two
+machines do not need a direct LAN route or inbound port forwarding. This public
+MCP route does not by itself provide private K3s node-to-node networking; use the
+declared network-overlay flow when cluster traffic also has to cross hosts.
+
 Run `bun scripts/platform-opute-onboard-public.ts upsert` from Opute to prepare
 a fresh public onboarding session. When the installer has completed, the
 script records a credential-free state file and verifies both the unauthenticated

@@ -1,0 +1,76 @@
+contractVersion: tunnel-recipe.v1
+recipeId: com.opute.cloudflare.tunneling.public-host
+recipeVersion: 1.0.0
+provider:
+  id: com.opute.cloudflare
+  capabilities: [tunneling]
+# The provider creates the named tunnel, DNS CNAME, and short-lived connector
+# token. It then invokes the Host Agent's typed public-MCP capability to install
+# the pinned cloudflared service and prove authenticated tools/list.
+bindings:
+  - id: public-host-agent
+    hostname: "${vars.inputs.hostname}"
+    localTarget: "${vars.inputs.localTarget}"
+inputs:
+  bindingId:
+    required: true
+    schema: {type: string, minLength: 1, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$'}
+  endpoint:
+    required: true
+    schema: {type: string, format: uri}
+  hostname:
+    required: true
+    schema: {type: string, minLength: 1, maxLength: 253}
+  tunnelName:
+    required: true
+    schema: {type: string, minLength: 1, maxLength: 253}
+  localTarget:
+    required: true
+    schema: {type: string, format: uri}
+  originHostId:
+    schema: {type: string, minLength: 1}
+  artifactUri:
+    schema: {type: string, format: uri}
+  artifactSha256:
+    schema: {type: string, pattern: '^(sha256:)?[0-9a-fA-F]{64}$'}
+  scope:
+    default: user
+    schema: {type: string, enum: [user, system]}
+activation:
+  capability: tunneling
+  servingContract: mcp-exposure.v1
+  inputBindings:
+    endpoint: endpoint
+compatibility:
+  requiredTools:
+    - opute.capability.tunneling.ensure-host-tunnel
+    - opute.capability.tunneling.probe-host-tunnel
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.cloudflare.tunneling.public-host
+  generation: 1
+  idempotencyKey: com.opute.cloudflare.public-host-${vars.inputs.bindingId}-${vars.inputs.endpoint}-${vars.inputs.hostname}-${vars.inputs.tunnelName}-${vars.inputs.localTarget}
+  nodes:
+    - id: public-host-agent
+      action:
+        tool: opute.capability.tunneling.ensure-host-tunnel
+        args:
+          bindingId: "${vars.inputs.bindingId}"
+          endpoint: "${vars.inputs.endpoint}"
+          hostname: "${vars.inputs.hostname}"
+          localTarget: "${vars.inputs.localTarget}"
+          originHostId: "${vars.inputs.originHostId}"
+          tunnelName: "${vars.inputs.tunnelName}"
+          artifactUri: "${vars.inputs.artifactUri}"
+          artifactSha256: "${vars.inputs.artifactSha256}"
+          scope: "${vars.inputs.scope}"
+          placement: host
+          manageHostConnector: true
+      validate:
+        tool: opute.capability.tunneling.probe-host-tunnel
+        args:
+          bindingId: "${vars.inputs.bindingId}"
+          hostname: "${vars.inputs.hostname}"
+          localTarget: "${vars.inputs.localTarget}"
+          placement: host
+        assert: [{path: /ready, op: eq, value: true}]

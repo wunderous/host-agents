@@ -48,6 +48,7 @@ func cloudflareManifest() providercontract.InstallManifest {
 		Recipes: []providercontract.RecipeRef{
 			{ID: "com.opute.cloudflare.tunneling", Source: providercontract.RecipeSource{URI: "recipes/tunneling.yaml", Revision: "working-tree", SHA256: "sha256:2f404972cbe5c463b8fe501973894c241341b2621e5941fad06af1434a958bc7"}, Mode: "tunnel"},
 			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:de45303f69256b664ec2e137f14e98ae3113ceb935c1fb6da34f85b54758fcae"}, Mode: "managed"},
+			{ID: "com.opute.cloudflare.tunneling.public-host", Source: providercontract.RecipeSource{URI: "recipes/tunneling-public-host.yaml", Revision: "working-tree", SHA256: "sha256:db9d4e1a82d376daeaa1ed2d4448f80e5ad2e6063886395c4de60864a70b840a"}, Mode: "public-host"},
 		},
 		Services: []providercontract.ServiceDefinition{
 			{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: cloudflareOperations()},
@@ -272,7 +273,13 @@ func ensureTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 		}
 		args["runToken"] = provisioned.RunToken
 	}
-	manageConnector := boolInput(args, "manageHostConnector", !dedicated)
+	// A provider-created hostname plus an explicit MCP endpoint is the complete
+	// public Host Agent flow. In that shape the provider owns DNS/TLS/token
+	// issuance and should immediately hand the token to the typed Host Agent
+	// connector unless the caller explicitly opts out. The hostname-only path
+	// remains a provisioning step for callers that intend to install the
+	// connector separately.
+	manageConnector := boolInput(args, "manageHostConnector", !dedicated || stringInput(args, "endpoint", "") != "")
 	if tokenFile := stringInput(args, "tokenFile", ""); provisioned != nil && tokenFile != "" {
 		client, hostErr := connectHostAgent(ctx)
 		if hostErr != nil {
