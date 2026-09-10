@@ -9,6 +9,13 @@ func TestLoadDefaultsTenantID(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultsResourceMemoryCapacityToElevenGiB(t *testing.T) {
+	t.Setenv("OPUTE_HOST_RESOURCE_MEMORY_CAPACITY_BYTES", "")
+	if got := Load().HostResourceMemoryCapacity; got != 11<<30 {
+		t.Fatalf("host resource memory capacity = %d, want %d", got, 11<<30)
+	}
+}
+
 func TestLoadPrefixToolNamesDefaultOff(t *testing.T) {
 	t.Setenv("OPUTE_MCP_PREFIX_TOOL_NAMES", "")
 	if Load().PrefixToolNames {

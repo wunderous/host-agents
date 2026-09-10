@@ -37,6 +37,7 @@ const (
 	EnsureHostFile                = "ensure_host_file"
 	EnsureHostFirewallRule        = "ensure_host_firewall_rule"
 	EnsurePublicMcpTunnel         = "ensure_public_mcp_tunnel"
+	EnsurePublicMcpQuickTunnel    = "ensure_public_mcp_quick_tunnel"
 	EnsureHostServiceSupervisor   = "ensure_host_service_supervisor"
 	EnsureHostTool                = "ensure_host_tool"
 	EnsureK3d                     = "ensure_k3d"
@@ -99,6 +100,7 @@ const (
 	ReleasePostgreSQLServiceRelay = "release_postgresql_service_relay"
 	ReleaseSqlConnector           = "release_sql_connector"
 	RemoveHostFile                = "remove_host_file"
+	RemovePublicMcpQuickTunnel    = "remove_public_mcp_quick_tunnel"
 	RemoveLocalLLMK3sProxy        = "remove_local_llm_k3s_proxy"
 	RemoveLocalLLMModel           = "remove_local_llm_model"
 	RemoveLocalLLMRelay           = "remove_local_llm_relay"
@@ -153,6 +155,7 @@ func All() []string {
 		EnsureHostFile,
 		EnsureHostFirewallRule,
 		EnsurePublicMcpTunnel,
+		EnsurePublicMcpQuickTunnel,
 		EnsureHostServiceSupervisor,
 		EnsureHostTool,
 		EnsureK3d,
@@ -215,6 +218,7 @@ func All() []string {
 		ReleasePostgreSQLServiceRelay,
 		ReleaseSqlConnector,
 		RemoveHostFile,
+		RemovePublicMcpQuickTunnel,
 		RemoveLocalLLMK3sProxy,
 		RemoveLocalLLMModel,
 		RemoveLocalLLMRelay,

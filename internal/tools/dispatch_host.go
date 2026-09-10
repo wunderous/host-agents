@@ -205,6 +205,32 @@ func init() {
 }
 
 func init() {
+	register(toolname.EnsurePublicMcpQuickTunnel, EffectMutation, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().EnsurePublicMcpQuickTunnel(ctx, host.EnsurePublicMcpQuickTunnelArgs{
+			BindingID: stringField(args, "bindingId"), LocalTarget: stringField(args, "localTarget"),
+			ArtifactURI: stringField(args, "artifactUri"), ArtifactSHA256: stringField(args, "artifactSha256"), Scope: stringField(args, "scope"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Authenticated public MCP quick tunnel reconciled."), nil
+	})
+}
+
+func init() {
+	register(toolname.RemovePublicMcpQuickTunnel, EffectDestructive, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().RemovePublicMcpQuickTunnel(ctx, host.RemovePublicMcpQuickTunnelArgs{
+			BindingID: stringField(args, "bindingId"), ArtifactURI: stringField(args, "artifactUri"), ArtifactSHA256: stringField(args, "artifactSha256"),
+			Scope: stringField(args, "scope"), Confirm: boolField(args, "confirm"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Authenticated public MCP quick tunnel cleanup reconciled."), nil
+	})
+}
+
+func init() {
 	register(toolname.ExtractHostArchive, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().ExtractHostArchive(host.ExtractHostArchiveArgs{ArchivePath: stringField(args, "archivePath"), Destination: stringField(args, "destination"), Format: stringField(args, "format")}, onData)
 		if err != nil {

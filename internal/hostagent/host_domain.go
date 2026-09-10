@@ -17,6 +17,8 @@ type (
 	ExtractHostArchiveArgs          = host.ExtractHostArchiveArgs
 	EnsureHostArtifactArgs          = host.EnsureHostArtifactArgs
 	EnsurePublicMcpTunnelArgs       = host.EnsurePublicMcpTunnelArgs
+	EnsurePublicMcpQuickTunnelArgs  = host.EnsurePublicMcpQuickTunnelArgs
+	RemovePublicMcpQuickTunnelArgs  = host.RemovePublicMcpQuickTunnelArgs
 	ProbeHTTPEndpointArgs           = host.ProbeHTTPEndpointArgs
 	HTTPObservation                 = host.HTTPObservation
 	ExecCommandArgs                 = host.ExecCommandArgs

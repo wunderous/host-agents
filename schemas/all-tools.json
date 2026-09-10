@@ -6146,5 +6146,131 @@
         "tasks": 8
       }
     }
+  },
+  {
+    "name": "ensure_public_mcp_quick_tunnel",
+    "title": "Ensure authenticated public MCP quick tunnel",
+    "description": "Install a pinned cloudflared Quick Tunnel for the Host Agent loopback MCP endpoint and prove authenticated tools/list. The returned trycloudflare.com URL is ephemeral and never a stable production binding.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "bindingId",
+        "localTarget"
+      ],
+      "properties": {
+        "bindingId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$"
+        },
+        "localTarget": {
+          "type": "string",
+          "format": "uri",
+          "description": "The Host Agent MCP origin, ending exactly in /mcp and resolving to loopback."
+        },
+        "artifactUri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "artifactSha256": {
+          "type": "string",
+          "pattern": "^(sha256:)?[0-9a-fA-F]{64}$"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "contractVersion",
+        "ready",
+        "mode",
+        "stable",
+        "bindingId",
+        "endpoint",
+        "localTarget",
+        "scope",
+        "serviceName",
+        "serviceFile",
+        "logFile",
+        "stateFile",
+        "artifact",
+        "origin",
+        "publicAuth"
+      ]
+    },
+    "_meta": {
+      "effect": "mutation",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
+    }
+  },
+  {
+    "name": "remove_public_mcp_quick_tunnel",
+    "title": "Remove public MCP quick tunnel",
+    "description": "Stop and remove one Opute-owned Cloudflare Quick Tunnel and its verified artifact after explicit confirmation; unrelated paths are refused.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "bindingId",
+        "confirm"
+      ],
+      "properties": {
+        "bindingId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$"
+        },
+        "artifactUri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "artifactSha256": {
+          "type": "string",
+          "pattern": "^(sha256:)?[0-9a-fA-F]{64}$"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ]
+        },
+        "confirm": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "contractVersion",
+        "ready",
+        "status",
+        "bindingId",
+        "scope",
+        "serviceName",
+        "attempts"
+      ]
+    },
+    "_meta": {
+      "effect": "destructive",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
+    }
   }
 ]
