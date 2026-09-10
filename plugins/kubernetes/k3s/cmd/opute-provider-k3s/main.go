@@ -53,7 +53,7 @@ func k3sManifest() providercontract.InstallManifest {
 		Schema:     providercontract.InstallManifestVersion,
 		Provider:   providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.1"},
 		Provides:   []providercontract.CapabilityRef{{ID: kubernetesCapability, Version: 1}},
-		Recipes:    []providercontract.RecipeRef{{ID: "com.opute.k3s.managed", Source: providercontract.RecipeSource{URI: "recipes/kubernetes.yaml", Revision: "working-tree", SHA256: "sha256:058d01adece826a08598c200df440ffa2406b0bf7a98a50543446fd7420c24d1"}, Mode: "kubernetes"}},
+		Recipes:    []providercontract.RecipeRef{{ID: "com.opute.k3s.managed", Source: providercontract.RecipeSource{URI: "recipes/kubernetes.yaml", Revision: "working-tree", SHA256: "sha256:91f0b596492e3c72fb5eacba4c14c6141e7da584eebfa88bc4ffbc72573c7788"}, Mode: "kubernetes"}},
 		Services:   []providercontract.ServiceDefinition{{ID: "opute.capability.kubernetes", CapabilityID: kubernetesCapability, Version: 1, Operations: operations()}},
 		Validation: providercontract.ValidationRef{Capability: kubernetesCapability, Operation: capabilitycontract.KubernetesValidateOperation},
 	}

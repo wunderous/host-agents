@@ -16,11 +16,17 @@ inputs:
   providerId:
     default: com.opute.k3s
     schema: {type: string, const: com.opute.k3s}
+  # Provider activation is repeatable. A caller-scoped nonce keeps a fresh
+  # activation from replaying a terminal plan that belongs to an older
+  # provider generation.
+  activationNonce:
+    default: default
+    schema: {type: string, minLength: 1, maxLength: 128}
 plan:
   contractVersion: host-plan.v1
   planId: com.opute.k3s.managed
   generation: 1
-  idempotencyKey: com.opute.k3s-${vars.inputs.providerId}
+  idempotencyKey: com.opute.k3s-${vars.inputs.providerId}-${vars.inputs.activationNonce}
   nodes:
     - id: host
       action:

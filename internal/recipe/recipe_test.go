@@ -103,6 +103,30 @@ func TestRecipeRejectsUnknownInputAndMissingRequiredInput(t *testing.T) {
 	}
 }
 
+func TestK3sRecipeActivationNonceScopesIdempotency(t *testing.T) {
+	path := filepath.Join("..", "..", "plugins", "kubernetes", "k3s", "recipes", "kubernetes.yaml")
+	first, err := Load(SourceRequest{Source: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.ResolveInputs(map[string]any{"providerId": "com.opute.k3s", "activationNonce": "run-a"}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := Load(SourceRequest{Source: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := second.ResolveInputs(map[string]any{"providerId": "com.opute.k3s", "activationNonce": "run-b"}); err != nil {
+		t.Fatal(err)
+	}
+	if first.ExpandedPlan.IdempotencyKey == second.ExpandedPlan.IdempotencyKey {
+		t.Fatalf("activation nonce did not scope idempotency key: %q", first.ExpandedPlan.IdempotencyKey)
+	}
+	if first.ExpandedPlan.IdempotencyKey != "com.opute.k3s-com.opute.k3s-run-a" {
+		t.Fatalf("first idempotency key = %q", first.ExpandedPlan.IdempotencyKey)
+	}
+}
+
 func TestRecipeTenantVariableIsHostOwned(t *testing.T) {
 	t.Setenv("OPUTE_TENANT_ID", "tenant-live")
 	dir := t.TempDir()
