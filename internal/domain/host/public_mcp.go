@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wunderous/host-agents/internal/mcpprobe"
 )
@@ -25,6 +26,8 @@ const (
 	publicMCPContractVersion         = "mcp-exposure.v1"
 	publicMCPTokenEnv                = "OPUTE_CLOUDFLARED_TUNNEL_TOKEN"
 	publicMCPManagedFileMarker       = "# Managed by Opute Host Agent: public MCP tunnel\n"
+	publicMCPProbeRetryWindow        = 90 * time.Second
+	publicMCPProbeRetryDelay         = 2 * time.Second
 )
 
 var (
@@ -121,17 +124,18 @@ func (s *Service) EnsurePublicMcpTunnel(ctx context.Context, args EnsurePublicMc
 		return nil, fmt.Errorf("start public MCP connector service: %w", err)
 	}
 
-	origin, err := s.ProbeHTTPEndpoint(ctx, ProbeHTTPEndpointArgs{
-		Endpoint:                      localTarget,
-		AcceptAuthenticationChallenge: true,
-	})
+	// MCP resources intentionally reject GET with 405. Use the same typed
+	// authenticated tools/list probe for the local origin that we use for the
+	// public endpoint; an HTTP health-style GET would turn a healthy MCP
+	// server into a false readiness failure.
+	origin, err := mcpprobe.ProbeAuthenticatedMCPEndpoint(ctx, localTarget, "")
 	if err != nil {
 		return nil, fmt.Errorf("probe public MCP origin: %w", err)
 	}
-	if origin == nil || !origin.Ready {
+	if origin == nil || origin["ready"] != true {
 		return nil, fmt.Errorf("public MCP origin is not ready")
 	}
-	public, err := mcpprobe.ProbeAuthenticatedMCPEndpoint(ctx, endpoint, "")
+	public, err := probePublicMCPWithRetry(ctx, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("probe authenticated public MCP endpoint: %w", err)
 	}
@@ -151,6 +155,42 @@ func (s *Service) EnsurePublicMcpTunnel(ctx context.Context, args EnsurePublicMc
 		"origin":          origin,
 		"publicAuth":      public,
 	}, nil
+}
+
+// probePublicMCPWithRetry closes the publication race between the provider's
+// DNS/CNAME write and recursive DNS visibility. The connector may already be
+// running while the stable hostname is still returning a transient lookup or
+// connection error, so a single probe would incorrectly fail a valid tunnel.
+// The retry is bounded and the final typed MCP/authentication error remains
+// visible to the caller.
+func probePublicMCPWithRetry(ctx context.Context, endpoint string) (map[string]any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline := time.Now().Add(publicMCPProbeRetryWindow)
+	var lastErr error
+	for {
+		result, err := mcpprobe.ProbeAuthenticatedMCPEndpoint(ctx, endpoint, "")
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("public MCP endpoint did not become ready within %s: %w", publicMCPProbeRetryWindow, lastErr)
+		}
+		timer := time.NewTimer(publicMCPProbeRetryDelay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func resolvePublicMCPPaths(args EnsurePublicMcpTunnelArgs) (publicMCPPaths, string, string, error) {
