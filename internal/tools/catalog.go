@@ -567,9 +567,9 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}, ToolDefinition{
 		Name:        "remove_host_file",
 		Title:       "Remove managed host file",
-		Description: "Remove one caller-owned regular file beneath the current user's home directory after explicit confirmation and an optional content hash check.",
+		Description: "Remove one caller-owned regular file after explicit confirmation and an optional content hash check; user scope is home-owned and system scope is limited to systemd service units.",
 		InputSchema: map[string]any{"type": "object", "required": []string{"path", "confirm"}, "properties": map[string]any{
-			"path": map[string]any{"type": "string", "minLength": 1}, "expectedSha256": map[string]any{"type": "string"}, "confirm": map[string]any{"type": "boolean"},
+			"path": map[string]any{"type": "string", "minLength": 1}, "expectedSha256": map[string]any{"type": "string"}, "confirm": map[string]any{"type": "boolean"}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"path", "exists", "removed"}},
 	}, ToolDefinition{

@@ -170,7 +170,7 @@ func init() {
 
 func init() {
 	register(toolname.RemoveHostFile, EffectDestructive, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.Host().RemoveHostFile(host.RemoveHostFileArgs{Path: stringField(args, "path"), ExpectedSHA256: stringField(args, "expectedSha256"), Confirm: boolField(args, "confirm")})
+		out, err := svc.Host().RemoveHostFile(host.RemoveHostFileArgs{Path: stringField(args, "path"), ExpectedSHA256: stringField(args, "expectedSha256"), Confirm: boolField(args, "confirm"), Scope: stringField(args, "scope")})
 		if err != nil {
 			return nil, err
 		}

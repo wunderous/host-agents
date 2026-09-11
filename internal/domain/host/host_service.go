@@ -159,6 +159,34 @@ func (s *Service) SetHostServiceState(args SetHostServiceStateArgs, onData func(
 	return map[string]any{"serviceName": serviceName, "state": state, "scope": scope, "status": status}, nil
 }
 
+// ReloadHostServiceManager refreshes the manager's unit-file cache after a
+// caller-owned service unit is removed. It is kept as a typed host primitive
+// so lifecycle code never needs to construct a shell command for systemd.
+func (s *Service) ReloadHostServiceManager(scope string) error {
+	if err := s.shared.RequireSharedHostOwner("reload_host_service_manager"); err != nil {
+		return err
+	}
+	scope = strings.ToLower(strings.TrimSpace(scope))
+	if scope == "" {
+		scope = "user"
+	}
+	if scope != "user" && scope != "system" {
+		return errors.New("scope must be user or system")
+	}
+	command := []string{hostruntime.DefaultSystemctlPath}
+	if scope == "user" {
+		command = append(command, "--user")
+	} else {
+		command = append([]string{"sudo", "-n"}, command...)
+	}
+	command = append(command, "daemon-reload")
+	result, err := s.shared.HostCommandRunner(command, nil, 15*time.Second)
+	if err != nil || result.ExitCode != 0 {
+		return fmt.Errorf("service manager reload failed: %s", textutil.FirstNonEmpty(result.Stderr, result.Stdout, "command failed"))
+	}
+	return nil
+}
+
 // EnsureHostServiceSupervisor makes the host service lifecycle explicit. WSL
 // and other session-based Linux environments otherwise terminate a user
 // manager as soon as the last non-interactive session exits, taking every

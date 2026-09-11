@@ -23,9 +23,12 @@ identity is `container:<tenant>:<id>`, provisioning registers that URI and
 after resolving a VM or container URI. Tenant mismatches, wrong resource types,
 and implicit VM fallback are rejected.
 
-Provider teardown remains two phase: the Host Agent executes the generic
-cleanup plan first, then the Cloudflare provider finalizes external API
-resources. A failed finalization leaves the generation retryable.
+Provider teardown remains two phase: the Host Agent first records the
+run-owned service in a read-only cleanup plan so the provider remains
+reachable, then the Cloudflare provider finalizes external API resources. Once
+finalization succeeds, Host Agent disables, removes, reloads, and stops the
+run-owned service unit. A failed finalization or host cleanup leaves the
+generation retryable.
 
 Kubernetes execution follows the same boundary. The public Host Agent exposes
 only canonical cluster-URI primitives; an active provider implementing

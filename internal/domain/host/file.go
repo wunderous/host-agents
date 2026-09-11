@@ -29,6 +29,7 @@ type RemoveHostFileArgs struct {
 	Path           string
 	ExpectedSHA256 string
 	Confirm        bool
+	Scope          string
 }
 
 // EnsureHostFile writes a caller-declared managed file atomically. User-scoped
@@ -172,10 +173,11 @@ func (s *Service) InspectHostFile(args InspectHostFileArgs) (map[string]any, err
 	return result, nil
 }
 
-// RemoveHostFile deletes one caller-owned regular file beneath the current
-// user's home directory after an explicit confirmation and optional content
-// hash match. It is intentionally separate from ensure_host_file so a recipe
-// cannot turn reconciliation into an implicit deletion.
+// RemoveHostFile deletes one caller-owned regular file after an explicit
+// confirmation and optional content hash match. User-scoped paths remain
+// beneath the current user's home directory; system scope is limited to one
+// systemd service unit. It is intentionally separate from ensure_host_file so
+// a recipe cannot turn reconciliation into an implicit deletion.
 func (s *Service) RemoveHostFile(args RemoveHostFileArgs) (map[string]any, error) {
 	if err := s.shared.RequireSharedHostOwner("remove_host_file"); err != nil {
 		return nil, err
@@ -183,17 +185,30 @@ func (s *Service) RemoveHostFile(args RemoveHostFileArgs) (map[string]any, error
 	if !args.Confirm {
 		return nil, errors.New("remove_host_file requires confirm=true")
 	}
-	home, err := hostHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("resolve home directory: %w", err)
+	scope := strings.ToLower(strings.TrimSpace(args.Scope))
+	if scope == "" {
+		scope = "user"
 	}
-	path, err := hostOwnedPath(home, args.Path)
+	var path string
+	var err error
+	switch scope {
+	case "user":
+		home, homeErr := hostHomeDir()
+		if homeErr != nil {
+			return nil, fmt.Errorf("resolve home directory: %w", homeErr)
+		}
+		path, err = hostOwnedPath(home, args.Path)
+	case "system":
+		path, err = systemdUnitPath(args.Path)
+	default:
+		return nil, fmt.Errorf("scope must be user or system")
+	}
 	if err != nil {
 		return nil, err
 	}
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return map[string]any{"path": path, "exists": false, "removed": false}, nil
+		return map[string]any{"path": path, "scope": scope, "exists": false, "removed": false}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("inspect removable host file: %w", err)
@@ -216,7 +231,7 @@ func (s *Service) RemoveHostFile(args RemoveHostFileArgs) (map[string]any, error
 	if err := os.Remove(path); err != nil {
 		return nil, fmt.Errorf("remove host file: %w", err)
 	}
-	return map[string]any{"path": path, "exists": true, "removed": true, "sha256": observed}, nil
+	return map[string]any{"path": path, "scope": scope, "exists": true, "removed": true, "sha256": observed}, nil
 }
 
 func hostOwnedPath(home, raw string) (string, error) {

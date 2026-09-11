@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/plan"
 	"github.com/wunderous/host-agents/internal/tools"
 )
@@ -109,6 +110,61 @@ func cloneProviderTeardownArgs(args map[string]any) map[string]any {
 	return cloned
 }
 
+// cleanupProviderHostService performs the generic host-owned portion of
+// provider teardown after the provider callback has finalized its external
+// resources. Provider adapters must stay reachable until finalize returns;
+// stopping their service from the prepare plan made the final callback fail
+// with connection refused. The operation is ordered to preserve retryability:
+// disable and remove the unit first, then stop the still-running process.
+func (s *Server) cleanupProviderHostService(inputs map[string]any) error {
+	if s == nil || s.agent == nil {
+		return fmt.Errorf("host service cleanup requires an agent service")
+	}
+	serviceName := recipeStringField(inputs, "serviceName")
+	if serviceName == "" {
+		return nil
+	}
+	scope := recipeStringField(inputs, "scope")
+	if scope == "" {
+		scope = "user"
+	}
+	serviceFile := recipeStringField(inputs, "serviceFile")
+	if serviceFile == "" {
+		if scope == "system" {
+			serviceFile = "/etc/systemd/system/" + serviceName
+		} else {
+			serviceFile = "~/.config/systemd/user/" + serviceName
+		}
+	}
+	hostService := s.agent.Host()
+	observed, err := hostService.InspectHostService(hostagent.InspectHostServiceArgs{ServiceName: serviceName, Scope: scope}, nil)
+	if err != nil {
+		return fmt.Errorf("inspect provider service %q: %w", serviceName, err)
+	}
+	active, activeOK := observed["active"].(bool)
+	enabled, enabledOK := observed["enabled"].(bool)
+	if !activeOK || !enabledOK {
+		return fmt.Errorf("inspect provider service %q returned incomplete state", serviceName)
+	}
+	if enabled {
+		if _, err := hostService.SetHostServiceState(hostagent.SetHostServiceStateArgs{ServiceName: serviceName, State: "disable", Scope: scope}, nil); err != nil {
+			return fmt.Errorf("disable provider service %q: %w", serviceName, err)
+		}
+	}
+	if _, err := hostService.RemoveHostFile(hostagent.RemoveHostFileArgs{Path: serviceFile, Confirm: true, Scope: scope}); err != nil {
+		return fmt.Errorf("remove provider service unit %q: %w", serviceFile, err)
+	}
+	if err := hostService.ReloadHostServiceManager(scope); err != nil {
+		return fmt.Errorf("reload provider service manager: %w", err)
+	}
+	if active {
+		if _, err := hostService.SetHostServiceState(hostagent.SetHostServiceStateArgs{ServiceName: serviceName, State: "stop", Scope: scope}, nil); err != nil {
+			return fmt.Errorf("stop provider service %q: %w", serviceName, err)
+		}
+	}
+	return nil
+}
+
 func (s *Server) completeProviderTeardown(metadata map[string]any) error {
 	return s.completeProviderTeardownContext(context.Background(), metadata)
 }
@@ -150,6 +206,9 @@ func (s *Server) completeProviderTeardownContext(ctx context.Context, metadata m
 	}
 	if finalize == nil || finalize.IsError {
 		return fmt.Errorf("provider %q teardown finalization failed", providerID)
+	}
+	if err := s.cleanupProviderHostService(inputs); err != nil {
+		return err
 	}
 	session.Close()
 	s.emitProviderLifecycleEvent(ctx, ProviderEventDraining, providerID, generationID, "teardown")

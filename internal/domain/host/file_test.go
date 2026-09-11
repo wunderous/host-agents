@@ -116,3 +116,16 @@ func TestRemoveHostFileRequiresConfirmationAndHash(t *testing.T) {
 		t.Fatalf("missing result = %#v", missing)
 	}
 }
+
+func TestRemoveHostFileSystemScopeAcceptsOnlyServiceUnits(t *testing.T) {
+	service := testService(hostruntime.Shared{OwnershipMode: "disabled"})
+	if _, err := service.RemoveHostFile(RemoveHostFileArgs{Path: "/etc/passwd", Scope: "system", Confirm: true}); err == nil {
+		t.Fatal("system-scoped removal accepted a non-service path")
+	}
+	if _, err := service.RemoveHostFile(RemoveHostFileArgs{Path: "/etc/systemd/system/../passwd.service", Scope: "system", Confirm: true}); err == nil {
+		t.Fatal("system-scoped removal accepted a traversal path")
+	}
+	if _, err := service.RemoveHostFile(RemoveHostFileArgs{Path: "/tmp/managed.service", Scope: "container", Confirm: true}); err == nil {
+		t.Fatal("remove_host_file accepted an unsupported scope")
+	}
+}

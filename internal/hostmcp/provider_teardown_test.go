@@ -5,13 +5,21 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
 	"github.com/wunderous/host-agents/internal/cordis"
 	provideradapter "github.com/wunderous/host-agents/internal/cordis/mcp"
+	hostexec "github.com/wunderous/host-agents/internal/exec"
+	"github.com/wunderous/host-agents/internal/hostagent"
+	"github.com/wunderous/host-agents/internal/hostruntime"
+	"github.com/wunderous/host-agents/internal/tools"
 )
 
 func TestProviderTeardownFinalizationFailureLeavesGenerationRetryable(t *testing.T) {
@@ -123,5 +131,120 @@ func TestProviderTeardownFinalizationFailureLeavesGenerationRetryable(t *testing
 	}
 	if calls := finalizeCalls.Load(); calls != 2 {
 		t.Fatalf("finalize calls = %d, want 2", calls)
+	}
+}
+
+func TestCleanupProviderHostServiceRemovesOnlyRunOwnedUnitAfterFinalize(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	unitPath := filepath.Join(home, ".config", "systemd", "user", "opute-provider-test.service")
+	if err := os.MkdirAll(filepath.Dir(unitPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unitPath, []byte("owned\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var commands []string
+	svc := hostagent.New(hostagent.Options{
+		ProviderID: hostruntime.IDIncus,
+		ToolsForProvider: func(providerID string) []string {
+			names, err := tools.HostToolNamesForProvider(providerID)
+			if err != nil {
+				return nil
+			}
+			return names
+		},
+		HostCommandRunnerFn: func(command []string, _ func(string), _ time.Duration) (hostexec.Result, error) {
+			commands = append(commands, strings.Join(command, " "))
+			joined := strings.Join(command, " ")
+			switch {
+			case strings.Contains(joined, "is-active"):
+				return hostexec.Result{ExitCode: 0, Stdout: "active\n"}, nil
+			case strings.Contains(joined, "is-enabled"):
+				return hostexec.Result{ExitCode: 0, Stdout: "enabled\n"}, nil
+			default:
+				return hostexec.Result{ExitCode: 0}, nil
+			}
+		},
+	})
+	server, err := NewServer(Options{ProviderID: "incus", Ops: svc, Standalone: true, AllowMutations: true, StateDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	if err := server.cleanupProviderHostService(map[string]any{
+		"serviceName": "opute-provider-test.service",
+		"serviceFile": unitPath,
+		"scope":       "user",
+	}); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if _, err := os.Stat(unitPath); !os.IsNotExist(err) {
+		t.Fatalf("run-owned service unit still exists: %v", err)
+	}
+	joined := strings.Join(commands, "\n")
+	if !strings.Contains(joined, " disable opute-provider-test.service") || !strings.Contains(joined, " stop opute-provider-test.service") {
+		t.Fatalf("cleanup did not disable and stop the declared unit: %s", joined)
+	}
+	if strings.Index(joined, " disable opute-provider-test.service") > strings.Index(joined, " stop opute-provider-test.service") {
+		t.Fatalf("service was stopped before it was disabled: %s", joined)
+	}
+}
+
+func TestCleanupProviderHostServiceReportsReloadFailureWithoutStoppingProvider(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	unitPath := filepath.Join(home, ".config", "systemd", "user", "opute-provider-test.service")
+	if err := os.MkdirAll(filepath.Dir(unitPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unitPath, []byte("owned\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var commands []string
+	svc := hostagent.New(hostagent.Options{
+		ProviderID: hostruntime.IDIncus,
+		ToolsForProvider: func(providerID string) []string {
+			names, err := tools.HostToolNamesForProvider(providerID)
+			if err != nil {
+				return nil
+			}
+			return names
+		},
+		HostCommandRunnerFn: func(command []string, _ func(string), _ time.Duration) (hostexec.Result, error) {
+			commands = append(commands, strings.Join(command, " "))
+			joined := strings.Join(command, " ")
+			if strings.Contains(joined, "is-active") {
+				return hostexec.Result{ExitCode: 0, Stdout: "active\n"}, nil
+			}
+			if strings.Contains(joined, "is-enabled") {
+				return hostexec.Result{ExitCode: 1, Stderr: "disabled\n"}, nil
+			}
+			if strings.Contains(joined, "daemon-reload") {
+				return hostexec.Result{ExitCode: 1, Stderr: "reload failed\n"}, nil
+			}
+			return hostexec.Result{ExitCode: 0}, nil
+		},
+	})
+	server, err := NewServer(Options{ProviderID: "incus", Ops: svc, Standalone: true, AllowMutations: true, StateDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	err = server.cleanupProviderHostService(map[string]any{
+		"serviceName": "opute-provider-test.service",
+		"serviceFile": unitPath,
+		"scope":       "user",
+	})
+	if err == nil || !strings.Contains(err.Error(), "reload provider service manager") {
+		t.Fatalf("cleanup error = %v, want visible reload failure", err)
+	}
+	if _, err := os.Stat(unitPath); !os.IsNotExist(err) {
+		t.Fatalf("service unit was not removed before reload failure: %v", err)
+	}
+	for _, command := range commands {
+		if strings.Contains(command, " stop ") {
+			t.Fatalf("provider was stopped after cleanup failure: %s", strings.Join(commands, "\n"))
+		}
 	}
 }

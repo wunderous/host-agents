@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wunderous/host-agents/internal/domain/cluster"
 	"github.com/wunderous/host-agents/internal/domain/incus"
@@ -16,6 +17,7 @@ import (
 	"github.com/wunderous/host-agents/internal/domain/llm"
 	"github.com/wunderous/host-agents/internal/domain/oci"
 	"github.com/wunderous/host-agents/internal/domain/postgres"
+	hostexec "github.com/wunderous/host-agents/internal/exec"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resource"
 )
@@ -77,6 +79,9 @@ type Options struct {
 	TenantID                  string
 	ResourceRegistry          ResourceRegistry
 	ResourceService           resource.HostResourceService
+	// HostCommandRunnerFn is a narrow composition seam for focused tests. The
+	// production constructor leaves it nil so host commands use the runtime.
+	HostCommandRunnerFn func(command []string, onData func(string), timeout time.Duration) (hostexec.Result, error)
 }
 
 func New(opts Options) *Service {
@@ -113,6 +118,7 @@ func New(opts Options) *Service {
 			SharedHostOwnerInstance: strings.TrimSpace(opts.SharedHostOwnerInstance),
 			IncusNetworkName:        strings.TrimSpace(opts.IncusNetworkName),
 			IncusNetworkAddress:     strings.TrimSpace(opts.IncusNetworkAddress),
+			HostCommandRunnerFn:     opts.HostCommandRunnerFn,
 		},
 		toolsFn:                toolsFn,
 		resetCheckpointPath:    resolveResetCheckpointPath(opts.ResetCheckpointPath, opts.RelayConfigDir),

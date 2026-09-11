@@ -107,9 +107,12 @@ chmod 600 /path/to/.env.cloudflare.local /path/to/platform-opute-tunnel-token.tx
 
 Provider teardown is two-phase:
 
-1. Host Agent prepares and runs the generic stop/disable/file or container
-   cleanup plan.
-2. Cloudflare finalizes tunnel and DNS deletion through the provider API.
+1. Host Agent prepares and runs a read-only observation plan for the declared
+   provider service. The service remains reachable while the provider callback
+   finalizes external resources.
+2. The provider finalizes tunnel and DNS deletion through its provider API;
+   after that succeeds, Host Agent disables, removes, reloads, and stops the
+   run-owned service unit.
 
 If finalization fails, leave the generation retryable and rerun the same
 teardown with the original external IDs. Do not report the generation fully

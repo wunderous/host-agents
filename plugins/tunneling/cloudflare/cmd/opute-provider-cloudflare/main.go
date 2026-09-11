@@ -613,7 +613,7 @@ func removeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 		for _, call := range []struct {
 			name string
 			args map[string]any
-		}{{"set_host_service_state", map[string]any{"uri": hostServiceURIForScope(scope, serviceName), "serviceName": serviceName, "state": "stop", "scope": scope}}, {"set_host_service_state", map[string]any{"uri": hostServiceURIForScope(scope, serviceName), "serviceName": serviceName, "state": "disable", "scope": scope}}, {"remove_host_file", map[string]any{"path": serviceFile, "confirm": true}}} {
+		}{{"set_host_service_state", map[string]any{"uri": hostServiceURIForScope(scope, serviceName), "serviceName": serviceName, "state": "stop", "scope": scope}}, {"set_host_service_state", map[string]any{"uri": hostServiceURIForScope(scope, serviceName), "serviceName": serviceName, "state": "disable", "scope": scope}}, {"remove_host_file", map[string]any{"path": serviceFile, "confirm": true, "scope": scope}}} {
 			if _, err := callHost(ctx, client, call.name, call.args); err != nil && !dedicated {
 				return nil, err
 			}
@@ -982,53 +982,21 @@ func cloudflareDelete(ctx context.Context, token, endpoint string) error {
 	}
 	return nil
 }
-func cloudflareTeardownRemovalNode(serviceFile, scope string) map[string]any {
-	if scope == "system" {
-		quoted := shellQuote(serviceFile)
-		return map[string]any{
-			"id":        "remove-service-file",
-			"dependsOn": []string{"disable"},
-			"action": map[string]any{
-				"tool": "run_host_command",
-				"args": map[string]any{"command": "rm -f -- " + quoted + " && systemctl daemon-reload", "timeoutMs": 120000},
-			},
-			"validate": map[string]any{
-				"tool":   "run_host_command",
-				"args":   map[string]any{"command": "test ! -e " + quoted},
-				"assert": []any{map[string]any{"path": "/exitCode", "op": "eq", "value": 0}},
-			},
-		}
-	}
-	return map[string]any{
-		"id":        "remove-service-file",
-		"dependsOn": []string{"disable"},
-		"action":    map[string]any{"tool": "remove_host_file", "args": map[string]any{"path": serviceFile, "confirm": true}},
-		"validate":  map[string]any{"tool": "inspect_host_file", "args": map[string]any{"path": serviceFile}, "assert": []any{map[string]any{"path": "/exists", "value": false, "op": "eq"}}},
-	}
-}
-
 func teardownPlan(planID, serviceName, serviceFile, serviceURI, scope, cleanupKey string) map[string]any {
-	serviceArgs := map[string]any{"uri": serviceURI, "state": "stop", "scope": scope}
 	inspectArgs := map[string]any{"uri": serviceURI, "scope": scope}
 	return map[string]any{
 		"contractVersion": "host-plan.v1",
 		"planId":          planID,
 		"generation":      1,
 		"idempotencyKey":  planID + "-" + serviceName + "-" + serviceFile + "-" + cleanupKey,
-		"nodes": []any{
-			map[string]any{
-				"id":       "stop",
-				"action":   map[string]any{"tool": "set_host_service_state", "args": serviceArgs},
-				"validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/active", "op": "eq", "value": false}}},
-			},
-			map[string]any{
-				"id":        "disable",
-				"dependsOn": []string{"stop"},
-				"action":    map[string]any{"tool": "set_host_service_state", "args": map[string]any{"uri": serviceURI, "state": "disable", "scope": scope}},
-				"validate":  map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/enabled", "op": "eq", "value": false}}},
-			},
-			cloudflareTeardownRemovalNode(serviceFile, scope),
-		},
+		// Provider teardown is two phase. The provider must remain reachable
+		// while the Host Agent invokes its finalize callback, so this plan only
+		// records the declared service identity. The Host Agent performs the
+		// generic stop/disable/file cleanup after finalization succeeds.
+		"nodes": []any{map[string]any{
+			"id":     "inspect-service",
+			"action": map[string]any{"tool": "inspect_host_service", "args": inspectArgs},
+		}},
 	}
 }
 func structured(value any) (*mcp.CallToolResult, error) {

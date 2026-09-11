@@ -78,24 +78,27 @@ func TestK3sTeardownPlanUsesDeclaredServiceIdentity(t *testing.T) {
 		t.Fatalf("unexpected teardown contract: %#v", plan["contractVersion"])
 	}
 	nodes, ok := plan["nodes"].([]any)
-	if !ok || len(nodes) != 3 {
+	if !ok || len(nodes) != 1 {
 		t.Fatalf("unexpected teardown nodes: %#v", plan["nodes"])
 	}
-	remove, ok := nodes[2].(map[string]any)
-	if !ok {
-		t.Fatalf("remove node has unexpected shape: %#v", nodes[2])
+	inspect, ok := nodes[0].(map[string]any)
+	if !ok || inspect["id"] != "inspect-service" {
+		t.Fatalf("inspect node has unexpected shape: %#v", nodes[0])
 	}
-	action, ok := remove["action"].(map[string]any)
+	action, ok := inspect["action"].(map[string]any)
 	if !ok {
-		t.Fatalf("remove action has unexpected shape: %#v", remove["action"])
+		t.Fatalf("inspect action has unexpected shape: %#v", inspect["action"])
+	}
+	if action["tool"] != "inspect_host_service" {
+		t.Fatalf("teardown used %q, want inspect_host_service", action["tool"])
 	}
 	args, ok := action["args"].(map[string]any)
-	if !ok || args["path"] != "/home/houman/.config/systemd/user/opute-provider-k3s-p15-test.service" {
-		t.Fatalf("teardown removed the wrong service path: %#v", args)
+	if !ok || args["uri"] != "host-service:local:user/opute-provider-k3s-p15-test.service" || args["scope"] != "user" {
+		t.Fatalf("teardown inspected the wrong service identity: %#v", args)
 	}
 }
 
-func TestK3sSystemTeardownRemovesOnlyDeclaredUnitWithHostCommand(t *testing.T) {
+func TestK3sSystemTeardownKeepsProviderReachableForFinalize(t *testing.T) {
 	serviceFile := "/etc/systemd/system/opute-provider-k3s-p15-test.service"
 	plan := k3sTeardownPlan(
 		"com.opute.k3s.teardown",
@@ -105,21 +108,17 @@ func TestK3sSystemTeardownRemovesOnlyDeclaredUnitWithHostCommand(t *testing.T) {
 		"system",
 	)
 	nodes, ok := plan["nodes"].([]any)
-	if !ok || len(nodes) != 3 {
+	if !ok || len(nodes) != 1 {
 		t.Fatalf("unexpected teardown nodes: %#v", plan["nodes"])
 	}
-	remove := nodes[2].(map[string]any)
-	action := remove["action"].(map[string]any)
-	if action["tool"] != "run_host_command" {
-		t.Fatalf("system teardown used %q, want run_host_command", action["tool"])
+	inspect := nodes[0].(map[string]any)
+	action := inspect["action"].(map[string]any)
+	if action["tool"] != "inspect_host_service" {
+		t.Fatalf("system teardown used %q, want inspect_host_service", action["tool"])
 	}
 	args := action["args"].(map[string]any)
-	if args["command"] != "rm -f -- '/etc/systemd/system/opute-provider-k3s-p15-test.service' && systemctl daemon-reload" {
-		t.Fatalf("system teardown command = %#v", args["command"])
-	}
-	validation := remove["validate"].(map[string]any)
-	if validation["tool"] != "run_host_command" {
-		t.Fatalf("system teardown validation used %q, want run_host_command", validation["tool"])
+	if args["uri"] != "host-service:local:system/opute-provider-k3s-p15-test.service" || args["scope"] != "system" {
+		t.Fatalf("system teardown service identity = %#v", args)
 	}
 }
 

@@ -184,7 +184,7 @@ func TestCloudflareHostServiceScopeUsesTypedURIAndDefaults(t *testing.T) {
 	}
 }
 
-func TestCloudflareSystemTeardownRemovesOnlyDeclaredUnitWithHostCommand(t *testing.T) {
+func TestCloudflareSystemTeardownKeepsProviderReachableForFinalize(t *testing.T) {
 	serviceFile := "/etc/systemd/system/opute-provider-cloudflare-p15-test.service"
 	plan := teardownPlan(
 		"com.opute.cloudflare.teardown",
@@ -195,21 +195,17 @@ func TestCloudflareSystemTeardownRemovesOnlyDeclaredUnitWithHostCommand(t *testi
 		"cleanup",
 	)
 	nodes, ok := plan["nodes"].([]any)
-	if !ok || len(nodes) != 3 {
+	if !ok || len(nodes) != 1 {
 		t.Fatalf("unexpected teardown nodes: %#v", plan["nodes"])
 	}
-	remove := nodes[2].(map[string]any)
-	action := remove["action"].(map[string]any)
-	if action["tool"] != "run_host_command" {
-		t.Fatalf("system teardown used %q, want run_host_command", action["tool"])
+	inspect := nodes[0].(map[string]any)
+	action := inspect["action"].(map[string]any)
+	if action["tool"] != "inspect_host_service" {
+		t.Fatalf("system teardown used %q, want inspect_host_service", action["tool"])
 	}
 	args := action["args"].(map[string]any)
-	if args["command"] != "rm -f -- '/etc/systemd/system/opute-provider-cloudflare-p15-test.service' && systemctl daemon-reload" {
-		t.Fatalf("system teardown command = %#v", args["command"])
-	}
-	validation := remove["validate"].(map[string]any)
-	if validation["tool"] != "run_host_command" {
-		t.Fatalf("system teardown validation used %q, want run_host_command", validation["tool"])
+	if args["uri"] != "host-service:local:system/opute-provider-cloudflare-p15-test.service" || args["scope"] != "system" {
+		t.Fatalf("system teardown service identity = %#v", args)
 	}
 }
 
