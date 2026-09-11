@@ -40,7 +40,8 @@
                 "produces": {"type": "array"},
                 "idempotent": {"type": "boolean"},
                 "supportsReadiness": {"type": "boolean"},
-                "supportsStreaming": {"type": "boolean"}
+                "supportsStreaming": {"type": "boolean"},
+                "taskSupport": {"enum": ["sync_only", "bridged"]}
               }
             }
           }

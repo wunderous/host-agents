@@ -1334,6 +1334,18 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 	if result, err, handled := s.dispatchLifecycleTool(ctx, name, args); handled {
 		return result, err
 	}
+	if descriptor, found := s.capabilityDescriptor(name); found && descriptor.TaskSupport == "bridged" {
+		// Provider-declared bridged work must cross the Host Agent Tasks
+		// boundary before the public HTTP request reaches the provider. The
+		// provider callback still runs synchronously inside createAsyncTask;
+		// this outer task owns cancellation, polling, correlation, and the
+		// terminal result so a long Cloudflare/K3s operation cannot expire at
+		// the public proxy while the work is still running.
+		if !taskExtensionDeclared(req) {
+			return nil, missingTasksCapabilityError()
+		}
+		return s.createAsyncTask(name, args)
+	}
 	if name == "cancel_operation" {
 		if id, _ := args["operationId"].(string); id != "" {
 			if result, handled := s.cancelHostPlan(id); handled {

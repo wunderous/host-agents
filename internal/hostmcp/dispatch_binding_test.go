@@ -18,6 +18,7 @@ import (
 	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/resource"
+	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
 )
 
@@ -86,6 +87,67 @@ func bindingTestDescriptor(name string, requires ...tools.ResourceBinding) tools
 		ResourceKinds:  []string{"vm"},
 		Requires:       requires,
 	}
+}
+
+func TestBridgedProviderCapabilityUsesHostTaskEnvelope(t *testing.T) {
+	server, _ := newBindingTestServer(t)
+	descriptor := bindingTestDescriptor("opute.capability.fake.bridged")
+	descriptor.Effect = "mutation"
+	descriptor.Provider = "com.opute.fake"
+	descriptor.Implementation = "provider:com.opute.fake"
+	descriptor.ResourceCost = &tools.ResourceCost{Class: "control"}
+	descriptor.TaskSupport = "bridged"
+	capability := &capturingCapability{descriptor: descriptor}
+	if err := server.registry.AuthorizeProvider(descriptor.Provider); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.RegisterCapabilityModule(capability, descriptor.Provider, descriptor.Implementation); err != nil {
+		t.Fatalf("register bridged capability: %v", err)
+	}
+
+	withoutTasks, err := server.handleToolCall(context.Background(), &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{Arguments: json.RawMessage(`{}`)},
+	}, descriptor.Name)
+	if withoutTasks != nil || err == nil {
+		t.Fatalf("bridged call without Tasks capability = %#v, err=%v", withoutTasks, err)
+	}
+
+	withTasks, err := server.handleToolCall(context.Background(), &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{
+			Arguments: json.RawMessage(`{}`),
+			Meta: map[string]any{
+				"io.modelcontextprotocol/clientCapabilities": map[string]any{
+					"extensions": map[string]any{
+						"io.modelcontextprotocol/tasks": map[string]any{},
+					},
+				},
+			},
+		},
+	}, descriptor.Name)
+	if err != nil || withTasks == nil || withTasks.IsError {
+		t.Fatalf("bridged call with Tasks capability = %#v, err=%v", withTasks, err)
+	}
+	envelope, ok := withTasks.StructuredContent.(map[string]any)
+	if !ok || envelope["resultType"] != "task" {
+		t.Fatalf("bridged call did not return a task envelope: %#v", withTasks.StructuredContent)
+	}
+	taskID, _ := envelope["taskId"].(string)
+	if taskID == "" {
+		t.Fatalf("bridged task omitted taskId: %#v", envelope)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		record, found := server.Tasks().Get(taskID)
+		if found && record.Status == tasks.StatusCompleted {
+			if record.ToolResult == nil || record.ToolResult.IsError {
+				t.Fatalf("bridged task completed with error: %#v", record.ToolResult)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	record, _ := server.Tasks().Get(taskID)
+	t.Fatalf("bridged task did not complete: %#v", record)
 }
 
 func TestProviderDispatchDoesNotHoldAdmissionWhileCallingProviderCallback(t *testing.T) {

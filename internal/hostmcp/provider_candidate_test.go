@@ -8,6 +8,20 @@ import (
 	provideradapter "github.com/wunderous/host-agents/internal/cordis/mcp"
 )
 
+func TestProviderOperationDescriptorProjectsTaskSupport(t *testing.T) {
+	manifest := providercontract.InstallManifest{Provider: providercontract.ProviderRef{ID: "com.opute.example", Version: "1.0.0"}}
+	service := providercontract.ServiceDefinition{ID: "com.opute.example.service"}
+	operation := providercontract.Operation{
+		ID: "opute.capability.example.mutation", Version: 1,
+		InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"},
+		Effect: "mutation", TaskSupport: "bridged",
+	}
+	descriptor := providerOperationDescriptor(manifest, service, operation, "generation-1")
+	if descriptor.TaskSupport != "bridged" {
+		t.Fatalf("descriptor taskSupport = %q, want bridged", descriptor.TaskSupport)
+	}
+}
+
 func TestProviderCandidateRecipeDispatchUsesPrivateCatalogProjection(t *testing.T) {
 	server, _ := newBindingTestServer(t)
 	provider := newBoundaryProvider(t, "1.0.0")

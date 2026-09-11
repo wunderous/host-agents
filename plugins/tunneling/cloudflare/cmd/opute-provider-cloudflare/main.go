@@ -89,7 +89,11 @@ func cloudflareOperations() []providercontract.Operation {
 }
 
 func providerOperation(id, effect string, input, output map[string]any, resources []string, requires []providercontract.ResourceBinding) providercontract.Operation {
-	op := providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: output, Effect: effect, ResourceKinds: resources, Requires: requires, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: "sync_only"}
+	taskSupport := "sync_only"
+	if effect != "read" {
+		taskSupport = "bridged"
+	}
+	op := providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: output, Effect: effect, ResourceKinds: resources, Requires: requires, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: taskSupport}
 	if effect != "read" {
 		// Host Agent admits mutating provider operations only when the
 		// manifest declares typed resourceCost. These calls are Cloudflare

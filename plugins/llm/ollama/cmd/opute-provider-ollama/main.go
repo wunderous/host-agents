@@ -56,7 +56,7 @@ func main() {
 				Effect:            "mutation",
 				Idempotent:        true,
 				SupportsReadiness: true,
-				TaskSupport:       "sync_only",
+				TaskSupport:       "bridged",
 			}},
 		}},
 		Teardown: &providercontract.Operation{

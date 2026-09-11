@@ -131,10 +131,16 @@ func TestCloudflareMutationsDeclareResourceCost(t *testing.T) {
 	check := func(operation providercontract.Operation) {
 		t.Helper()
 		if operation.Effect == "read" {
+			if operation.TaskSupport != "sync_only" {
+				t.Fatalf("read operation %q must remain sync_only, got %q", operation.ID, operation.TaskSupport)
+			}
 			return
 		}
 		if operation.ResourceCost == nil || strings.TrimSpace(operation.ResourceCost.Class) == "" {
 			t.Fatalf("mutating operation %q must declare resourceCost.class", operation.ID)
+		}
+		if operation.TaskSupport != "bridged" {
+			t.Fatalf("mutating operation %q must declare bridged task support, got %q", operation.ID, operation.TaskSupport)
 		}
 	}
 	for _, service := range manifest.Services {
@@ -145,7 +151,9 @@ func TestCloudflareMutationsDeclareResourceCost(t *testing.T) {
 	if manifest.Teardown == nil {
 		t.Fatal("manifest missing teardown")
 	}
-	check(*manifest.Teardown)
+	if manifest.Teardown.TaskSupport != "sync_only" {
+		t.Fatalf("provider teardown must remain sync_only, got %q", manifest.Teardown.TaskSupport)
+	}
 }
 
 func TestCloudflareValidationPreservesDeclaredBindingsAndRejectsPlacement(t *testing.T) {

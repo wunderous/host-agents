@@ -442,6 +442,11 @@ func (r *Registry) validateDescriptor(descriptor tools.CapabilityDescriptor) err
 	default:
 		return fmt.Errorf("capability %q has unsupported effect %q", descriptor.OperationID, descriptor.Effect)
 	}
+	switch descriptor.TaskSupport {
+	case "", "sync_only", "bridged":
+	default:
+		return fmt.Errorf("capability %q has unsupported taskSupport %q", descriptor.OperationID, descriptor.TaskSupport)
+	}
 	for _, kind := range descriptor.ResourceKinds {
 		if !resourceid.IsKnownType(kind) || (len(r.known) > 0 && !r.known[kind]) {
 			return fmt.Errorf("capability %q references unknown resource kind %q", descriptor.OperationID, kind)

@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -45,6 +46,18 @@ func TestRegistryRejectsUnsafeOrConflictingRegistrationsAndBumpsRevision(t *test
 	unknown.ResourceKinds = []string{"database"}
 	if err := registry.RegisterRegistration(Registration{Descriptor: unknown, ProviderID: "incus", Implementation: "incus-v1", Capability: executable(unknown)}); err == nil {
 		t.Fatal("unknown resource kind was accepted")
+	}
+}
+
+func TestRegistryRejectsUnsupportedTaskSupport(t *testing.T) {
+	value := descriptor("invalid_task_support")
+	value.TaskSupport = "provider_task"
+	registry := NewRegistry(tools.CapabilityCatalogSnapshot{ProviderID: "incus"}, Options{ProviderID: "incus"})
+	err := registry.RegisterRegistration(Registration{
+		Descriptor: value, ProviderID: "incus", Implementation: "incus-v1", Capability: executable(value),
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported taskSupport") {
+		t.Fatalf("unsupported taskSupport was not rejected: %v", err)
 	}
 }
 

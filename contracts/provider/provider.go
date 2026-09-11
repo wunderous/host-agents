@@ -102,8 +102,9 @@ type Operation struct {
 	ResourceCost      *ResourceCost                   `json:"resourceCost,omitempty" yaml:"resourceCost,omitempty"`
 	SupportsStreaming bool                            `json:"supportsStreaming,omitempty" yaml:"supportsStreaming,omitempty"`
 	// TaskSupport is explicit because MCP discovery does not transfer task
-	// ownership through the Host Agent boundary. Providers currently use
-	// sync_only until a Host Agent task bridge is implemented.
+	// ownership through the Host Agent boundary. "bridged" delegates the
+	// outer MCP task lifecycle to the Host Agent; "sync_only" rejects provider
+	// task results and keeps the operation synchronous within that boundary.
 	TaskSupport string `json:"taskSupport,omitempty" yaml:"taskSupport,omitempty"`
 }
 

@@ -64,6 +64,18 @@ func TestK3sManifestDeclaresNeutralCapabilityAndOperations(t *testing.T) {
 	if manifest.Teardown.ID != "opute.provider.teardown" || manifest.Teardown.Effect != "destructive" {
 		t.Fatalf("unexpected provider teardown declaration: %#v", manifest.Teardown)
 	}
+	if manifest.Teardown.TaskSupport != "sync_only" {
+		t.Fatalf("provider teardown must remain sync_only, got %q", manifest.Teardown.TaskSupport)
+	}
+	for _, operation := range operations() {
+		want := "sync_only"
+		if operation.Effect != "read" {
+			want = "bridged"
+		}
+		if operation.TaskSupport != want {
+			t.Fatalf("operation %q taskSupport = %q, want %q", operation.ID, operation.TaskSupport, want)
+		}
+	}
 }
 
 func TestK3sTeardownPlanUsesDeclaredServiceIdentity(t *testing.T) {

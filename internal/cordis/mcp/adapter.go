@@ -101,9 +101,9 @@ func (a *Adapter) Call(ctx context.Context, operation string, arguments map[stri
 	return a.client.CallTool(ctx, operation, arguments)
 }
 
-// CallSynchronousOnly is the explicit provider task contract used until a
-// Host Agent task bridge owns downstream task creation, polling, and
-// cancellation. MCP discovery alone must not make a provider task portable.
+// CallSynchronousOnly enforces the provider-side contract inside a Host Agent
+// task. The Host Agent owns outer task creation, polling, and cancellation;
+// providers must return a synchronous result rather than a second task.
 func (a *Adapter) CallSynchronousOnly(ctx context.Context, operation string, arguments map[string]any) (*sdkmcp.CallToolResult, error) {
 	result, err := a.Call(ctx, operation, arguments)
 	if err != nil || result == nil {

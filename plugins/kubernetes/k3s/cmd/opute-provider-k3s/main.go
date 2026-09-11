@@ -197,7 +197,11 @@ func instanceTargetBindings() []providercontract.ResourceBinding {
 }
 
 func providerOperation(id, effect string, input map[string]any) providercontract.Operation {
-	operation := providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: map[string]any{"type": "object"}, Effect: effect, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: "sync_only"}
+	taskSupport := "sync_only"
+	if effect != "read" {
+		taskSupport = "bridged"
+	}
+	operation := providercontract.Operation{ID: id, Version: 1, InputSchema: input, OutputSchema: map[string]any{"type": "object"}, Effect: effect, Idempotent: true, SupportsReadiness: effect != "read", TaskSupport: taskSupport}
 	if effect != "read" {
 		operation.ResourceCost = &providercontract.ResourceCost{Class: "control"}
 	}
