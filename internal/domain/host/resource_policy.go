@@ -12,11 +12,12 @@ import (
 	"time"
 
 	"github.com/wunderous/host-agents/internal/hostruntime"
+	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/resourceid"
 )
 
 // These values are the Linux/WSL projection of
-// opute-host-resource-policy.v1. The policy service remains neutral; this file
+// opute-host-resource-policy.v2. The policy service remains neutral; this file
 // is the host-owned backend that knows how to repair the systemd projection.
 const (
 	hostAgentProtectedSlice = "opute-host-agent-protected.slice"
@@ -61,18 +62,61 @@ func resourcePolicyTarget(target resourceid.URI) (scope, unit string, err error)
 
 func renderHostResourceSliceUnits() map[string]string {
 	return map[string]string{
-		hostAgentProtectedSlice: "[Unit]\nDescription=Protected Opute Host Agent control slice\n\n[Slice]\nCPUWeight=1000\nTasksMax=1024\n",
-		hostWorkloadSlice:       "[Unit]\nDescription=Bounded Opute Host Agent workload slice\n\n[Slice]\nMemoryHigh=5G\nMemoryMax=6G\nMemorySwapMax=1G\nCPUQuota=600%\nCPUWeight=100\nTasksMax=4096\n",
+		hostAgentProtectedSlice: fmt.Sprintf("[Unit]\nDescription=%s\n\n[Slice]\nCPUWeight=1000\nTasksMax=1024\n", resourceUnitDescription(hostAgentProtectedSlice)),
+		hostWorkloadSlice:       fmt.Sprintf("[Unit]\nDescription=%s\n\n[Slice]\nMemoryHigh=10G\nMemoryMax=11G\nMemorySwapMax=1G\nCPUQuota=600%%\nCPUWeight=100\nTasksMax=4096\n", resourceUnitDescription(hostWorkloadSlice)),
 	}
 }
 
-func (s *Service) ensureResourceSliceUnits(scope string) error {
+func resourceUnitDescription(name string) string {
+	switch name {
+	case hostAgentProtectedSlice:
+		return fmt.Sprintf("Opute protected host-agent control slice (%s)", resource.HostResourcePolicyRevision)
+	case hostWorkloadSlice:
+		return fmt.Sprintf("Opute killable workload slice (%s)", resource.HostResourcePolicyRevision)
+	default:
+		return ""
+	}
+}
+
+// managedResourceUnitNeedsMigration distinguishes an older Opute-managed
+// unit from an operator-owned stricter unit. The latter remains untouched,
+// while known managed descriptions are rewritten when the policy revision or
+// workload ceiling changes.
+func managedResourceUnitNeedsMigration(name, description string) bool {
+	description = strings.TrimSpace(description)
+	if description == "" || description == resourceUnitDescription(name) {
+		return false
+	}
+	var prefixes []string
+	switch name {
+	case hostAgentProtectedSlice:
+		prefixes = []string{
+			"Protected Opute Host Agent control slice",
+			"Opute protected host-agent control slice",
+		}
+	case hostWorkloadSlice:
+		prefixes = []string{
+			"Bounded Opute Host Agent workload slice",
+			"Opute killable workload slice",
+		}
+	default:
+		return false
+	}
+	for _, prefix := range prefixes {
+		if description == prefix || strings.HasPrefix(description, prefix+" (opute-host-resource-policy.") {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) ensureResourceSliceUnits(scope string) (bool, error) {
 	var unitDir string
 	switch scope {
 	case "user":
 		home, err := hostHomeDir()
 		if err != nil {
-			return fmt.Errorf("resolve host resource policy home: %w", err)
+			return false, fmt.Errorf("resolve host resource policy home: %w", err)
 		}
 		unitDir = filepath.Join(home, ".config", "systemd", "user")
 	case "system":
@@ -84,11 +128,12 @@ func (s *Service) ensureResourceSliceUnits(scope string) error {
 			unitDir = "/etc/systemd/system"
 		}
 	default:
-		return fmt.Errorf("unsupported host resource policy scope %q", scope)
+		return false, fmt.Errorf("unsupported host resource policy scope %q", scope)
 	}
 	if err := os.MkdirAll(unitDir, 0o755); err != nil {
-		return fmt.Errorf("create %s systemd unit directory: %w", scope, err)
+		return false, fmt.Errorf("create %s systemd unit directory: %w", scope, err)
 	}
+	workloadUpdated := false
 	for name, contents := range renderHostResourceSliceUnits() {
 		path := filepath.Join(unitDir, name)
 		if existing, readErr := os.ReadFile(path); readErr == nil {
@@ -100,13 +145,16 @@ func (s *Service) ensureResourceSliceUnits(scope string) error {
 				continue
 			}
 		} else if !os.IsNotExist(readErr) {
-			return fmt.Errorf("inspect managed systemd unit %q: %w", name, readErr)
+			return false, fmt.Errorf("inspect managed systemd unit %q: %w", name, readErr)
 		}
 		if err := writeManagedUnit(path, contents); err != nil {
-			return err
+			return false, err
+		}
+		if name == hostWorkloadSlice {
+			workloadUpdated = true
 		}
 	}
-	return nil
+	return workloadUpdated, nil
 }
 
 func writeManagedUnit(path, contents string) error {
@@ -145,7 +193,8 @@ func (s *Service) ReconcileHostResourcePolicy(ctx context.Context, target resour
 	if err != nil {
 		return err
 	}
-	if err := s.ensureResourceSliceUnits(scope); err != nil {
+	workloadUpdated, err := s.ensureResourceSliceUnits(scope)
+	if err != nil {
 		return err
 	}
 	base := []string{hostruntime.DefaultSystemctlPath}
@@ -165,6 +214,19 @@ func (s *Service) ReconcileHostResourcePolicy(ctx context.Context, target resour
 	startArgs := append(append([]string(nil), base...), "start", hostWorkloadSlice)
 	if result, err := s.shared.HostCommandRunnerContext(ctx, startArgs, nil, 15*time.Second); err != nil || result.ExitCode != 0 {
 		return fmt.Errorf("materialize %s systemd workload slice: %s", scope, firstHostResourceError(result.Stderr, result.Stdout, err))
+	}
+	if workloadUpdated {
+		workloadArgs := append(append([]string(nil), base...), "set-property", hostWorkloadSlice,
+			"MemoryHigh=10G",
+			"MemoryMax=11G",
+			"MemorySwapMax=1G",
+			"CPUQuota=600%",
+			"CPUWeight=100",
+			"TasksMax=4096",
+		)
+		if result, err := s.shared.HostCommandRunnerContext(ctx, workloadArgs, nil, 15*time.Second); err != nil || result.ExitCode != 0 {
+			return fmt.Errorf("apply workload resource policy to %s: %s", hostWorkloadSlice, firstHostResourceError(result.Stderr, result.Stdout, err))
+		}
 	}
 	setArgs := append(append([]string(nil), base...), "set-property", unit,
 		"CPUWeight="+hostAgentCPUWeight,
@@ -295,8 +357,8 @@ func hostResourceSystemdScopes() []string {
 
 func workloadSystemdPropertiesEnforced(properties map[string]string) bool {
 	limits := map[string]int64{
-		"MemoryHigh":         5 << 30,
-		"MemoryMax":          6 << 30,
+		"MemoryHigh":         10 << 30,
+		"MemoryMax":          11 << 30,
 		"MemorySwapMax":      1 << 30,
 		"CPUQuotaPerSecUSec": 6_000_000,
 		"CPUWeight":          100,
@@ -400,6 +462,9 @@ func parseSystemdProperties(output string) map[string]string {
 
 func preservesStricterResourceUnit(name, contents string) bool {
 	properties := parseSystemdProperties(contents)
+	if managedResourceUnitNeedsMigration(name, properties["Description"]) {
+		return false
+	}
 	if name == hostAgentProtectedSlice {
 		// The protected control slice must never acquire a hard memory kill
 		// boundary as a side effect of reconciliation.
@@ -416,8 +481,8 @@ func preservesStricterResourceUnit(name, contents string) bool {
 		return false
 	}
 	for property, maximum := range map[string]int64{
-		"MemoryHigh":    5 << 30,
-		"MemoryMax":     6 << 30,
+		"MemoryHigh":    10 << 30,
+		"MemoryMax":     11 << 30,
 		"MemorySwapMax": 1 << 30,
 		"CPUQuota":      6_000_000,
 		"CPUWeight":     100,

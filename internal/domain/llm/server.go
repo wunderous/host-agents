@@ -463,8 +463,8 @@ Environment=CUDA_VISIBLE_DEVICES=0
 ExecStart=%s --model %s%s --host 127.0.0.1 --port %d --jinja%s%s --reasoning-budget 0 --ctx-size %d --n-gpu-layers %d --temp 0.1 --top-p 0.9 --seed 42
 Slice=opute-workload.slice
 KillMode=control-group
-MemoryHigh=5G
-MemoryMax=6G
+MemoryHigh=10G
+MemoryMax=11G
 MemorySwapMax=1G
 CPUQuota=600%%
 CPUWeight=100

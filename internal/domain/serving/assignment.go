@@ -315,7 +315,7 @@ func servingSystemdUnitActive(unit string) bool {
 func servingLaunchCommand(pidFile, assignmentID, command, restartPolicy string) string {
 	unit := servingTransientUnit(assignmentID)
 	logToken := servingFileToken(assignmentID)
-	resourceProperties := " --property=Slice=opute-workload.slice --property=MemoryHigh=5G --property=MemoryMax=6G --property=MemorySwapMax=1G --property=CPUQuota=600% --property=CPUWeight=100 --property=TasksMax=4096 --property=StartLimitIntervalSec=60s --property=StartLimitBurst=5"
+	resourceProperties := " --property=Slice=opute-workload.slice --property=MemoryHigh=10G --property=MemoryMax=11G --property=MemorySwapMax=1G --property=CPUQuota=600% --property=CPUWeight=100 --property=TasksMax=4096 --property=StartLimitIntervalSec=60s --property=StartLimitBurst=5"
 	restartProperties := ""
 	if restartPolicy == "on-failure" || restartPolicy == "always" {
 		restartProperties = " --property=Restart=" + restartPolicy + " --property=RestartSec=2s"

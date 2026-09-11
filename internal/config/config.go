@@ -164,7 +164,7 @@ func Load() Config {
 		HostResourceMinMemoryBytes:  envInt64Or("OPUTE_HOST_MIN_AVAILABLE_MEMORY_BYTES", 0),
 		HostResourceMinDiskBytes:    envInt64Or("OPUTE_HOST_MIN_AVAILABLE_DISK_BYTES", 0),
 		HostResourceDiskPaths:       envPathsOr("OPUTE_HOST_RESOURCE_DISK_PATHS", []string{"/"}),
-		HostResourcePolicyRevision:  envOr("OPUTE_HOST_RESOURCE_POLICY_REVISION", "opute-host-resource-policy.v1"),
+		HostResourcePolicyRevision:  envOr("OPUTE_HOST_RESOURCE_POLICY_REVISION", "opute-host-resource-policy.v2"),
 		HostResourceFailClosed:      enforcementPolicy == "fail-closed" || os.Getenv("OPUTE_HOST_RESOURCE_FAIL_CLOSED") == "true",
 		HostResourceCPUCapacity:     envFloatOr("OPUTE_HOST_RESOURCE_CPU_CAPACITY_CORES", 6),
 		HostResourceMemoryCapacity:  envInt64Or("OPUTE_HOST_RESOURCE_MEMORY_CAPACITY_BYTES", 11<<30),

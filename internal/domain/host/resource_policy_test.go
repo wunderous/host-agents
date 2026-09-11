@@ -55,7 +55,7 @@ func TestRenderHostResourceSliceUnitsPreservesPolicyValues(t *testing.T) {
 		t.Fatalf("protected slice has a hard memory boundary: %q", protected)
 	}
 	workload := units[hostWorkloadSlice]
-	for _, marker := range []string{"MemoryHigh=5G", "MemoryMax=6G", "MemorySwapMax=1G", "CPUQuota=600%", "CPUWeight=100", "TasksMax=4096"} {
+	for _, marker := range []string{"MemoryHigh=10G", "MemoryMax=11G", "MemorySwapMax=1G", "CPUQuota=600%", "CPUWeight=100", "TasksMax=4096"} {
 		if !strings.Contains(workload, marker) {
 			t.Fatalf("workload slice missing %q: %q", marker, workload)
 		}
@@ -81,12 +81,18 @@ func TestReconcileHostResourcePolicyUsesExactSystemdUnit(t *testing.T) {
 	if err := service.ReconcileHostResourcePolicy(context.Background(), target); err != nil {
 		t.Fatalf("reconcile failed: %v", err)
 	}
-	if len(calls) != 4 {
-		t.Fatalf("systemd calls = %d, want reload/start/set/show: %#v", len(calls), calls)
+	if len(calls) != 5 {
+		t.Fatalf("systemd calls = %d, want reload/start/workload-set/protected-set/show: %#v", len(calls), calls)
 	}
-	joined := strings.Join(calls[2], " ")
+	joined := strings.Join(calls[3], " ")
 	if !strings.Contains(joined, "set-property") || !strings.Contains(joined, "opute-host-agent@agent-a.service") {
-		t.Fatalf("set-property did not target the exact service: %#v", calls[2])
+		t.Fatalf("set-property did not target the exact service: %#v", calls[3])
+	}
+	workloadSet := strings.Join(calls[2], " ")
+	for _, marker := range []string{"opute-workload.slice", "MemoryHigh=10G", "MemoryMax=11G"} {
+		if !strings.Contains(workloadSet, marker) {
+			t.Fatalf("workload set-property missing %q: %#v", marker, calls[2])
+		}
 	}
 	for _, call := range calls {
 		joined = strings.Join(call, " ")
@@ -99,8 +105,8 @@ func TestReconcileHostResourcePolicyUsesExactSystemdUnit(t *testing.T) {
 func TestWorkloadSystemdPropertiesRequireBoundedPolicy(t *testing.T) {
 	valid := map[string]string{
 		"ControlGroup":       "/user.slice/user-1000.slice/user@1000.service/opute-workload.slice",
-		"MemoryHigh":         "5368709120",
-		"MemoryMax":          "6442450944",
+		"MemoryHigh":         "10737418240",
+		"MemoryMax":          "11811160064",
 		"MemorySwapMax":      "1073741824",
 		"CPUQuotaPerSecUSec": "6s",
 		"CPUWeight":          "100",
@@ -157,6 +163,21 @@ func TestPreservesOnlyStricterResourceUnits(t *testing.T) {
 	}
 }
 
+func TestMigratesKnownManagedResourceUnitRevisions(t *testing.T) {
+	for _, legacy := range []string{
+		"[Unit]\nDescription=Bounded Opute Host Agent workload slice\n\n[Slice]\nMemoryHigh=5G\nMemoryMax=6G\nMemorySwapMax=1G\nCPUQuota=600%\nCPUWeight=100\nTasksMax=4096\n",
+		"[Unit]\nDescription=Opute killable workload slice (opute-host-resource-policy.v1)\n\n[Slice]\nMemoryHigh=5G\nMemoryMax=6G\nMemorySwapMax=1G\nCPUQuota=600%\nCPUWeight=100\nTasksMax=4096\n",
+	} {
+		if preservesStricterResourceUnit(hostWorkloadSlice, legacy) {
+			t.Fatalf("legacy managed workload unit was preserved: %q", legacy)
+		}
+	}
+	current := "[Unit]\nDescription=Opute killable workload slice (opute-host-resource-policy.v2)\n\n[Slice]\nMemoryHigh=4G\nMemoryMax=5G\nMemorySwapMax=512M\nCPUQuota=400%\nCPUWeight=50\nTasksMax=2048\n"
+	if !preservesStricterResourceUnit(hostWorkloadSlice, current) {
+		t.Fatal("current operator-owned stricter workload unit should remain intact")
+	}
+}
+
 // A freshly installed host has the workload slice configured but no member
 // process, so systemd may report a ControlGroup whose kernel controls are not
 // materialised yet. Admission then refuses every workload for want of verified
@@ -165,7 +186,7 @@ func TestPreservesOnlyStricterResourceUnits(t *testing.T) {
 // one-shot member and look again.
 func TestObserveHostResourceEnforcementMaterializesAnInactiveWorkloadSlice(t *testing.T) {
 	var calls [][]string
-	enforced := "ControlGroup=\nCPUWeight=100\nCPUQuotaPerSecUSec=6s\nMemoryHigh=5368709120\nMemoryMax=6442450944\nMemorySwapMax=1073741824\nTasksMax=4096\n"
+	enforced := "ControlGroup=\nCPUWeight=100\nCPUQuotaPerSecUSec=6s\nMemoryHigh=10737418240\nMemoryMax=11811160064\nMemorySwapMax=1073741824\nTasksMax=4096\n"
 	service := &Service{shared: &hostruntime.Shared{
 		HostCommandRunnerFn: func(command []string, _ func(string), _ time.Duration) (exec.Result, error) {
 			calls = append(calls, append([]string(nil), command...))

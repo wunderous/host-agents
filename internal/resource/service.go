@@ -17,7 +17,7 @@ import (
 // HostResourcePolicyRevision is the current neutral policy contract. Concrete
 // WSL/systemd and Incus renderers may project it, but they do not change the
 // service API or the identity of a reservation.
-const HostResourcePolicyRevision = "opute-host-resource-policy.v1"
+const HostResourcePolicyRevision = "opute-host-resource-policy.v2"
 
 const (
 	EnforcementEnforced    = "enforced"
