@@ -34,6 +34,7 @@ func main() {
 	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-k3s", Version: "1.0.0"}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}}})
 	addManifestTool(server, manifest)
 	addOperations(server)
+	addTeardownTool(server)
 	handler := newHTTPHandler(server)
 	log.Printf("Opute K3s provider listening on :%s/mcp", port)
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
@@ -50,11 +51,23 @@ func newHTTPHandler(server *mcp.Server) http.Handler {
 
 func k3sManifest() providercontract.InstallManifest {
 	return providercontract.InstallManifest{
-		Schema:     providercontract.InstallManifestVersion,
-		Provider:   providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.1"},
-		Provides:   []providercontract.CapabilityRef{{ID: kubernetesCapability, Version: 1}},
-		Recipes:    []providercontract.RecipeRef{{ID: "com.opute.k3s.managed", Source: providercontract.RecipeSource{URI: "recipes/kubernetes.yaml", Revision: "working-tree", SHA256: "sha256:91f0b596492e3c72fb5eacba4c14c6141e7da584eebfa88bc4ffbc72573c7788"}, Mode: "kubernetes"}},
-		Services:   []providercontract.ServiceDefinition{{ID: "opute.capability.kubernetes", CapabilityID: kubernetesCapability, Version: 1, Operations: operations()}},
+		Schema:   providercontract.InstallManifestVersion,
+		Provider: providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.1"},
+		Provides: []providercontract.CapabilityRef{{ID: kubernetesCapability, Version: 1}},
+		Recipes:  []providercontract.RecipeRef{{ID: "com.opute.k3s.managed", Source: providercontract.RecipeSource{URI: "recipes/kubernetes.yaml", Revision: "working-tree", SHA256: "sha256:91f0b596492e3c72fb5eacba4c14c6141e7da584eebfa88bc4ffbc72573c7788"}, Mode: "kubernetes"}},
+		Services: []providercontract.ServiceDefinition{{ID: "opute.capability.kubernetes", CapabilityID: kubernetesCapability, Version: 1, Operations: operations()}},
+		Teardown: &providercontract.Operation{
+			ID:                "opute.provider.teardown",
+			Version:           1,
+			InputSchema:       teardownSchema(),
+			OutputSchema:      map[string]any{"type": "object", "required": []string{"contractVersion", "plan"}},
+			Effect:            "destructive",
+			ResourceKinds:     []string{"service"},
+			Idempotent:        true,
+			SupportsReadiness: true,
+			TaskSupport:       "sync_only",
+			ResourceCost:      &providercontract.ResourceCost{Class: "control"},
+		},
 		Validation: providercontract.ValidationRef{Capability: kubernetesCapability, Operation: capabilitycontract.KubernetesValidateOperation},
 	}
 }
@@ -225,6 +238,100 @@ func addManifestTool(server *mcp.Server, manifest providercontract.InstallManife
 	server.AddTool(&mcp.Tool{Name: "opute.provider.get_install_manifest", Description: "Read the K3s provider installation manifest", InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return structured(manifest)
 	})
+}
+
+func teardownSchema() map[string]any {
+	return map[string]any{
+		"type":     "object",
+		"required": []string{"inputs"},
+		"properties": map[string]any{
+			"inputs": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"phase":       map[string]any{"type": "string", "enum": []string{"prepare", "finalize"}},
+					"serviceName": map[string]any{"type": "string"},
+					"serviceFile": map[string]any{"type": "string"},
+					"scope":       map[string]any{"type": "string", "enum": []string{"user", "system"}},
+				},
+			},
+		},
+	}
+}
+
+func addTeardownTool(server *mcp.Server) {
+	server.AddTool(&mcp.Tool{
+		Name:        "opute.provider.teardown",
+		Description: "Return a generic cleanup plan for the K3s provider generation",
+		InputSchema: teardownSchema(),
+		OutputSchema: map[string]any{
+			"type": "object",
+		},
+	}, func(_ context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var input struct {
+			Phase  string         `json:"phase"`
+			Inputs map[string]any `json:"inputs"`
+		}
+		if request != nil && request.Params != nil {
+			if err := json.Unmarshal(request.Params.Arguments, &input); err != nil {
+				return nil, err
+			}
+		}
+		if firstNonEmpty(input.Phase, stringInput(input.Inputs, "phase")) == "finalize" {
+			return structured(map[string]any{"completed": true})
+		}
+		serviceName := firstNonEmpty(stringInput(input.Inputs, "serviceName"), "opute-provider-k3s.service")
+		scope := firstNonEmpty(stringInput(input.Inputs, "scope"), "user")
+		if scope != "user" && scope != "system" {
+			return nil, fmt.Errorf("unsupported host service scope %q", scope)
+		}
+		serviceFile := firstNonEmpty(stringInput(input.Inputs, "serviceFile"), defaultK3sHostServiceFile(scope, serviceName))
+		serviceURI := firstNonEmpty(stringInput(input.Inputs, "serviceUri"), k3sHostServiceURI(scope, serviceName))
+		return structured(map[string]any{
+			"contractVersion": "host-plan.v1",
+			"plan":            k3sTeardownPlan("com.opute.k3s.teardown", serviceName, serviceFile, serviceURI, scope),
+		})
+	})
+}
+
+func defaultK3sHostServiceFile(scope, serviceName string) string {
+	if scope == "system" {
+		return "/etc/systemd/system/" + serviceName
+	}
+	return "~/.config/systemd/user/" + serviceName
+}
+
+func k3sHostServiceURI(scope, serviceName string) string {
+	return "host-service:local:" + scope + "/" + serviceName
+}
+
+func k3sTeardownPlan(planID, serviceName, serviceFile, serviceURI, scope string) map[string]any {
+	serviceArgs := map[string]any{"uri": serviceURI, "state": "stop", "scope": scope}
+	inspectArgs := map[string]any{"uri": serviceURI, "scope": scope}
+	return map[string]any{
+		"contractVersion": "host-plan.v1",
+		"planId":          planID,
+		"generation":      1,
+		"idempotencyKey":  planID + "-" + serviceName + "-" + serviceFile,
+		"nodes": []any{
+			map[string]any{
+				"id":       "stop",
+				"action":   map[string]any{"tool": "set_host_service_state", "args": serviceArgs},
+				"validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/active", "op": "eq", "value": false}}},
+			},
+			map[string]any{
+				"id":        "disable",
+				"dependsOn": []string{"stop"},
+				"action":    map[string]any{"tool": "set_host_service_state", "args": map[string]any{"uri": serviceURI, "state": "disable", "scope": scope}},
+				"validate":  map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/enabled", "op": "eq", "value": false}}},
+			},
+			map[string]any{
+				"id":        "remove-service-file",
+				"dependsOn": []string{"disable"},
+				"action":    map[string]any{"tool": "remove_host_file", "args": map[string]any{"path": serviceFile, "confirm": true}},
+				"validate":  map[string]any{"tool": "inspect_host_file", "args": map[string]any{"path": serviceFile}, "assert": []any{map[string]any{"path": "/exists", "op": "eq", "value": false}}},
+			},
+		},
+	}
 }
 
 func addOperations(server *mcp.Server) {

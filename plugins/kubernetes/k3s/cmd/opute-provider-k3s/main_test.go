@@ -58,6 +58,41 @@ func TestK3sManifestDeclaresNeutralCapabilityAndOperations(t *testing.T) {
 			t.Fatalf("missing provider operation %q", operation)
 		}
 	}
+	if manifest.Teardown == nil {
+		t.Fatal("K3s manifest must declare provider teardown")
+	}
+	if manifest.Teardown.ID != "opute.provider.teardown" || manifest.Teardown.Effect != "destructive" {
+		t.Fatalf("unexpected provider teardown declaration: %#v", manifest.Teardown)
+	}
+}
+
+func TestK3sTeardownPlanUsesDeclaredServiceIdentity(t *testing.T) {
+	plan := k3sTeardownPlan(
+		"com.opute.k3s.teardown",
+		"opute-provider-k3s-p15-test.service",
+		"/home/houman/.config/systemd/user/opute-provider-k3s-p15-test.service",
+		"host-service:local:user/opute-provider-k3s-p15-test.service",
+		"user",
+	)
+	if plan["contractVersion"] != "host-plan.v1" {
+		t.Fatalf("unexpected teardown contract: %#v", plan["contractVersion"])
+	}
+	nodes, ok := plan["nodes"].([]any)
+	if !ok || len(nodes) != 3 {
+		t.Fatalf("unexpected teardown nodes: %#v", plan["nodes"])
+	}
+	remove, ok := nodes[2].(map[string]any)
+	if !ok {
+		t.Fatalf("remove node has unexpected shape: %#v", nodes[2])
+	}
+	action, ok := remove["action"].(map[string]any)
+	if !ok {
+		t.Fatalf("remove action has unexpected shape: %#v", remove["action"])
+	}
+	args, ok := action["args"].(map[string]any)
+	if !ok || args["path"] != "/home/houman/.config/systemd/user/opute-provider-k3s-p15-test.service" {
+		t.Fatalf("teardown removed the wrong service path: %#v", args)
+	}
 }
 
 func TestK3sHTTPHandlerAdvertisesModernProviderProtocol(t *testing.T) {
@@ -121,6 +156,7 @@ func newTestServer() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-k3s", Version: "1.0.0"}, nil)
 	addManifestTool(server, k3sManifest())
 	addOperations(server)
+	addTeardownTool(server)
 	return server
 }
 
