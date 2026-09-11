@@ -95,6 +95,40 @@ func TestK3sTeardownPlanUsesDeclaredServiceIdentity(t *testing.T) {
 	}
 }
 
+func TestK3sSystemTeardownRemovesOnlyDeclaredUnitWithHostCommand(t *testing.T) {
+	serviceFile := "/etc/systemd/system/opute-provider-k3s-p15-test.service"
+	plan := k3sTeardownPlan(
+		"com.opute.k3s.teardown",
+		"opute-provider-k3s-p15-test.service",
+		serviceFile,
+		"host-service:local:system/opute-provider-k3s-p15-test.service",
+		"system",
+	)
+	nodes, ok := plan["nodes"].([]any)
+	if !ok || len(nodes) != 3 {
+		t.Fatalf("unexpected teardown nodes: %#v", plan["nodes"])
+	}
+	remove := nodes[2].(map[string]any)
+	action := remove["action"].(map[string]any)
+	if action["tool"] != "run_host_command" {
+		t.Fatalf("system teardown used %q, want run_host_command", action["tool"])
+	}
+	args := action["args"].(map[string]any)
+	if args["command"] != "rm -f -- '/etc/systemd/system/opute-provider-k3s-p15-test.service' && systemctl daemon-reload" {
+		t.Fatalf("system teardown command = %#v", args["command"])
+	}
+	validation := remove["validate"].(map[string]any)
+	if validation["tool"] != "run_host_command" {
+		t.Fatalf("system teardown validation used %q, want run_host_command", validation["tool"])
+	}
+}
+
+func TestK3sSystemTeardownRejectsUnownedServicePath(t *testing.T) {
+	if _, err := validateK3sServiceFile("system", "/etc/systemd/system/../passwd.service"); err == nil {
+		t.Fatal("invalid system service path was accepted")
+	}
+}
+
 func TestK3sHTTPHandlerAdvertisesModernProviderProtocol(t *testing.T) {
 	server := newTestServer()
 	recorder := httptest.NewRecorder()

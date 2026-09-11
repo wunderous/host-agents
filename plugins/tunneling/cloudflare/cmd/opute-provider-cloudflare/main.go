@@ -731,7 +731,13 @@ func addTeardownTool(server *mcp.Server) {
 		if err != nil {
 			return nil, err
 		}
+		if !cloudflareServiceNamePattern.MatchString(serviceName) {
+			return nil, fmt.Errorf("serviceName must name a .service unit")
+		}
 		serviceFile := firstNonEmpty(stringInput(input.Inputs, "serviceFile", ""), defaultHostServiceFile(scope, serviceName))
+		if _, err := validateCloudflareServiceFile(scope, serviceFile); err != nil {
+			return nil, err
+		}
 		serviceURI := firstNonEmpty(stringInput(input.Inputs, "serviceUri", ""), hostServiceURIForScope(scope, serviceName))
 		cleanupKey := stringInput(input.Inputs, "tunnelId", "") + "-" + strings.Join(stringSliceInput(input.Inputs, "dnsRecordIds"), ",")
 		return structured(map[string]any{"contractVersion": "host-plan.v1", "plan": teardownPlan("com.opute.cloudflare.teardown", serviceName, serviceFile, serviceURI, scope, cleanupKey)})
@@ -739,6 +745,23 @@ func addTeardownTool(server *mcp.Server) {
 }
 
 var cloudflareIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+var cloudflareServiceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+\.service$`)
+var systemCloudflareServiceFilePattern = regexp.MustCompile(`^/etc/systemd/system/[A-Za-z0-9_.@:-]+\.service$`)
+
+func validateCloudflareServiceFile(scope, serviceFile string) (string, error) {
+	serviceFile = strings.TrimSpace(serviceFile)
+	serviceName := serviceFile
+	if index := strings.LastIndexByte(serviceName, '/'); index >= 0 {
+		serviceName = serviceName[index+1:]
+	}
+	if !cloudflareServiceNamePattern.MatchString(serviceName) {
+		return "", fmt.Errorf("Cloudflare service file must name a .service unit")
+	}
+	if scope == "system" && !systemCloudflareServiceFilePattern.MatchString(serviceFile) {
+		return "", fmt.Errorf("system-scoped Cloudflare service file must be one .service unit beneath /etc/systemd/system")
+	}
+	return serviceFile, nil
+}
 
 func cleanupExternalResources(ctx context.Context, inputs map[string]any) error {
 	tunnelID, recordIDs := stringInput(inputs, "tunnelId", ""), stringSliceInput(inputs, "dnsRecordIds")
@@ -959,10 +982,54 @@ func cloudflareDelete(ctx context.Context, token, endpoint string) error {
 	}
 	return nil
 }
+func cloudflareTeardownRemovalNode(serviceFile, scope string) map[string]any {
+	if scope == "system" {
+		quoted := shellQuote(serviceFile)
+		return map[string]any{
+			"id":        "remove-service-file",
+			"dependsOn": []string{"disable"},
+			"action": map[string]any{
+				"tool": "run_host_command",
+				"args": map[string]any{"command": "rm -f -- " + quoted + " && systemctl daemon-reload", "timeoutMs": 120000},
+			},
+			"validate": map[string]any{
+				"tool":   "run_host_command",
+				"args":   map[string]any{"command": "test ! -e " + quoted},
+				"assert": []any{map[string]any{"path": "/exitCode", "op": "eq", "value": 0}},
+			},
+		}
+	}
+	return map[string]any{
+		"id":        "remove-service-file",
+		"dependsOn": []string{"disable"},
+		"action":    map[string]any{"tool": "remove_host_file", "args": map[string]any{"path": serviceFile, "confirm": true}},
+		"validate":  map[string]any{"tool": "inspect_host_file", "args": map[string]any{"path": serviceFile}, "assert": []any{map[string]any{"path": "/exists", "value": false, "op": "eq"}}},
+	}
+}
+
 func teardownPlan(planID, serviceName, serviceFile, serviceURI, scope, cleanupKey string) map[string]any {
 	serviceArgs := map[string]any{"uri": serviceURI, "state": "stop", "scope": scope}
 	inspectArgs := map[string]any{"uri": serviceURI, "scope": scope}
-	return map[string]any{"contractVersion": "host-plan.v1", "planId": planID, "generation": 1, "idempotencyKey": planID + "-" + serviceName + "-" + serviceFile + "-" + cleanupKey, "nodes": []any{map[string]any{"id": "stop", "action": map[string]any{"tool": "set_host_service_state", "args": serviceArgs}, "validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/active", "op": "eq", "value": false}}}}, map[string]any{"id": "disable", "dependsOn": []string{"stop"}, "action": map[string]any{"tool": "set_host_service_state", "args": map[string]any{"uri": serviceURI, "state": "disable", "scope": scope}}, "validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/enabled", "op": "eq", "value": false}}}}, map[string]any{"id": "remove-service-file", "dependsOn": []string{"disable"}, "action": map[string]any{"tool": "remove_host_file", "args": map[string]any{"path": serviceFile, "confirm": true}}, "validate": map[string]any{"tool": "inspect_host_file", "args": map[string]any{"path": serviceFile}, "assert": []any{map[string]any{"path": "/exists", "value": false, "op": "eq"}}}}}}
+	return map[string]any{
+		"contractVersion": "host-plan.v1",
+		"planId":          planID,
+		"generation":      1,
+		"idempotencyKey":  planID + "-" + serviceName + "-" + serviceFile + "-" + cleanupKey,
+		"nodes": []any{
+			map[string]any{
+				"id":       "stop",
+				"action":   map[string]any{"tool": "set_host_service_state", "args": serviceArgs},
+				"validate": map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/active", "op": "eq", "value": false}}},
+			},
+			map[string]any{
+				"id":        "disable",
+				"dependsOn": []string{"stop"},
+				"action":    map[string]any{"tool": "set_host_service_state", "args": map[string]any{"uri": serviceURI, "state": "disable", "scope": scope}},
+				"validate":  map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/enabled", "op": "eq", "value": false}}},
+			},
+			cloudflareTeardownRemovalNode(serviceFile, scope),
+		},
+	}
 }
 func structured(value any) (*mcp.CallToolResult, error) {
 	encoded, err := json.Marshal(value)

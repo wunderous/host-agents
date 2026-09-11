@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -285,6 +286,12 @@ func addTeardownTool(server *mcp.Server) {
 			return nil, fmt.Errorf("unsupported host service scope %q", scope)
 		}
 		serviceFile := firstNonEmpty(stringInput(input.Inputs, "serviceFile"), defaultK3sHostServiceFile(scope, serviceName))
+		if !k3sServiceNamePattern.MatchString(serviceName) {
+			return nil, fmt.Errorf("serviceName must name a .service unit")
+		}
+		if _, err := validateK3sServiceFile(scope, serviceFile); err != nil {
+			return nil, err
+		}
 		serviceURI := firstNonEmpty(stringInput(input.Inputs, "serviceUri"), k3sHostServiceURI(scope, serviceName))
 		return structured(map[string]any{
 			"contractVersion": "host-plan.v1",
@@ -302,6 +309,49 @@ func defaultK3sHostServiceFile(scope, serviceName string) string {
 
 func k3sHostServiceURI(scope, serviceName string) string {
 	return "host-service:local:" + scope + "/" + serviceName
+}
+
+var systemK3sServiceFilePattern = regexp.MustCompile(`^/etc/systemd/system/[A-Za-z0-9_.@:-]+\.service$`)
+var k3sServiceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+\.service$`)
+
+func validateK3sServiceFile(scope, serviceFile string) (string, error) {
+	serviceFile = strings.TrimSpace(serviceFile)
+	serviceName := serviceFile
+	if index := strings.LastIndexByte(serviceName, '/'); index >= 0 {
+		serviceName = serviceName[index+1:]
+	}
+	if !k3sServiceNamePattern.MatchString(serviceName) {
+		return "", fmt.Errorf("K3s service file must name a .service unit")
+	}
+	if scope == "system" && !systemK3sServiceFilePattern.MatchString(serviceFile) {
+		return "", fmt.Errorf("system-scoped K3s service file must be one .service unit beneath /etc/systemd/system")
+	}
+	return serviceFile, nil
+}
+
+func k3sTeardownRemovalNode(serviceFile, scope string) map[string]any {
+	if scope == "system" {
+		quoted := shellQuote(serviceFile)
+		return map[string]any{
+			"id":        "remove-service-file",
+			"dependsOn": []string{"disable"},
+			"action": map[string]any{
+				"tool": "run_host_command",
+				"args": map[string]any{"command": "rm -f -- " + quoted + " && systemctl daemon-reload", "timeoutMs": 120000},
+			},
+			"validate": map[string]any{
+				"tool":   "run_host_command",
+				"args":   map[string]any{"command": "test ! -e " + quoted},
+				"assert": []any{map[string]any{"path": "/exitCode", "op": "eq", "value": 0}},
+			},
+		}
+	}
+	return map[string]any{
+		"id":        "remove-service-file",
+		"dependsOn": []string{"disable"},
+		"action":    map[string]any{"tool": "remove_host_file", "args": map[string]any{"path": serviceFile, "confirm": true}},
+		"validate":  map[string]any{"tool": "inspect_host_file", "args": map[string]any{"path": serviceFile}, "assert": []any{map[string]any{"path": "/exists", "op": "eq", "value": false}}},
+	}
 }
 
 func k3sTeardownPlan(planID, serviceName, serviceFile, serviceURI, scope string) map[string]any {
@@ -324,12 +374,7 @@ func k3sTeardownPlan(planID, serviceName, serviceFile, serviceURI, scope string)
 				"action":    map[string]any{"tool": "set_host_service_state", "args": map[string]any{"uri": serviceURI, "state": "disable", "scope": scope}},
 				"validate":  map[string]any{"tool": "inspect_host_service", "args": inspectArgs, "assert": []any{map[string]any{"path": "/enabled", "op": "eq", "value": false}}},
 			},
-			map[string]any{
-				"id":        "remove-service-file",
-				"dependsOn": []string{"disable"},
-				"action":    map[string]any{"tool": "remove_host_file", "args": map[string]any{"path": serviceFile, "confirm": true}},
-				"validate":  map[string]any{"tool": "inspect_host_file", "args": map[string]any{"path": serviceFile}, "assert": []any{map[string]any{"path": "/exists", "op": "eq", "value": false}}},
-			},
+			k3sTeardownRemovalNode(serviceFile, scope),
 		},
 	}
 }
