@@ -40,13 +40,17 @@ type CapabilityDescriptor struct {
 	ResourceCost        *ResourceCost                   `json:"resourceCost,omitempty"`
 	Idempotent          bool                            `json:"idempotent"`
 	SupportsReadiness   bool                            `json:"supportsReadiness"`
-	ValidationSchema    string                          `json:"validationSchema,omitempty"`
-	ObservationSchema   string                          `json:"observationSchema,omitempty"`
-	GenerationID        string                          `json:"generationId,omitempty"`
-	Requires            []ResourceBinding               `json:"requires,omitempty"`
-	Produces            []ResourceBinding               `json:"produces,omitempty"`
-	InputEdges          []CapabilityEdge                `json:"inputEdges,omitempty"`
-	OutputEdges         []CapabilityEdge                `json:"outputEdges,omitempty"`
+	// TaskSupport is the provider-declared execution contract projected into
+	// the Host Agent catalog. "bridged" means the Host Agent owns the outer
+	// MCP task lifecycle; "sync_only" keeps provider task results forbidden.
+	TaskSupport       string            `json:"taskSupport,omitempty"`
+	ValidationSchema  string            `json:"validationSchema,omitempty"`
+	ObservationSchema string            `json:"observationSchema,omitempty"`
+	GenerationID      string            `json:"generationId,omitempty"`
+	Requires          []ResourceBinding `json:"requires,omitempty"`
+	Produces          []ResourceBinding `json:"produces,omitempty"`
+	InputEdges        []CapabilityEdge  `json:"inputEdges,omitempty"`
+	OutputEdges       []CapabilityEdge  `json:"outputEdges,omitempty"`
 }
 
 // ResourceCost is typed admission metadata published by a capability. It is

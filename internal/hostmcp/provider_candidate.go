@@ -53,6 +53,7 @@ func providerOperationDescriptor(
 		Produces:          providerBindings(operation.Produces),
 		Idempotent:        operation.Idempotent,
 		SupportsReadiness: operation.SupportsReadiness,
+		TaskSupport:       operation.TaskSupport,
 	}
 	if operation.ResourceCost != nil {
 		descriptor.ResourceCost = &tools.ResourceCost{
