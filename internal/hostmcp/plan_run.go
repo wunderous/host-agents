@@ -260,6 +260,20 @@ func (s *Server) handleRunHostPlanWithMetadata(ctx context.Context, args map[str
 	s.planCancels[record.RunID] = cancel
 	s.planMu.Unlock()
 	launched = true
+	// A reservation is inherited by task identity, and this run is its own task.
+	// When the context carries a reservation admitted for a DIFFERENT task --
+	// which is what happens when a durable run is launched from inside another
+	// one, as opute.provider.install launches a provider's activation plan --
+	// every node of this run would be refused with
+	// host_reservation_owner_mismatch, an ownership it can never satisfy. A
+	// launcher whose reservation carries no task identity is still inherited:
+	// that is the ordinary case of a tool call handing its capacity to the run
+	// it started.
+	if reservation, ok := resource.ReservationFromContext(taskCtx); ok {
+		if taskID := reservation.Request.TaskID; taskID != "" && taskID != rec.TaskID {
+			taskCtx = resource.WithoutReservation(taskCtx)
+		}
+	}
 	lease := claimReservationLease(ctx)
 	lease.keepAlive(taskCtx)
 	go s.executeHostPlan(taskCtx, cancel, rec.TaskID, doc, stateValue, snapshot, recipeMetadata, nil, lease)

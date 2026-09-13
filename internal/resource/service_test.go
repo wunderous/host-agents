@@ -271,3 +271,37 @@ func TestRenewKeepsALongRunningOperationsReservationInheritable(t *testing.T) {
 		t.Fatalf("renew after release = %T %v, want host_reservation_expired", err, err)
 	}
 }
+
+// A durable run launched from inside another durable run is a new task, and a
+// reservation is inherited by task identity: carrying the launcher's
+// reservation into it refuses its first node for an ownership mismatch it can
+// never satisfy. Detaching lets it be admitted on its own.
+func TestWithoutReservationLetsANestedRunAdmitItsOwnCapacity(t *testing.T) {
+	config := testServiceConfig(t.TempDir())
+	config.MaxNormal = 2
+	coordinator, err := NewCoordinator(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := coordinator.Admit(context.Background(), zeroCostRequest("agent-a", "run_host_local_recipe", "outer-run"))
+	if err != nil {
+		t.Fatalf("admit parent: %v", err)
+	}
+	held := WithReservation(context.Background(), parent)
+
+	nested := zeroCostRequest("agent-a", "get_host_info", "nested-run")
+	if _, err := coordinator.Admit(held, nested); err == nil {
+		t.Fatal("a different task must not inherit the reservation in context")
+	} else {
+		var requestErr *RequestError
+		if !errors.As(err, &requestErr) || requestErr.Code != "host_reservation_owner_mismatch" {
+			t.Fatalf("unexpected error: %T %v", err, err)
+		}
+	}
+	if _, err := coordinator.Admit(WithoutReservation(held), nested); err != nil {
+		t.Fatalf("detached admission: %v", err)
+	}
+	if _, ok := ReservationFromContext(WithoutReservation(held)); ok {
+		t.Fatal("detached context still reports a reservation")
+	}
+}

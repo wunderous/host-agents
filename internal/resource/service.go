@@ -211,6 +211,22 @@ func WithReservation(ctx context.Context, reservation *Reservation) context.Cont
 	return context.WithValue(ctx, reservationContextKey{}, reservation)
 }
 
+// WithoutReservation detaches a context from the reservation it carries, for
+// work that will admit its own capacity instead of inheriting.
+//
+// A reservation is inherited by task identity, so it can only be shared by work
+// running under the task that admitted it. A durable run launched from inside
+// another run is a new task by construction: carrying the launcher's
+// reservation into it means every one of its nodes is refused for an ownership
+// mismatch it can never satisfy. Detaching says what is true -- this run owns
+// no reservation yet -- and lets admission answer for it on its own terms.
+func WithoutReservation(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithValue(ctx, reservationContextKey{}, (*Reservation)(nil))
+}
+
 func ReservationFromContext(ctx context.Context) (*Reservation, bool) {
 	if ctx == nil {
 		return nil, false
