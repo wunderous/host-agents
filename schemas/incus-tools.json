@@ -1213,6 +1213,67 @@
     }
   },
   {
+    "name": "inspect_host_service_supervisor",
+    "title": "Inspect host service supervisor",
+    "description": "Report whether this scope's service manager will keep caller-owned services running, without changing anything. The read-only counterpart of ensure_host_service_supervisor, and the readiness check a plan node for it requires.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ],
+          "description": "Service manager to inspect. Defaults to user."
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "scope",
+        "status",
+        "persistent"
+      ],
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "unavailable"
+          ]
+        },
+        "persistent": {
+          "type": "boolean",
+          "description": "True when caller-owned services survive the last session exiting."
+        },
+        "state": {
+          "type": "string",
+          "description": "System manager state, for system scope."
+        },
+        "user": {
+          "type": "string",
+          "description": "User whose manager was inspected, for user scope."
+        },
+        "linger": {
+          "type": "boolean"
+        },
+        "userBus": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  {
     "name": "ensure_host_tool",
     "title": "Ensure generic host tool",
     "description": "Ensure an explicitly allowlisted generic host build/runtime tool is installed and available.",
@@ -1449,7 +1510,47 @@
         },
         "agent": {
           "type": "object",
-          "description": "Where this Host Agent is installed: agentId, instanceId, instanceRoot, environmentFile, homeDir, serviceScope (user|system), serviceUnitDir, mcpEndpoint (loopback, for a co-located provider's callback) and providerRoot. Fields are omitted when the agent cannot observe them; environmentFile is reported only when the file is actually present.",
+          "description": "Where this Host Agent is installed. A recipe places a provider module beside the agent by interpolating these, so they are typed rather than opaque. Fields are omitted when the agent cannot observe them; environmentFile appears only when the file is actually present.",
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "instanceId": {
+              "type": "string"
+            },
+            "instanceRoot": {
+              "type": "string"
+            },
+            "environmentFile": {
+              "type": "string",
+              "description": "The agent's own environment file, carrying the credential a co-located provider calls back with. Suitable for a unit's EnvironmentFile=."
+            },
+            "homeDir": {
+              "type": "string"
+            },
+            "serviceScope": {
+              "type": "string",
+              "enum": [
+                "user",
+                "system"
+              ],
+              "description": "Which systemd manager owns units this agent installs. Root under the system manager owns /etc/systemd/system; anyone else owns their own user manager and cannot write there."
+            },
+            "serviceUnitDir": {
+              "type": "string"
+            },
+            "serviceWantedBy": {
+              "type": "string",
+              "description": "The target a unit in this scope should be WantedBy=. The user manager has no multi-user.target, so the pairing is reported rather than guessed."
+            },
+            "mcpEndpoint": {
+              "type": "string",
+              "description": "Loopback MCP endpoint a provider running on this same host dials back on. Not the agent's public or bridge address."
+            },
+            "providerRoot": {
+              "type": "string"
+            }
+          },
           "additionalProperties": true
         }
       },
@@ -5696,6 +5797,14 @@
         },
         "expectedSha256": {
           "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ],
+          "description": "Ownership scope the path is resolved under, matching ensure_host_file. Defaults to user."
         }
       },
       "required": [

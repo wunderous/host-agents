@@ -42,6 +42,7 @@ type AgentInstallation struct {
 	HomeDir         string `json:"homeDir,omitempty"`
 	ServiceScope    string `json:"serviceScope,omitempty"`
 	ServiceUnitDir  string `json:"serviceUnitDir,omitempty"`
+	ServiceWantedBy string `json:"serviceWantedBy,omitempty"`
 	MCPEndpoint     string `json:"mcpEndpoint,omitempty"`
 	ProviderRoot    string `json:"providerRoot,omitempty"`
 }
@@ -67,10 +68,15 @@ func describeAgentInstallation(agentID string, runtime AgentRuntime) *AgentInsta
 	switch installation.ServiceScope {
 	case "system":
 		installation.ServiceUnitDir = "/etc/systemd/system"
+		installation.ServiceWantedBy = "multi-user.target"
 	default:
 		if installation.HomeDir != "" {
 			installation.ServiceUnitDir = filepath.Join(installation.HomeDir, ".config", "systemd", "user")
 		}
+		// The user manager has no multi-user.target. Reporting the scope without
+		// the target it implies would leave a recipe author to rediscover the
+		// pairing, and getting it wrong yields a unit that installs into nothing.
+		installation.ServiceWantedBy = "default.target"
 	}
 	if installation.InstanceRoot != "" {
 		candidate := filepath.Join(installation.InstanceRoot, agentEnvironmentFileName)

@@ -129,3 +129,34 @@ func TestRemoveHostFileSystemScopeAcceptsOnlyServiceUnits(t *testing.T) {
 		t.Fatal("remove_host_file accepted an unsupported scope")
 	}
 }
+
+// A recipe that writes a system-scoped unit must be able to read it back: the
+// plan contract requires a readiness check for every mutating node, and before
+// inspect_host_file honoured scope the only check available to it resolved the
+// path against the user's home and refused.
+func TestInspectHostFileResolvesTheSameScopesEnsureDoes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service := testService(hostruntime.Shared{})
+
+	userPath := filepath.Join(home, ".config", "systemd", "user", "example.service")
+	if _, err := service.EnsureHostFile(EnsureHostFileArgs{Path: userPath, Content: "[Service]\n", Mode: 0o644}); err != nil {
+		t.Fatal(err)
+	}
+	observed, err := service.InspectHostFile(InspectHostFileArgs{Path: userPath, Scope: "user"})
+	if err != nil || observed["exists"] != true {
+		t.Fatalf("explicit user scope: %#v %v", observed, err)
+	}
+
+	// System scope reaches outside the home, and is confined to one unit: the
+	// same confinement ensure_host_file and remove_host_file apply.
+	if _, err := service.InspectHostFile(InspectHostFileArgs{Path: "/etc/systemd/system/absent.service", Scope: "system"}); err != nil {
+		t.Fatalf("system-scoped unit path should resolve, got %v", err)
+	}
+	if _, err := service.InspectHostFile(InspectHostFileArgs{Path: "/etc/passwd", Scope: "system"}); err == nil {
+		t.Fatal("system scope must refuse a path that is not a systemd unit")
+	}
+	if _, err := service.InspectHostFile(InspectHostFileArgs{Path: userPath, Scope: "root"}); err == nil {
+		t.Fatal("an unknown scope must be refused rather than defaulted")
+	}
+}

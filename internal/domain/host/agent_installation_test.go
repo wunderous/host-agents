@@ -54,6 +54,13 @@ func TestDescribeAgentInstallationAnswersWhereTheAgentIs(t *testing.T) {
 	if installation.ProviderRoot == "" || filepath.Base(installation.ProviderRoot) != "providers" {
 		t.Fatalf("provider root = %q", installation.ProviderRoot)
 	}
+	// The scope implies the target, and the user manager has no
+	// multi-user.target. A unit installed into the wrong one installs into
+	// nothing, so the pairing is reported rather than left to be rediscovered.
+	wantedBy := map[string]string{"system": "multi-user.target", "user": "default.target"}
+	if installation.ServiceWantedBy != wantedBy[installation.ServiceScope] {
+		t.Fatalf("wantedBy = %q for scope %q", installation.ServiceWantedBy, installation.ServiceScope)
+	}
 }
 
 // An EnvironmentFile= naming a path that is not there is a unit that fails to

@@ -66,6 +66,7 @@ const (
 	InspectContainerStorage       = "inspect_container_storage"
 	InspectHostFile               = "inspect_host_file"
 	InspectHostService            = "inspect_host_service"
+	InspectHostServiceSupervisor  = "inspect_host_service_supervisor"
 	InstallHelmChart              = "install_helm_chart"
 	InstallClusterAgent           = "install_cluster_agent"
 	InstallIncusStack             = "install_incus_stack"
@@ -185,6 +186,7 @@ func All() []string {
 		InspectContainerStorage,
 		InspectHostFile,
 		InspectHostService,
+		InspectHostServiceSupervisor,
 		InstallHelmChart,
 		InstallClusterAgent,
 		InstallIncusStack,

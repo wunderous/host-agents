@@ -262,7 +262,7 @@ func init() {
 		// every managed env file, unit file and config ends in a newline, so
 		// the trimmed expectation could never hash to the file on disk and
 		// inspect_host_file reported matches:false for a byte-identical file.
-		out, err := svc.Host().InspectHostFile(host.InspectHostFileArgs{Path: stringField(args, "path"), ExpectedSHA256: stringField(args, "expectedSha256"), ExpectedContent: rawStringField(args, "expectedContent")})
+		out, err := svc.Host().InspectHostFile(host.InspectHostFileArgs{Path: stringField(args, "path"), Scope: stringField(args, "scope"), ExpectedSHA256: stringField(args, "expectedSha256"), ExpectedContent: rawStringField(args, "expectedContent")})
 		if err != nil {
 			return nil, err
 		}

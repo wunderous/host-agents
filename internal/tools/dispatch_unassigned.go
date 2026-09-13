@@ -340,6 +340,16 @@ func init() {
 }
 
 func init() {
+	register(toolname.InspectHostServiceSupervisor, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().InspectHostServiceSupervisor(host.EnsureHostServiceSupervisorArgs{Scope: stringField(args, "scope")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Host service supervisor inspected."), nil
+	})
+}
+
+func init() {
 	register(toolname.EnsureDocker, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		// EnsureDocker is an unsupported stub on Incus Linux hosts: it always errors,
 		// so the success path below was dead.
