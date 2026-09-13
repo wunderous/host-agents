@@ -37,6 +37,7 @@ type (
 	InspectHostServiceArgs          = host.InspectHostServiceArgs
 	EnsureHostToolArgs              = host.EnsureHostToolArgs
 	InstallIncusStackArgs           = host.InstallIncusStackArgs
+	UninstallIncusStackArgs         = host.UninstallIncusStackArgs
 )
 
 // hostSvc is stateless, so it is rebuilt per call rather than held. Unlike

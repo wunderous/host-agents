@@ -296,6 +296,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"remove_postgresql_service":        true,
 		"release_postgresql_service_relay": true,
 		"install_incus_stack":              true,
+		"uninstall_incus_stack":            true,
 		"probe_incus_gpu":                  true,
 		"provision_container":              true,
 		"run_instance_command":             true,
@@ -407,6 +408,8 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Name: "discover_service_ingress", Title: "Discover service ingress", Description: "Resolve caller-declared service ingress endpoints on an explicit Kubernetes target. No product hostnames or ports are inferred.", InputSchema: map[string]any{"type": "object", "required": []string{"vmName", "endpoints"}, "properties": map[string]any{"vmName": map[string]any{"type": "string"}, "endpoints": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object"}}, "ingressNamespace": map[string]any{"type": "string"}, "ingressService": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
 		Name: "install_incus_stack", Title: "Install Incus virtualization stack", Description: "Install or upgrade a pinned Incus feature release from the signed Zabbly repository. QEMU is optional for VM profiles; GPU container profiles do not install it.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"incusPackage": map[string]any{"type": "string"}, "qemuPackage": map[string]any{"type": "string"}, "gpuPackages": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "incusChannel": map[string]any{"type": "string", "enum": []string{"stable", "lts-7.0", "lts-6.0"}}, "incusVersion": map[string]any{"type": "string"}, "installQemu": map[string]any{"type": "boolean"}}},
+	}, ToolDefinition{
+		Name: "uninstall_incus_stack", Title: "Uninstall Incus virtualization stack", Description: "Purge the Incus virtualization stack from this host. Refuses while any instance remains; opt in to discarding /var/lib/incus.", InputSchema: map[string]any{"type": "object", "required": []string{"confirm"}, "properties": map[string]any{"confirm": map[string]any{"type": "boolean"}, "removeState": map[string]any{"type": "boolean"}, "keepRepository": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"}, Meta: map[string]any{"resourceCost": map[string]any{"class": "heavy"}},
 	}, ToolDefinition{
 		Name: "probe_incus_gpu", Title: "Probe Incus GPU capability", Description: "Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.", InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{

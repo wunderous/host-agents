@@ -29,6 +29,20 @@ func init() {
 }
 
 func init() {
+	register(toolname.UninstallIncusStack, EffectDestructive, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().UninstallIncusStack(host.UninstallIncusStackArgs{
+			Confirm:        boolField(args, "confirm"),
+			RemoveState:    boolField(args, "removeState"),
+			KeepRepository: boolField(args, "keepRepository"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Incus virtualization stack removed from this host"), nil
+	})
+}
+
+func init() {
 	register(toolname.ProbeIncusGPU, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().ProbeIncusGPU(args)
 		if err != nil {

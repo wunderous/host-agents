@@ -69,6 +69,7 @@ const (
 	InstallHelmChart              = "install_helm_chart"
 	InstallClusterAgent           = "install_cluster_agent"
 	InstallIncusStack             = "install_incus_stack"
+	UninstallIncusStack           = "uninstall_incus_stack"
 	InstallLocalLLMModel          = "install_local_llm_model"
 	InstallOCIRegistry            = "install_oci_registry"
 	InstallPostgreSQL             = "install_postgresql"
@@ -187,6 +188,7 @@ func All() []string {
 		InstallHelmChart,
 		InstallClusterAgent,
 		InstallIncusStack,
+		UninstallIncusStack,
 		InstallLocalLLMModel,
 		InstallOCIRegistry,
 		InstallPostgreSQL,

@@ -612,6 +612,11 @@
       "support": "experimental"
     },
     {
+      "name": "uninstall_incus_stack",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
       "name": "reset_incus_stack",
       "classification": "destructive",
       "support": "experimental"
