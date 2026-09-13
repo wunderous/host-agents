@@ -1,6 +1,7 @@
 package hostmcp
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,7 +90,7 @@ func TestHostLocalEntryPointRefusesADistributedRecipe(t *testing.T) {
 	distributed = strings.Replace(distributed, "mode: local", "mode: distributed", 1)
 	path := writeRecipe(t, distributed)
 
-	result, err := server.handleRunHostLocalRecipe(map[string]any{
+	result, err := server.handleRunHostLocalRecipe(context.Background(), map[string]any{
 		"source": path,
 		"inputs": map[string]any{"host": "host-under-test"},
 	})

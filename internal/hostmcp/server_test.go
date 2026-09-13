@@ -181,7 +181,7 @@ func TestHostPlanWaitSurvivesRestartAndResumesThroughTasks(t *testing.T) {
 			},
 		},
 	}
-	result, err := server.handleRunHostPlan(map[string]any{"plan": planDocument})
+	result, err := server.handleRunHostPlan(context.Background(), map[string]any{"plan": planDocument})
 	if err != nil {
 		t.Fatalf("run host plan: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestHostPlanMCPValidationAndDurableRun(t *testing.T) {
 	if err != nil || validated == nil || validated.IsError {
 		t.Fatalf("validate host plan = %#v err=%v", validated, err)
 	}
-	started, err := server.handleRunHostPlan(map[string]any{"plan": planDocument})
+	started, err := server.handleRunHostPlan(context.Background(), map[string]any{"plan": planDocument})
 	if err != nil || started == nil || started.IsError {
 		t.Fatalf("run host plan = %#v err=%v", started, err)
 	}
@@ -478,7 +478,7 @@ func TestHostPlanMCPValidationAndDurableRun(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	second, err := server.handleRunHostPlan(map[string]any{"plan": planDocument})
+	second, err := server.handleRunHostPlan(context.Background(), map[string]any{"plan": planDocument})
 	if err != nil || second == nil || second.IsError {
 		t.Fatalf("idempotent second run = %#v err=%v", second, err)
 	}
@@ -521,7 +521,7 @@ func TestCompletedHostPlanIsReconciledNotReplayed(t *testing.T) {
 	}
 
 	runPlan := func(step string) string {
-		started, runErr := server.handleRunHostPlan(map[string]any{"plan": planDocument})
+		started, runErr := server.handleRunHostPlan(context.Background(), map[string]any{"plan": planDocument})
 		if runErr != nil || started == nil || started.IsError {
 			t.Fatalf("%s run host plan = %#v err=%v", step, started, runErr)
 		}
@@ -606,7 +606,7 @@ plan:
 	if err != nil || validated == nil || validated.IsError {
 		t.Fatalf("validate runtime recipe = %#v err=%v", validated, err)
 	}
-	started, err := server.handleRunRuntimeRecipe(map[string]any{"source": recipePath})
+	started, err := server.handleRunRuntimeRecipe(context.Background(), map[string]any{"source": recipePath})
 	if err != nil || started == nil || started.IsError {
 		t.Fatalf("run runtime recipe = %#v err=%v", started, err)
 	}
@@ -636,7 +636,7 @@ plan:
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	resumed, err := server.handleRunRuntimeRecipe(map[string]any{"runId": runID})
+	resumed, err := server.handleRunRuntimeRecipe(context.Background(), map[string]any{"runId": runID})
 	if err != nil || resumed == nil || resumed.IsError {
 		t.Fatalf("resume runtime recipe = %#v err=%v", resumed, err)
 	}
@@ -699,7 +699,7 @@ plan:
 	if err := os.WriteFile(recipePath, []byte(recipeDocument), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	started, err := server.handleRunRuntimeRecipe(map[string]any{"source": recipePath, "activate": true})
+	started, err := server.handleRunRuntimeRecipe(context.Background(), map[string]any{"source": recipePath, "activate": true})
 	if err != nil || started == nil || started.IsError {
 		t.Fatalf("run activating recipe = %#v err=%v", started, err)
 	}

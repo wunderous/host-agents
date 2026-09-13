@@ -1,6 +1,7 @@
 package hostmcp
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -49,7 +50,7 @@ func TestFailedHostPlanIsReconciledNotReplayed(t *testing.T) {
 	}
 
 	runPlan := func(step string) string {
-		started, runErr := server.handleRunHostPlan(map[string]any{"plan": planDocument})
+		started, runErr := server.handleRunHostPlan(context.Background(), map[string]any{"plan": planDocument})
 		if runErr != nil || started == nil || started.IsError {
 			t.Fatalf("%s run host plan = %#v err=%v", step, started, runErr)
 		}

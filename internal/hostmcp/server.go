@@ -544,8 +544,13 @@ func (s *Server) dispatchLifecycleTool(ctx context.Context, name string, args ma
 			return tools.ErrorResult(err), nil, true
 		}
 		if reservation != nil {
-			defer func() { _ = s.admission.Release(reservation) }()
+			// The reservation is released here only if no durable run claims
+			// it; a lifecycle tool that launches one holds it for the life of
+			// the run instead. See reservationLease.
+			lease := newReservationLease(s.admission, reservation)
+			defer lease.releaseIfUnclaimed()
 			ctx = resource.WithReservation(ctx, reservation)
+			ctx = withReservationLease(ctx, lease)
 			binding.ReservationID = reservation.ID
 			binding.ResourcePolicyRevision = s.admission.Snapshot().PolicyRevision
 		}
@@ -574,23 +579,23 @@ func (s *Server) invokeLifecycleTool(ctx context.Context, name string, args map[
 	case "validate_host_plan":
 		return s.handleValidateHostPlan(args)
 	case "run_host_plan":
-		return s.handleRunHostPlan(args)
+		return s.handleRunHostPlan(ctx, args)
 	case "get_host_plan_run":
 		return s.handleGetHostPlanRun(args)
 	case "validate_host_local_recipe":
 		return s.handleValidateHostLocalRecipe(args)
 	case "run_host_local_recipe":
-		return s.handleRunHostLocalRecipe(args)
+		return s.handleRunHostLocalRecipe(ctx, args)
 	case "validate_runtime_recipe":
 		return s.handleValidateRuntimeRecipe(args)
 	case "run_runtime_recipe":
-		return s.handleRunRuntimeRecipe(args)
+		return s.handleRunRuntimeRecipe(ctx, args)
 	case "get_runtime_recipe_run":
 		return s.handleGetRuntimeRecipeRun(args)
 	case "validate_tunnel_recipe":
 		return s.handleValidateTunnelRecipe(args)
 	case "run_tunnel_recipe":
-		return s.handleRunTunnelRecipe(args)
+		return s.handleRunTunnelRecipe(ctx, args)
 	case "get_tunnel_run":
 		return s.handleGetTunnelRun(args)
 	case "opute.provider.install":

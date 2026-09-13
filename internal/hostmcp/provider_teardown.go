@@ -51,7 +51,7 @@ func (s *Server) handleProviderTeardownContext(ctx context.Context, args map[str
 		// The plan runner may finalize the provider before this handler
 		// returns; release the preparation session before handing control to it.
 		session.Close()
-		return s.runForcedProviderReclaim(active, providerInputs, recipeBoolField(args, "resume"), blocked)
+		return s.runForcedProviderReclaim(ctx, active, providerInputs, recipeBoolField(args, "resume"), blocked)
 	}
 	metadata := map[string]any{
 		"providerTeardown":        true,
@@ -64,7 +64,7 @@ func (s *Server) handleProviderTeardownContext(ctx context.Context, args map[str
 	// The plan runner may finalize the provider before this handler returns;
 	// release the preparation session before handing control to it.
 	session.Close()
-	return s.handleRunHostPlanWithMetadata(map[string]any{"plan": doc, "resume": recipeBoolField(args, "resume")}, metadata, "opute.provider.teardown", "Tearing down provider...")
+	return s.handleRunHostPlanWithMetadata(ctx, map[string]any{"plan": doc, "resume": recipeBoolField(args, "resume")}, metadata, "opute.provider.teardown", "Tearing down provider...")
 }
 
 // prepareProviderTeardownPlan runs the provider's own prepare phase and
@@ -119,7 +119,7 @@ func (s *Server) prepareProviderTeardownPlan(ctx context.Context, providerID, ge
 // finalize the provider's external resources -- only the provider knows those
 // -- so anything it created beyond this host survives the reclaim and remains
 // the operator's to remove.
-func (s *Server) runForcedProviderReclaim(active cordis.ProviderGeneration, providerInputs map[string]any, resume bool, blocked string) (*mcp.CallToolResult, error) {
+func (s *Server) runForcedProviderReclaim(ctx context.Context, active cordis.ProviderGeneration, providerInputs map[string]any, resume bool, blocked string) (*mcp.CallToolResult, error) {
 	doc, err := plan.Decode(forcedProviderReclaimPlan(active, providerInputs))
 	if err != nil {
 		return tools.ErrorResult(fmt.Errorf("build forced provider reclaim plan: %w", err)), nil
@@ -134,7 +134,7 @@ func (s *Server) runForcedProviderReclaim(active cordis.ProviderGeneration, prov
 		"teardownContractVersion":      "provider-teardown.v1",
 		"providerTeardownInputs":       redactTaskValue(providerInputs),
 	}
-	return s.handleRunHostPlanWithMetadata(map[string]any{"plan": doc, "resume": resume}, metadata, "opute.provider.teardown", "Reclaiming orphaned provider generation...")
+	return s.handleRunHostPlanWithMetadata(ctx, map[string]any{"plan": doc, "resume": resume}, metadata, "opute.provider.teardown", "Reclaiming orphaned provider generation...")
 }
 
 // forcedProviderReclaimPlan is the host's stand-in for the plan a reachable

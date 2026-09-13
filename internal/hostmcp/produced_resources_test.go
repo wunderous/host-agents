@@ -92,3 +92,34 @@ func TestValidateProducedResourcesRejectsMissingDeclaredOutput(t *testing.T) {
 		t.Fatal("expected absent output to fail closed")
 	}
 }
+
+// list_kubernetes_clusters is contributed by the k3s provider, so its bindings
+// come from the provider manifest and carry no host-side selector. On a host
+// with no clusters it returned {"clusters": []} and was refused for not
+// returning "clusters[].uri" -- on the first call any clean host makes.
+func TestValidateProducedResourcesAcceptsEmptyInventoryWithoutASelector(t *testing.T) {
+	descriptor := tools.CapabilityDescriptor{
+		OperationID: "list_kubernetes_clusters",
+		Produces:    []tools.ResourceBinding{{SourcePath: "clusters[].uri", ResourceType: "cluster"}},
+	}
+	if err := validateProducedResources(descriptor, map[string]any{"clusters": []any{}}, "tenant-a"); err != nil {
+		t.Fatalf("empty cluster inventory rejected: %v", err)
+	}
+	// Absent is still not empty: a capability that returns no clusters field at
+	// all has not answered the question.
+	if err := validateProducedResources(descriptor, map[string]any{}, "tenant-a"); err == nil {
+		t.Fatal("expected an absent clusters field to fail closed")
+	}
+	if err := validateProducedResources(descriptor, map[string]any{"clusters": "none"}, "tenant-a"); err == nil {
+		t.Fatal("expected a non-array clusters field to fail closed")
+	}
+	// A single-value binding that came back empty is still a failure; only a
+	// collection may legitimately have no members.
+	scalar := tools.CapabilityDescriptor{
+		OperationID: "provision_kubernetes_cluster",
+		Produces:    []tools.ResourceBinding{{SourcePath: "uri", ResourceType: "cluster"}},
+	}
+	if err := validateProducedResources(scalar, map[string]any{}, "tenant-a"); err == nil {
+		t.Fatal("expected an absent single-resource output to fail closed")
+	}
+}

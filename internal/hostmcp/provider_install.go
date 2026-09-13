@@ -105,12 +105,12 @@ func (s *Server) handleProviderInstallContext(ctx context.Context, args map[stri
 		if err := ctx.Err(); err != nil {
 			return tools.ErrorResult(err), nil
 		}
-		return s.handleRunTunnelRecipe(runArgs)
+		return s.handleRunTunnelRecipe(ctx, runArgs)
 	}
 	if err := ctx.Err(); err != nil {
 		return tools.ErrorResult(err), nil
 	}
-	return s.handleRunRuntimeRecipe(runArgs)
+	return s.handleRunRuntimeRecipe(ctx, runArgs)
 }
 
 func (s *Server) handleProviderValidate(args map[string]any) (*mcp.CallToolResult, error) {

@@ -1,6 +1,7 @@
 package hostmcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -93,13 +94,13 @@ func (s *Server) handleValidateTunnelRecipe(args map[string]any) (*mcp.CallToolR
 	}, "tunnel recipe is valid"), nil
 }
 
-func (s *Server) handleRunTunnelRecipe(args map[string]any) (*mcp.CallToolResult, error) {
+func (s *Server) handleRunTunnelRecipe(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	resumeRunID := recipeStringField(args, "runId")
 	if recipeStringField(args, "source") == "" {
 		if resumeRunID == "" || s.state == nil || !recipeBoolField(args, "resume") {
 			return tools.ErrorResult(fmt.Errorf("source is required unless resuming with runId")), nil
 		}
-		return s.resumeRecipeRun(args, resumeRunID, "tunnel", "run_tunnel_recipe", "Executing tunnel recipe...")
+		return s.resumeRecipeRun(ctx, args, resumeRunID, "tunnel", "run_tunnel_recipe", "Executing tunnel recipe...")
 	}
 	loaded, _, err := s.loadTunnelRecipe(args, true)
 	if err != nil {
@@ -116,13 +117,13 @@ func (s *Server) handleRunTunnelRecipe(args map[string]any) (*mcp.CallToolResult
 		metadata["providerGenerationId"] = recipeStringField(args, "providerGenerationId")
 		metadata["providerManifest"] = redactTaskValue(args["providerManifest"])
 	}
-	return s.handleRunHostPlanWithMetadata(map[string]any{
+	return s.handleRunHostPlanWithMetadata(ctx, map[string]any{
 		"plan":   loaded.ExpandedPlan,
 		"resume": recipeBoolField(args, "resume"),
 	}, metadata, "run_tunnel_recipe", "Executing tunnel recipe...")
 }
 
-func (s *Server) resumeRecipeRun(args map[string]any, runID, kind, taskName, description string) (*mcp.CallToolResult, error) {
+func (s *Server) resumeRecipeRun(ctx context.Context, args map[string]any, runID, kind, taskName, description string) (*mcp.CallToolResult, error) {
 	record, found, err := s.state.GetPlan(runID)
 	if err != nil {
 		return tools.ErrorResult(fmt.Errorf("get %s run: %w", kind, err)), nil
@@ -144,7 +145,7 @@ func (s *Server) resumeRecipeRun(args map[string]any, runID, kind, taskName, des
 	if persistedPlanHasRedactedSecret(document, metadata) {
 		return tools.ErrorResult(fmt.Errorf("%s recipe resume requires secret inputs to be supplied through references; refusing to execute redacted values", kind)), nil
 	}
-	return s.handleRunHostPlanWithMetadata(map[string]any{"plan": document, "resume": true}, metadata, taskName, description)
+	return s.handleRunHostPlanWithMetadata(ctx, map[string]any{"plan": document, "resume": true}, metadata, taskName, description)
 }
 
 func (s *Server) handleGetTunnelRun(args map[string]any) (*mcp.CallToolResult, error) {

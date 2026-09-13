@@ -1,6 +1,7 @@
 package hostmcp
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -119,12 +120,12 @@ func (s *Server) handleValidateHostLocalRecipe(args map[string]any) (*mcp.CallTo
 	}, "host-local recipe is valid"), nil
 }
 
-func (s *Server) handleRunHostLocalRecipe(args map[string]any) (*mcp.CallToolResult, error) {
+func (s *Server) handleRunHostLocalRecipe(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	loaded, _, err := s.loadHostLocalRecipe(args, true)
 	if err != nil {
 		return tools.ErrorResult(err), nil
 	}
-	return s.handleRunHostPlanWithMetadata(map[string]any{
+	return s.handleRunHostPlanWithMetadata(ctx, map[string]any{
 		"plan":   loaded.ExpandedPlan,
 		"resume": recipeBoolField(args, "resume"),
 	}, hostLocalRecipeMetadata(loaded), "run_host_local_recipe", "Executing host-local recipe...")
