@@ -394,26 +394,62 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 printf 'net.ipv4.ip_forward = 1\nnet.ipv6.conf.all.forwarding = 1\nnet.ipv6.conf.all.accept_ra = 2\n' > /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
 sysctl --system >/dev/null 2>&1 || true
-if ! warp-cli --accept-tos status 2>/dev/null | grep -q 'Connected'; then
+# Readiness is the Mesh address, not the status text.
+#
+# The packaged 2026.7.x client prints nothing for status or registration
+# show under a non-interactive exec: three runs failed the bounded wait as
+# "did not reach Connected" against guests that already held CloudflareWARP
+# 100.96.0.131/32 and 100.96.0.132/32, and the failure diagnostics -- which run
+# the same commands with 2>&1 -- captured no status line either, only settings
+# output and the addresses. Gating enrollment on text this client does not emit
+# made a healthy connector unprovable.
+#
+# The address is the signal the overlay actually owns: WARP assigns one in
+# 100.96.0.0/12 only after the connector registers with Zero Trust and the
+# tunnel is up, and probe-reachability then proves the peer path end to end
+# before any K3s traffic uses it. A guest address such as 10.0.100.225 contains
+# "100.", so the address test stays anchored on the CIDR field rather than on a
+# substring.
+mesh_address() {
+  ip -4 -o addr show scope global 2>/dev/null \
+    | awk '$4 ~ /^100\.(9[6-9]|10[0-9]|11[01])\./ { print $4; exit }'
+}
+mesh_ready() {
+  [ -n "$(mesh_address)" ]
+}
+if ! mesh_ready; then
   timeout 45s warp-cli --accept-tos connector new "$mesh_token"
   timeout 45s warp-cli --accept-tos connect
 fi
+# A cold guest installs the package, registers with Zero Trust, and only then
+# receives its Mesh address; two minutes was inside that window on a loaded
+# host, and the enrollment failed while the connector was still coming up.
 connected=0
-for attempt in $(seq 1 60); do
-  status="$(warp-cli --accept-tos status 2>/dev/null || true)"
-  addresses="$(ip -4 -o addr show scope global 2>/dev/null || true)"
-  if printf '%s\n' "$status" | grep -q 'Connected' && printf '%s\n' "$addresses" | grep -q '100\.'; then
+for attempt in $(seq 1 150); do
+  if mesh_ready; then
     connected=1
     break
   fi
   sleep 2
 done
 if [ "$connected" -ne 1 ]; then
-  echo 'Cloudflare Mesh connector did not reach Connected state before the bounded wait' >&2
+  echo 'Cloudflare Mesh connector received no address in 100.96.0.0/12 before the bounded wait' >&2
+  # Report what the client will say about itself, the registration mode, and
+  # every address the guest actually holds, so the next attempt starts from
+  # evidence. An empty status is itself a finding -- that is how this client
+  # behaves under a non-interactive exec.
   warp-cli --accept-tos status 2>&1 || true
+  warp-cli --accept-tos registration show 2>&1 || true
+  warp-cli --accept-tos settings 2>&1 || true
+  echo 'warp-interface addresses:'
+  ip -4 -o addr show scope global 2>&1 || true
   exit 1
 fi
-mesh_iface="$(ip -4 -o addr show scope global 2>/dev/null | awk '$4 ~ /^100\./ {print $2; exit}' | sed 's/:$//' )"
+# Same Mesh CIDR test the readiness predicate uses. A bare "100." prefix also
+# matches the rest of the shared CGNAT space (100.64/10), so a guest that holds
+# a carrier-grade address would have had the Mesh route published on the wrong
+# interface.
+mesh_iface="$(ip -4 -o addr show scope global 2>/dev/null | awk '$4 ~ /^100\.(9[6-9]|10[0-9]|11[01])\./ {print $2; exit}' | sed 's/:$//' )"
 if [ -z "$mesh_iface" ]; then
   echo 'Cloudflare Mesh interface could not be identified for the main-table route' >&2
   exit 1
@@ -981,8 +1017,13 @@ func findMeshInterface(output, meshIP string) string {
 	return ""
 }
 
+// Enough lines to carry `warp-cli status`, the registration mode, and the
+// guest's addresses together -- the three facts that separate the ways a Mesh
+// enrollment can fail.
+const meshDiagnosticLineBudget = 16
+
 func meshCommandDiagnostics(output, secret string) string {
-	lines := make([]string, 0, 8)
+	lines := make([]string, 0, meshDiagnosticLineBudget)
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		lower := strings.ToLower(line)
@@ -995,9 +1036,14 @@ func meshCommandDiagnostics(output, secret string) string {
 		if len(line) > 240 {
 			line = line[:240]
 		}
+		// Keep the LAST eight matches, not the first. The install half of the
+		// script emits enough apt chatter ("Setting up cloudflare-warp ...") to
+		// fill the budget before `warp-cli status` ever runs, so stopping at the
+		// first eight reported the package manager succeeding and hid the
+		// connector failure this message exists to explain.
 		lines = append(lines, line)
-		if len(lines) == 8 {
-			break
+		if len(lines) > meshDiagnosticLineBudget {
+			lines = lines[len(lines)-meshDiagnosticLineBudget:]
 		}
 	}
 	if len(lines) == 0 {
