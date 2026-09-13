@@ -940,8 +940,21 @@ func (s *Service) ensurePostgreSQLServiceOrdered(ctx context.Context, spec postg
 	if err := s.waitForPostgreSQLServiceK3sReady(ctx, spec); err != nil {
 		return err
 	}
-	if err := s.applyPostgreSQLServiceManifest(ctx, spec, renderPostgreSQLServiceOperatorManifest(), "apply CloudNativePG HelmChart"); err != nil {
+	// Reapplying the HelmChart of an operator that is already serving makes the
+	// Helm Controller rerun its install job, which rolls the operator Deployment
+	// and takes the admission webhook's endpoints away for the length of that
+	// roll. The repair path is entered for any incomplete service -- a tenant
+	// Cluster that is merely unhealthy included -- so an unconditional apply
+	// turns a healthy operator into a five-minute webhook wait that a cell under
+	// memory pressure does not finish. Install only what is missing.
+	operatorReady, _, err := s.postgresqlServiceOperatorReady(ctx, spec)
+	if err != nil {
 		return err
+	}
+	if !operatorReady {
+		if err := s.applyPostgreSQLServiceManifest(ctx, spec, renderPostgreSQLServiceOperatorManifest(), "apply CloudNativePG HelmChart"); err != nil {
+			return err
+		}
 	}
 	if err := s.waitForPostgreSQLServiceCRD(ctx, spec); err != nil {
 		return err
