@@ -46,6 +46,17 @@ func (s *Service) InspectHostService(args InspectHostServiceArgs, onData func(st
 	if unitFileState == "" {
 		unitFileState = strings.TrimSpace(enabledResult.Stderr)
 	}
+	// Where the unit lives and what it launches. Running/enabled says whether a
+	// service is up; it does not say WHOSE it is, and a caller holding no
+	// install-time record of a unit has no other way to establish that. Both are
+	// read-only systemd properties, which is all this probe is allowed to be.
+	fragmentPath, execStart := "", ""
+	showResult, showErr := s.shared.HostCommandRunner(
+		append(append([]string{}, commandPrefix...), "show", serviceName, "-p", "FragmentPath", "-p", "ExecStart", "--no-pager"),
+		onData, 15*time.Second)
+	if showErr == nil && showResult.ExitCode == 0 {
+		fragmentPath, execStart = parseUnitLaunchProperties(showResult.Stdout)
+	}
 	return map[string]any{
 		"serviceName":   serviceName,
 		"scope":         scope,
@@ -54,7 +65,33 @@ func (s *Service) InspectHostService(args InspectHostServiceArgs, onData func(st
 		"enabled":       enabledErr == nil && enabledResult.ExitCode == 0 && unitFileState == "enabled",
 		"unitFileState": unitFileState,
 		"exitCode":      result.ExitCode,
+		"fragmentPath":  fragmentPath,
+		"execStart":     execStart,
 	}, nil
+}
+
+// parseUnitLaunchProperties reads FragmentPath and the ExecStart executable out
+// of `systemctl show`. ExecStart is a structured value rather than a plain
+// string -- `{ path=/x ; argv[]=/x serve ; ... }` -- and only the executable is
+// wanted, because it is the part that says which installation the unit belongs
+// to.
+func parseUnitLaunchProperties(output string) (fragmentPath, execStart string) {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "FragmentPath="):
+			fragmentPath = strings.TrimSpace(strings.TrimPrefix(line, "FragmentPath="))
+		case strings.HasPrefix(line, "ExecStart=") && execStart == "":
+			if index := strings.Index(line, "path="); index >= 0 {
+				value := line[index+len("path="):]
+				if end := strings.Index(value, " ;"); end >= 0 {
+					value = value[:end]
+				}
+				execStart = strings.TrimSpace(value)
+			}
+		}
+	}
+	return fragmentPath, execStart
 }
 
 // ListHostServices returns a list of systemd services and registers their canonical URIs.

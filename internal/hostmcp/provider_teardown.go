@@ -42,7 +42,15 @@ func (s *Server) handleProviderTeardownContext(ctx context.Context, args map[str
 		return tools.ErrorResult(sessionErr), nil
 	}
 	defer session.Close()
-	providerInputs := s.providerTeardownInputs(args)
+	providerInputs := s.providerTeardownInputs(providerID, args)
+	// Refuse before anything is retired rather than after. A teardown that
+	// cannot name the provider's host service can only retire the generation
+	// and leave the process running, and the caller finds that out from a run
+	// that says completed. Saying so first leaves the generation intact and
+	// tells the caller what would make the call answerable.
+	if err := requireProviderHostServiceTarget(providerID, providerInputs); err != nil {
+		return tools.ErrorResult(err), nil
+	}
 	doc, blocked := s.prepareProviderTeardownPlan(ctx, providerID, session.GenerationID(), args, providerInputs)
 	if blocked != "" {
 		if !forced {
@@ -177,11 +185,20 @@ func forcedProviderReclaimPlan(active cordis.ProviderGeneration, providerInputs 
 // provider callback. Providers must execute service mutations through the
 // canonical tenant-scoped URI; they must not reconstruct a target from a
 // display name or assume the local tenant.
-func (s *Server) providerTeardownInputs(args map[string]any) map[string]any {
+func (s *Server) providerTeardownInputs(providerID string, args map[string]any) map[string]any {
 	inputs := map[string]any{}
 	if raw, ok := args["inputs"].(map[string]any); ok {
 		for key, value := range raw {
 			inputs[key] = value
+		}
+	}
+	// The caller's own record wins when it has one; the host only answers for a
+	// caller that does not. See resolveProviderHostService.
+	if recipeStringField(inputs, "serviceName") == "" && recipeStringField(inputs, "hostService") != "none" {
+		for key, value := range s.resolveProviderHostService(providerID) {
+			if _, present := inputs[key]; !present {
+				inputs[key] = value
+			}
 		}
 	}
 	serviceName := recipeStringField(inputs, "serviceName")
@@ -194,6 +211,17 @@ func (s *Server) providerTeardownInputs(args map[string]any) map[string]any {
 	}
 	inputs["serviceUri"] = fmt.Sprintf("host-service:%s:%s/%s", s.agent.TenantID(), scope, serviceName)
 	return inputs
+}
+
+// requireProviderHostServiceTarget rejects a teardown whose host-owned half
+// would be a no-op. `hostService: "none"` is the way to say a provider really
+// has no unit to reclaim -- it is supervised elsewhere -- so the absence of a
+// service name means "not determined", not "there is none".
+func requireProviderHostServiceTarget(providerID string, inputs map[string]any) error {
+	if recipeStringField(inputs, "serviceName") != "" || recipeStringField(inputs, "hostService") == "none" {
+		return nil
+	}
+	return fmt.Errorf("provider_host_service_unknown: cannot determine which host service runs provider %q, so tearing it down would retire the generation and leave its process running; pass inputs.serviceName (list_host_services names the units) or inputs.hostService=\"none\" if this provider has no unit to reclaim", providerID)
 }
 
 func cloneProviderTeardownArgs(args map[string]any) map[string]any {
@@ -216,7 +244,14 @@ func (s *Server) cleanupProviderHostService(inputs map[string]any) error {
 	}
 	serviceName := recipeStringField(inputs, "serviceName")
 	if serviceName == "" {
-		return nil
+		// Silence here was the whole defect: the generation was retired, this
+		// returned nil, and the run reported completed with the provider still
+		// listening. handleProviderTeardownContext refuses such a call up
+		// front; this is the same answer for a resumed or replayed one.
+		if recipeStringField(inputs, "hostService") == "none" {
+			return nil
+		}
+		return fmt.Errorf("provider_host_service_unknown: provider teardown reached host cleanup without a service to reclaim")
 	}
 	scope := recipeStringField(inputs, "scope")
 	if scope == "" {

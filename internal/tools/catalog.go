@@ -717,7 +717,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}, ToolDefinition{
 		Name:         "opute.provider.teardown",
 		Title:        "Teardown provider",
-		Description:  "Ask the connected provider for a generic teardown host plan, validate it, execute it durably, and retire the provider only after the plan succeeds.",
+		Description:  "Ask the connected provider for a generic teardown host plan, validate it, execute it durably, and retire the provider only after the plan succeeds. The host also reclaims the provider's own service unit; it resolves which unit that is from the provider's installed location, and refuses rather than retiring a generation whose process it could not identify. Pass inputs.serviceName to name it explicitly, or inputs.hostService=\"none\" for a provider supervised elsewhere.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"provider", "confirm"}, "properties": map[string]any{"provider": map[string]any{"type": "string", "minLength": 1}, "generation": map[string]any{"type": "string", "minLength": 1}, "inputs": map[string]any{"type": "object"}, "confirm": map[string]any{"type": "boolean"}, "resume": map[string]any{"type": "boolean"}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
 		Meta:         map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
