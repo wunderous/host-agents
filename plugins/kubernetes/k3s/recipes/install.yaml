@@ -1,0 +1,265 @@
+# Materialise the k3s provider module on the host executing this recipe.
+#
+# opute.provider.install adopts a provider that is ALREADY serving: it connects
+# to an endpoint and asks for the install manifest. Everything before that --
+# obtaining the binary, writing the unit, starting the service -- had no product
+# expression, so it lived in scripts/p15-two-node-public-mesh.ts as per-host
+# literals. A host-agent-only bootstrap has no such script and no such literals:
+# the premise is a user with a Host Agent and nothing else. This recipe is that
+# missing half.
+#
+# It ends where the provider starts serving. It deliberately does NOT go on to
+# use the provider's Kubernetes capabilities: those do not exist in the catalog
+# when this recipe is submitted, and the host-local path validates every node
+# against the catalog snapshot taken at load. See Decision 4 in
+# openspec/changes/2026-09-13-self-hosting-control-plane/design.md -- the
+# bootstrap is staged, and the last node here is the typed answer to "may I
+# submit the next recipe yet?".
+#
+# Nothing here is told where the agent lives. The agent node asks the host, and
+# every path, scope and callback address is interpolated from that answer, which
+# is why the same document runs unchanged on an unprivileged agent under a user
+# manager in /home and a root agent under the system manager in /root.
+contractVersion: host-recipe.v1
+recipeId: com.opute.k3s.install
+recipeVersion: 1.0.0
+execution:
+  coordinator: host-agent
+  mode: local
+compatibility:
+  requiredTools:
+    - get_host_info
+    - ensure_host_artifact
+    - ensure_host_file
+    - ensure_host_service_supervisor
+    - set_host_service_state
+    - inspect_host_service
+    - inspect_host_service_supervisor
+    - opute.provider.install
+    - opute.provider.status
+inputs:
+  # The artifact pin. A URI without a digest is not a pin, so both are required
+  # and neither has a default: a default release would silently decide which
+  # provider build a bootstrap gets.
+  artifactUri:
+    required: true
+    description: Pinned URI of the opute-provider-k3s executable for this host's platform.
+    schema: {type: string, minLength: 1}
+  artifactSha256:
+    required: true
+    description: SHA-256 of the executable at artifactUri, verified by the host before it is placed.
+    schema: {type: string, pattern: "^[0-9a-f]{64}$"}
+  providerId:
+    default: com.opute.k3s
+    schema: {type: string, const: com.opute.k3s}
+  providerPort:
+    default: 4320
+    description: Loopback port the provider module serves its MCP endpoint on.
+    schema: {type: integer, minimum: 1024, maximum: 65535}
+  # Materialisation is repeatable, and the plan store keys a run by its
+  # idempotency key: re-submitting the SAME document under the same nonce
+  # converges, while a revised document under the same nonce is refused rather
+  # than silently replacing the run it does not match. A caller who means to
+  # start a fresh run says so by changing the nonce. This mirrors
+  # kubernetes.yaml's activationNonce, for the same reason.
+  runNonce:
+    default: default
+    schema: {type: string, minLength: 1, maxLength: 128}
+  # The provider's activation recipe is sourced and pinned like any other
+  # recipe. It is an input rather than a literal because it names a specific
+  # published revision of the plugin repository, which this document cannot know
+  # about itself. A raw.githubusercontent.com URL carries its own immutable
+  # commit; a path on this host is accepted too, and the digest pins either form.
+  activationRecipeSource:
+    required: true
+    description: Pinned source of the provider's activation recipe -- a raw.githubusercontent.com URL containing a 40-character commit, or a path on this host.
+    schema: {type: string, minLength: 1}
+  activationRecipeSha256:
+    required: true
+    description: SHA-256 of the activation recipe document at activationRecipeSource.
+    schema: {type: string, pattern: "^[0-9a-f]{64}$"}
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.k3s.install
+  generation: 1
+  # Stable across re-runs of the same document on purpose: re-running this
+  # recipe against a host that already has the provider must converge rather
+  # than mint a new generation.
+  idempotencyKey: com.opute.k3s.install-${vars.inputs.providerId}-${vars.inputs.runNonce}
+  defaults:
+    timeoutMs: 600000
+  # No default retry. The plan contract refuses automatic retries on a
+  # capability the catalog does not declare idempotent, and several of the
+  # capabilities here are not declared so. Readiness is expressed as a polling
+  # validate on each node instead, which is the mechanism that actually
+  # observes the host rather than re-running a mutation and hoping.
+  nodes:
+    # Where are you, so I can put something next to you? Every path below comes
+    # from this one read.
+    - id: agent
+      action:
+        tool: get_host_info
+
+    - id: binary
+      dependsOn: [agent]
+      action:
+        tool: ensure_host_artifact
+        args:
+          uri: ${vars.inputs.artifactUri}
+          sha256: ${vars.inputs.artifactSha256}
+          destination: ${nodes.agent.output.agent.providerRoot}/com.opute.k3s/bin/opute-provider-k3s
+          executable: true
+      timeoutMs: 900000
+      validate:
+        tool: inspect_host_file
+        args:
+          path: ${nodes.agent.output.agent.providerRoot}/com.opute.k3s/bin/opute-provider-k3s
+        # The provider root is beneath the agent's home in both scopes, so this
+        # one stays user-scoped: system scope is confined to systemd units.
+        assert:
+          - {path: /exists, op: eq, value: true}
+          - {path: /executable, op: eq, value: true}
+
+    # The unit is written from the agent's own answers: its home, its
+    # environment file -- which is where the provider gets the credential it
+    # calls back with -- its loopback endpoint, and the target its scope implies.
+    - id: unit
+      dependsOn: [agent, binary]
+      action:
+        tool: ensure_host_file
+        args:
+          scope: ${nodes.agent.output.agent.serviceScope}
+          path: ${nodes.agent.output.agent.serviceUnitDir}/opute-provider-k3s.service
+          mode: 420
+          content: |
+            [Unit]
+            Description=Opute k3s provider MCP
+            After=network-online.target
+
+            [Service]
+            Type=simple
+            Environment=HOME=${nodes.agent.output.agent.homeDir}
+            Environment=OPUTE_PROVIDER_PORT=${vars.inputs.providerPort}
+            Environment=OPUTE_HOST_AGENT_ENDPOINT=${nodes.agent.output.agent.mcpEndpoint}
+            ExecStart=${nodes.agent.output.agent.providerRoot}/com.opute.k3s/bin/opute-provider-k3s serve
+            EnvironmentFile=${nodes.agent.output.agent.environmentFile}
+            Restart=always
+            RestartSec=3
+
+            [Install]
+            WantedBy=${nodes.agent.output.agent.serviceWantedBy}
+      validate:
+        tool: inspect_host_file
+        args:
+          scope: ${nodes.agent.output.agent.serviceScope}
+          path: ${nodes.agent.output.agent.serviceUnitDir}/opute-provider-k3s.service
+        assert:
+          - {path: /exists, op: eq, value: true}
+
+    - id: supervisor
+      dependsOn: [agent]
+      action:
+        tool: ensure_host_service_supervisor
+        args:
+          scope: ${nodes.agent.output.agent.serviceScope}
+      # A directory is not something inspect_host_file can speak about under
+      # system scope, where managed paths are single .service units. The
+      # supervisor's own read reports the thing this node actually establishes:
+      # that caller-owned services survive the last session exiting.
+      validate:
+        tool: inspect_host_service_supervisor
+        args:
+          scope: ${nodes.agent.output.agent.serviceScope}
+        assert:
+          - {path: /persistent, op: eq, value: true}
+
+    - id: enable
+      dependsOn: [unit, supervisor]
+      action:
+        tool: set_host_service_state
+        args:
+          uri: host-service:local:${nodes.agent.output.agent.serviceScope}/opute-provider-k3s.service
+          state: enable
+          scope: ${nodes.agent.output.agent.serviceScope}
+      validate:
+        tool: inspect_host_service
+        args:
+          uri: host-service:local:${nodes.agent.output.agent.serviceScope}/opute-provider-k3s.service
+          scope: ${nodes.agent.output.agent.serviceScope}
+        assert:
+          - {path: /enabled, op: eq, value: true}
+
+    # start, not restart: a re-run must leave a healthy provider alone.
+    - id: start
+      dependsOn: [enable]
+      action:
+        tool: set_host_service_state
+        args:
+          uri: host-service:local:${nodes.agent.output.agent.serviceScope}/opute-provider-k3s.service
+          state: start
+          scope: ${nodes.agent.output.agent.serviceScope}
+      validate:
+        tool: inspect_host_service
+        args:
+          uri: host-service:local:${nodes.agent.output.agent.serviceScope}/opute-provider-k3s.service
+          scope: ${nodes.agent.output.agent.serviceScope}
+        assert:
+          - {path: /active, op: eq, value: true}
+        pollIntervalMs: 2000
+        timeoutMs: 120000
+
+    # Now the provider is serving, so adoption can do what it was always able to
+    # do: connect, read the manifest, register the capabilities.
+    - id: install
+      dependsOn: [start]
+      action:
+        tool: opute.provider.install
+        args:
+          descriptor:
+            schema: opute-provider-plugin.v1
+            pluginId: ${vars.inputs.providerId}
+            version: 1.0.1
+            capabilities:
+              - id: opute.capability.kubernetes.v1
+                version: 1
+            server:
+              transport: streamable_http
+              endpoint: http://127.0.0.1:${vars.inputs.providerPort}/mcp
+          endpoint: http://127.0.0.1:${vars.inputs.providerPort}/mcp
+          mode: kubernetes
+          recipeSource: ${vars.inputs.activationRecipeSource}
+          sha256: ${vars.inputs.activationRecipeSha256}
+          # One nonce governs both runs. The activation plan is keyed by it for
+          # the same reason this one is: without it a months-old terminal run
+          # under the same key is replayed, and the readiness check then reports
+          # a generation that is already active where a candidate was expected.
+          inputs:
+            providerId: ${vars.inputs.providerId}
+            activationNonce: ${vars.inputs.runNonce}
+          activate: true
+      timeoutMs: 1800000
+      # Activation is asynchronous: install returns once the generation is
+      # accepted, not once it is serving. Polling a typed status is how a
+      # host-local recipe waits, having no durable wait fence of its own.
+      validate:
+        tool: opute.provider.status
+        args:
+          provider: ${vars.inputs.providerId}
+        assert:
+          - {path: /active, op: eq, value: true}
+          - {path: /connected, op: eq, value: true}
+        pollIntervalMs: 3000
+        timeoutMs: 600000
+
+    # The recipe's reported answer, and the caller's signal that the staged next
+    # recipe may now be submitted.
+    - id: status
+      dependsOn: [install]
+      action:
+        tool: opute.provider.status
+        args:
+          provider: ${vars.inputs.providerId}
+outputMapping:
+  provider: ${nodes.status.output}
+  serviceScope: ${nodes.agent.output.agent.serviceScope}
+  unitPath: ${nodes.agent.output.agent.serviceUnitDir}/opute-provider-k3s.service
