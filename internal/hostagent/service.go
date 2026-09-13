@@ -48,9 +48,11 @@ type Service struct {
 	incusOnce sync.Once
 	// llm is the llm domain, built lazily -- built in llm_domain.go. It owns live
 	// relay listeners, so it is one instance per service.
-	llmSvc    *llm.Service
-	llmOnce   sync.Once
-	relayDirs [2]string
+	llmSvc            *llm.Service
+	llmOnce           sync.Once
+	relayDirs         [2]string
+	agentInstanceRoot string
+	agentMCPPort      int
 	// postgres is the postgres domain, built lazily -- built in postgres_domain.go.
 	// It owns live relay listeners, so it is one instance per service.
 	postgresSvc            *postgres.Service
@@ -66,6 +68,8 @@ type Options struct {
 	ProviderID                hostruntime.ID
 	ToolsForProvider          func(providerID string) []string
 	InstanceID                string
+	InstanceRoot              string
+	MCPPort                   int
 	AgentID                   string
 	OwnershipMode             string
 	RelayConfigDir            string
@@ -125,6 +129,8 @@ func New(opts Options) *Service {
 		ociStoragePolicyPath:   strings.TrimSpace(opts.OciStoragePolicyPath),
 		sqliteDatabaseRoot:     strings.TrimSpace(opts.SQLiteDatabaseRoot),
 		relayDirs:              [2]string{opts.RelayConfigDir, opts.SharedHostResourceLockDir},
+		agentInstanceRoot:      strings.TrimSpace(opts.InstanceRoot),
+		agentMCPPort:           opts.MCPPort,
 		postgresRelayConfigDir: postgresRelayConfigDir,
 		resourceSvc:            opts.ResourceService,
 	}

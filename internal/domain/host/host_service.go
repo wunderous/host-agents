@@ -40,6 +40,9 @@ func (s *Service) DescribeHost() HostInfoResult {
 			result.RootDiskQuota = quota
 		}
 	}
+	if s.deps.AgentRuntime != nil {
+		result.Agent = describeAgentInstallation(s.shared.AgentID, s.deps.AgentRuntime())
+	}
 	result.System = heartbeat.ReadHostSystemMetadata()
 	if s.shared.ResourceSnapshot != nil {
 		if result.System == nil {

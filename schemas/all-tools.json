@@ -1495,7 +1495,7 @@
   {
     "name": "get_host_info",
     "title": "Get Host Info",
-    "description": "Return host metadata and supported infrastructure operations",
+    "description": "Return host metadata, supported infrastructure operations, and where this Host Agent itself is installed. The agent block answers \"where are you, so I can put something next to you?\" -- home directory, systemd scope and unit directory, the agent's own environment file, and the loopback MCP endpoint a co-located provider calls back on -- so a recipe can place a provider beside the agent without being told any of it.",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -1534,6 +1534,11 @@
         "system": {
           "type": "object",
           "description": "Effective host/cgroup resource limits, usage, load, and memory pressure.",
+          "additionalProperties": true
+        },
+        "agent": {
+          "type": "object",
+          "description": "Where this Host Agent is installed: agentId, instanceId, instanceRoot, environmentFile, homeDir, serviceScope (user|system), serviceUnitDir, mcpEndpoint (loopback, for a co-located provider's callback) and providerRoot. Fields are omitted when the agent cannot observe them; environmentFile is reported only when the file is actually present.",
           "additionalProperties": true
         },
         "uri": {
