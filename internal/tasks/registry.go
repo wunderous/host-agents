@@ -443,6 +443,7 @@ var TaskAwareTools = map[string]bool{
 	"remove_vm_network_device":      true,
 	"install_host_agent":            true,
 	"run_host_plan":                 true,
+	"run_host_local_recipe":         true,
 	"run_runtime_recipe":            true,
 	"run_tunnel_recipe":             true,
 	"opute.provider.install":        true,

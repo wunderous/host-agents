@@ -325,7 +325,7 @@ func TestHostRecipeRejectsMissingExactTargetAndWrongExecutionOwner(t *testing.T)
 		ContractVersion: HostContractVersion,
 		RecipeID:        "invalid",
 		RecipeVersion:   "1.0.0",
-		Execution:       HostExecution{Coordinator: "host-agent", Mode: "local"},
+		Execution:       HostExecution{Coordinator: "host-agent", Mode: "distributed"},
 		Plan: plan.Document{
 			ContractVersion: plan.ContractVersion,
 			PlanID:          "invalid",
@@ -334,8 +334,15 @@ func TestHostRecipeRejectsMissingExactTargetAndWrongExecutionOwner(t *testing.T)
 			Nodes:           []plan.Node{{ID: "action", Action: &plan.Action{Tool: "probe"}}},
 		},
 	}
+	// The contract defines two whole envelopes, not a grid of coordinators and
+	// modes: a Host Agent cannot run a distributed plan and the Platform does not
+	// run a local one.
 	if err := ValidateHostEnvelope(doc); err == nil {
-		t.Fatal("wrong execution owner was accepted")
+		t.Fatal("an undefined coordinator/mode pairing was accepted")
+	}
+	doc.Execution = HostExecution{Coordinator: "platform", Mode: "local"}
+	if err := ValidateHostEnvelope(doc); err == nil {
+		t.Fatal("an undefined coordinator/mode pairing was accepted")
 	}
 	doc.Execution = HostExecution{Coordinator: "platform", Mode: "distributed"}
 	if err := ValidateHostEnvelope(doc); err != nil {
@@ -347,5 +354,96 @@ func TestHostRecipeRejectsMissingExactTargetAndWrongExecutionOwner(t *testing.T)
 	}
 	if err := loaded.Validate(map[string]plan.Capability{"probe": {Name: "probe", InputSchema: map[string]any{"type": "object"}, Effect: "read"}}, ""); err == nil || !strings.Contains(err.Error(), "exact target") {
 		t.Fatalf("missing target error = %v", err)
+	}
+}
+
+// The first Kubernetes node of the cluster that will host the Platform has to be
+// established when no Platform is running, so the envelope has to admit a recipe
+// the Host Agent owns. The restrictions below are what keep that mode from
+// becoming a second coordinator without any of the durable machinery -- wait
+// fences, resume revisions, authenticated event minting -- that makes the
+// Platform one.
+func TestHostLocalRecipeIsAcceptedAndConfinedToOneHost(t *testing.T) {
+	base := func(nodes []plan.Node) HostDocument {
+		return HostDocument{
+			ContractVersion: HostContractVersion,
+			RecipeID:        "bootstrap-first-node",
+			RecipeVersion:   "1.0.0",
+			Execution:       HostExecution{Coordinator: "host-agent", Mode: "local"},
+			Plan: plan.Document{
+				ContractVersion: plan.ContractVersion,
+				PlanID:          "bootstrap-first-node",
+				Generation:      1,
+				IdempotencyKey:  "bootstrap-first-node",
+				Nodes:           nodes,
+			},
+		}
+	}
+	onHost := func(id, ref string) plan.Node {
+		return plan.Node{ID: id, Target: &plan.TargetRef{HostRef: ref}, Action: &plan.Action{Tool: "probe"}}
+	}
+
+	valid := base([]plan.Node{
+		onHost("provision", "${vars.inputs.host}"),
+		onHost("install", "${vars.inputs.host}"),
+	})
+	if err := ValidateHostEnvelope(valid); err != nil {
+		t.Fatalf("host-local envelope rejected: %v", err)
+	}
+	if !valid.Execution.IsHostLocal() {
+		t.Fatal("host-local execution was not recognised")
+	}
+
+	twoHosts := base([]plan.Node{
+		onHost("provision", "${vars.inputs.host}"),
+		onHost("join", "${vars.inputs.peer}"),
+	})
+	if err := ValidateHostEnvelope(twoHosts); err == nil || !strings.Contains(err.Error(), "may only act on the host executing it") {
+		t.Fatalf("second host was accepted: %v", err)
+	}
+
+	withWait := base([]plan.Node{
+		onHost("provision", "${vars.inputs.host}"),
+		{ID: "await-material", Wait: &plan.WaitSpec{}},
+	})
+	if err := ValidateHostEnvelope(withWait); err == nil || !strings.Contains(err.Error(), "no durable resume channel") {
+		t.Fatalf("wait was accepted: %v", err)
+	}
+}
+
+// plan.Node has no emits field, so a declaration the Host Agent cannot honour
+// would otherwise vanish in decoding and leave the author believing an event was
+// published. The raw document is checked for exactly that.
+func TestHostLocalRecipeRejectsAnEmittedEvent(t *testing.T) {
+	raw := []byte(`contractVersion: host-recipe.v1
+recipeId: bootstrap-first-node
+recipeVersion: 1.0.0
+execution:
+  coordinator: host-agent
+  mode: local
+plan:
+  contractVersion: ` + plan.ContractVersion + `
+  planId: bootstrap-first-node
+  generation: 1
+  idempotencyKey: bootstrap-first-node
+  nodes:
+    - id: provision
+      target:
+        hostRef: ${vars.inputs.host}
+      action:
+        tool: probe
+      emits:
+        type: guest.ready
+        payload:
+          guest: ${nodes.provision.output}
+`)
+	if err := rejectHostLocalEventBindings(raw); err == nil || !strings.Contains(err.Error(), "authenticated events exist to satisfy waits on other hosts") {
+		t.Fatalf("emitted event was accepted: %v", err)
+	}
+
+	distributed := strings.Replace(string(raw), "coordinator: host-agent", "coordinator: platform", 1)
+	distributed = strings.Replace(distributed, "mode: local", "mode: distributed", 1)
+	if err := rejectHostLocalEventBindings([]byte(distributed)); err != nil {
+		t.Fatalf("distributed emits rejected: %v", err)
 	}
 }

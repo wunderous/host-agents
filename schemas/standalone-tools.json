@@ -242,6 +242,24 @@
       "support": "experimental"
     },
     {
+      "name": "validate_host_local_recipe",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "run_host_local_recipe",
+      "classification": "mutation",
+      "support": "experimental",
+      "_meta": {
+        "resourceCost": {
+          "class": "heavy",
+          "cpuCores": 2,
+          "memoryBytes": 2147483648,
+          "tasks": 8
+        }
+      }
+    },
+    {
       "name": "validate_runtime_recipe",
       "classification": "read_only",
       "support": "experimental"

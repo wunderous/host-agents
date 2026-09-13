@@ -360,6 +360,7 @@ var capabilityEffects = map[string]string{
 	"send_console_input":            "mutation",
 	"resize_console":                "mutation",
 	"run_host_plan":                 "mutation",
+	"run_host_local_recipe":         "mutation",
 	"run_runtime_recipe":            "mutation",
 	"run_tunnel_recipe":             "mutation",
 	"cancel_operation":              "mutation",

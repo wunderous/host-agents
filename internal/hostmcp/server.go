@@ -557,6 +557,7 @@ func (s *Server) dispatchLifecycleTool(ctx context.Context, name string, args ma
 func isLifecycleTool(name string) bool {
 	switch name {
 	case "validate_host_plan", "run_host_plan", "get_host_plan_run",
+		"validate_host_local_recipe", "run_host_local_recipe",
 		"validate_runtime_recipe", "run_runtime_recipe", "get_runtime_recipe_run",
 		"validate_tunnel_recipe", "run_tunnel_recipe", "get_tunnel_run",
 		"opute.provider.install", "opute.provider.validate", "opute.provider.status",
@@ -576,6 +577,10 @@ func (s *Server) invokeLifecycleTool(ctx context.Context, name string, args map[
 		return s.handleRunHostPlan(args)
 	case "get_host_plan_run":
 		return s.handleGetHostPlanRun(args)
+	case "validate_host_local_recipe":
+		return s.handleValidateHostLocalRecipe(args)
+	case "run_host_local_recipe":
+		return s.handleRunHostLocalRecipe(args)
 	case "validate_runtime_recipe":
 		return s.handleValidateRuntimeRecipe(args)
 	case "run_runtime_recipe":
@@ -1088,7 +1093,7 @@ func (s *Server) reclaimTerminalTaskReservations() error {
 
 func isHostPlanTask(toolName string) bool {
 	switch toolName {
-	case "run_host_plan", "run_runtime_recipe", "run_tunnel_recipe":
+	case "run_host_plan", "run_host_local_recipe", "run_runtime_recipe", "run_tunnel_recipe":
 		return true
 	default:
 		return false
