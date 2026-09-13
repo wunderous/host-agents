@@ -60,7 +60,11 @@ func TestEnsurePostgreSQLServiceAppliesOperatorBeforeCluster(t *testing.T) {
 				clusterIndex = index
 			}
 		}
-		if strings.HasPrefix(cmd, "get crd") && crdIndex < 0 {
+		// The webhook endpoints probe is unique to waitForPostgreSQLServiceCRD,
+		// so it marks the wait itself. `get crd` no longer does: the ordered
+		// path also reads the CRD to decide whether the operator needs
+		// installing at all, and that read comes before the apply.
+		if strings.HasPrefix(cmd, "get endpoints cnpg-webhook-service") && crdIndex < 0 {
 			crdIndex = index
 		}
 	}
@@ -68,7 +72,55 @@ func TestEnsurePostgreSQLServiceAppliesOperatorBeforeCluster(t *testing.T) {
 		t.Fatalf("missing expected events: order=%v", order)
 	}
 	if !(operatorIndex < crdIndex && crdIndex < clusterIndex) {
-		t.Fatalf("expected operator apply < CRD wait < cluster apply, got order=%v", order)
+		t.Fatalf("expected operator apply < CRD/webhook wait < cluster apply, got order=%v", order)
+	}
+}
+
+// A repair pass is entered whenever the service is not fully ready, including
+// when only the tenant Cluster is unhealthy. Reapplying the operator HelmChart
+// there makes the Helm Controller roll the operator Deployment and drop the
+// admission webhook's endpoints, which is what turned an otherwise healthy
+// operator into a five-minute wait that a cell under memory pressure never
+// finished.
+func TestEnsurePostgreSQLServiceKeepsAReadyOperatorInstalled(t *testing.T) {
+	service := validResetService()
+	var order []string
+	var appliedManifests []string
+	service.setKubectlRunner(func(ctx context.Context, vmName string, kubectlArgs []string, input []byte, label string, timeout time.Duration) (string, error) {
+		cmd := strings.Join(kubectlArgs, " ")
+		order = append(order, cmd)
+		switch {
+		case kubectlArgs[0] == "get" && kubectlArgs[1] == "nodes":
+			return `{"items":[{"status":{"conditions":[{"type":"Ready","status":"True"}]}}]}`, nil
+		case kubectlArgs[0] == "get" && kubectlArgs[1] == "crd":
+			return "", nil
+		case kubectlArgs[0] == "get" && kubectlArgs[1] == "deployments":
+			return `{"items":[{"spec":{"replicas":1},"status":{"availableReplicas":1}}]}`, nil
+		case kubectlArgs[0] == "get" && kubectlArgs[1] == "endpoints":
+			return `{"subsets":[{"addresses":[{"ip":"10.42.0.9"}]}]}`, nil
+		case kubectlArgs[0] == "apply":
+			appliedManifests = append(appliedManifests, string(input))
+			return "", nil
+		default:
+			return "", fmt.Errorf("unexpected call: %s", cmd)
+		}
+	})
+	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system", Databases: []string{"testdb"}, ConsumerSecretName: "test-db", ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service", ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := service.ensurePostgreSQLServiceOrdered(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	for _, manifest := range appliedManifests {
+		if strings.Contains(manifest, "kind: HelmChart") {
+			t.Fatalf("reapplied the operator HelmChart while the operator was ready: order=%v", order)
+		}
+	}
+	if len(appliedManifests) != 1 || !strings.Contains(appliedManifests[0], "apiVersion: postgresql.cnpg.io/v1") {
+		t.Fatalf("expected the tenant Cluster apply alone, got %d applies: order=%v", len(appliedManifests), order)
 	}
 }
 
