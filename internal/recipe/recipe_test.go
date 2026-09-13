@@ -447,3 +447,58 @@ plan:
 		t.Fatalf("distributed emits rejected: %v", err)
 	}
 }
+
+// A host-local recipe runs on the agent that received it. Making the author name
+// that agent would force the caller to learn its own id and pass it back as an
+// input -- which is the privileged-caller knowledge the host-agent-only
+// bootstrap exists to remove. An omitted target means this host; a target that
+// names a peer is still refused.
+func TestHostLocalActionMayOmitItsTargetButNotNameAPeer(t *testing.T) {
+	capabilities := map[string]plan.Capability{
+		"probe": {Name: "probe", InputSchema: map[string]any{"type": "object"}, Effect: "read"},
+	}
+	build := func(execution HostExecution, target *plan.TargetRef) HostDocument {
+		return HostDocument{
+			ContractVersion: HostContractVersion,
+			RecipeID:        "materialise",
+			RecipeVersion:   "1.0.0",
+			Execution:       execution,
+			Plan: plan.Document{
+				ContractVersion: plan.ContractVersion,
+				PlanID:          "materialise",
+				Generation:      1,
+				IdempotencyKey:  "materialise",
+				Nodes:           []plan.Node{{ID: "probe", Target: target, Action: &plan.Action{Tool: "probe"}}},
+			},
+		}
+	}
+	hostLocal := HostExecution{Coordinator: HostCoordinatorHostAgent, Mode: HostModeLocal}
+	distributed := HostExecution{Coordinator: HostCoordinatorPlatform, Mode: HostModeDistributed}
+
+	untargeted, err := ResolveHostInputs(build(hostLocal, nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := untargeted.Validate(capabilities, ""); err != nil {
+		t.Fatalf("host-local recipe without a target was rejected: %v", err)
+	}
+
+	// The Platform dispatches across hosts, so an unbound node there has no
+	// answer to "which one?" and the requirement is unchanged.
+	distributedUntargeted, err := ResolveHostInputs(build(distributed, nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := distributedUntargeted.Validate(capabilities, ""); err == nil || !strings.Contains(err.Error(), "exact target") {
+		t.Fatalf("distributed recipe without a target = %v", err)
+	}
+
+	// Present means pinned: a literal host id is still not a target binding.
+	literal, err := ResolveHostInputs(build(hostLocal, &plan.TargetRef{HostRef: "host-zephyrus-ef47fbbf"}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := literal.Validate(capabilities, ""); err == nil || !strings.Contains(err.Error(), "exact vars.inputs reference") {
+		t.Fatalf("literal hostRef = %v", err)
+	}
+}

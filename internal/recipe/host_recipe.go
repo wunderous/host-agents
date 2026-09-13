@@ -150,7 +150,7 @@ func (loaded HostLoaded) Validate(capabilities map[string]plan.Capability, catal
 	if err := rejectNestedPlanRuns(loaded.ExpandedPlan); err != nil {
 		return err
 	}
-	if err := validateHostTargets(loaded.ExpandedPlan); err != nil {
+	if err := validateHostTargets(loaded.ExpandedPlan, loaded.Document.Execution.IsHostLocal()); err != nil {
 		return err
 	}
 	if err := plan.Validate(loaded.ExpandedPlan, capabilities, catalogRevision); err != nil {
@@ -238,12 +238,26 @@ func rejectHostLocalEventBindings(raw []byte) error {
 	return nil
 }
 
-func validateHostTargets(document plan.Document) error {
+// A distributed recipe must say which host every action belongs to: the
+// Platform is dispatching across several and an unbound node has no answer.
+//
+// A host-local recipe has exactly one host by construction -- the agent
+// executing it -- so requiring the author to name it is the privileged-caller
+// problem in miniature. The caller would have to learn its own agent id and pass
+// it back as an input before the recipe that discovers the host has run. So a
+// host-local action node MAY omit its target, and omitting it means this host. A
+// target that IS present is still pinned to an exact vars.inputs reference and
+// still checked against the executing agent id at load and at dispatch, so
+// naming a peer remains a refusal rather than a silent retarget.
+func validateHostTargets(document plan.Document, hostLocal bool) error {
 	for _, node := range document.Nodes {
 		if node.Action == nil {
 			continue
 		}
 		if node.Target == nil {
+			if hostLocal {
+				continue
+			}
 			return fmt.Errorf("host recipe action node %q requires an exact target binding", node.ID)
 		}
 		ref := strings.TrimSpace(node.Target.HostRef)
