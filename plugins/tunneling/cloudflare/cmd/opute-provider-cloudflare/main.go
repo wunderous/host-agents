@@ -547,31 +547,16 @@ func probeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult,
 
 func authenticatedPublicToolsList(ctx context.Context, resourceURL string) (map[string]any, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
-	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(resourceURL, "/mcp")+"/oauth/token", strings.NewReader("grant_type=client_credentials&client_id=opute-mcp-host&resource="+url.QueryEscape(resourceURL)))
+	token, err := mintPublicHostAgentToken(ctx, client, resourceURL)
 	if err != nil {
 		return nil, err
-	}
-	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	tokenRes, err := client.Do(tokenReq)
-	if err != nil {
-		return nil, err
-	}
-	defer tokenRes.Body.Close()
-	if tokenRes.StatusCode >= 300 {
-		return nil, fmt.Errorf("public token mint failed: %s", tokenRes.Status)
-	}
-	var tokenBody struct {
-		AccessToken string `json:"access_token"`
-	}
-	if err := json.NewDecoder(io.LimitReader(tokenRes.Body, 64*1024)).Decode(&tokenBody); err != nil || tokenBody.AccessToken == "" {
-		return nil, fmt.Errorf("public token mint missing access_token")
 	}
 	body := `{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"cloudflare-tunnel-probe","version":"1.0.0"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
 	listReq, err := http.NewRequestWithContext(ctx, http.MethodPost, resourceURL, strings.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	listReq.Header.Set("Authorization", "Bearer "+tokenBody.AccessToken)
+	listReq.Header.Set("Authorization", "Bearer "+token)
 	listReq.Header.Set("Content-Type", "application/json")
 	listReq.Header.Set("Accept", "application/json, text/event-stream")
 	listReq.Header.Set("MCP-Protocol-Version", "2026-07-28")
@@ -597,6 +582,36 @@ func authenticatedPublicToolsList(ctx context.Context, resourceURL string) (map[
 		return nil, fmt.Errorf("public tools/list: %s", rpc.Error.Message)
 	}
 	return map[string]any{"endpoint": resourceURL, "ready": true, "tools": rpc.Result["tools"]}, nil
+}
+
+// mintPublicHostAgentToken obtains the audience-bound credential required by
+// an HTTPS Host Agent endpoint. A local MCP_AUTH_TOKEN is intentionally not
+// sent to a public route: it belongs to the loopback listener and the public
+// OAuth resource has a different audience.
+func mintPublicHostAgentToken(ctx context.Context, client *http.Client, resourceURL string) (string, error) {
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
+	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(resourceURL, "/mcp")+"/oauth/token", strings.NewReader("grant_type=client_credentials&client_id=opute-mcp-host&resource="+url.QueryEscape(resourceURL)))
+	if err != nil {
+		return "", err
+	}
+	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	tokenRes, err := client.Do(tokenReq)
+	if err != nil {
+		return "", err
+	}
+	defer tokenRes.Body.Close()
+	if tokenRes.StatusCode >= 300 {
+		return "", fmt.Errorf("public token mint failed: %s", tokenRes.Status)
+	}
+	var tokenBody struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(tokenRes.Body, 64*1024)).Decode(&tokenBody); err != nil || tokenBody.AccessToken == "" {
+		return "", fmt.Errorf("public token mint missing access_token")
+	}
+	return tokenBody.AccessToken, nil
 }
 
 func removeTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -802,6 +817,14 @@ func connectHostAgent(ctx context.Context) (*hostagentclient.Client, error) {
 		return nil, errors.New("OPUTE_HOST_AGENT_ENDPOINT is required for Cloudflare provider callbacks")
 	}
 	bearerToken := firstNonEmpty(os.Getenv("OPUTE_HOST_AGENT_BEARER_TOKEN"), os.Getenv("MCP_AUTH_TOKEN"))
+	if parsed, err := url.Parse(endpoint); err == nil && strings.EqualFold(parsed.Scheme, "https") {
+		// Public Host Agent routes use OAuth resource tokens. Do not let a
+		// local EnvironmentFile bearer override the endpoint audience.
+		bearerToken, err = mintPublicHostAgentToken(ctx, nil, endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("mint public Host Agent callback token: %w", err)
+		}
+	}
 	return hostagentclient.Connect(ctx, endpoint, bearerToken)
 }
 

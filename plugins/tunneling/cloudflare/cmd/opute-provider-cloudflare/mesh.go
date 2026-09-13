@@ -44,6 +44,11 @@ type meshNode struct {
 	Token  string `json:"token,omitempty"`
 }
 
+type meshConnectivitySettings struct {
+	OfframpWARPEnabled bool `json:"offramp_warp_enabled"`
+	ICMPProxyEnabled   bool `json:"icmp_proxy_enabled"`
+}
+
 type meshHAEndpoint struct {
 	TunnelID    string
 	DNSRecordID string
@@ -213,6 +218,9 @@ func prepareNetworkOverlay(ctx context.Context, args map[string]any) (*mcp.CallT
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureMeshConnectivity(ctx, accountID, apiToken); err != nil {
+		return nil, err
+	}
 	body, err := json.Marshal(map[string]any{"name": name, "ha": false})
 	if err != nil {
 		return nil, err
@@ -249,6 +257,41 @@ func prepareNetworkOverlay(ctx context.Context, args map[string]any) (*mcp.CallT
 		"targetUri":       instanceURI.String(),
 		"tokenExposed":    false,
 	})
+}
+
+// ensureMeshConnectivity reconciles only the account-level settings required
+// by a WARP-to-WARP test overlay. The recipe owns this preflight because a
+// connector can report Connected while its peers remain unreachable when
+// off-ramp or ICMP proxying is disabled. The PATCH is deliberately sparse so
+// unrelated connectivity settings remain under the account owner's control.
+func ensureMeshConnectivity(ctx context.Context, accountID, apiToken string) error {
+	endpoint := fmt.Sprintf("%s/accounts/%s/zerotrust/connectivity_settings", cloudflareAPIBase(), accountID)
+	var current meshConnectivitySettings
+	if err := cloudflareJSON(ctx, apiToken, http.MethodGet, endpoint, nil, &current); err != nil {
+		return fmt.Errorf("read Cloudflare Mesh connectivity settings: %w", err)
+	}
+	patch := make(map[string]bool, 2)
+	if !current.OfframpWARPEnabled {
+		patch["offramp_warp_enabled"] = true
+	}
+	if !current.ICMPProxyEnabled {
+		patch["icmp_proxy_enabled"] = true
+	}
+	if len(patch) == 0 {
+		return nil
+	}
+	body, err := json.Marshal(patch)
+	if err != nil {
+		return fmt.Errorf("encode Cloudflare Mesh connectivity settings: %w", err)
+	}
+	var updated meshConnectivitySettings
+	if err := cloudflareJSON(ctx, apiToken, http.MethodPatch, endpoint, body, &updated); err != nil {
+		return fmt.Errorf("enable Cloudflare Mesh connectivity settings: %w", err)
+	}
+	if !updated.OfframpWARPEnabled || !updated.ICMPProxyEnabled {
+		return fmt.Errorf("Cloudflare Mesh connectivity settings were not enabled: offramp_warp_enabled=%t icmp_proxy_enabled=%t", updated.OfframpWARPEnabled, updated.ICMPProxyEnabled)
+	}
+	return nil
 }
 
 func attachNetworkOverlay(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -821,6 +864,13 @@ func probeNetworkOverlay(ctx context.Context, args map[string]any) (*mcp.CallToo
 	if err != nil {
 		return nil, err
 	}
+	resultContent, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("Cloudflare Mesh reachability probe returned no structured command result")
+	}
+	if err := validateMeshProbeResult(resultContent); err != nil {
+		return nil, err
+	}
 	return structured(map[string]any{
 		"contractVersion": capabilitycontract.NetworkOverlay,
 		"ready":           true,
@@ -829,6 +879,14 @@ func probeNetworkOverlay(ctx context.Context, args map[string]any) (*mcp.CallToo
 		"peerMeshIp":      peerIP.String(),
 		"probe":           result.StructuredContent,
 	})
+}
+
+func validateMeshProbeResult(result map[string]any) error {
+	exitCode, present := numericInput(result, "exitCode")
+	if !present || exitCode != 0 {
+		return fmt.Errorf("Cloudflare Mesh reachability probe failed with exit code %d: %s", exitCode, meshCommandDiagnostics(stringInput(result, "stdout", "")+"\n"+stringInput(result, "stderr", ""), ""))
+	}
+	return nil
 }
 
 func removeNetworkOverlay(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
