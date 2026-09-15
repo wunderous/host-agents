@@ -2395,12 +2395,35 @@
           "type": "integer"
         },
         "localTargets": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "localPort",
+              "target"
+            ],
+            "properties": {
+              "localPort": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "target": {
+                "type": "string",
+                "minLength": 3,
+                "description": "host:port the connector pod should reach on this loopback port."
+              }
+            }
+          }
         },
         "uri": {
           "type": "string",
           "minLength": 1,
           "description": "Canonical Host Agent resource URI returned by discovery."
+        },
+        "forwarderImage": {
+          "type": "string",
+          "description": "Image for the per-mapping loopback forwarder sidecars. Defaults to a pinned socat."
         }
       }
     },

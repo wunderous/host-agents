@@ -59,12 +59,17 @@ func TestCodexWSLNonInteractiveE2E(t *testing.T) {
 		"MCP_AUTH_TOKEN="+authToken,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), standaloneProcessTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binary, "--mode=standalone")
 	cmd.Dir = root
 	cmd.Env = env
+	// Streamed, so a startup failure explains itself. Without this the only
+	// evidence of a binary that died immediately was the readiness timeout,
+	// which names the symptom and hides the reason.
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start host agent: %v", err)
 	}
@@ -77,7 +82,7 @@ func TestCodexWSLNonInteractiveE2E(t *testing.T) {
 	mcpClient := mcphttp.Client{Endpoint: endpoint, Token: authToken, Name: "codex-e2e-test", Version: "1"}
 
 	// Wait for server ready by polling tools/list
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(standaloneReadyTimeout)
 	var listed map[string]any
 	for time.Now().Before(deadline) {
 		res, err := mcpClient.Call(ctx, "tools/list", "", map[string]any{})

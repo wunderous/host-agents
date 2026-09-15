@@ -86,7 +86,7 @@ func TestStandaloneHTTPIsolationAndShutdown(t *testing.T) {
 	binary := buildStandaloneIsolationBinary(t)
 	stateDir := t.TempDir()
 	port := freeStandalonePort(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), standaloneProcessTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, "--mode=standalone")
 	cmd.Env = standaloneCleanEnv(
@@ -103,7 +103,7 @@ func TestStandaloneHTTPIsolationAndShutdown(t *testing.T) {
 	}
 
 	mcpClient := mcphttp.Client{Endpoint: fmt.Sprintf("http://127.0.0.1:%d/mcp", port), Token: "host-bootstrap", Name: "standalone-isolation-test", Version: "1"}
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(standaloneReadyTimeout)
 	for {
 		_, err = mcpClient.Call(ctx, "server/discover", "", map[string]any{})
 		if err == nil {

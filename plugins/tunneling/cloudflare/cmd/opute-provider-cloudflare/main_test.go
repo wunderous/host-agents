@@ -252,7 +252,7 @@ func TestCloudflareMeshTargetAdmissionAcceptsVMsAndContainers(t *testing.T) {
 }
 
 func TestCloudflareConnectorManifestDoesNotReturnToken(t *testing.T) {
-	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 1, "secret-token", nil)
+	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 1, "secret-token", nil, defaultForwarderImage)
 	if !strings.Contains(manifest, "secret-token") {
 		t.Fatal("connector manifest must carry token to the host callback")
 	}

@@ -133,7 +133,7 @@ func tunnelSchema() map[string]any {
 	}}
 }
 func connectorSchema() map[string]any {
-	return map[string]any{"type": "object", "required": []string{"token", "namespace"}, "properties": map[string]any{"token": map[string]any{"type": "string", "minLength": 1}, "namespace": map[string]any{"type": "string", "minLength": 1}, "name": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "replicas": map[string]any{"type": "integer", "minimum": 1}, "targetUri": map[string]any{"type": "string"}, "placement": map[string]any{"type": "string", "enum": []string{"kubernetes", "container"}}, "artifactUri": map[string]any{"type": "string"}, "artifactSha256": map[string]any{"type": "string"}, "localTargets": map[string]any{"type": "array"}}}
+	return map[string]any{"type": "object", "required": []string{"token", "namespace"}, "properties": map[string]any{"token": map[string]any{"type": "string", "minLength": 1}, "namespace": map[string]any{"type": "string", "minLength": 1}, "name": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "replicas": map[string]any{"type": "integer", "minimum": 1}, "targetUri": map[string]any{"type": "string"}, "placement": map[string]any{"type": "string", "enum": []string{"kubernetes", "container"}}, "artifactUri": map[string]any{"type": "string"}, "artifactSha256": map[string]any{"type": "string"}, "localTargets": localTargetsSchema(), "forwarderImage": map[string]any{"type": "string"}}}
 }
 
 func connectorTargetSchema() map[string]any {
@@ -476,7 +476,12 @@ func installKubernetesConnector(ctx context.Context, client *hostagentclient.Cli
 		return err
 	}
 	namespace, name, image := firstNonEmpty(stringInput(args, "namespace", ""), "cloudflare-connector"), firstNonEmpty(stringInput(args, "name", ""), "cloudflared"), firstNonEmpty(stringInput(args, "image", ""), "cloudflare/cloudflared:2026.7.2")
-	_, err = callHost(ctx, client, "apply_manifest", map[string]any{"uri": target.String(), "manifest": cloudflaredManifest(namespace, name, image, intInput(args, "replicas", 1), stringInput(args, "token", ""), args["localTargets"])})
+	localTargets, err := parseLocalTargets(args["localTargets"])
+	if err != nil {
+		return err
+	}
+	forwarderImage := firstNonEmpty(stringInput(args, "forwarderImage", ""), defaultForwarderImage)
+	_, err = callHost(ctx, client, "apply_manifest", map[string]any{"uri": target.String(), "manifest": cloudflaredManifest(namespace, name, image, intInput(args, "replicas", 1), stringInput(args, "token", ""), localTargets, forwarderImage)})
 	return err
 }
 
@@ -676,7 +681,7 @@ func defaultCloudflaredArtifactPath(scope string) string {
 	return "~/.local/share/opute/providers/com.opute.cloudflare/bin/cloudflared"
 }
 
-func cloudflaredManifest(namespace, name, image string, replicas int, token string, localTargets any) string {
+func cloudflaredManifest(namespace, name, image string, replicas int, token string, targets []localTarget, forwarderImage string) string {
 	if replicas < 1 {
 		replicas = 1
 	}
@@ -723,9 +728,8 @@ spec:
             command: [cloudflared, --version]
           initialDelaySeconds: 5
           periodSeconds: 10
-# localTargets are provider-owned routing metadata: %s
 `
-	return fmt.Sprintf(manifest, namespace, name, namespace, yamlQuote(token), name, namespace, replicas, name, name, image, name, yamlQuote(fmt.Sprint(localTargets)))
+	return fmt.Sprintf(manifest, namespace, name, namespace, yamlQuote(token), name, namespace, replicas, name, name, image, name) + forwarderContainers(targets, forwarderImage)
 }
 
 func addTeardownTool(server *mcp.Server) {
