@@ -18,3 +18,7 @@ __pycache__/
 plugins/**/opute-provider-*
 !plugins/**/cmd/opute-provider-*/
 !plugins/**/cmd/opute-provider-*/**
+
+# `go build ./...` inside a cmd directory drops the linked binary beside its
+# source. One reached a commit; the pattern is what keeps the next one out.
+plugins/tunneling/cloudflare/cmd/opute-provider-cloudflare/opute-provider-cloudflare
