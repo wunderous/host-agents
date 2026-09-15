@@ -94,6 +94,28 @@ func parseUnitLaunchProperties(output string) (fragmentPath, execStart string) {
 	return fragmentPath, execStart
 }
 
+// unitEnablement maps unit name to its systemd enablement state.
+//
+// Best-effort by design: this detail is an addition to a listing that is useful
+// without it, so a failure here reports every unit as "unknown" rather than
+// failing the whole call. It never reports a unit as enabled on a guess.
+func (s *Service) unitEnablement(commandPrefix []string) map[string]string {
+	command := append(append([]string{}, commandPrefix...), "list-unit-files", "--type=service", "--no-pager", "--plain", "--no-legend")
+	result, err := s.shared.HostCommandRunner(command, nil, 15*time.Second)
+	if err != nil {
+		return nil
+	}
+	states := make(map[string]string)
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 {
+			continue
+		}
+		states[fields[0]] = fields[1]
+	}
+	return states
+}
+
 // ListHostServices returns a list of systemd services and registers their canonical URIs.
 func (s *Service) ListHostServices(scope string) (map[string]any, error) {
 	scope = strings.ToLower(strings.TrimSpace(scope))
@@ -112,6 +134,7 @@ func (s *Service) ListHostServices(scope string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list host services: %w", err)
 	}
+	enablement := s.unitEnablement(commandPrefix)
 	lines := strings.Split(result.Stdout, "\n")
 	services := make([]map[string]any, 0, len(lines))
 	tenantID := s.shared.EffectiveTenantID()
@@ -146,13 +169,27 @@ func (s *Service) ListHostServices(scope string) (map[string]any, error) {
 				"scope":       scope,
 			})
 		}
+		// `enabled` used to be the literal `true` for every row. `list-units`
+		// does not report enablement at all -- it reports load/active/sub state
+		// -- so the field was answering a question nothing had asked systemd,
+		// and a disabled, static or masked unit was indistinguishable from one
+		// set to start at boot. `list-unit-files` is the command that knows.
+		state, known := enablement[unitName]
+		if !known {
+			state = "unknown"
+		}
 		services = append(services, map[string]any{
 			"uri":         uri.String(),
 			"serviceName": serviceName,
 			"scope":       scope,
 			"status":      status,
 			"active":      active,
-			"enabled":     true,
+			"enabled":     state == "enabled" || state == "enabled-runtime",
+			// The raw systemd word, because the boolean above flattens six
+			// distinct states into two. A `static` unit is not disabled, it has
+			// no install section to enable; a `masked` one cannot be started at
+			// all. A caller deciding whether to act needs the difference.
+			"enablementState": state,
 		})
 	}
 	return map[string]any{

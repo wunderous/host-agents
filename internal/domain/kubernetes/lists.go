@@ -91,6 +91,120 @@ func (s *Service) ListIngressClasses(vmName string) ([]string, error) {
 	return out, nil
 }
 
+// ListCertificateIssuers answers with cert-manager's issuers: the cluster-scoped
+// `ClusterIssuer` objects plus the namespaced `Issuer` ones.
+//
+// `clusterissuers` was already listed in clusterScopedK8sResources above, but
+// nothing ever called it -- the Host Agent had no `list_certificate_issuers`
+// handler at all, while the Platform's catalog advertised one. Asking for it
+// answered "tool not found" against a cluster where cert-manager was installed
+// and working.
+//
+// A namespace narrows the question to that namespace, so the cluster-scoped kind
+// is skipped: a caller that asked about one namespace should not be handed
+// objects that live outside it.
+func (s *Service) ListCertificateIssuers(vmName, namespace string) ([]map[string]any, error) {
+	out := make([]map[string]any, 0)
+	if strings.TrimSpace(namespace) == "" {
+		rows, err := s.listIssuerKind(vmName, "clusterissuers", "ClusterIssuer", "")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+	}
+	rows, err := s.listIssuerKind(vmName, "issuers", "Issuer", namespace)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, rows...), nil
+}
+
+// listIssuerKind reads one issuer kind, treating an absent CRD as an empty list.
+//
+// cert-manager is optional. On a cluster without it `kubectl get clusterissuers`
+// exits non-zero with "the server doesn't have a resource type", which is an
+// answer -- there are no issuers, because the operator that defines them is not
+// installed -- and not a failure of this call. Propagating it would put a shell
+// error in front of an operator who asked a question the cluster answered
+// perfectly well.
+func (s *Service) listIssuerKind(vmName, resource, kind, namespace string) ([]map[string]any, error) {
+	data, err := s.getKubernetesList(vmName, resource, namespace)
+	if err != nil {
+		if isMissingResourceType(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := make([]map[string]any, 0)
+	for _, raw := range data["items"].([]any) {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		meta, _ := m["metadata"].(map[string]any)
+		name, _ := meta["name"].(string)
+		ns, _ := meta["namespace"].(string)
+		row := map[string]any{
+			"name":      name,
+			"namespace": ns,
+			"kind":      kind,
+			"ready":     issuerReady(m),
+			"age":       k8sAge(stringOrEmpty(meta["creationTimestamp"])),
+		}
+		if issuerType := issuerType(m); issuerType != "" {
+			row["type"] = issuerType
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+// issuerReady reads the `Ready` condition cert-manager writes on every issuer.
+// Absent means not yet reconciled, which is reported as not ready rather than
+// omitted: "ready" is the one thing a caller asks an issuer about.
+func issuerReady(item map[string]any) bool {
+	status, _ := item["status"].(map[string]any)
+	conditions, _ := status["conditions"].([]any)
+	for _, raw := range conditions {
+		condition, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if stringOrEmpty(condition["type"]) == "Ready" {
+			return stringOrEmpty(condition["status"]) == "True"
+		}
+	}
+	return false
+}
+
+// issuerType names the solver an issuer is configured with. cert-manager models
+// this as exactly one populated key on `spec`, so the key is the answer.
+func issuerType(item map[string]any) string {
+	spec, _ := item["spec"].(map[string]any)
+	for _, candidate := range []string{"acme", "ca", "selfSigned", "vault", "venafi"} {
+		if _, ok := spec[candidate]; ok {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// isMissingResourceType reports whether kubectl refused because the kind is not
+// registered in the cluster, rather than because the call itself went wrong.
+// Matched on the message because the error arrives here as provider-formatted
+// text, having crossed the provider RPC boundary that erases typed kinds.
+func isMissingResourceType(err error) bool {
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "doesn't have a resource type") ||
+		strings.Contains(text, "the server could not find the requested resource") ||
+		strings.Contains(text, "could not find the requested resource")
+}
+
+func stringOrEmpty(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
 func (s *Service) ListServices(vmName, namespace string) ([]map[string]any, error) {
 	data, err := s.getKubernetesList(vmName, "services", namespace)
 	if err != nil {

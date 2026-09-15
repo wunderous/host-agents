@@ -435,6 +435,11 @@
       "support": "experimental"
     },
     {
+      "name": "list_certificate_issuers",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
       "name": "list_ingress_classes",
       "classification": "read_only",
       "support": "experimental"

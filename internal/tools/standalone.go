@@ -226,6 +226,7 @@ var StandaloneToolNames = map[string]bool{
 	"delete_vm":                        true,
 	"list_namespaces":                  true,
 	"list_ingress_classes":             true,
+	"list_certificate_issuers":         true,
 	"list_pods":                        true,
 	"list_services":                    true,
 	"install_postgresql":               true,

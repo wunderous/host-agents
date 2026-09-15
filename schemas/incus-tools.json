@@ -6480,6 +6480,10 @@
               },
               "enabled": {
                 "type": "boolean"
+              },
+              "enablementState": {
+                "type": "string",
+                "description": "Raw systemd enablement word (enabled, disabled, static, masked, indirect, generated) or \"unknown\" when list-unit-files could not be read."
               }
             }
           }

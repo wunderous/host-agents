@@ -405,6 +405,20 @@ func init() {
 }
 
 func init() {
+	register(toolname.ListCertificateIssuers, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		vmName := vmNameFromBinding(binding)
+		namespace := stringField(args, "namespace")
+		issuers, err := svc.Kubernetes().ListCertificateIssuers(vmName, namespace)
+		if err != nil {
+			return nil, err
+		}
+		// `issuers` is the field name the Platform's Kubernetes discovery
+		// contract reads; see normalizeOputeKubernetesDiscovery.
+		return structuredResult(withBindingURI(map[string]any{"issuers": issuers}, binding, "cluster"), ""), nil
+	})
+}
+
+func init() {
 	register(toolname.ListPods, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		vmName := vmNameFromBinding(binding)
 		namespace := stringField(args, "namespace")

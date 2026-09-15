@@ -74,6 +74,7 @@ const (
 	InstallLocalLLMModel          = "install_local_llm_model"
 	InstallOCIRegistry            = "install_oci_registry"
 	InstallPostgreSQL             = "install_postgresql"
+	ListCertificateIssuers        = "list_certificate_issuers"
 	ListClusters                  = "list_clusters"
 	ListDeployments               = "list_deployments"
 	ListHostServices              = "list_host_services"
@@ -194,6 +195,7 @@ func All() []string {
 		InstallLocalLLMModel,
 		InstallOCIRegistry,
 		InstallPostgreSQL,
+		ListCertificateIssuers,
 		ListClusters,
 		ListDeployments,
 		ListHostServices,
