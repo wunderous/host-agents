@@ -6198,6 +6198,10 @@
         },
         "resume": {
           "type": "boolean"
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Re-run even when an identical generation is already active and connected."
         }
       }
     },

@@ -52,6 +52,49 @@ func (s *Server) handleProviderInstallContext(ctx context.Context, args map[stri
 		_ = adapter.Close()
 		return tools.ErrorResult(err), nil
 	}
+	// An install that changes nothing should not mint a generation.
+	//
+	// Every call used to create a candidate, persist it, and re-run the whole
+	// recipe. A bootstrap script that calls install twice, a recipe that
+	// retries, a Platform reconciling on a timer -- each left another
+	// generation behind and repeated heavy work that had already succeeded.
+	// Nothing upstream could deduplicate it, because the generation id is
+	// minted right here.
+	//
+	// Three things identify an install: the provider, the manifest it just
+	// published, and the endpoint it published it from. When all three match a
+	// generation that is ACTIVE and whose adapter is still connected, the
+	// honest answer to "install this" is that it is installed. Anything else --
+	// a changed manifest, a moved endpoint, a generation that is active on
+	// paper but has no live adapter -- falls through and installs as before.
+	//
+	// CatalogRevision is deliberately not part of that key. A generation
+	// records the revision it was created against, and activating it publishes
+	// its services, which advances the catalog: the recorded revision is
+	// therefore never equal to the live one for a generation that is active.
+	// Comparing them would make this branch unreachable rather than strict.
+	//
+	// `force` re-runs regardless, for an install that is intact on paper and
+	// broken in fact. `resume` is already a request to continue one specific
+	// run, so it never short-circuits, and provider reload passes `force`
+	// because re-establishing the provider is the whole point of it.
+	if !recipeBoolField(args, "force") && !recipeBoolField(args, "resume") {
+		if active, ok := s.providerLifecycle.Active(manifest.Provider.ID); ok &&
+			active.ManifestHash == manifestHash &&
+			active.Endpoint == endpoint &&
+			s.providerGenerationAdapter(manifest.Provider.ID, active.ID) != nil {
+			_ = adapter.Close()
+			return structuredResult(map[string]any{
+				"providerId":           manifest.Provider.ID,
+				"providerVersion":      manifest.Provider.Version,
+				"providerGenerationId": active.ID,
+				"generation":           active,
+				"activated":            true,
+				"reused":               true,
+				"status":               "already-installed",
+			}, ""), nil
+		}
+	}
 	candidate, err := s.providerLifecycle.CreateCandidate(manifest.Provider, manifestHash, endpoint, s.CatalogSnapshot().Revision)
 	if err != nil {
 		_ = adapter.Close()
@@ -192,7 +235,16 @@ func (s *Server) handleProviderReloadContext(ctx context.Context, args map[strin
 	if recipeStringField(args, "source") == "" && recipeStringField(args, "descriptor") == "" {
 		return tools.ErrorResult(fmt.Errorf("provider reload requires descriptor source")), nil
 	}
-	return s.handleProviderInstallContext(ctx, args)
+	// Reload exists to re-establish a provider that is already installed, so it
+	// is the one caller that must never take the install short-circuit: taking
+	// it would turn every reload into a no-op that reported success. Copied
+	// rather than mutated, because the caller's map is not ours to change.
+	reloadArgs := make(map[string]any, len(args)+1)
+	for key, value := range args {
+		reloadArgs[key] = value
+	}
+	reloadArgs["force"] = true
+	return s.handleProviderInstallContext(ctx, reloadArgs)
 }
 
 func loadProviderDescriptor(args map[string]any) (providercontract.PluginDescriptor, string, error) {
