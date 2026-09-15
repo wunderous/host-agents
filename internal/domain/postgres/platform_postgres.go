@@ -673,7 +673,11 @@ func (s *Service) ensurePostgreSQLServiceDatabase(ctx context.Context, spec post
 	}
 	createSQL := postgresqlServiceCreateDatabaseSQL(database)
 	script = postgresqlServiceSQLScript(serviceHost, credentials.Username, "postgres", createSQL)
-	args[len(args)-1] = script
+	// The create path carries the same multiline script as the check above, so
+	// it needs the same single-line encoding. Handing the provider the raw
+	// script refused every creation with "kubectlArgs must contain non-empty
+	// safe strings".
+	args[len(args)-1] = kubectlShellScriptArgument(script)
 	if _, err := s.deps.RunKubectlWithStdinContext(ctx, spec.VMName, args, input, "create PostgreSQL service database", 60*time.Second); err != nil {
 		return err
 	}

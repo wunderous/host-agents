@@ -3,6 +3,7 @@ package incus
 import (
 	"errors"
 	"fmt"
+	"net"
 	"runtime"
 	"strings"
 	"time"
@@ -30,6 +31,11 @@ type ProvisionContainerArgs struct {
 	Nesting       *bool  `json:"nesting,omitempty"`
 	Port          int    `json:"port,omitempty"`
 	ModelVolume   string `json:"modelVolume,omitempty"`
+	// A cluster member's address is part of its identity: k3s pins --node-ip,
+	// --advertise-address and the etcd peer URLs to it. A DHCP lease does not
+	// survive the managed bridge being recreated, so callers that build
+	// clusters pin the address here instead.
+	IPv4Address string `json:"ipv4Address,omitempty"`
 }
 
 type ContainerStatusResult struct {
@@ -93,6 +99,12 @@ func (s *Service) ProvisionContainer(args ProvisionContainerArgs, onData func(st
 		if onData != nil {
 			onData(fmt.Sprintf("Reusing existing Incus container %q", name))
 		}
+		// Pin the address before the start so the container claims it from
+		// this boot rather than keeping whatever the bridge last leased.
+		deferredPin, _, pinErr := s.ensureContainerStaticIPv4(name, args.IPv4Address, onData)
+		if pinErr != nil {
+			return ContainerStatusResult{}, pinErr
+		}
 		started, startErr := s.commandRunner([]string{"start", name}, onData, 2*time.Minute)
 		if startErr != nil || (started.ExitCode != 0 && !strings.Contains(strings.ToLower(textutil.FirstNonEmpty(started.Stderr, started.Stdout)), "already running")) {
 			return ContainerStatusResult{}, fmt.Errorf("start existing container: %s", textutil.FirstNonEmpty(started.Stderr, started.Stdout, textutil.ErrString(startErr, "incus start failed")))
@@ -123,6 +135,11 @@ func (s *Service) ProvisionContainer(args ProvisionContainerArgs, onData func(st
 		if err := s.awaitContainerIPv4(name, onData); err != nil {
 			return ContainerStatusResult{}, err
 		}
+		if deferredPin {
+			if err := s.applyGuestStaticIPv4(name, args.IPv4Address, onData); err != nil {
+				return ContainerStatusResult{}, err
+			}
+		}
 		return s.containerStatusResult(name, image, "running"), nil
 	}
 	requestedDisk := strings.TrimSpace(args.Disk)
@@ -152,6 +169,19 @@ func (s *Service) ProvisionContainer(args ProvisionContainerArgs, onData func(st
 	if err := s.launchIncusContainer(name, image, disk, cpus, memory, nesting, onData, 10*time.Minute); err != nil {
 		return ContainerStatusResult{}, err
 	}
+	// A member built on a lease loses its identity the first time the bridge is
+	// recreated, so a fresh container is pinned as deliberately as a reused one.
+	launchedPin, pinChanged, pinErr := s.ensureContainerStaticIPv4(name, args.IPv4Address, onData)
+	if pinErr != nil {
+		_, _ = s.commandRunner(s.deleteVMArgs(name), onData, 2*time.Minute)
+		return ContainerStatusResult{}, pinErr
+	}
+	if pinChanged {
+		// The NIC address is claimed at boot, and this container already booted.
+		if err := s.restartIncusInstanceIfRunning(name, onData); err != nil {
+			return ContainerStatusResult{}, err
+		}
+	}
 	if args.GPU {
 		if err := s.attachContainerGPUDevices(name, args.WSLGpuLibs, onData); err != nil {
 			_, _ = s.commandRunner(s.deleteVMArgs(name), onData, 2*time.Minute)
@@ -172,6 +202,11 @@ func (s *Service) ProvisionContainer(args ProvisionContainerArgs, onData func(st
 	}
 	if err := s.awaitContainerIPv4(name, onData); err != nil {
 		return ContainerStatusResult{}, err
+	}
+	if launchedPin {
+		if err := s.applyGuestStaticIPv4(name, args.IPv4Address, onData); err != nil {
+			return ContainerStatusResult{}, err
+		}
 	}
 	return s.containerStatusResult(name, image, "running"), nil
 }
@@ -368,6 +403,176 @@ func (s *Service) attachContainerModelVolume(name, volume string, onData func(st
 		"config", "device", "add", name, "models", "disk",
 		"pool=default", "source=" + volume, "path=/models",
 	})
+}
+
+// ensureContainerStaticIPv4 pins the instance's bridge address. The NIC comes
+// from the default profile, so the instance needs its own device override
+// before an address can belong to this container alone. A host that merely
+// shares another host's bridge cannot pin there at all -- only the incusd that
+// created the network hands out addresses on it -- so that case reports the
+// pin as deferred: it has to be made inside the guest once it is running.
+func (s *Service) ensureContainerStaticIPv4(name, address string, onData func(string)) (deferred bool, changed bool, err error) {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return false, false, nil
+	}
+	if net.ParseIP(address) == nil || strings.Contains(address, ":") {
+		return false, false, fmt.Errorf("ipv4Address %q is not an IPv4 address", address)
+	}
+	current, readErr := s.commandRunner([]string{"config", "device", "get", name, "eth0", "ipv4.address"}, nil, 30*time.Second)
+	if readErr == nil && current.ExitCode == 0 && strings.TrimSpace(current.Stdout) == address {
+		return false, false, nil
+	}
+	overridden, overrideErr := s.commandRunner([]string{"config", "device", "override", name, "eth0", "ipv4.address=" + address}, onData, 2*time.Minute)
+	if overrideErr == nil && overridden.ExitCode == 0 {
+		return false, true, nil
+	}
+	detail := textutil.FirstNonEmpty(overridden.Stderr, overridden.Stdout, textutil.ErrString(overrideErr, "incus config device override failed"))
+	if isUnmanagedParentBridge(detail) {
+		return deferGuestIPv4Pin(name, address, onData), false, nil
+	}
+	if !strings.Contains(strings.ToLower(detail), "already exists") {
+		return false, false, fmt.Errorf("pin container address: %s", detail)
+	}
+	// The override is already in place from an earlier provision; only the
+	// address itself still has to move.
+	updated, updateErr := s.commandRunner([]string{"config", "device", "set", name, "eth0", "ipv4.address", address}, onData, 2*time.Minute)
+	if updateErr == nil && updated.ExitCode == 0 {
+		return false, true, nil
+	}
+	detail = textutil.FirstNonEmpty(updated.Stderr, updated.Stdout, textutil.ErrString(updateErr, "incus config device set failed"))
+	if isUnmanagedParentBridge(detail) {
+		return deferGuestIPv4Pin(name, address, onData), false, nil
+	}
+	return false, false, fmt.Errorf("pin container address: %s", detail)
+}
+
+// isUnmanagedParentBridge reads incus's refusal to hand out an address on a
+// network it does not own. It is the ordinary answer on every host but the one
+// that created the bridge, so it is a routing decision rather than a failure.
+func isUnmanagedParentBridge(detail string) bool {
+	return strings.Contains(strings.ToLower(detail), "unmanaged parent bridge")
+}
+
+func deferGuestIPv4Pin(name, address string, onData func(string)) bool {
+	if onData != nil {
+		onData(fmt.Sprintf("The bridge is owned by another host; pinning %s inside %q instead", address, name))
+	}
+	return true
+}
+
+const guestStaticIPv4NetplanPath = "/etc/netplan/99-opute-static.yaml"
+
+const guestStaticIPv4NetplanTemplate = `set -e
+umask 022
+cat > %s <<'NETPLAN'
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: false
+      addresses: [%s/%s]
+      routes:
+        - to: default
+          via: %s
+      nameservers:
+        addresses: [%s]
+NETPLAN
+chmod 0600 %s
+netplan apply
+`
+
+// applyGuestStaticIPv4 pins the address from inside the guest, for the hosts
+// that are not allowed to pin it on the NIC. The prefix and gateway are read
+// back from the lease the guest currently holds rather than assumed from the
+// address: this host does not own the network, so the guest's own routing
+// table is the only honest description of it available here.
+func (s *Service) applyGuestStaticIPv4(name, address string, onData func(string)) error {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return nil
+	}
+	observed, prefix, gateway, err := s.readGuestIPv4Lease(name)
+	if err != nil {
+		return err
+	}
+	if observed == address && s.guestHoldsStaticIPv4(name, address) {
+		return nil
+	}
+	if gateway == "" {
+		return fmt.Errorf("pin %s inside %q: the guest holds no default route to copy", address, name)
+	}
+	if onData != nil {
+		onData(fmt.Sprintf("Pinning %s/%s via %s inside %q", address, prefix, gateway, name))
+	}
+	script := fmt.Sprintf(guestStaticIPv4NetplanTemplate, guestStaticIPv4NetplanPath, address, prefix, gateway, gateway, guestStaticIPv4NetplanPath)
+	applied, applyErr := s.commandRunner([]string{"exec", name, "--", "sh", "-c", script}, onData, 2*time.Minute)
+	if applyErr != nil || applied.ExitCode != 0 {
+		return fmt.Errorf("pin %s inside %q: %s", address, name, textutil.FirstNonEmpty(applied.Stderr, applied.Stdout, textutil.ErrString(applyErr, "netplan apply failed")))
+	}
+	deadline := time.Now().Add(containerAddressTimeout)
+	for {
+		held, _, _, readErr := s.readGuestIPv4Lease(name)
+		if readErr == nil && held == address {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("pin %s inside %q: the guest still reports %q", address, name, held)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// guestHoldsStaticIPv4 reports whether the pin already came from this managed
+// file, so that a guest that merely happens to hold the right lease is still
+// pinned rather than left on DHCP.
+func (s *Service) guestHoldsStaticIPv4(name, address string) bool {
+	shown, err := s.commandRunner([]string{"exec", name, "--", "cat", guestStaticIPv4NetplanPath}, nil, 30*time.Second)
+	if err != nil || shown.ExitCode != 0 {
+		return false
+	}
+	return strings.Contains(shown.Stdout, address+"/")
+}
+
+// readGuestIPv4Lease returns the address, prefix length and default gateway
+// eth0 currently holds in the guest.
+func (s *Service) readGuestIPv4Lease(name string) (address string, prefix string, gateway string, err error) {
+	addr, addrErr := s.commandRunner([]string{"exec", name, "--", "ip", "-4", "-o", "addr", "show", "dev", "eth0"}, nil, 30*time.Second)
+	if addrErr != nil || addr.ExitCode != 0 {
+		return "", "", "", fmt.Errorf("read guest address of %q: %s", name, textutil.FirstNonEmpty(addr.Stderr, addr.Stdout, textutil.ErrString(addrErr, "ip addr show failed")))
+	}
+	address, prefix = parseGuestIPv4Address(addr.Stdout)
+	route, routeErr := s.commandRunner([]string{"exec", name, "--", "ip", "-4", "route", "show", "default"}, nil, 30*time.Second)
+	if routeErr == nil && route.ExitCode == 0 {
+		gateway = parseGuestIPv4Gateway(route.Stdout)
+	}
+	return address, prefix, gateway, nil
+}
+
+func parseGuestIPv4Address(output string) (address string, prefix string) {
+	prefix = "24"
+	fields := strings.Fields(output)
+	for index, field := range fields {
+		if field != "inet" || index+1 >= len(fields) {
+			continue
+		}
+		value := fields[index+1]
+		if head, tail, ok := strings.Cut(value, "/"); ok {
+			return head, tail
+		}
+		return value, prefix
+	}
+	return "", prefix
+}
+
+func parseGuestIPv4Gateway(output string) string {
+	fields := strings.Fields(output)
+	for index, field := range fields {
+		if field == "via" && index+1 < len(fields) {
+			return fields[index+1]
+		}
+	}
+	return ""
 }
 
 func (s *Service) ensureContainerHTTPProxy(name string, port int, onData func(string)) error {
