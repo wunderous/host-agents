@@ -104,7 +104,7 @@ func TestProviderTeardownFinalizationFailureLeavesGenerationRetryable(t *testing
 	metadata := map[string]any{
 		"providerId":             providerID,
 		"providerGenerationId":   generation.ID,
-		"providerTeardownInputs": map[string]any{"tunnelId": "disposable-tunnel"},
+		"providerTeardownInputs": map[string]any{"tunnelId": "disposable-tunnel", "hostService": "none"},
 	}
 	if err := server.completeProviderTeardown(metadata); err == nil {
 		t.Fatal("first finalization unexpectedly succeeded")

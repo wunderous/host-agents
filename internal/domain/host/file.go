@@ -21,6 +21,7 @@ type EnsureHostFileArgs struct {
 
 type InspectHostFileArgs struct {
 	Path            string
+	Scope           string
 	ExpectedSHA256  string
 	ExpectedContent string
 }
@@ -125,12 +126,13 @@ func systemdUnitPath(raw string) (string, error) {
 	return path, nil
 }
 
+// InspectHostFile reads back a file this agent manages. It resolves the path
+// under the same scope rules as EnsureHostFile and RemoveHostFile: without
+// that, a system-scoped unit could be written and deleted but never read, and
+// the readiness check for the very file a recipe just wrote was impossible to
+// express on a root agent whose unit directory is /etc/systemd/system.
 func (s *Service) InspectHostFile(args InspectHostFileArgs) (map[string]any, error) {
-	home, err := hostHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("resolve home directory: %w", err)
-	}
-	path, err := hostOwnedPath(home, args.Path)
+	path, err := managedHostPath(args.Scope, args.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -232,6 +234,25 @@ func (s *Service) RemoveHostFile(args RemoveHostFileArgs) (map[string]any, error
 		return nil, fmt.Errorf("remove host file: %w", err)
 	}
 	return map[string]any{"path": path, "scope": scope, "exists": true, "removed": true, "sha256": observed}, nil
+}
+
+// managedHostPath resolves a caller-supplied path under the scope that owns it.
+// User scope stays beneath this user's home; system scope is one systemd
+// service unit. Every managed-file operation goes through here so the three
+// agree on what this agent is allowed to name.
+func managedHostPath(scope, raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "", "user":
+		home, err := hostHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home directory: %w", err)
+		}
+		return hostOwnedPath(home, raw)
+	case "system":
+		return systemdUnitPath(raw)
+	default:
+		return "", fmt.Errorf("scope must be user or system")
+	}
 }
 
 func hostOwnedPath(home, raw string) (string, error) {

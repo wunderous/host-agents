@@ -673,7 +673,11 @@ func (s *Service) ensurePostgreSQLServiceDatabase(ctx context.Context, spec post
 	}
 	createSQL := postgresqlServiceCreateDatabaseSQL(database)
 	script = postgresqlServiceSQLScript(serviceHost, credentials.Username, "postgres", createSQL)
-	args[len(args)-1] = script
+	// The create path carries the same multiline script as the check above, so
+	// it needs the same single-line encoding. Handing the provider the raw
+	// script refused every creation with "kubectlArgs must contain non-empty
+	// safe strings".
+	args[len(args)-1] = kubectlShellScriptArgument(script)
 	if _, err := s.deps.RunKubectlWithStdinContext(ctx, spec.VMName, args, input, "create PostgreSQL service database", 60*time.Second); err != nil {
 		return err
 	}
@@ -940,8 +944,21 @@ func (s *Service) ensurePostgreSQLServiceOrdered(ctx context.Context, spec postg
 	if err := s.waitForPostgreSQLServiceK3sReady(ctx, spec); err != nil {
 		return err
 	}
-	if err := s.applyPostgreSQLServiceManifest(ctx, spec, renderPostgreSQLServiceOperatorManifest(), "apply CloudNativePG HelmChart"); err != nil {
+	// Reapplying the HelmChart of an operator that is already serving makes the
+	// Helm Controller rerun its install job, which rolls the operator Deployment
+	// and takes the admission webhook's endpoints away for the length of that
+	// roll. The repair path is entered for any incomplete service -- a tenant
+	// Cluster that is merely unhealthy included -- so an unconditional apply
+	// turns a healthy operator into a five-minute webhook wait that a cell under
+	// memory pressure does not finish. Install only what is missing.
+	operatorReady, _, err := s.postgresqlServiceOperatorReady(ctx, spec)
+	if err != nil {
 		return err
+	}
+	if !operatorReady {
+		if err := s.applyPostgreSQLServiceManifest(ctx, spec, renderPostgreSQLServiceOperatorManifest(), "apply CloudNativePG HelmChart"); err != nil {
+			return err
+		}
 	}
 	if err := s.waitForPostgreSQLServiceCRD(ctx, spec); err != nil {
 		return err

@@ -367,6 +367,25 @@ func nestedRuntimeMap(value map[string]any, keys ...string) (map[string]any, boo
 	return nil, false
 }
 
+func firstStringSlice(value map[string]any, keys ...string) []string {
+	for _, key := range keys {
+		raw, ok := value[key].([]any)
+		if !ok {
+			continue
+		}
+		names := make([]string, 0, len(raw))
+		for _, item := range raw {
+			if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+				names = append(names, strings.TrimSpace(text))
+			}
+		}
+		if len(names) > 0 {
+			return names
+		}
+	}
+	return nil
+}
+
 func firstString(value map[string]any, keys ...string) string {
 	for _, key := range keys {
 		if text, ok := value[key].(string); ok && strings.TrimSpace(text) != "" {
@@ -448,6 +467,10 @@ type containerImage struct {
 	Created    int64
 	Containers int
 	Size       int64
+	// Names is every local reference pointing at this image. An image
+	// carrying more than one is why a non-forced removal is refused, so the
+	// report can say which tags to retire instead of only that it failed.
+	Names []string
 }
 
 func parseContainerImages(output []byte) ([]containerImage, error) {
@@ -462,7 +485,13 @@ func parseContainerImages(output []byte) ([]containerImage, error) {
 		if created == 0 {
 			created = parseImageTime(firstString(entry, "CreatedAt", "createdAt"))
 		}
-		images = append(images, containerImage{ID: id, Created: created, Containers: int(firstInt64(entry, "Containers", "containers")), Size: firstInt64(entry, "Size", "size")})
+		images = append(images, containerImage{
+			ID:         id,
+			Created:    created,
+			Containers: int(firstInt64(entry, "Containers", "containers")),
+			Size:       firstInt64(entry, "Size", "size"),
+			Names:      firstStringSlice(entry, "Names", "names", "RepoTags", "repoTags"),
+		})
 	}
 	return images, nil
 }

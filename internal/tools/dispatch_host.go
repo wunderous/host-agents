@@ -29,6 +29,20 @@ func init() {
 }
 
 func init() {
+	register(toolname.UninstallIncusStack, EffectDestructive, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().UninstallIncusStack(host.UninstallIncusStackArgs{
+			Confirm:        boolField(args, "confirm"),
+			RemoveState:    boolField(args, "removeState"),
+			KeepRepository: boolField(args, "keepRepository"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Incus virtualization stack removed from this host"), nil
+	})
+}
+
+func init() {
 	register(toolname.ProbeIncusGPU, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().ProbeIncusGPU(args)
 		if err != nil {
@@ -248,7 +262,7 @@ func init() {
 		// every managed env file, unit file and config ends in a newline, so
 		// the trimmed expectation could never hash to the file on disk and
 		// inspect_host_file reported matches:false for a byte-identical file.
-		out, err := svc.Host().InspectHostFile(host.InspectHostFileArgs{Path: stringField(args, "path"), ExpectedSHA256: stringField(args, "expectedSha256"), ExpectedContent: rawStringField(args, "expectedContent")})
+		out, err := svc.Host().InspectHostFile(host.InspectHostFileArgs{Path: stringField(args, "path"), Scope: stringField(args, "scope"), ExpectedSHA256: stringField(args, "expectedSha256"), ExpectedContent: rawStringField(args, "expectedContent")})
 		if err != nil {
 			return nil, err
 		}

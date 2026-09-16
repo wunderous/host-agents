@@ -40,6 +40,9 @@ func (s *Service) DescribeHost() HostInfoResult {
 			result.RootDiskQuota = quota
 		}
 	}
+	if s.deps.AgentRuntime != nil {
+		result.Agent = describeAgentInstallation(s.shared.AgentID, s.deps.AgentRuntime())
+	}
 	result.System = heartbeat.ReadHostSystemMetadata()
 	if s.shared.ResourceSnapshot != nil {
 		if result.System == nil {
@@ -240,6 +243,61 @@ func (s *Service) EnsureHostServiceSupervisor(args EnsureHostServiceSupervisorAr
 		return nil, fmt.Errorf("user service supervisor bus is unavailable: %s", textutil.FirstNonEmpty(bus.Stderr, bus.Stdout, "systemctl --user failed"))
 	}
 	return map[string]any{"scope": scope, "status": "ready", "persistent": true, "user": user, "linger": true, "userBus": true}, nil
+}
+
+// InspectHostServiceSupervisor reports the same supervisor state that
+// EnsureHostServiceSupervisor guarantees, without changing anything.
+//
+// The plan contract requires every mutating node to name a read-only readiness
+// check, and ensure_host_service_supervisor had none: the only read that came
+// close was inspect_host_file on the unit directory, which is a directory and,
+// under system scope, not a .service unit -- so the node was unverifiable
+// exactly on a root agent. A capability the bootstrap depends on has to be
+// observable by the same contract that demands the observation.
+func (s *Service) InspectHostServiceSupervisor(args EnsureHostServiceSupervisorArgs, onData func(string)) (map[string]any, error) {
+	scope := strings.ToLower(strings.TrimSpace(args.Scope))
+	if scope == "" {
+		scope = "user"
+	}
+	if scope != "user" && scope != "system" {
+		return nil, errors.New("scope must be user or system")
+	}
+	if scope == "system" {
+		result, err := s.shared.HostCommandRunner([]string{hostruntime.DefaultSystemctlPath, "is-system-running"}, onData, 10*time.Second)
+		state := strings.TrimSpace(result.Stdout)
+		// is-system-running exits non-zero for "degraded", which is a running
+		// manager with a failed unit somewhere -- it still supervises services,
+		// so the state is reported rather than treated as absence.
+		ready := err == nil && state != ""
+		return map[string]any{"scope": scope, "status": statusWord(ready), "persistent": ready, "state": state}, nil
+	}
+	user := strings.TrimSpace(os.Getenv("USER"))
+	if user == "" {
+		identity, err := osuser.Current()
+		if err != nil {
+			return nil, fmt.Errorf("resolve host service user: %w", err)
+		}
+		user = identity.Username
+	}
+	if user == "" || strings.ContainsAny(user, "\r\n") {
+		return nil, errors.New("resolve host service user: invalid username")
+	}
+	observed, err := s.shared.HostCommandRunner([]string{"loginctl", "show-user", user, "-p", "Linger"}, onData, 15*time.Second)
+	linger := err == nil && observed.ExitCode == 0 && strings.Contains(observed.Stdout, "Linger=yes")
+	bus, busErr := s.shared.HostCommandRunner([]string{hostruntime.DefaultSystemctlPath, "--user", "show-environment"}, onData, 15*time.Second)
+	userBus := busErr == nil && bus.ExitCode == 0
+	ready := linger && userBus
+	return map[string]any{
+		"scope": scope, "status": statusWord(ready), "persistent": ready,
+		"user": user, "linger": linger, "userBus": userBus,
+	}, nil
+}
+
+func statusWord(ready bool) string {
+	if ready {
+		return "ready"
+	}
+	return "unavailable"
 }
 
 func (s *Service) EnsureDocker(onData func(string)) (map[string]any, error) {

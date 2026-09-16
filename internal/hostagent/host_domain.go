@@ -37,6 +37,7 @@ type (
 	InspectHostServiceArgs          = host.InspectHostServiceArgs
 	EnsureHostToolArgs              = host.EnsureHostToolArgs
 	InstallIncusStackArgs           = host.InstallIncusStackArgs
+	UninstallIncusStackArgs         = host.UninstallIncusStackArgs
 )
 
 // hostSvc is stateless, so it is rebuilt per call rather than held. Unlike
@@ -65,5 +66,12 @@ func (s *Service) Host() *host.Service {
 			return s.Incus().RunVMExecWithStdinContext(ctx, vmName, guestArgv, input, onData, timeout)
 		},
 		SupportedTools: s.toolsFn,
+		AgentRuntime: func() host.AgentRuntime {
+			return host.AgentRuntime{
+				InstanceID:   s.shared.InstanceID,
+				InstanceRoot: s.agentInstanceRoot,
+				MCPPort:      s.agentMCPPort,
+			}
+		},
 	})
 }

@@ -104,10 +104,22 @@ func validateProducedResources(descriptor tools.CapabilityDescriptor, structured
 			return fmt.Errorf("capability %q did not return declared resource output %q", descriptor.OperationID, path)
 		}
 		if len(values) == 0 {
-			// A many-cardinality result is allowed to be empty. Inventory
-			// capabilities such as list_vms must still return the declared array
-			// field when there are no resources; requiring one URI here made an
-			// empty, healthy Incus host fail closed before onboarding could finish.
+			// An empty inventory is a valid answer, and listing is the first call
+			// a clean host makes: refusing it made list_kubernetes_clusters fail
+			// on a host that simply has no clusters yet, which is every host
+			// before the first one is created.
+			//
+			// The path shape is the authority here rather than the selector. A
+			// binding that addresses array elements can legitimately match none
+			// of them, and valuesAtPath already reports found=false when the
+			// declared field was absent rather than empty -- so this accepts an
+			// array that was returned and is empty, never one that was not
+			// returned at all. A provider-contributed capability declares its
+			// bindings in its own manifest and has no host-side selector to
+			// consult, so a selector-only rule could not reach it.
+			if pathAddressesCollection(path) {
+				continue
+			}
 			if descriptor.OutputType != "" && selectorByPath[path] != "" {
 				if selector, ok := selectors.Find(descriptor.OutputType, selectorByPath[path], descriptor.ResultTypes); ok && selector.NormalizedCardinality() == capabilitycontract.CardinalityMany {
 					continue
@@ -133,6 +145,17 @@ func validateProducedResources(descriptor tools.CapabilityDescriptor, structured
 		}
 	}
 	return nil
+}
+
+// pathAddressesCollection reports whether a produced-resource binding selects
+// the elements of an array rather than a single value.
+func pathAddressesCollection(path string) bool {
+	for _, segment := range strings.Split(path, ".") {
+		if strings.HasSuffix(segment, "[]") {
+			return true
+		}
+	}
+	return false
 }
 
 func valuesAtPath(value any, segments []string) ([]any, bool) {

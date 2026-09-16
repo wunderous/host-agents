@@ -108,12 +108,26 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create state directory: %w", err)
 	}
-	db, err := sql.Open("sqlite", filepath.Join(dir, "state.db"))
+	// sql.Open hands back a connection POOL, so a PRAGMA executed after opening
+	// applies only to the one connection the pool happened to lend for it. Every
+	// connection opened afterwards starts at SQLite's defaults -- busy_timeout 0 --
+	// and the second concurrent writer is refused with SQLITE_BUSY instead of
+	// waiting. Carrying the pragmas in the DSN makes the driver apply them to each
+	// connection it opens.
+	//
+	// _txlock=immediate takes the write lock when a transaction begins. A deferred
+	// transaction that upgrades from read to write cannot wait: SQLite has already
+	// pinned its read snapshot, so a competing commit makes the upgrade fail with
+	// SQLITE_BUSY immediately, ignoring busy_timeout entirely. Plan runs finish by
+	// writing their terminal state, and losing that write turns a run whose nodes
+	// all applied into a durable failure.
+	db, err := sql.Open("sqlite", filepath.Join(dir, "state.db")+
+		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("open standalone state: %w", err)
 	}
 	store := &Store{db: db}
-	if _, err := db.Exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;`); err != nil {
+	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("configure standalone state: %w", err)
 	}

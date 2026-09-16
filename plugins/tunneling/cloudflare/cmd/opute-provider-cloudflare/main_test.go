@@ -252,7 +252,7 @@ func TestCloudflareMeshTargetAdmissionAcceptsVMsAndContainers(t *testing.T) {
 }
 
 func TestCloudflareConnectorManifestDoesNotReturnToken(t *testing.T) {
-	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 1, "secret-token", nil)
+	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 1, "secret-token", nil, defaultForwarderImage)
 	if !strings.Contains(manifest, "secret-token") {
 		t.Fatal("connector manifest must carry token to the host callback")
 	}
@@ -274,6 +274,62 @@ func TestCloudflareTunnelRejectsUnsafeLocalTargetBeforeCallback(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "HTTP(S)") {
 		t.Fatalf("expected unsafe local target rejection, got %v", err)
+	}
+}
+
+func TestMintPublicHostAgentTokenUsesEndpointResource(t *testing.T) {
+	resourceURL := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oauth/token" {
+			t.Fatalf("token path = %q, want /oauth/token", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse token form: %v", err)
+		}
+		if got := r.Form.Get("grant_type"); got != "client_credentials" {
+			t.Fatalf("grant_type = %q", got)
+		}
+		if got := r.Form.Get("client_id"); got != "opute-mcp-host" {
+			t.Fatalf("client_id = %q", got)
+		}
+		if got := r.Form.Get("resource"); got != resourceURL {
+			t.Fatalf("resource = %q, want %q", got, resourceURL)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"audience-bound-token"}`))
+	}))
+	defer server.Close()
+	resourceURL = server.URL + "/mcp"
+
+	token, err := mintPublicHostAgentToken(t.Context(), server.Client(), resourceURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "audience-bound-token" {
+		t.Fatalf("token = %q", token)
+	}
+}
+
+func TestPublicHostAgentCallbackDoesNotUseLocalBearer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oauth/token" {
+			t.Fatalf("token path = %q, want /oauth/token", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"audience-bound-token"}`))
+	}))
+	defer server.Close()
+
+	// The callback token helper is deliberately the only path that can mint
+	// credentials for a public route. This test keeps the local bearer out of
+	// the public request contract without requiring a live Cloudflare tunnel.
+	t.Setenv("MCP_AUTH_TOKEN", "local-only-token")
+	token, err := mintPublicHostAgentToken(t.Context(), server.Client(), server.URL+"/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token == "local-only-token" {
+		t.Fatal("public callback reused the local Host Agent bearer")
 	}
 }
 

@@ -217,3 +217,91 @@ func TestTypedAdmissionReconcileFailsClosedWithoutConcreteBackend(t *testing.T) 
 		}
 	}
 }
+
+// A durable plan run holds its reservation for the life of the run, and a run
+// that installs a Kubernetes server outlives the reservation TTL. The TTL is
+// what reclaims a crashed holder's capacity, so the answer is renewal rather
+// than a longer lease: this asserts that a renewed reservation is still the one
+// the run's own nodes inherit after its original expiry has passed.
+func TestRenewKeepsALongRunningOperationsReservationInheritable(t *testing.T) {
+	config := testServiceConfig(t.TempDir())
+	config.ReservationTTL = 80 * time.Millisecond
+	coordinator, err := NewCoordinator(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := coordinator.Admit(context.Background(), zeroCostRequest("agent-a", "run_host_plan", "task-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalExpiry := parent.expiry()
+
+	time.Sleep(50 * time.Millisecond)
+	if err := coordinator.Renew(parent); err != nil {
+		t.Fatalf("renew a held reservation: %v", err)
+	}
+	if !parent.expiry().After(originalExpiry) {
+		t.Fatalf("renewed expiry = %s, want later than %s", parent.expiry(), originalExpiry)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	if !time.Now().After(originalExpiry) {
+		t.Fatalf("test did not outlive the original lease; expiry = %s", originalExpiry)
+	}
+	nested, err := coordinator.Admit(WithReservation(context.Background(), parent), AdmissionRequest{
+		Class: ClassNormal, Operation: "inspect_host_service", AgentID: "agent-a", TaskID: "task-a",
+		ParentReservationID: parent.ID,
+	})
+	if err != nil {
+		t.Fatalf("plan node after renewal should inherit the run's reservation: %v", err)
+	}
+	if nested.ID != parent.ID || !nested.inherited {
+		t.Fatalf("nested reservation = %#v, want inherited parent %q", nested, parent.ID)
+	}
+	if got := coordinator.Snapshot().Reservations.Count; got != 1 {
+		t.Fatalf("reservations after renewal = %d, want the renewed one", got)
+	}
+
+	if err := coordinator.Release(parent); err != nil {
+		t.Fatal(err)
+	}
+	err = coordinator.Renew(parent)
+	var requestErr *RequestError
+	if !errors.As(err, &requestErr) || requestErr.Code != "host_reservation_expired" {
+		t.Fatalf("renew after release = %T %v, want host_reservation_expired", err, err)
+	}
+}
+
+// A durable run launched from inside another durable run is a new task, and a
+// reservation is inherited by task identity: carrying the launcher's
+// reservation into it refuses its first node for an ownership mismatch it can
+// never satisfy. Detaching lets it be admitted on its own.
+func TestWithoutReservationLetsANestedRunAdmitItsOwnCapacity(t *testing.T) {
+	config := testServiceConfig(t.TempDir())
+	config.MaxNormal = 2
+	coordinator, err := NewCoordinator(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := coordinator.Admit(context.Background(), zeroCostRequest("agent-a", "run_host_local_recipe", "outer-run"))
+	if err != nil {
+		t.Fatalf("admit parent: %v", err)
+	}
+	held := WithReservation(context.Background(), parent)
+
+	nested := zeroCostRequest("agent-a", "get_host_info", "nested-run")
+	if _, err := coordinator.Admit(held, nested); err == nil {
+		t.Fatal("a different task must not inherit the reservation in context")
+	} else {
+		var requestErr *RequestError
+		if !errors.As(err, &requestErr) || requestErr.Code != "host_reservation_owner_mismatch" {
+			t.Fatalf("unexpected error: %T %v", err, err)
+		}
+	}
+	if _, err := coordinator.Admit(WithoutReservation(held), nested); err != nil {
+		t.Fatalf("detached admission: %v", err)
+	}
+	if _, ok := ReservationFromContext(WithoutReservation(held)); ok {
+		t.Fatal("detached context still reports a reservation")
+	}
+}

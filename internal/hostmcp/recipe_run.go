@@ -133,7 +133,7 @@ func (s *Server) handleValidateRuntimeRecipe(args map[string]any) (*mcp.CallTool
 	return structuredResult(result, "runtime recipe is valid"), nil
 }
 
-func (s *Server) handleRunRuntimeRecipe(args map[string]any) (*mcp.CallToolResult, error) {
+func (s *Server) handleRunRuntimeRecipe(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	resumeRunID := recipeStringField(args, "runId")
 	if recipeStringField(args, "source") == "" || (resumeRunID != "" && recipeBoolField(args, "resume")) {
 		runID := resumeRunID
@@ -161,7 +161,7 @@ func (s *Server) handleRunRuntimeRecipe(args map[string]any) (*mcp.CallToolResul
 		if persistedPlanHasRedactedSecret(doc, metadata) {
 			return tools.ErrorResult(fmt.Errorf("runtime recipe resume requires secret inputs to be supplied through references; refusing to execute redacted values")), nil
 		}
-		return s.handleRunHostPlanWithMetadata(map[string]any{
+		return s.handleRunHostPlanWithMetadata(ctx, map[string]any{
 			"plan":   doc,
 			"resume": true,
 		}, metadata, "run_runtime_recipe", "Executing runtime recipe...")
@@ -182,7 +182,7 @@ func (s *Server) handleRunRuntimeRecipe(args map[string]any) (*mcp.CallToolResul
 		metadata["providerGenerationId"] = recipeStringField(args, "providerGenerationId")
 		metadata["providerManifest"] = redactTaskValue(args["providerManifest"])
 	}
-	return s.handleRunHostPlanWithMetadata(map[string]any{
+	return s.handleRunHostPlanWithMetadata(ctx, map[string]any{
 		"plan":   loaded.ExpandedPlan,
 		"resume": recipeBoolField(args, "resume"),
 	}, metadata, "run_runtime_recipe", "Executing runtime recipe...")

@@ -28,6 +28,30 @@ type HostExecution struct {
 	Mode        string `json:"mode" yaml:"mode"`
 }
 
+// The two execution envelopes differ in who owns the graph, not in how much a
+// node is allowed to do.
+//
+// platform/distributed is the Platform's durable coordinator: it owns wait
+// fences, resume revisions, cross-host event minting and task projection, none
+// of which a Host Agent can provide for its peers.
+//
+// host-agent/local exists because the first Kubernetes node of the cluster that
+// will host the Platform has to be established when no Platform is running --
+// an arbitrary new user has a Host Agent and nothing else. It is deliberately
+// the weaker mode: one host, no waits, no events.
+const (
+	HostCoordinatorPlatform  = "platform"
+	HostModeDistributed      = "distributed"
+	HostCoordinatorHostAgent = "host-agent"
+	HostModeLocal            = "local"
+)
+
+// IsHostLocal reports whether this recipe is executed by the Host Agent that
+// owns the work rather than coordinated by the Platform.
+func (execution HostExecution) IsHostLocal() bool {
+	return execution.Coordinator == HostCoordinatorHostAgent && execution.Mode == HostModeLocal
+}
+
 type HostLoaded struct {
 	Document     HostDocument
 	ExpandedPlan plan.Document
@@ -46,6 +70,9 @@ func LoadHost(request SourceRequest) (HostLoaded, error) {
 		return HostLoaded{}, err
 	}
 	if err := ValidateHostEnvelope(document); err != nil {
+		return HostLoaded{}, err
+	}
+	if err := rejectHostLocalEventBindings(raw); err != nil {
 		return HostLoaded{}, err
 	}
 	hash, err := CanonicalHash(document)
@@ -123,7 +150,7 @@ func (loaded HostLoaded) Validate(capabilities map[string]plan.Capability, catal
 	if err := rejectNestedPlanRuns(loaded.ExpandedPlan); err != nil {
 		return err
 	}
-	if err := validateHostTargets(loaded.ExpandedPlan); err != nil {
+	if err := validateHostTargets(loaded.ExpandedPlan, loaded.Document.Execution.IsHostLocal()); err != nil {
 		return err
 	}
 	if err := plan.Validate(loaded.ExpandedPlan, capabilities, catalogRevision); err != nil {
@@ -139,8 +166,9 @@ func ValidateHostEnvelope(document HostDocument) error {
 	if strings.TrimSpace(document.RecipeID) == "" || strings.TrimSpace(document.RecipeVersion) == "" {
 		return fmt.Errorf("recipeId and recipeVersion are required")
 	}
-	if document.Execution.Coordinator != "platform" || document.Execution.Mode != "distributed" {
-		return fmt.Errorf("execution must be coordinator=platform and mode=distributed")
+	distributed := document.Execution.Coordinator == HostCoordinatorPlatform && document.Execution.Mode == HostModeDistributed
+	if !distributed && !document.Execution.IsHostLocal() {
+		return fmt.Errorf("execution must be coordinator=%s/mode=%s or coordinator=%s/mode=%s", HostCoordinatorPlatform, HostModeDistributed, HostCoordinatorHostAgent, HostModeLocal)
 	}
 	if document.Plan.ContractVersion != plan.ContractVersion {
 		return fmt.Errorf("host recipe plan must use %s", plan.ContractVersion)
@@ -148,15 +176,88 @@ func ValidateHostEnvelope(document HostDocument) error {
 	if len(document.Plan.Nodes) == 0 {
 		return fmt.Errorf("host recipe plan must contain at least one node")
 	}
+	if document.Execution.IsHostLocal() {
+		return validateHostLocalPlan(document.Plan)
+	}
 	return nil
 }
 
-func validateHostTargets(document plan.Document) error {
+// validateHostLocalPlan enforces the three restrictions that keep host-local
+// execution from becoming a second coordinator with none of the durable
+// machinery that makes the Platform one: a single host, no waits, and -- checked
+// against the raw document, because plan.Node has no field for it -- no emitted
+// events.
+func validateHostLocalPlan(document plan.Document) error {
+	hostRefs := map[string]struct{}{}
+	ordered := make([]string, 0, 2)
+	for _, node := range document.Nodes {
+		if node.Wait != nil {
+			return fmt.Errorf("host-local node %q declares a wait; a Host Agent has no durable resume channel for one", node.ID)
+		}
+		if node.Target == nil {
+			continue
+		}
+		ref := strings.TrimSpace(node.Target.HostRef)
+		if _, seen := hostRefs[ref]; seen {
+			continue
+		}
+		hostRefs[ref] = struct{}{}
+		ordered = append(ordered, ref)
+	}
+	if len(ordered) > 1 {
+		return fmt.Errorf("host-local recipe targets %d hosts (%s); it may only act on the host executing it", len(ordered), strings.Join(sortedStrings(ordered), ", "))
+	}
+	return nil
+}
+
+// rejectHostLocalEventBindings reads the raw document because plan.Node carries
+// no emits field: a Host Agent has no event channel, so an emits declaration
+// would otherwise be dropped in decoding and the author would believe an event
+// was published.
+func rejectHostLocalEventBindings(raw []byte) error {
+	var generic struct {
+		Execution HostExecution `json:"execution" yaml:"execution"`
+		Plan      struct {
+			Nodes []struct {
+				ID    string         `json:"id" yaml:"id"`
+				Emits map[string]any `json:"emits,omitempty" yaml:"emits,omitempty"`
+			} `json:"nodes" yaml:"nodes"`
+		} `json:"plan" yaml:"plan"`
+	}
+	if err := decodeValue(raw, &generic, "host recipe"); err != nil {
+		return err
+	}
+	if !generic.Execution.IsHostLocal() {
+		return nil
+	}
+	for _, node := range generic.Plan.Nodes {
+		if len(node.Emits) > 0 {
+			return fmt.Errorf("host-local node %q emits an event; authenticated events exist to satisfy waits on other hosts", node.ID)
+		}
+	}
+	return nil
+}
+
+// A distributed recipe must say which host every action belongs to: the
+// Platform is dispatching across several and an unbound node has no answer.
+//
+// A host-local recipe has exactly one host by construction -- the agent
+// executing it -- so requiring the author to name it is the privileged-caller
+// problem in miniature. The caller would have to learn its own agent id and pass
+// it back as an input before the recipe that discovers the host has run. So a
+// host-local action node MAY omit its target, and omitting it means this host. A
+// target that IS present is still pinned to an exact vars.inputs reference and
+// still checked against the executing agent id at load and at dispatch, so
+// naming a peer remains a refusal rather than a silent retarget.
+func validateHostTargets(document plan.Document, hostLocal bool) error {
 	for _, node := range document.Nodes {
 		if node.Action == nil {
 			continue
 		}
 		if node.Target == nil {
+			if hostLocal {
+				continue
+			}
 			return fmt.Errorf("host recipe action node %q requires an exact target binding", node.ID)
 		}
 		ref := strings.TrimSpace(node.Target.HostRef)

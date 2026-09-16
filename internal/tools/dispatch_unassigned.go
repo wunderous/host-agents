@@ -340,6 +340,16 @@ func init() {
 }
 
 func init() {
+	register(toolname.InspectHostServiceSupervisor, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().InspectHostServiceSupervisor(host.EnsureHostServiceSupervisorArgs{Scope: stringField(args, "scope")}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "Host service supervisor inspected."), nil
+	})
+}
+
+func init() {
 	register(toolname.EnsureDocker, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		// EnsureDocker is an unsupported stub on Incus Linux hosts: it always errors,
 		// so the success path below was dead.
@@ -391,6 +401,20 @@ func init() {
 			return nil, err
 		}
 		return structuredResult(withBindingURI(map[string]any{"classes": ingressClasses, "ingressClasses": ingressClasses}, binding, "cluster"), ""), nil
+	})
+}
+
+func init() {
+	register(toolname.ListCertificateIssuers, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		vmName := vmNameFromBinding(binding)
+		namespace := stringField(args, "namespace")
+		issuers, err := svc.Kubernetes().ListCertificateIssuers(vmName, namespace)
+		if err != nil {
+			return nil, err
+		}
+		// `issuers` is the field name the Platform's Kubernetes discovery
+		// contract reads; see normalizeOputeKubernetesDiscovery.
+		return structuredResult(withBindingURI(map[string]any{"issuers": issuers}, binding, "cluster"), ""), nil
 	})
 }
 

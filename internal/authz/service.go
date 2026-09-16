@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -295,6 +296,19 @@ func (s *Service) writeAccessToken(w http.ResponseWriter, clientID, resource str
 		Hash: hashToken(token), ClientID: clientID, Resource: resource, Scope: MCPScope,
 		ExpiresAt: time.Now().Add(accessTokenTTL).Unix(),
 	}); err != nil {
+		// The cause used to be dropped here. What reached the operator was
+		// `{"error":"server_error","error_description":"token persist failed"}`
+		// on a 500, three layers up in a panel that said "Failed to list ingress
+		// classes" -- with nothing anywhere naming a locked database, a full
+		// disk, or a permission. A store failure is the agent's own fault to
+		// report, not the caller's to guess at, so log it where the agent's
+		// logs are read.
+		//
+		// The response stays deliberately coarse: this endpoint answers
+		// unauthenticated callers, and the path and schema of the agent's state
+		// are not theirs to learn. `err` never contains the token -- the hash is
+		// what is written, and the driver reports the constraint, not the value.
+		log.Printf("[authz] token persist failed for client %q resource %q: %v", clientID, resource, err)
 		writeOAuthError(w, http.StatusInternalServerError, "server_error", "token persist failed")
 		return
 	}

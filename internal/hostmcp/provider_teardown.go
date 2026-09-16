@@ -2,9 +2,11 @@ package hostmcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/wunderous/host-agents/internal/cordis"
 	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/plan"
 	"github.com/wunderous/host-agents/internal/tools"
@@ -34,36 +36,30 @@ func (s *Server) handleProviderTeardownContext(ctx context.Context, args map[str
 	if generation := recipeStringField(args, "generation"); generation != "" && generation != active.ID {
 		return tools.ErrorResult(fmt.Errorf("provider generation %q is not active; active generation is %q", generation, active.ID)), nil
 	}
+	forced := recipeBoolField(args, "force")
 	session, sessionErr := s.providerLifecycle.OpenSession(providerID)
 	if sessionErr != nil {
 		return tools.ErrorResult(sessionErr), nil
 	}
 	defer session.Close()
-	adapter := s.providerGenerationAdapter(providerID, session.GenerationID())
-	if adapter == nil {
-		return tools.ErrorResult(fmt.Errorf("provider %q is not connected", providerID)), nil
-	}
-	prepareArgs := cloneProviderTeardownArgs(args)
-	prepareArgs["phase"] = "prepare"
-	providerInputs := s.providerTeardownInputs(args)
-	prepareArgs["inputs"] = providerInputs
-	result, err := adapter.CallSynchronousOnly(ctx, providerTeardownOperation, prepareArgs)
-	if err != nil {
+	providerInputs := s.providerTeardownInputs(providerID, args)
+	// Refuse before anything is retired rather than after. A teardown that
+	// cannot name the provider's host service can only retire the generation
+	// and leave the process running, and the caller finds that out from a run
+	// that says completed. Saying so first leaves the generation intact and
+	// tells the caller what would make the call answerable.
+	if err := requireProviderHostServiceTarget(providerID, providerInputs); err != nil {
 		return tools.ErrorResult(err), nil
 	}
-	if result == nil || result.IsError {
-		return tools.ErrorResult(fmt.Errorf("provider %q teardown operation failed", providerID)), nil
-	}
-	object, ok := structuredObject(result.StructuredContent)
-	if !ok {
-		return tools.ErrorResult(fmt.Errorf("provider %q teardown returned no structured plan", providerID)), nil
-	}
-	if version, _ := object["contractVersion"].(string); version != "host-plan.v1" {
-		return tools.ErrorResult(fmt.Errorf("provider teardown returned unsupported contract %q", version)), nil
-	}
-	doc, err := plan.Decode(object["plan"])
-	if err != nil {
-		return tools.ErrorResult(fmt.Errorf("decode provider teardown plan: %w", err)), nil
+	doc, blocked := s.prepareProviderTeardownPlan(ctx, providerID, session.GenerationID(), args, providerInputs)
+	if blocked != "" {
+		if !forced {
+			return tools.ErrorResult(errors.New(blocked)), nil
+		}
+		// The plan runner may finalize the provider before this handler
+		// returns; release the preparation session before handing control to it.
+		session.Close()
+		return s.runForcedProviderReclaim(ctx, active, providerInputs, recipeBoolField(args, "resume"), blocked)
 	}
 	metadata := map[string]any{
 		"providerTeardown":        true,
@@ -76,18 +72,133 @@ func (s *Server) handleProviderTeardownContext(ctx context.Context, args map[str
 	// The plan runner may finalize the provider before this handler returns;
 	// release the preparation session before handing control to it.
 	session.Close()
-	return s.handleRunHostPlanWithMetadata(map[string]any{"plan": doc, "resume": recipeBoolField(args, "resume")}, metadata, "opute.provider.teardown", "Tearing down provider...")
+	return s.handleRunHostPlanWithMetadata(ctx, map[string]any{"plan": doc, "resume": recipeBoolField(args, "resume")}, metadata, "opute.provider.teardown", "Tearing down provider...")
+}
+
+// prepareProviderTeardownPlan runs the provider's own prepare phase and
+// returns the host plan it declared. A non-empty second return value is the
+// reason the provider could not declare one; it is a sentence rather than an
+// error because a forced reclaim records it as evidence instead of raising it.
+func (s *Server) prepareProviderTeardownPlan(ctx context.Context, providerID, generationID string, args, providerInputs map[string]any) (plan.Document, string) {
+	adapter := s.providerGenerationAdapter(providerID, generationID)
+	if adapter == nil {
+		return plan.Document{}, fmt.Sprintf("provider %q is not connected", providerID)
+	}
+	prepareArgs := cloneProviderTeardownArgs(args)
+	prepareArgs["phase"] = "prepare"
+	prepareArgs["inputs"] = providerInputs
+	result, err := adapter.CallSynchronousOnly(ctx, providerTeardownOperation, prepareArgs)
+	if err != nil {
+		return plan.Document{}, err.Error()
+	}
+	if result == nil || result.IsError {
+		return plan.Document{}, fmt.Sprintf("provider %q teardown operation failed", providerID)
+	}
+	object, ok := structuredObject(result.StructuredContent)
+	if !ok {
+		return plan.Document{}, fmt.Sprintf("provider %q teardown returned no structured plan", providerID)
+	}
+	if version, _ := object["contractVersion"].(string); version != "host-plan.v1" {
+		return plan.Document{}, fmt.Sprintf("provider teardown returned unsupported contract %q", version)
+	}
+	doc, err := plan.Decode(object["plan"])
+	if err != nil {
+		return plan.Document{}, fmt.Sprintf("decode provider teardown plan: %v", err)
+	}
+	return doc, ""
+}
+
+// runForcedProviderReclaim retires a generation whose provider can no longer
+// take part in its own teardown.
+//
+// opute.provider.teardown dispatches the whole operation to the provider
+// process, so a generation whose process is gone could not be torn down at
+// all: prepare failed with "is not connected", nothing was retired, and the
+// generation kept reporting active -- and because provider status derives
+// `connected` from the same adapter lookup that just failed, there was no
+// typed way out of that state. `force: true` is that way out. It is not a
+// bypass of the provider contract: the provider is still asked first, and
+// force only takes effect once prepare has actually failed, with the failure
+// recorded in the run metadata as the reason the callback was skipped.
+//
+// The reclaim runs through the same durable plan runner as a cooperative
+// teardown, so it yields the same runId/status/catalogRevision evidence and
+// the same completion hook retires the generation. What it cannot do is
+// finalize the provider's external resources -- only the provider knows those
+// -- so anything it created beyond this host survives the reclaim and remains
+// the operator's to remove.
+func (s *Server) runForcedProviderReclaim(ctx context.Context, active cordis.ProviderGeneration, providerInputs map[string]any, resume bool, blocked string) (*mcp.CallToolResult, error) {
+	doc, err := plan.Decode(forcedProviderReclaimPlan(active, providerInputs))
+	if err != nil {
+		return tools.ErrorResult(fmt.Errorf("build forced provider reclaim plan: %w", err)), nil
+	}
+	metadata := map[string]any{
+		"providerTeardown":             true,
+		"providerTeardownForced":       true,
+		"providerTeardownForcedReason": blocked,
+		"providerId":                   active.Provider.ID,
+		"providerVersion":              active.Provider.Version,
+		"providerGenerationId":         active.ID,
+		"teardownContractVersion":      "provider-teardown.v1",
+		"providerTeardownInputs":       redactTaskValue(providerInputs),
+	}
+	return s.handleRunHostPlanWithMetadata(ctx, map[string]any{"plan": doc, "resume": resume}, metadata, "opute.provider.teardown", "Reclaiming orphaned provider generation...")
+}
+
+// forcedProviderReclaimPlan is the host's stand-in for the plan a reachable
+// provider would have declared. It mirrors the shape providers actually
+// return -- one read node recording the service identity being reclaimed,
+// with the stop/disable/remove work left to cleanupProviderHostService once
+// the run completes. The node continues on failure because the unit it reads
+// is the one whose process is gone and may already be half-removed; the node
+// is there for the evidence, not as a gate.
+func forcedProviderReclaimPlan(active cordis.ProviderGeneration, providerInputs map[string]any) map[string]any {
+	scope := recipeStringField(providerInputs, "scope")
+	if scope == "" {
+		scope = "user"
+	}
+	node := map[string]any{
+		"id":                "list-host-services",
+		"action":            map[string]any{"tool": "list_host_services", "args": map[string]any{"scope": scope}},
+		"continueOnFailure": true,
+	}
+	// inspect_host_service selects its unit by canonical tenant-scoped URI, the
+	// same one providerTeardownInputs resolves for the provider callback; a
+	// display name is not a target.
+	if serviceURI := recipeStringField(providerInputs, "serviceUri"); serviceURI != "" {
+		node = map[string]any{
+			"id":                "inspect-orphaned-provider-service",
+			"action":            map[string]any{"tool": "inspect_host_service", "args": map[string]any{"uri": serviceURI, "scope": scope}},
+			"continueOnFailure": true,
+		}
+	}
+	return map[string]any{
+		"contractVersion": "host-plan.v1",
+		"planId":          "com.opute.host.provider-reclaim",
+		"generation":      1,
+		"idempotencyKey":  "com.opute.host.provider-reclaim-" + active.ID,
+		"nodes":           []any{node},
+	}
 }
 
 // providerTeardownInputs adds the host-resolved service URI to the neutral
 // provider callback. Providers must execute service mutations through the
 // canonical tenant-scoped URI; they must not reconstruct a target from a
 // display name or assume the local tenant.
-func (s *Server) providerTeardownInputs(args map[string]any) map[string]any {
+func (s *Server) providerTeardownInputs(providerID string, args map[string]any) map[string]any {
 	inputs := map[string]any{}
 	if raw, ok := args["inputs"].(map[string]any); ok {
 		for key, value := range raw {
 			inputs[key] = value
+		}
+	}
+	// The caller's own record wins when it has one; the host only answers for a
+	// caller that does not. See resolveProviderHostService.
+	if recipeStringField(inputs, "serviceName") == "" && recipeStringField(inputs, "hostService") != "none" {
+		for key, value := range s.resolveProviderHostService(providerID) {
+			if _, present := inputs[key]; !present {
+				inputs[key] = value
+			}
 		}
 	}
 	serviceName := recipeStringField(inputs, "serviceName")
@@ -100,6 +211,17 @@ func (s *Server) providerTeardownInputs(args map[string]any) map[string]any {
 	}
 	inputs["serviceUri"] = fmt.Sprintf("host-service:%s:%s/%s", s.agent.TenantID(), scope, serviceName)
 	return inputs
+}
+
+// requireProviderHostServiceTarget rejects a teardown whose host-owned half
+// would be a no-op. `hostService: "none"` is the way to say a provider really
+// has no unit to reclaim -- it is supervised elsewhere -- so the absence of a
+// service name means "not determined", not "there is none".
+func requireProviderHostServiceTarget(providerID string, inputs map[string]any) error {
+	if recipeStringField(inputs, "serviceName") != "" || recipeStringField(inputs, "hostService") == "none" {
+		return nil
+	}
+	return fmt.Errorf("provider_host_service_unknown: cannot determine which host service runs provider %q, so tearing it down would retire the generation and leave its process running; pass inputs.serviceName (list_host_services names the units) or inputs.hostService=\"none\" if this provider has no unit to reclaim", providerID)
 }
 
 func cloneProviderTeardownArgs(args map[string]any) map[string]any {
@@ -122,7 +244,14 @@ func (s *Server) cleanupProviderHostService(inputs map[string]any) error {
 	}
 	serviceName := recipeStringField(inputs, "serviceName")
 	if serviceName == "" {
-		return nil
+		// Silence here was the whole defect: the generation was retired, this
+		// returned nil, and the run reported completed with the provider still
+		// listening. handleProviderTeardownContext refuses such a call up
+		// front; this is the same answer for a resumed or replayed one.
+		if recipeStringField(inputs, "hostService") == "none" {
+			return nil
+		}
+		return fmt.Errorf("provider_host_service_unknown: provider teardown reached host cleanup without a service to reclaim")
 	}
 	scope := recipeStringField(inputs, "scope")
 	if scope == "" {
@@ -187,25 +316,31 @@ func (s *Server) completeProviderTeardownContext(ctx context.Context, metadata m
 		session.Close()
 		return fmt.Errorf("provider teardown generation %q is no longer active", generationID)
 	}
-	adapter := s.providerGenerationAdapter(providerID, session.GenerationID())
-	if adapter == nil {
-		return fmt.Errorf("provider %q is not connected for teardown finalization", providerID)
-	}
 	inputs, _ := metadata["providerTeardownInputs"].(map[string]any)
 	if _, redacted := inputs["redacted"]; redacted {
 		return fmt.Errorf("provider teardown inputs are redacted; resume requires the provider inputs to be supplied again")
 	}
-	finalizeInputs := make(map[string]any, len(inputs)+1)
-	for key, value := range inputs {
-		finalizeInputs[key] = value
-	}
-	finalizeInputs["phase"] = "finalize"
-	finalize, err := adapter.CallSynchronousOnly(ctx, providerTeardownOperation, map[string]any{"phase": "finalize", "inputs": finalizeInputs})
-	if err != nil {
-		return fmt.Errorf("finalize provider teardown: %w", err)
-	}
-	if finalize == nil || finalize.IsError {
-		return fmt.Errorf("provider %q teardown finalization failed", providerID)
+	// A forced reclaim has already established that the provider cannot answer
+	// -- the reason is in providerTeardownForcedReason -- so there is nothing to
+	// finalize and no adapter to require. Everything below it is host-owned and
+	// runs identically either way.
+	if !recipeBoolField(metadata, "providerTeardownForced") {
+		adapter := s.providerGenerationAdapter(providerID, session.GenerationID())
+		if adapter == nil {
+			return fmt.Errorf("provider %q is not connected for teardown finalization", providerID)
+		}
+		finalizeInputs := make(map[string]any, len(inputs)+1)
+		for key, value := range inputs {
+			finalizeInputs[key] = value
+		}
+		finalizeInputs["phase"] = "finalize"
+		finalize, err := adapter.CallSynchronousOnly(ctx, providerTeardownOperation, map[string]any{"phase": "finalize", "inputs": finalizeInputs})
+		if err != nil {
+			return fmt.Errorf("finalize provider teardown: %w", err)
+		}
+		if finalize == nil || finalize.IsError {
+			return fmt.Errorf("provider %q teardown finalization failed", providerID)
+		}
 	}
 	if err := s.cleanupProviderHostService(inputs); err != nil {
 		return err

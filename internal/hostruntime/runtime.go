@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wunderous/host-agents/internal/contract/toolname"
 	hostexec "github.com/wunderous/host-agents/internal/exec"
 )
 
@@ -122,8 +123,39 @@ func (r *Runtime) RunProvider(args []string, onData func(string), timeout time.D
 
 // RunProviderContext runs a provider CLI subcommand with cancellation.
 func (r *Runtime) RunProviderContext(ctx context.Context, args []string, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	if err := r.requireProviderBinary(); err != nil {
+		return hostexec.Result{}, err
+	}
 	argv := append([]string{r.cfg.ProviderBinary}, args...)
 	return hostexec.RunCommandContext(ctx, argv, onData, timeout)
+}
+
+// requireProviderBinary separates "this host has no virtualization stack" from
+// "the provider command failed".
+//
+// A host with nothing installed is the normal starting state -- it is the state
+// every new user's host agent is in, and it is where the first inventory read of
+// a bootstrap lands. Reporting it as `exec: "incus": executable file not found
+// in $PATH` handed the caller a shell detail and no typed way to tell an empty
+// host from a broken one, so list_vms could not be answered on the one host
+// shape it most needs to answer for.
+//
+// It resolves the execution handle rather than performing a provider operation:
+// it asks the filesystem whether the binary exists, asks the provider nothing,
+// and changes nothing -- the same S9.2 rule-3 category as ContainerLookPath,
+// and the opposite of runVMExec, which asks incus about ownership and is
+// therefore incus-owned. The remediation comes from the tool-name contract so
+// the message cannot drift from the capability that resolves it.
+func (r *Runtime) requireProviderBinary() error {
+	binary := strings.TrimSpace(r.cfg.ProviderBinary)
+	if binary == "" {
+		return fmt.Errorf("virtualization_stack_absent: this host agent has no virtualization provider configured")
+	}
+	if _, err := lookPath(binary); err != nil {
+		return fmt.Errorf("virtualization_stack_absent: the %s virtualization stack is not installed on this host; install it with %s",
+			firstNonEmpty(string(r.cfg.ProviderID), binary), toolname.InstallIncusStack)
+	}
+	return nil
 }
 
 // RunHost runs a command on the host OS.
@@ -151,6 +183,9 @@ func (r *Runtime) RunVMExecContext(ctx context.Context, vmName string, guestArgv
 // supplied input off the provider process argv. This is required for
 // Kubernetes Secret manifests and other credential-bearing payloads.
 func (r *Runtime) RunVMExecWithStdinContext(ctx context.Context, vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error) {
+	if err := r.requireProviderBinary(); err != nil {
+		return hostexec.Result{}, err
+	}
 	execArgs := append([]string{"exec", vmName, "--"}, guestArgv...)
 	return hostexec.RunCommandWithStdinContext(ctx, append([]string{r.cfg.ProviderBinary}, execArgs...), input, onData, timeout)
 }
@@ -160,6 +195,9 @@ func (r *Runtime) RunVMExecWithStdinContext(ctx context.Context, vmName string, 
 func (r *Runtime) NewVMInteractiveCommand(vmName string) (*exec.Cmd, error) {
 	if strings.TrimSpace(vmName) == "" {
 		return nil, fmt.Errorf("vmName is required")
+	}
+	if err := r.requireProviderBinary(); err != nil {
+		return nil, err
 	}
 	return exec.Command(r.cfg.ProviderBinary, "exec", vmName, "--", "bash", "-il"), nil
 }

@@ -59,13 +59,34 @@ func OpenStore(dir string) (*Store, error) {
 		return nil, fmt.Errorf("create authz state dir: %w", err)
 	}
 	path := filepath.Join(dir, "authz.sqlite")
-	db, err := sql.Open("sqlite", path)
+	// sql.Open hands back a connection POOL, so a PRAGMA executed after opening
+	// applies only to the one connection the pool happened to lend for it. Every
+	// other connection starts at SQLite's defaults -- busy_timeout 0 -- and the
+	// second concurrent writer is refused with SQLITE_BUSY instead of waiting.
+	// `internal/state` already carries its pragmas in the DSN for exactly this
+	// reason; this store was opened bare and never got the lesson.
+	//
+	// It is the store every authorized call goes through. One cluster page opens
+	// a dozen capability calls at once, each minting a token, so the concurrent
+	// INSERT here is the normal case and not an edge: the write lost the race,
+	// `saveToken` returned SQLITE_BUSY, and the token endpoint answered 500
+	// `token persist failed` -- which surfaced in the product as "Failed to list
+	// ingress classes", against a host agent that was running and healthy.
+	//
+	// _txlock=immediate takes the write lock at BEGIN. A deferred transaction
+	// that upgrades from read to write cannot wait -- SQLite has already pinned
+	// its read snapshot, so a competing commit fails the upgrade with
+	// SQLITE_BUSY immediately, ignoring busy_timeout entirely.
+	db, err := sql.Open("sqlite", path+
+		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("open authz store: %w", err)
 	}
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("configure authz store: %w", err)
+	}
 	if _, err := db.Exec(`
-		PRAGMA journal_mode=WAL;
-		PRAGMA foreign_keys=ON;
 		CREATE TABLE IF NOT EXISTS clients (
 			client_id TEXT PRIMARY KEY,
 			secret_hash TEXT NOT NULL DEFAULT '',
@@ -178,10 +199,31 @@ func (s *Store) consumeCode(value string) (authCode, error) {
 }
 
 func (s *Store) saveToken(token issuedToken) error {
+	now := time.Now().Unix()
 	_, err := s.db.Exec(`INSERT INTO tokens(token_hash, client_id, resource, scope, expires_at, revoked, created_at) VALUES(?,?,?,?,?,?,?)`,
-		token.Hash, token.ClientID, token.Resource, token.Scope, token.ExpiresAt, boolToInt(token.Revoked), time.Now().Unix())
-	return err
+		token.Hash, token.ClientID, token.Resource, token.Scope, token.ExpiresAt, boolToInt(token.Revoked), now)
+	if err != nil {
+		return err
+	}
+	// Nothing ever deleted from this table. Every authorized call mints a row,
+	// an agent runs for weeks, and the rows are dead the hour after they are
+	// written -- `tokenByHash` will not honour an expired one. On a host with
+	// little disk left, an unbounded append-only table is the difference
+	// between a store that works and one that cannot write.
+	//
+	// Prune on the write that caused the growth rather than on a timer: it
+	// needs no goroutine to own, and it cannot run on a store nobody is using.
+	// A failed prune is not a failed mint -- the token above is already durable
+	// and the caller is entitled to it -- so the error is dropped deliberately
+	// here and the row it could not remove is simply collected next time.
+	_, _ = s.db.Exec(`DELETE FROM tokens WHERE expires_at < ?`, now-int64(expiredTokenGrace.Seconds()))
+	return nil
 }
+
+// How long an expired token stays readable before it is collected. Keeping a
+// short tail means a caller that just missed the expiry still gets "expired"
+// from `tokenByHash` rather than the indistinguishable "unknown token".
+const expiredTokenGrace = time.Hour
 
 func (s *Store) tokenByHash(hash string) (issuedToken, bool, error) {
 	var token issuedToken

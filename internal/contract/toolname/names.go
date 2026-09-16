@@ -66,12 +66,15 @@ const (
 	InspectContainerStorage       = "inspect_container_storage"
 	InspectHostFile               = "inspect_host_file"
 	InspectHostService            = "inspect_host_service"
+	InspectHostServiceSupervisor  = "inspect_host_service_supervisor"
 	InstallHelmChart              = "install_helm_chart"
 	InstallClusterAgent           = "install_cluster_agent"
 	InstallIncusStack             = "install_incus_stack"
+	UninstallIncusStack           = "uninstall_incus_stack"
 	InstallLocalLLMModel          = "install_local_llm_model"
 	InstallOCIRegistry            = "install_oci_registry"
 	InstallPostgreSQL             = "install_postgresql"
+	ListCertificateIssuers        = "list_certificate_issuers"
 	ListClusters                  = "list_clusters"
 	ListDeployments               = "list_deployments"
 	ListHostServices              = "list_host_services"
@@ -184,12 +187,15 @@ func All() []string {
 		InspectContainerStorage,
 		InspectHostFile,
 		InspectHostService,
+		InspectHostServiceSupervisor,
 		InstallHelmChart,
 		InstallClusterAgent,
 		InstallIncusStack,
+		UninstallIncusStack,
 		InstallLocalLLMModel,
 		InstallOCIRegistry,
 		InstallPostgreSQL,
+		ListCertificateIssuers,
 		ListClusters,
 		ListDeployments,
 		ListHostServices,

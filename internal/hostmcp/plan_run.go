@@ -97,11 +97,18 @@ func (s *Server) handleValidateHostPlan(args map[string]any) (*mcp.CallToolResul
 	return structuredResult(result, "host plan is valid"), nil
 }
 
-func (s *Server) handleRunHostPlan(args map[string]any) (*mcp.CallToolResult, error) {
-	return s.handleRunHostPlanWithMetadata(args, nil, "run_host_plan", "Executing host plan...")
+func (s *Server) handleRunHostPlan(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	return s.handleRunHostPlanWithMetadata(ctx, args, nil, "run_host_plan", "Executing host plan...")
 }
 
-func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetadata map[string]any, taskName, taskDescription string) (*mcp.CallToolResult, error) {
+// handleRunHostPlanWithMetadata takes the caller's context for its values, not
+// its lifetime: the run it starts outlives the request that started it, so the
+// execution context drops cancellation but keeps the admitted reservation that
+// the plan's nodes inherit.
+func (s *Server) handleRunHostPlanWithMetadata(ctx context.Context, args map[string]any, recipeMetadata map[string]any, taskName, taskDescription string) (*mcp.CallToolResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s.planMu.Lock()
 	if s.closed || s.state == nil {
 		s.planMu.Unlock()
@@ -229,7 +236,7 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 		return tools.ErrorResult(fmt.Errorf("start plan run: %w", err)), nil
 	}
 
-	taskCtx, cancel := context.WithCancel(context.Background())
+	taskCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	taskArgs := map[string]any{"plan": s.redactedPlanTaskValue([]byte(redactedPlan), recipeMetadata, snapshot), "resume": resume}
 	if recipeMetadata != nil {
 		taskArgs["recipe"] = s.redactedMetadata(recipeMetadata)
@@ -253,7 +260,23 @@ func (s *Server) handleRunHostPlanWithMetadata(args map[string]any, recipeMetada
 	s.planCancels[record.RunID] = cancel
 	s.planMu.Unlock()
 	launched = true
-	go s.executeHostPlan(taskCtx, cancel, rec.TaskID, doc, stateValue, snapshot, recipeMetadata, nil)
+	// A reservation is inherited by task identity, and this run is its own task.
+	// When the context carries a reservation admitted for a DIFFERENT task --
+	// which is what happens when a durable run is launched from inside another
+	// one, as opute.provider.install launches a provider's activation plan --
+	// every node of this run would be refused with
+	// host_reservation_owner_mismatch, an ownership it can never satisfy. A
+	// launcher whose reservation carries no task identity is still inherited:
+	// that is the ordinary case of a tool call handing its capacity to the run
+	// it started.
+	if reservation, ok := resource.ReservationFromContext(taskCtx); ok {
+		if taskID := reservation.Request.TaskID; taskID != "" && taskID != rec.TaskID {
+			taskCtx = resource.WithoutReservation(taskCtx)
+		}
+	}
+	lease := claimReservationLease(ctx)
+	lease.keepAlive(taskCtx)
+	go s.executeHostPlan(taskCtx, cancel, rec.TaskID, doc, stateValue, snapshot, recipeMetadata, nil, lease)
 	return s.planRunResult(record), nil
 }
 
@@ -329,7 +352,7 @@ func (s *Server) resumeHostPlan(runID string) {
 	s.planWG.Add(1)
 	s.planCancels[runID] = cancel
 	s.planMu.Unlock()
-	go s.executeHostPlan(taskCtx, cancel, runID, doc, stateValue, snapshot, recipeMetadata, &request)
+	go s.executeHostPlan(taskCtx, cancel, runID, doc, stateValue, snapshot, recipeMetadata, &request, nil)
 }
 
 func (s *Server) queueHostPlanResume(runID string, input map[string]any) {
@@ -370,8 +393,11 @@ func (s *Server) queueHostPlanResume(runID string, input map[string]any) {
 	go s.resumeHostPlan(runID)
 }
 
-func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc, runID string, doc plan.Document, stateValue plan.RunState, snapshot tools.CapabilityCatalogSnapshot, recipeMetadata map[string]any, resumeRequest *plan.ResumeRequest) {
+func (s *Server) executeHostPlan(ctx context.Context, cancel context.CancelFunc, runID string, doc plan.Document, stateValue plan.RunState, snapshot tools.CapabilityCatalogSnapshot, recipeMetadata map[string]any, resumeRequest *plan.ResumeRequest, lease *reservationLease) {
 	defer s.planWG.Done()
+	// Declared after planWG.Done so it runs before it: a shutdown that waits
+	// for plan runs must not complete while this run still holds capacity.
+	defer lease.finish()
 	defer cancel()
 	defer func() {
 		s.planMu.Lock()

@@ -39,7 +39,16 @@ import (
 // Raised 540 -> 620 for the bounded host-workload execution handle. It is
 // shared by host artifact builds and local-LLM builds, carries no domain type,
 // and keeps systemd ownership outside the Cordis/provider-neutral layer.
-const budgetLines = 620
+//
+// Raised 620 -> 660 for requireProviderBinary, the absent-stack guard on the
+// provider entry points. Against the three rules: it names no domain type (a
+// Config field, a toolname constant, and the package's own lookPath seam);
+// incus, host, postgres and kubernetes all reach the provider CLI through it;
+// and it resolves the execution handle rather than operating -- it asks the
+// filesystem whether the binary exists, asks the provider nothing and changes
+// nothing, which is where ContainerLookPath already sits. The rule-3 line is
+// unmoved: runVMExec asks incus about ownership and is still incus-owned.
+const budgetLines = 660
 
 func TestHostruntimeStaysWithinBudget(t *testing.T) {
 	entries, err := os.ReadDir(".")

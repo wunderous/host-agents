@@ -299,16 +299,31 @@ func (s *Service) InstallClusterAgent(args InstallClusterAgentArgs, onData func(
 	}
 
 	vmName := strings.TrimSpace(args.VMName)
-	if vmName == "" && args.Source != "k3s-host" && args.Source != "external" {
-		return nil, fmt.Errorf("vmName is required for VM-based cluster agent install")
+
+	// A cluster that names no VM is not VM-backed, and there are two ways to be
+	// that: `k3s-host` runs K3s on the host OS, and `external` is a cluster
+	// adopted where it already lives -- including one whose nodes are system
+	// containers, reached through the same host-native execution plane. Both
+	// install the agent on the host, in the branch below.
+	//
+	// `external` was already excused from the VM-name requirement here, and
+	// then handled nowhere: this check let it through, the branch below
+	// admitted `k3s-host` only, and it fell to a second copy of the very error
+	// it had just been excused from -- "vmName is required for VM-based cluster
+	// agent install", reported against a cluster that had no VM by design and
+	// left behind on the cluster row long after the cluster was serving. The
+	// exemption was right; the branch it excused the caller into was missing.
+	//
+	// Any other source with no VM name is still an error: a `k3s-vm` cluster
+	// genuinely needs the VM it was asked to install into.
+	hostNativeInstall := vmName == "" && (args.Source == "k3s-host" || args.Source == "external")
+	if vmName == "" && !hostNativeInstall {
+		return nil, fmt.Errorf("vmName is required for VM-based cluster agent install (source %q)", args.Source)
 	}
 
-	// A k3s-host cluster normally runs directly on the host OS. Some host
-	// providers, however, manage K3s inside a system container while still
-	// exposing it through the host-native execution plane. When the durable
-	// target supplies vmName, install the generic agent in that target; do not
-	// mistake the host-agent OS for the Kubernetes runtime.
-	if args.Source == "k3s-host" && vmName == "" {
+	// When the durable target does supply vmName, install the generic agent in
+	// that target; do not mistake the host-agent OS for the Kubernetes runtime.
+	if hostNativeInstall {
 		bridgeURL := strings.TrimSpace(args.BridgeURL)
 		if bridgeURL == "" {
 			bridgeURL = resolveBridgeURLFromEnv()
@@ -357,10 +372,6 @@ func (s *Service) InstallClusterAgent(args InstallClusterAgentArgs, onData func(
 			"status":      "active",
 			"arch":        string(arch),
 		}, nil
-	}
-
-	if vmName == "" {
-		return nil, fmt.Errorf("vmName is required for VM-based cluster agent install")
 	}
 
 	if err := s.deps.WaitForVMExecReady(vmName, 5*time.Minute, onData); err != nil {

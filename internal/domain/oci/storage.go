@@ -265,7 +265,7 @@ func (s *Service) cleanupContainerStorageLocked(ctx context.Context, adapter con
 				break
 			}
 			if err := adapter.RemoveImage(ctx, image.ID); err != nil {
-				warnings = append(warnings, fmt.Sprintf("skipped image %s: %v", image.ID, err))
+				warnings = append(warnings, describeSkippedImage(image, err))
 				continue
 			}
 			result["pruneAttempted"] = true
@@ -393,6 +393,23 @@ func (s *Service) enforceOciStoragePolicy(ctx context.Context, builder string, o
 		return nil, err
 	}
 	return s.cleanupContainerStorageLocked(ctx, adapter, policy, &policy.MaxBytes, false, onData)
+}
+
+// describeSkippedImage says why an age-eligible image survived the cleanup.
+//
+// The common refusal is an image that several tags still point at -- a release
+// tag beside the rollback tag it replaced. Removing it by id would take both,
+// so the cleanup does not force it; naming the tags is what lets an operator
+// retire the one they meant to retire.
+func describeSkippedImage(image containerImage, err error) string {
+	if len(image.Names) > 1 {
+		return fmt.Sprintf(
+			"skipped image %s: still referenced by %s; retire a tag deliberately, cleanup never force-removes a shared image",
+			image.ID,
+			strings.Join(image.Names, ", "),
+		)
+	}
+	return fmt.Sprintf("skipped image %s: %v", image.ID, err)
 }
 
 func selectOciPruneCandidates(images []containerImage, cutoff int64) []containerImage {

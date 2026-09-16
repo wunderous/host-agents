@@ -29,6 +29,9 @@ type HostInfoResult struct {
 	Capacity       *vminfo.VMInventoryCapacity  `json:"capacity,omitempty"`
 	RootDiskQuota  *vminfo.RootDiskQuotaSupport `json:"rootDiskQuota,omitempty"`
 	System         map[string]any               `json:"system,omitempty"`
+	// Agent is where this Host Agent itself is installed. See
+	// agent_installation.go for why a host has to be able to say this.
+	Agent *AgentInstallation `json:"agent,omitempty"`
 }
 
 // BridgeDiagnosticResult is returned by DiagnoseBridge.

@@ -65,6 +65,8 @@ func buildHostRuntime(cfg config.Config, logger *slog.Logger) ([]string, *hostag
 		ProviderID:                hostruntime.NormalizeProviderID(cfg.ProviderID),
 		TenantID:                  cfg.TenantID,
 		InstanceID:                cfg.InstanceID,
+		InstanceRoot:              cfg.InstanceRoot,
+		MCPPort:                   cfg.HostMCPPort,
 		AgentID:                   cfg.RemoteAgentID,
 		OwnershipMode:             cfg.OwnershipMode,
 		RelayConfigDir:            cfg.RelayConfigDir,

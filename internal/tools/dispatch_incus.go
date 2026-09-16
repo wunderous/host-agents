@@ -26,6 +26,7 @@ func init() {
 			Nesting:       nesting,
 			Port:          intField(args, "port"),
 			ModelVolume:   stringField(args, "modelVolume"),
+			IPv4Address:   stringField(args, "ipv4Address"),
 		}, onData)
 		if err != nil {
 			return nil, err

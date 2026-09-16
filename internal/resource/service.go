@@ -39,6 +39,9 @@ type HostResourceService interface {
 	Snapshot() CapacitySnapshot
 	Admit(context.Context, AdmissionRequest) (*Reservation, error)
 	Release(*Reservation) error
+	// Renew extends a live reservation's lease for an operation whose work
+	// outlives a single request, such as a durable plan run.
+	Renew(*Reservation) error
 	// ReclaimTerminalTaskReservations removes durable reservations whose owning
 	// task is known to be terminal after a process restart. Reservations for
 	// working or input_required tasks remain fenced until their owner releases
@@ -123,6 +126,25 @@ type Reservation struct {
 	CreatedAt time.Time        `json:"createdAt"`
 	ExpiresAt time.Time        `json:"expiresAt"`
 	inherited bool
+	// renewed carries a lease extension without writing ExpiresAt, which the
+	// nodes of a running plan read concurrently through the reservation their
+	// run inherits. Inherited copies share the cell on purpose: there is one
+	// lease, and extending it extends it for every holder of that lease.
+	renewed *atomic.Int64
+}
+
+// expiry is the reservation's current lease end: the renewed value once the
+// holder has extended the lease, and the admission value until then.
+func (r *Reservation) expiry() time.Time {
+	if r == nil {
+		return time.Time{}
+	}
+	if r.renewed != nil {
+		if renewed := r.renewed.Load(); renewed > 0 {
+			return time.Unix(0, renewed).UTC()
+		}
+	}
+	return r.ExpiresAt
 }
 
 type persistedReservation struct {
@@ -189,6 +211,22 @@ func WithReservation(ctx context.Context, reservation *Reservation) context.Cont
 	return context.WithValue(ctx, reservationContextKey{}, reservation)
 }
 
+// WithoutReservation detaches a context from the reservation it carries, for
+// work that will admit its own capacity instead of inheriting.
+//
+// A reservation is inherited by task identity, so it can only be shared by work
+// running under the task that admitted it. A durable run launched from inside
+// another run is a new task by construction: carrying the launcher's
+// reservation into it means every one of its nodes is refused for an ownership
+// mismatch it can never satisfy. Detaching says what is true -- this run owns
+// no reservation yet -- and lets admission answer for it on its own terms.
+func WithoutReservation(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithValue(ctx, reservationContextKey{}, (*Reservation)(nil))
+}
+
 func ReservationFromContext(ctx context.Context) (*Reservation, bool) {
 	if ctx == nil {
 		return nil, false
@@ -237,7 +275,7 @@ func (c *Coordinator) Admit(ctx context.Context, request AdmissionRequest) (*Res
 		if request.ParentReservationID != "" && request.ParentReservationID != parent.ID {
 			return nil, &RequestError{Code: "host_reservation_parent_mismatch", Reason: "request parent reservation does not match the reservation in context"}
 		}
-		if time.Now().Before(parent.ExpiresAt) {
+		if time.Now().Before(parent.expiry()) {
 			if !reservationOwnerCanInherit(parent.Request, request) {
 				return nil, &RequestError{Code: "host_reservation_owner_mismatch", Reason: "nested reservation owner does not match the reservation in context"}
 			}
@@ -290,6 +328,7 @@ func (c *Coordinator) Admit(ctx context.Context, request AdmissionRequest) (*Res
 	reservation := &Reservation{
 		ID: newReservationID(), Request: request, CreatedAt: now,
 		ExpiresAt: now.Add(c.config.ReservationTTL),
+		renewed:   &atomic.Int64{},
 	}
 	records[reservation.ID] = persistedReservation{
 		ID: reservation.ID, Request: request,
@@ -324,6 +363,50 @@ func (c *Coordinator) Release(reservation *Reservation) error {
 	}
 	delete(records, reservation.ID)
 	return c.writeReservations(records)
+}
+
+// Renew extends a live reservation's lease.
+//
+// A reservation's TTL bounds how long a crashed holder can keep capacity
+// reserved, so it is deliberately shorter than the work some operations do: a
+// durable plan run holds its reservation for the life of the run, and a run
+// that installs a Kubernetes server outlives a fifteen-minute lease. Renewing
+// keeps the record present -- which is what the run's own nodes inherit --
+// without lengthening the TTL for holders that do crash.
+//
+// Renewal is refused once the record is gone. An expired or released
+// reservation cannot be resurrected, because the capacity it described may
+// already have been admitted to someone else.
+func (c *Coordinator) Renew(reservation *Reservation) error {
+	if c == nil || reservation == nil || reservation.inherited || reservation.ID == "" || reservation.ID == "control" || reservation.ID == "unmanaged" {
+		return nil
+	}
+	lockRelease, err := c.reservationLock.acquire(context.Background(), true)
+	if err != nil {
+		return err
+	}
+	defer lockRelease()
+	records, err := c.readReservations()
+	if err != nil {
+		return err
+	}
+	record, ok := records[reservation.ID]
+	if !ok {
+		return &RequestError{Code: "host_reservation_expired", Reason: "the reservation being renewed is no longer held"}
+	}
+	if !sameReservationOwner(record.Request, reservation.Request) {
+		return &RequestError{Code: "host_reservation_owner_mismatch", Reason: "reservation ownership does not match the renewing operation"}
+	}
+	expires := time.Now().UTC().Add(c.config.ReservationTTL)
+	record.ExpiresAt = expires.Format(time.RFC3339Nano)
+	records[reservation.ID] = record
+	if err := c.writeReservations(records); err != nil {
+		return err
+	}
+	if reservation.renewed != nil {
+		reservation.renewed.Store(expires.UnixNano())
+	}
+	return nil
 }
 
 // ReclaimTerminalTaskReservations repairs the restart boundary without

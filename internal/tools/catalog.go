@@ -296,6 +296,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"remove_postgresql_service":        true,
 		"release_postgresql_service_relay": true,
 		"install_incus_stack":              true,
+		"uninstall_incus_stack":            true,
 		"probe_incus_gpu":                  true,
 		"provision_container":              true,
 		"run_instance_command":             true,
@@ -333,6 +334,8 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		"validate_host_plan":               true,
 		"run_host_plan":                    true,
 		"get_host_plan_run":                true,
+		"validate_host_local_recipe":       true,
+		"run_host_local_recipe":            true,
 		"validate_runtime_recipe":          true,
 		"run_runtime_recipe":               true,
 		"get_runtime_recipe_run":           true,
@@ -406,9 +409,11 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}, ToolDefinition{
 		Name: "install_incus_stack", Title: "Install Incus virtualization stack", Description: "Install or upgrade a pinned Incus feature release from the signed Zabbly repository. QEMU is optional for VM profiles; GPU container profiles do not install it.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"incusPackage": map[string]any{"type": "string"}, "qemuPackage": map[string]any{"type": "string"}, "gpuPackages": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "incusChannel": map[string]any{"type": "string", "enum": []string{"stable", "lts-7.0", "lts-6.0"}}, "incusVersion": map[string]any{"type": "string"}, "installQemu": map[string]any{"type": "boolean"}}},
 	}, ToolDefinition{
+		Name: "uninstall_incus_stack", Title: "Uninstall Incus virtualization stack", Description: "Purge the Incus virtualization stack from this host. Refuses while any instance remains; opt in to discarding /var/lib/incus.", InputSchema: map[string]any{"type": "object", "required": []string{"confirm"}, "properties": map[string]any{"confirm": map[string]any{"type": "boolean"}, "removeState": map[string]any{"type": "boolean"}, "keepRepository": map[string]any{"type": "boolean"}}}, OutputSchema: map[string]any{"type": "object"}, Meta: map[string]any{"resourceCost": map[string]any{"class": "heavy"}},
+	}, ToolDefinition{
 		Name: "probe_incus_gpu", Title: "Probe Incus GPU capability", Description: "Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.", InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"},
 	}, ToolDefinition{
-		Name: "provision_container", Title: "Provision Incus system container", Description: "Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.", InputSchema: map[string]any{"type": "object", "required": []string{"containerName"}, "properties": map[string]any{"containerName": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "cpus": map[string]any{"type": "integer", "minimum": 1, "default": 2}, "memory": map[string]any{"type": "string", "default": "2GiB"}, "disk": map[string]any{"type": "string"}, "gpu": map[string]any{"type": "boolean"}, "wslGpuLibs": map[string]any{"type": "boolean"}, "nesting": map[string]any{"type": "boolean"}, "port": map[string]any{"type": "integer"}, "modelVolume": map[string]any{"type": "string"}}}, OutputSchema: map[string]any{"type": "object"}, Meta: map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8, "argumentBindings": map[string]any{"cpuCores": "cpus", "memoryBytes": "memory", "diskBytes": "disk"}}},
+		Name: "provision_container", Title: "Provision Incus system container", Description: "Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.", InputSchema: map[string]any{"type": "object", "required": []string{"containerName"}, "properties": map[string]any{"containerName": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "cpus": map[string]any{"type": "integer", "minimum": 1, "default": 2}, "memory": map[string]any{"type": "string", "default": "2GiB"}, "disk": map[string]any{"type": "string"}, "gpu": map[string]any{"type": "boolean"}, "wslGpuLibs": map[string]any{"type": "boolean"}, "nesting": map[string]any{"type": "boolean"}, "port": map[string]any{"type": "integer"}, "modelVolume": map[string]any{"type": "string"}, "ipv4Address": map[string]any{"type": "string", "description": "Pin the container to this address on the managed bridge instead of a DHCP lease."}}}, OutputSchema: map[string]any{"type": "object"}, Meta: map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8, "argumentBindings": map[string]any{"cpuCores": "cpus", "memoryBytes": "memory", "diskBytes": "disk"}}},
 	}, ToolDefinition{
 		Name: "run_instance_command", Title: "Run typed instance command", Description: "Execute a provider-declared argv on a resolved Incus VM or system container. The target must be a canonical tenant-scoped URI.", InputSchema: map[string]any{"type": "object", "required": []string{"uri", "command"}, "properties": map[string]any{"uri": map[string]any{"type": "string", "pattern": `^(vm|container):[a-z][a-z0-9-]{0,31}:.+$`}, "command": map[string]any{"type": "string", "minLength": 1}, "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "stdin": map[string]any{"type": "string", "writeOnly": true}, "timeoutMs": map[string]any{"type": "integer", "minimum": 0, "maximum": 7200000}}}, OutputSchema: map[string]any{"type": "object", "required": []string{"uri", "exitCode", "stdout", "stderr"}},
 	}, ToolDefinition{
@@ -684,7 +689,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Title:       "Install provider",
 		Description: "Connect to a trusted provider MCP module, validate its neutral install manifest, execute its selected declarative recipe, and optionally activate the resulting provider generation.",
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
-			"source": map[string]any{"type": "string", "minLength": 1}, "descriptor": map[string]any{"type": "object"}, "endpoint": map[string]any{"type": "string", "format": "uri"}, "token": map[string]any{"type": "string", "writeOnly": true}, "mode": map[string]any{"type": "string"}, "recipeSource": map[string]any{"type": "string"}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}, "activate": map[string]any{"type": "boolean"}, "resume": map[string]any{"type": "boolean"},
+			"source": map[string]any{"type": "string", "minLength": 1}, "descriptor": map[string]any{"type": "object"}, "endpoint": map[string]any{"type": "string", "format": "uri"}, "token": map[string]any{"type": "string", "writeOnly": true}, "mode": map[string]any{"type": "string"}, "recipeSource": map[string]any{"type": "string"}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}, "activate": map[string]any{"type": "boolean"}, "resume": map[string]any{"type": "boolean"}, "force": map[string]any{"type": "boolean", "description": "Re-run even when an identical generation is already active and connected."},
 		}},
 		OutputSchema: map[string]any{"type": "object"},
 		Meta:         map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
@@ -712,7 +717,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 	}, ToolDefinition{
 		Name:         "opute.provider.teardown",
 		Title:        "Teardown provider",
-		Description:  "Ask the connected provider for a generic teardown host plan, validate it, execute it durably, and retire the provider only after the plan succeeds.",
+		Description:  "Ask the connected provider for a generic teardown host plan, validate it, execute it durably, and retire the provider only after the plan succeeds. The host also reclaims the provider's own service unit; it resolves which unit that is from the provider's installed location, and refuses rather than retiring a generation whose process it could not identify. Pass inputs.serviceName to name it explicitly, or inputs.hostService=\"none\" for a provider supervised elsewhere.",
 		InputSchema:  map[string]any{"type": "object", "required": []string{"provider", "confirm"}, "properties": map[string]any{"provider": map[string]any{"type": "string", "minLength": 1}, "generation": map[string]any{"type": "string", "minLength": 1}, "inputs": map[string]any{"type": "object"}, "confirm": map[string]any{"type": "boolean"}, "resume": map[string]any{"type": "boolean"}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
 		Meta:         map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
@@ -737,6 +742,20 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		InputSchema:  map[string]any{"type": "object", "required": []string{"runId"}, "properties": map[string]any{"runId": map[string]any{"type": "string", "minLength": 1}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "nodes"}},
 		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
+	}, ToolDefinition{
+		Name:         "validate_host_local_recipe",
+		Title:        "Validate host-local recipe",
+		Description:  "Resolve and validate a host-recipe.v1 document that declares coordinator=host-agent/mode=local, against this Host Agent's catalog and identity, without changing host state.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"source"}, "properties": map[string]any{"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"valid", "recipeId", "recipeVersion", "recipeHash", "plan"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
+	}, ToolDefinition{
+		Name:         "run_host_local_recipe",
+		Title:        "Run host-local recipe",
+		Description:  "Execute a host-recipe.v1 document that declares coordinator=host-agent/mode=local through the durable host-plan runner, so a first cluster node can be established with no Platform in the loop. Read the run with get_host_plan_run. A distributed recipe is refused.",
+		InputSchema:  map[string]any{"type": "object", "required": []string{"source"}, "properties": map[string]any{"source": map[string]any{"type": "string", "minLength": 1}, "revision": map[string]any{"type": "string"}, "sha256": map[string]any{"type": "string"}, "inputs": map[string]any{"type": "object"}, "resume": map[string]any{"type": "boolean"}}},
+		OutputSchema: map[string]any{"type": "object", "required": []string{"runId", "status", "catalogRevision"}},
+		Meta:         map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}},
 	}, ToolDefinition{
 		Name:        "validate_runtime_recipe",
 		Title:       "Validate runtime recipe",

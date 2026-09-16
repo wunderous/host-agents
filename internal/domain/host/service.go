@@ -38,6 +38,9 @@ type Deps struct {
 	RunVMExecWithStdinContext func(ctx context.Context, vmName string, guestArgv []string, input []byte, onData func(string), timeout time.Duration) (hostexec.Result, error)
 	// SupportedTools lists the tool names this agent serves for a provider.
 	SupportedTools func(providerID string) []string
+	// AgentRuntime reports the composition root's own installation configuration.
+	// Only the root knows it; only the host domain has a reason to describe it.
+	AgentRuntime func() AgentRuntime
 }
 
 // Service is the host domain's entry point.

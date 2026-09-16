@@ -65,7 +65,7 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 		"MCP_AUTH_TOKEN=host-bootstrap",
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), standaloneProcessTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binary, "--mode=standalone")
@@ -81,7 +81,7 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 	}()
 
 	endpoint := fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(standaloneReadyTimeout)
 	fixtureRaw, err := schemas.FS.ReadFile("streamable-http-client.json")
 	if err != nil {
 		t.Fatal(err)

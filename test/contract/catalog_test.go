@@ -45,6 +45,14 @@ func TestIncusCatalogMatchesExportMinusOmitted(t *testing.T) {
 	// by the Go catalog because the legacy Incus export does not carry its
 	// current execution binding contract.
 	want = append(want, tools.ToolDefinition{Name: "install_helm_chart"})
+	// Host-local recipe execution is Host Agent-owned by definition: it is the
+	// path a user with nothing but a Host Agent uses to establish the first
+	// cluster node, so it cannot come from a provider export.
+	want = append(want, tools.ToolDefinition{Name: "validate_host_local_recipe"})
+	want = append(want, tools.ToolDefinition{Name: "run_host_local_recipe"})
+	// The legacy Incus export can install the virtualization stack but never
+	// removed it, so the inverse is Host Agent-owned and appended here.
+	want = append(want, tools.ToolDefinition{Name: "uninstall_incus_stack"})
 	for _, name := range tools.IncusInventoryTools {
 		found := false
 		for _, tool := range want {

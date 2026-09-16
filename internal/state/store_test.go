@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -141,5 +142,61 @@ func TestTaskSnapshotSurvivesStoreRestart(t *testing.T) {
 	}
 	if snapshots[0]["taskId"] != "task-1" || snapshots[0]["status"] != "completed" {
 		t.Fatalf("snapshot=%v", snapshots[0])
+	}
+}
+
+// A plan run finishes by writing its terminal state while the agent keeps
+// serving other tool calls against the same store. Before the pragmas moved
+// into the DSN they applied to whichever single connection the pool lent for
+// them, and a deferred transaction upgrading from read to write could not wait
+// at all: a concurrent writer was refused outright with "database is locked (5)
+// (SQLITE_BUSY)", turning a run whose nodes had all applied into a durable
+// failure.
+func TestConcurrentWritersWaitRatherThanFailBusy(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.Close()
+
+	const writers = 8
+	errs := make(chan error, writers)
+	start := make(chan struct{})
+	for i := 0; i < writers; i++ {
+		go func(i int) {
+			<-start
+			var err error
+			for attempt := 0; attempt < 4 && err == nil; attempt++ {
+				id := fmt.Sprintf("op-%d-%d", i, attempt)
+				if err = store.Create(id, "test_tool", "concurrent write"); err != nil {
+					break
+				}
+				if err = store.Complete(id, map[string]any{"ok": true}); err != nil {
+					break
+				}
+				// The transactional path is the one a plan run finishes on.
+				run := PlanRecord{
+					RunID: id, PlanID: fmt.Sprintf("plan-%d", i), Generation: attempt,
+					IdempotencyKey: id, DocumentHash: "sha256:test", CatalogRevision: "rev",
+					Status: "running", PlanJSON: "{}", StateJSON: "{}",
+				}
+				if _, _, err = store.CreatePlan(run); err != nil {
+					break
+				}
+				err = store.CompletePlanWithActiveCapability(id, "{}", ActiveCapabilityRecord{
+					Capability: fmt.Sprintf("cap-%d", i), ServingContract: "c.v1",
+					Provider: "test", RecipeID: "r", RecipeVersion: "1.0.0",
+					RecipeHash: "sha256:test", RunID: id,
+					InputBindingsJSON: "{}", ObservationJSON: "{}",
+				})
+			}
+			errs <- err
+		}(i)
+	}
+	close(start)
+	for i := 0; i < writers; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent writer failed: %v", err)
+		}
 	}
 }

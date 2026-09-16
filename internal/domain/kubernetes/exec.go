@@ -15,7 +15,13 @@ func (s *Service) RunKubectl(vmName string, kubectlArgs []string, label string) 
 }
 
 func (s *Service) RunKubectlTimed(vmName string, kubectlArgs []string, label string, timeout time.Duration) (string, error) {
-	return s.runProviderCommand(context.Background(), vmName, kubectlArgs, nil, label, timeout)
+	// Through RunKubectlContext rather than straight to runProviderCommand, so
+	// this honours the kubectlRunner seam like the other three entry points do.
+	// It was the one that did not, which left every caller reaching cluster
+	// state through RunKubectl -- the whole of lists.go -- impossible to test
+	// without a live provider. Behaviour is unchanged when no runner is
+	// installed: RunKubectlContext falls through to the same call.
+	return s.RunKubectlContext(context.Background(), vmName, kubectlArgs, label, timeout)
 }
 
 func (s *Service) RunKubectlContext(ctx context.Context, vmName string, kubectlArgs []string, label string, timeout time.Duration) (string, error) {
