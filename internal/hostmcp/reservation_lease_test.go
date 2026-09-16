@@ -170,7 +170,7 @@ func TestPlanRunNodesInheritTheLaunchingLifecycleReservation(t *testing.T) {
 	if events[node] != "admit detect_host_platform parent=reservation-run_host_plan" {
 		t.Fatalf("plan node did not inherit the launching reservation: %q (all: %#v)", events[node], events)
 	}
-	if !(launcher < node && node < release) {
+	if launcher >= node || node >= release {
 		t.Fatalf("reservation was not held across the run: launcher=%d node=%d release=%d events=%#v", launcher, node, release, events)
 	}
 	releases := 0
