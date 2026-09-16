@@ -144,9 +144,12 @@ func runMeshReadinessProbeOnStream(t *testing.T, warpStatus, redirect, ipAddrOut
 	}
 	probe := script[start:end] + "\nif mesh_ready; then echo CONNECTED; fi\nmesh_address\n"
 
-	// Same shell options the install script runs under, so the predicates are
-	// exercised in the environment they actually execute in.
-	cmd := exec.Command("sh", "-c", "set -euo pipefail\n"+probe)
+	// The same interpreter the install script runs under. The provider invokes
+	// it as `bash -lc`, and `set -o pipefail` is a bashism: asking `sh` for it
+	// passed on a box where /bin/sh is bash and failed on a runner where it is
+	// dash, which said nothing about the predicates. `-c` rather than `-lc` so
+	// the stub PATH below is not overwritten by a login profile.
+	cmd := exec.Command("bash", "-c", "set -euo pipefail\n"+probe)
 	// Stubs take precedence; the real grep/awk the predicates use stay reachable.
 	cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
