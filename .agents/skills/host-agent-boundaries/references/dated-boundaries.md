@@ -68,3 +68,14 @@ neutral shared-host provider capability
 
 The chat inspector must not copy the model-facing catalog verbatim into
 public SSE snapshots. Retain only the typed catalog identity/policy summary.
+
+## Storage reclaim
+
+Host Podman (`inspect_container_storage` / `cleanup_container_storage`) is a
+different plane from k3s guest containerd and the in-cluster registry PVC.
+Run guest tools on the Host Agent that owns the Incus guest. Recipe
+`storage-reclaim.yaml` does inspect → dry-run prune → prune → optional
+registry GC → TRIM; `compact_wsl_disk` is not a recipe node and fails closed
+if the VHDX is still attached to `vmmemWSL`. Do not enable WSL sparse VHDX.
+Never `crictl rmi --all` or delete Postgres PVCs / Incus instances. Skill:
+`host-agent-storage-reclaim`.

@@ -893,6 +893,31 @@
           "attempts"
         ]
       }
+    },
+    {
+      "name": "inspect_guest_storage",
+      "classification": "read_only",
+      "support": "experimental"
+    },
+    {
+      "name": "prune_unused_cluster_images",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "garbage_collect_cluster_registry",
+      "classification": "destructive",
+      "support": "experimental"
+    },
+    {
+      "name": "trim_guest_storage",
+      "classification": "mutation",
+      "support": "experimental"
+    },
+    {
+      "name": "compact_wsl_disk",
+      "classification": "destructive",
+      "support": "experimental"
     }
   ]
 }

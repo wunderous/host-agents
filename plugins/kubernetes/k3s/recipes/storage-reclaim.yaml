@@ -1,0 +1,120 @@
+# Reclaim k3s/containerd guest image storage, optionally garbage-collect the
+# in-cluster registry, then TRIM the guest filesystem.
+#
+# Compact of the WSL VHDX is deliberately NOT a node here: Optimize-VHD cannot
+# run against a disk still attached to vmmemWSL, and terminate of one distro
+# does not unlock the file while a sibling WSL VM is alive. After this recipe
+# succeeds, call compact_wsl_disk from a sibling distro (or Windows). If the
+# VHDX is still locked, compact_wsl_disk fails closed (isError + structured
+# report) and compact needs shutdown_wsl (kills this agent). Optimize-VHD
+# needs an elevated Hyper-V admin token. Do not enable WSL sparse VHDX.
+# Operator fallback when UAC is blocked: wsl --export to a volume with spare
+# capacity, unregister, import, then delete the tar (leaving the tar fills
+# that volume).
+#
+# trim_guest_storage tries guest fstrim first; unprivileged Incus FITRIM
+# EPERM falls back to host sudo -n fstrim. garbage_collect_cluster_registry
+# omits a configMap volume when the live deploy has none.
+#
+# Run on the Host Agent that owns the Incus guest. Ubuntu cannot incus-exec a
+# guest that only exists inside Opute-HA-B. A cell agent without a connected
+# k3s provider is not a substitute — call the k3s provider capability tools.
+contractVersion: host-recipe.v1
+recipeId: com.opute.k3s.storage-reclaim
+recipeVersion: 1.0.0
+execution:
+  coordinator: host-agent
+  mode: local
+compatibility:
+  requiredTools:
+    - inspect_guest_storage
+    - prune_unused_cluster_images
+    - garbage_collect_cluster_registry
+    - trim_guest_storage
+inputs:
+  clusterUri:
+    required: true
+    description: Canonical cluster URI from list_kubernetes_clusters (cluster:<tenant>:<id>).
+    schema: {type: string, minLength: 1}
+  includeRegistry:
+    default: false
+    description: When true, garbage-collect-registry deletes unkept tags, scales the registry to 0, runs registry garbage-collect --delete-untagged, restores, and waits Ready.
+    schema: {type: boolean}
+  extraKeepTags:
+    default: []
+    description: Additional image references to keep beyond current pod images.
+    schema: {type: array, items: {type: string}}
+  minAgeSeconds:
+    default: 3600
+    description: Age gate for unused images. Floor is 3600 seconds.
+    schema: {type: integer, minimum: 3600}
+  runNonce:
+    default: default
+    schema: {type: string, minLength: 1, maxLength: 128}
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.k3s.storage-reclaim
+  generation: 1
+  idempotencyKey: com.opute.k3s.storage-reclaim-${vars.inputs.clusterUri}-${vars.inputs.runNonce}
+  defaults:
+    timeoutMs: 1800000
+  nodes:
+    - id: inspect
+      action:
+        tool: inspect_guest_storage
+        args:
+          uri: ${vars.inputs.clusterUri}
+          includeRegistry: ${vars.inputs.includeRegistry}
+          extraKeepTags: ${vars.inputs.extraKeepTags}
+
+    - id: prune-dry-run
+      dependsOn: [inspect]
+      action:
+        tool: prune_unused_cluster_images
+        args:
+          uri: ${vars.inputs.clusterUri}
+          dryRun: true
+          minAgeSeconds: ${vars.inputs.minAgeSeconds}
+          extraKeepTags: ${vars.inputs.extraKeepTags}
+      validate: &cluster-inspect
+        tool: inspect_guest_storage
+        args:
+          uri: ${vars.inputs.clusterUri}
+        assert:
+          - {path: /imageCount, op: gte, value: 0}
+          - {path: /uri, op: exists}
+
+    - id: prune
+      dependsOn: [prune-dry-run]
+      action:
+        tool: prune_unused_cluster_images
+        args:
+          uri: ${vars.inputs.clusterUri}
+          dryRun: false
+          minAgeSeconds: ${vars.inputs.minAgeSeconds}
+          extraKeepTags: ${vars.inputs.extraKeepTags}
+      validate: *cluster-inspect
+
+    - id: registry-gc
+      dependsOn: [prune]
+      action:
+        tool: garbage_collect_cluster_registry
+        args:
+          uri: ${vars.inputs.clusterUri}
+          dryRun: false
+          includeRegistry: ${vars.inputs.includeRegistry}
+          extraKeepTags: ${vars.inputs.extraKeepTags}
+      validate: *cluster-inspect
+
+    - id: trim
+      dependsOn: [registry-gc]
+      action:
+        tool: trim_guest_storage
+        args:
+          uri: ${vars.inputs.clusterUri}
+      validate: *cluster-inspect
+outputMapping:
+  inspect: ${nodes.inspect.output}
+  prune: ${nodes.prune.output}
+  registry: ${nodes.registry-gc.output}
+  trim: ${nodes.trim.output}

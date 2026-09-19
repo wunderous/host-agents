@@ -312,12 +312,16 @@ func TestCanonicalKubernetesOperationsRequireClusterURIs(t *testing.T) {
 		t.Fatal(err)
 	}
 	wanted := map[string]bool{
-		"apply_manifest":          true,
-		"put_k8s_secret":          true,
-		"get_k8s_resource":        true,
-		"delete_k8s_resource":     true,
-		"get_k8s_resource_status": true,
-		"list_k8s_events":         true,
+		"apply_manifest":                   true,
+		"put_k8s_secret":                   true,
+		"get_k8s_resource":                 true,
+		"delete_k8s_resource":              true,
+		"get_k8s_resource_status":          true,
+		"list_k8s_events":                  true,
+		"inspect_guest_storage":            true,
+		"prune_unused_cluster_images":      true,
+		"garbage_collect_cluster_registry": true,
+		"trim_guest_storage":               true,
 	}
 	seen := map[string]bool{}
 	for _, definition := range definitions {

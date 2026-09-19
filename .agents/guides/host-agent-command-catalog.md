@@ -5,8 +5,8 @@ It deliberately covers both checked-in command surfaces:
 
 | Surface | Source of truth | Count | Meaning |
 | --- | --- | ---: | --- |
-| Incus/platform export | `schemas/all-tools.json` | 105 | Platform/tunnel export, including commands that are internal or omitted from the agent-facing catalog. |
-| Standalone HTTP | `schemas/standalone-tools.json` | 107 | Direct `host-agent` Streamable HTTP contract. |
+| Incus/platform export | `schemas/all-tools.json` | 115 | Platform/tunnel export, including commands that are internal or omitted from the agent-facing catalog. |
+| Standalone HTTP | `schemas/standalone-tools.json` | 119 | Direct `host-agent` Streamable HTTP contract. |
 
 The two lists overlap, but are not interchangeable. The dispatch contract is
 checked independently by `internal/contract/toolname`; the standalone contract
@@ -45,12 +45,13 @@ not a second schema.
 | Kubernetes resource | Existing disposable K3s/cluster URI | `list_namespaces`, `list_ingress_classes`, `list_pods`, `list_services`, `list_deployments`, `list_storage_classes`, `list_k8s_events`, `get_k8s_resource`, `get_k8s_resource_status`, `apply_manifest`, `put_k8s_secret`, `delete_k8s_resource` | Delete only resources carrying the run name; never delete the cluster |
 | PostgreSQL | Existing disposable cluster; minimum supported storage | `reconcile_postgresql_service`, `get_postgresql_service_status`, `remove_postgresql_service` | PASS live on a unique namespace/cluster; remove completed successfully |
 | OCI registry/build | Existing disposable K3s/VM and a tiny image context | `ensure_oci_builder`, `configure_oci_storage`, `inspect_container_storage`, `install_oci_registry`, `get_oci_registry_status`, `delete_oci_registry`, `cleanup_container_storage` | PASS live for builder/storage/registry; build-context staging and image push remain unverified because no disposable context/push endpoint was needed |
+| k3s guest + WSL VHDX reclaim | Existing bound cluster URI on the agent that owns the Incus guest; do not compact from CI | `inspect_guest_storage`, `prune_unused_cluster_images`, `garbage_collect_cluster_registry`, `trim_guest_storage`, `run_host_local_recipe` (`storage-reclaim.yaml`), `compact_wsl_disk` | PASS live 2026-09-19 on ha-a/ha-b (prune, registry GC, host-fallback TRIM). Compact is fail-closed if the VHDX is locked; `Optimize-VHD` needs elevation. Not a CI lane. |
 | Service/domain/storage | Platform/provider-owned schemas plus an optional disposable service fixture | `create_service_storage`, `get_service_storage`, `update_service_storage`, `backup_service_storage`, `restore_service_storage`, `delete_service_storage`, `get_service_domain_binding`, `sync_service_domain_binding`, `upsert_service_domain_binding`, `delete_service_domain_binding` | Not Host Agent-callable; direct catalog omits these families by policy. Require platform/provider fixture and credentials; unverified here |
 | Host files/services | User-owned temporary file and a validated disposable service | `ensure_host_file`, `inspect_host_file`, `remove_host_file`, `list_host_services`, `inspect_host_service`, `ensure_host_service_supervisor` | Remove only the run file; service state is restored |
 | Console | Existing disposable container and console operation | `stream_vm_console`, `send_console_input`, `resize_console` | PASS live; the PTY closed after control-D and no `incus console` process remained |
 | Local LLM | Existing shared runtime; no model install in CI | `check_local_llm_prerequisites`, `get_local_status`, `list_local_llm_models`, `probe_local_llm`, `configure_local_llm_runtime`, `start_local_llm_runtime`, `stop_local_llm_runtime` | Do not change shared model/runtime state |
 
-## Incus/platform export: all 105 names
+## Incus/platform export: all 115 names
 
 Required inputs are kept in `schemas/all-tools.json`; names below are listed
 verbatim from that file so schema drift is visible in review.
@@ -61,6 +62,7 @@ apply_manifest
 backup_service_storage
 build_and_push_oci_image
 cleanup_container_storage
+compact_wsl_disk
 configure_host_network
 configure_network
 configure_oci_storage
@@ -104,7 +106,11 @@ get_sql_connector_status
 get_sqlite_database_status
 get_vm_info
 inspect_container_storage
+inspect_guest_storage
 inspect_workload
+garbage_collect_cluster_registry
+prune_unused_cluster_images
+trim_guest_storage
 install_cloudflared_connector
 install_helm_chart
 install_oci_registry
@@ -193,7 +199,7 @@ These provider operations are catalogued separately because their lifecycle
 and schemas are owned by the provider capability layer rather than the legacy
 tool-name registries.
 
-## Standalone HTTP: all 107 names
+## Standalone HTTP: all 119 names
 
 Each row below includes the standalone classification and support level from
 `schemas/standalone-tools.json`.
@@ -281,6 +287,11 @@ Each row below includes the standalone classification and support level from
 | `ensure_oci_builder` | mutation | experimental |
 | `configure_oci_storage` | mutation | experimental |
 | `inspect_container_storage` | read_only | experimental |
+| `inspect_guest_storage` | read_only | experimental |
+| `prune_unused_cluster_images` | destructive | experimental |
+| `garbage_collect_cluster_registry` | destructive | experimental |
+| `trim_guest_storage` | mutation | experimental |
+| `compact_wsl_disk` | destructive | experimental |
 | `cleanup_container_storage` | mutation | experimental |
 | `build_and_push_oci_image` | mutation | experimental |
 | `stage_build_context` | mutation | experimental |
@@ -312,7 +323,7 @@ Each row below includes the standalone classification and support level from
 
 | Check | Status | Evidence/next action |
 | --- | --- | --- |
-| Schema names and counts | PASS | The checked-in Incus export contains 105 callable/owned entries and the standalone contract contains 107 entries; this file records both surfaces. |
+| Schema names and counts | PASS | The checked-in Incus export contains 115 callable/owned entries and the standalone contract contains 119 entries; this file records both surfaces. |
 | Dispatch/contract coverage | PASS | `go test ./...` passes, including registry parity and standalone catalog validation. |
 | Packaged standalone HTTP smoke | PASS | CI builds the release binary and runs `go test ./test/standalone`. |
 | OpenRouter Granite smoke | PASS when secret is available | CI passes `OPENROUTER_API_KEY` to `make openrouter-llm-smoke`; missing secrets skip that opt-in test. |

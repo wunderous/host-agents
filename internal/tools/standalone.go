@@ -249,7 +249,12 @@ var StandaloneToolNames = map[string]bool{
 	"ensure_oci_builder":               true,
 	"configure_oci_storage":            true,
 	"inspect_container_storage":        true,
+	"inspect_guest_storage":            true,
 	"cleanup_container_storage":        true,
+	"prune_unused_cluster_images":      true,
+	"garbage_collect_cluster_registry": true,
+	"trim_guest_storage":               true,
+	"compact_wsl_disk":                 true,
 	"build_and_push_oci_image":         true,
 	"stage_build_context":              true,
 	"ensure_host_tool":                 true,
@@ -305,6 +310,10 @@ var standaloneMutationToolNames = map[string]bool{
 	"ensure_oci_builder":               true,
 	"configure_oci_storage":            true,
 	"cleanup_container_storage":        true,
+	"prune_unused_cluster_images":      true,
+	"garbage_collect_cluster_registry": true,
+	"trim_guest_storage":               true,
+	"compact_wsl_disk":                 true,
 	"build_and_push_oci_image":         true,
 	"stage_build_context":              true,
 	"ensure_host_tool":                 true,
@@ -355,6 +364,7 @@ func StandaloneToolDefinitions() []ToolDefinition {
 		{Name: "detect_host_platform", Description: "Detect the operating system and CPU identity of the host running this agent, distinguishing native Windows, macOS, WSL1/WSL2, and native Linux, and reporting CPU architecture and family including Apple M-series silicon.", InputSchema: objectSchema(map[string]any{}, nil), OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "os", "kind", "cpu"}}},
 		{Name: "terminate_wsl_distribution", Description: "Terminate exactly one named WSL distribution through tested Windows interop. Requires host approval.", InputSchema: objectSchema(map[string]any{"distro": map[string]any{"type": "string", "minLength": 1}}, []string{"distro"}), OutputSchema: map[string]any{"type": "object", "required": []string{"distro", "terminated"}}},
 		{Name: "shutdown_wsl", Description: "Shutdown the complete WSL2 environment through tested Windows lifecycle capability. Requires explicit destructive approval.", InputSchema: objectSchema(map[string]any{}, nil), OutputSchema: map[string]any{"type": "object", "required": []string{"shutdown"}}},
+		{Name: "compact_wsl_disk", Description: "Inspect and compact a Stopped WSL2 distro VHDX with Optimize-VHD Full (needs an elevated Hyper-V admin token). Fails closed if the distro is live, Running, or the VHDX is still locked by a sibling WSL VM; compact then needs shutdown_wsl (kills this agent). Does not enable sparse VHDX. Not a recipe node.", InputSchema: objectSchema(map[string]any{"distro": map[string]any{"type": "string", "minLength": 1}, "dryRun": map[string]any{"type": "boolean"}}, []string{"distro"}), OutputSchema: map[string]any{"type": "object", "required": []string{"distro"}}, Meta: map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}}},
 		{Name: "probe_http_endpoint", Description: "Probe a caller-declared HTTP(S) endpoint for provider-neutral reachability evidence.", InputSchema: objectSchema(map[string]any{"endpoint": map[string]any{"type": "string", "format": "uri"}, "acceptAuthenticationChallenge": map[string]any{"type": "boolean"}}, []string{"endpoint"}), OutputSchema: map[string]any{"type": "object", "required": []string{"endpoint", "ready"}}},
 		{Name: "ensure_host_file", Description: "Atomically reconcile a caller-declared managed file; user scope is home-owned and system scope is limited to systemd service units.", InputSchema: objectSchema(map[string]any{"path": map[string]any{"type": "string", "minLength": 1}, "content": map[string]any{"type": "string"}, "mode": map[string]any{"type": "integer", "minimum": 384, "maximum": 493}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}}}, []string{"path", "content"}), OutputSchema: map[string]any{"type": "object", "required": []string{"path", "changed", "contentSha256", "mode"}}},
 		{Name: "remove_host_file", Description: "Remove one caller-owned regular file after explicit confirmation and an optional content hash check; user scope is home-owned and system scope is limited to systemd service units.", InputSchema: objectSchema(map[string]any{"path": map[string]any{"type": "string", "minLength": 1}, "expectedSha256": map[string]any{"type": "string"}, "confirm": map[string]any{"type": "boolean"}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}}}, []string{"path", "confirm"}), OutputSchema: map[string]any{"type": "object", "required": []string{"path", "exists", "removed"}}},
@@ -489,12 +499,24 @@ func StandaloneToolDefinitions() []ToolDefinition {
 		{Name: "inspect_container_storage", Description: "Inspect runtime-reported image, container, volume, and build-cache storage usage without changing state.", InputSchema: objectSchema(map[string]any{
 			"runtime": map[string]any{"type": "string", "enum": []string{"auto", "podman"}},
 		}, nil)},
-		{Name: "cleanup_container_storage", Description: "Age-gated cleanup of unused images and supported build cache; containers, volumes, networks, and running image references are preserved.", InputSchema: objectSchema(map[string]any{
+		{Name: "inspect_guest_storage", Description: "Inspect k3s/containerd image, snapshot, and PVC usage inside the bound cluster guest without changing state. Optional registry tag inventory via includeRegistry.", InputSchema: objectSchema(map[string]any{
+			"uri": map[string]any{"type": "string", "minLength": 1, resourceTypeKeyword: "cluster"}, "includeRegistry": map[string]any{"type": "boolean"}, "extraKeepTags": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		}, []string{"uri"})},
+		{Name: "cleanup_container_storage", Description: "Age-gated cleanup of unused host Podman images and supported build cache; containers, volumes, networks, and running image references are preserved. Shared multi-tag images are skipped until a tag is retired. Does not remove buildah working containers.", InputSchema: objectSchema(map[string]any{
 			"runtime":       map[string]any{"type": "string", "enum": []string{"auto", "podman"}},
 			"maxBytes":      map[string]any{"type": "integer", "minimum": 0},
 			"minAgeSeconds": map[string]any{"type": "integer", "minimum": 3600},
 			"dryRun":        map[string]any{"type": "boolean"},
 		}, nil)},
+		{Name: "prune_unused_cluster_images", Description: "Age-gated removal of unused k3s/containerd images not referenced by current pods. Dry-run first. Never deletes PVCs or Incus instances.", InputSchema: objectSchema(map[string]any{
+			"uri": map[string]any{"type": "string", "minLength": 1, resourceTypeKeyword: "cluster"}, "dryRun": map[string]any{"type": "boolean"}, "minAgeSeconds": map[string]any{"type": "integer", "minimum": 3600}, "extraKeepTags": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		}, []string{"uri"}), Meta: map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}}},
+		{Name: "garbage_collect_cluster_registry", Description: "Delete untagged/unkept in-cluster registry manifests, scale the registry to zero, run garbage-collect --delete-untagged, restore, and wait Ready. Default off via includeRegistry. The GC Job omits a configMap volume when the live deploy has none.", InputSchema: objectSchema(map[string]any{
+			"uri": map[string]any{"type": "string", "minLength": 1, resourceTypeKeyword: "cluster"}, "dryRun": map[string]any{"type": "boolean"}, "includeRegistry": map[string]any{"type": "boolean"}, "extraKeepTags": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "registryNamespace": map[string]any{"type": "string"}, "registryName": map[string]any{"type": "string"},
+		}, []string{"uri"}), Meta: map[string]any{"resourceCost": map[string]any{"class": "heavy", "cpuCores": 2, "memoryBytes": 2147483648, "tasks": 8}}},
+		{Name: "trim_guest_storage", Description: "Run guest fstrim after reclaim. Unprivileged Incus guests that get FITRIM EPERM fall back to host sudo -n fstrim -v / and report scope guest|host.", InputSchema: objectSchema(map[string]any{
+			"uri": map[string]any{"type": "string", "minLength": 1, resourceTypeKeyword: "cluster"},
+		}, []string{"uri"})},
 		{Name: "build_and_push_oci_image", Description: "Build a generic OCI image from a host-local context directory and push it to a registry.", InputSchema: objectSchema(map[string]any{
 			"contextDir":       map[string]any{"type": "string"},
 			"dockerfile":       map[string]any{"type": "string"},

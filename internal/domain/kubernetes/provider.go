@@ -17,29 +17,33 @@ import (
 const KubernetesCapabilityID = capabilitycontract.Kubernetes
 
 const (
-	KubernetesValidateOperation          = capabilitycontract.KubernetesValidateOperation
-	KubernetesProvisionOperation         = capabilitycontract.KubernetesProvisionOperation
-	KubernetesStatusOperation            = capabilitycontract.KubernetesStatusOperation
-	KubernetesConfigureRegistryOperation = capabilitycontract.KubernetesConfigureRegistryOperation
-	KubernetesRemoveOperation            = capabilitycontract.KubernetesRemoveOperation
-	KubernetesRestartOperation           = capabilitycontract.KubernetesRestartOperation
-	KubernetesApplyManifestOperation     = capabilitycontract.KubernetesApplyManifestOperation
-	KubernetesPutSecretOperation         = capabilitycontract.KubernetesPutSecretOperation
-	KubernetesGetResourceOperation       = capabilitycontract.KubernetesGetResourceOperation
-	KubernetesDeleteResourceOperation    = capabilitycontract.KubernetesDeleteResourceOperation
-	KubernetesGetResourceStatusOperation = capabilitycontract.KubernetesGetResourceStatusOperation
-	KubernetesListEventsOperation        = capabilitycontract.KubernetesListEventsOperation
-	KubernetesListClustersOperation      = capabilitycontract.KubernetesListClustersOperation
-	KubernetesGetClusterInfoOperation    = capabilitycontract.KubernetesGetClusterInfoOperation
-	KubernetesExecCommandOperation       = capabilitycontract.KubernetesExecCommandOperation
-	KubernetesInspectMembershipOperation = capabilitycontract.KubernetesInspectMembershipOperation
-	KubernetesPrepareHAOperation         = capabilitycontract.KubernetesPrepareHAOperation
-	KubernetesPrepareJoinOperation       = capabilitycontract.KubernetesPrepareJoinOperation
-	KubernetesRedeemJoinOperation        = capabilitycontract.KubernetesRedeemJoinOperation
-	KubernetesJoinNodeOperation          = capabilitycontract.KubernetesJoinNodeOperation
-	KubernetesEnsureHAEndpointOperation  = capabilitycontract.KubernetesEnsureHAEndpointOperation
-	KubernetesRemoveNodeOperation        = capabilitycontract.KubernetesRemoveNodeOperation
-	KubernetesRecoverQuorumOperation     = capabilitycontract.KubernetesRecoverQuorumOperation
+	KubernetesValidateOperation               = capabilitycontract.KubernetesValidateOperation
+	KubernetesProvisionOperation              = capabilitycontract.KubernetesProvisionOperation
+	KubernetesStatusOperation                 = capabilitycontract.KubernetesStatusOperation
+	KubernetesConfigureRegistryOperation      = capabilitycontract.KubernetesConfigureRegistryOperation
+	KubernetesRemoveOperation                 = capabilitycontract.KubernetesRemoveOperation
+	KubernetesRestartOperation                = capabilitycontract.KubernetesRestartOperation
+	KubernetesApplyManifestOperation          = capabilitycontract.KubernetesApplyManifestOperation
+	KubernetesPutSecretOperation              = capabilitycontract.KubernetesPutSecretOperation
+	KubernetesGetResourceOperation            = capabilitycontract.KubernetesGetResourceOperation
+	KubernetesDeleteResourceOperation         = capabilitycontract.KubernetesDeleteResourceOperation
+	KubernetesGetResourceStatusOperation      = capabilitycontract.KubernetesGetResourceStatusOperation
+	KubernetesListEventsOperation             = capabilitycontract.KubernetesListEventsOperation
+	KubernetesListClustersOperation           = capabilitycontract.KubernetesListClustersOperation
+	KubernetesGetClusterInfoOperation         = capabilitycontract.KubernetesGetClusterInfoOperation
+	KubernetesExecCommandOperation            = capabilitycontract.KubernetesExecCommandOperation
+	KubernetesInspectGuestStorageOperation    = capabilitycontract.KubernetesInspectGuestStorageOperation
+	KubernetesPruneUnusedImagesOperation      = capabilitycontract.KubernetesPruneUnusedImagesOperation
+	KubernetesGarbageCollectRegistryOperation = capabilitycontract.KubernetesGarbageCollectRegistryOperation
+	KubernetesTrimGuestStorageOperation       = capabilitycontract.KubernetesTrimGuestStorageOperation
+	KubernetesInspectMembershipOperation      = capabilitycontract.KubernetesInspectMembershipOperation
+	KubernetesPrepareHAOperation              = capabilitycontract.KubernetesPrepareHAOperation
+	KubernetesPrepareJoinOperation            = capabilitycontract.KubernetesPrepareJoinOperation
+	KubernetesRedeemJoinOperation             = capabilitycontract.KubernetesRedeemJoinOperation
+	KubernetesJoinNodeOperation               = capabilitycontract.KubernetesJoinNodeOperation
+	KubernetesEnsureHAEndpointOperation       = capabilitycontract.KubernetesEnsureHAEndpointOperation
+	KubernetesRemoveNodeOperation             = capabilitycontract.KubernetesRemoveNodeOperation
+	KubernetesRecoverQuorumOperation          = capabilitycontract.KubernetesRecoverQuorumOperation
 )
 
 // KubernetesProviderRequest is the neutral execution envelope passed from

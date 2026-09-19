@@ -114,6 +114,19 @@ func init() {
 }
 
 func init() {
+	register(toolname.CompactWSLDisk, EffectDestructive, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Host().CompactWSLDisk(ctx, host.CompactWSLDiskArgs{
+			Distro: stringField(args, "distro"),
+			DryRun: boolField(args, "dryRun"),
+		}, onData)
+		if err != nil {
+			return nil, err
+		}
+		return structuredResult(out, "WSL disk compact completed."), nil
+	})
+}
+
+func init() {
 	register(toolname.ProbeHTTPEndpoint, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
 		out, err := svc.Host().ProbeHTTPEndpoint(ctx, host.ProbeHTTPEndpointArgs{
 			Endpoint:                      stringField(args, "endpoint"),

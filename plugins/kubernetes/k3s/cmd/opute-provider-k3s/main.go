@@ -178,7 +178,31 @@ func operations() []providercontract.Operation {
 			"kubectlArgs": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string", "minLength": 1}},
 			"stdin":       map[string]any{"type": "string", "writeOnly": true},
 		}, "kubectlArgs")),
+		targetRead(capabilitycontract.KubernetesInspectGuestStorageOperation, targetSchema(map[string]any{
+			"includeRegistry": map[string]any{"type": "boolean"},
+			"extraKeepTags":   map[string]any{"type": "array", "items": map[string]any{"type": "string", "minLength": 1}},
+		})),
+		heavyTargetDestructive(capabilitycontract.KubernetesPruneUnusedImagesOperation, targetSchema(map[string]any{
+			"dryRun":        map[string]any{"type": "boolean"},
+			"minAgeSeconds": map[string]any{"type": "integer", "minimum": 3600},
+			"extraKeepTags": map[string]any{"type": "array", "items": map[string]any{"type": "string", "minLength": 1}},
+		})),
+		heavyTargetDestructive(capabilitycontract.KubernetesGarbageCollectRegistryOperation, targetSchema(map[string]any{
+			"dryRun":            map[string]any{"type": "boolean"},
+			"includeRegistry":   map[string]any{"type": "boolean"},
+			"extraKeepTags":     map[string]any{"type": "array", "items": map[string]any{"type": "string", "minLength": 1}},
+			"registryNamespace": map[string]any{"type": "string", "minLength": 1},
+			"registryName":      map[string]any{"type": "string", "minLength": 1},
+		})),
+		targetMutation(capabilitycontract.KubernetesTrimGuestStorageOperation, targetSchema(map[string]any{})),
 	}
+}
+
+func heavyTargetDestructive(id string, input map[string]any) providercontract.Operation {
+	operation := providerOperation(id, "destructive", input)
+	operation.Requires = []providercontract.ResourceBinding{clusterTargetBinding()}
+	operation.ResourceCost = &providercontract.ResourceCost{Class: "heavy", CPUCores: 2, MemoryBytes: 2147483648, Tasks: 8}
+	return operation
 }
 
 func clusterTargetBinding() providercontract.ResourceBinding {
@@ -512,6 +536,26 @@ func dispatch(ctx context.Context, operation string, args map[string]any) (*mcp.
 			return nil, err
 		}
 		return structured(map[string]any{"targetUri": stringInput(args, "targetUri"), "stdout": string(stdout), "exitCode": 0})
+	case capabilitycontract.KubernetesInspectGuestStorageOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return inspectGuestStorage(ctx, args)
+	case capabilitycontract.KubernetesPruneUnusedImagesOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return pruneUnusedImages(ctx, args)
+	case capabilitycontract.KubernetesGarbageCollectRegistryOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return garbageCollectRegistry(ctx, args)
+	case capabilitycontract.KubernetesTrimGuestStorageOperation:
+		if err := requireTarget(args); err != nil {
+			return nil, err
+		}
+		return trimGuestStorage(ctx, args)
 	default:
 		return nil, fmt.Errorf("unknown K3s provider operation %q", operation)
 	}
