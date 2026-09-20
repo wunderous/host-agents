@@ -463,3 +463,4 @@ or a deterministic orchestrator heuristic.
 - [Host Agent provider architecture ADR](adr/0002-provider-extension-architecture.md)
 - [Tool contract conformance and capability authority ADR](adr/0009-tool-contract-conformance-and-catalog-authority.md)
 - [Storage quota enforceability admission ADR](adr/0010-storage-quota-enforceability-admission.md)
+- [In-cluster PVC limits and HA recipe-declared storage bounds ADR](adr/0014-in-cluster-pvc-and-ha-storage-bounds.md)

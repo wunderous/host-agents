@@ -22,8 +22,9 @@ not a second schema.
   the smallest supported profile, and a `defer`/cleanup step immediately after
   creation. Existing resources are never selected by discovery alone.
 * The VM/container lifecycle chain is `create_vm` or `provision_vm` ->
-  `list_vms` -> `get_vm_info` -> `start_vm`/`stop_vm`/`restart_vm` ->
-  `update_vm_resources` -> `delete_vm`.
+`list_vms` -> `get_vm_info` -> `start_vm`/`stop_vm`/`restart_vm` ->
+`update_vm_resources` (cpus, memory, and/or admitted grow-only `disk`) ->
+`delete_vm`.
 * Kubernetes, PostgreSQL, OCI, service-domain, storage, relay, and console
   commands are only invoked after their target URI or operation/session ID is
   returned by the preceding command in the same chain.

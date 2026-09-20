@@ -292,25 +292,11 @@ func (s *Service) launchIncusVMViaAPI(vmName, image string, cpus int, memory, di
 	// Incus profiles may provide a small root disk for VMs. Apply the caller's
 	// requested size explicitly after creation so the provisioning contract is
 	// reflected by the guest-visible block device rather than only inventory.
-	// There is no /device/{name} endpoint — patch the instance devices map.
 	// Skipped when admission produced no enforceable quota: there is nothing to
 	// resize to, and patching a sizeless device would only restate the profile.
 	if disk != "" {
-		resizePayload, resizeMarshalErr := json.Marshal(map[string]any{
-			"devices": map[string]any{
-				"root": rootDevice,
-			},
-		})
-		if resizeMarshalErr != nil {
-			return resizeMarshalErr
-		}
-		instancePath := fmt.Sprintf("/1.0/instances/%s", urlPathEscape(vmName))
-		resize, err := s.commandRunner([]string{"query", "-X", "PATCH", "--wait", instancePath, "-d", string(resizePayload)}, onData, timeout)
-		if err != nil {
+		if err := s.patchInstanceRootDisk(vmName, rootDevice, onData, timeout); err != nil {
 			return err
-		}
-		if resize.ExitCode != 0 {
-			return fmt.Errorf("incus resize root disk %q: %s", vmName, textutil.FirstNonEmpty(resize.Stderr, resize.Stdout, "failed to resize root disk"))
 		}
 	}
 

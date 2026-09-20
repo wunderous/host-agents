@@ -5370,7 +5370,7 @@
   {
     "name": "update_vm_resources",
     "title": "Update VM Resources",
-    "description": "Update CPU and/or memory limits of an existing VM or system container on the host",
+    "description": "Update CPU, memory, and/or root disk limits of an existing VM or system container. Disk is admitted only when the instance's storage pool can enforce it, and is grow-only.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5381,6 +5381,10 @@
         "memory": {
           "type": "string",
           "description": "New memory limit (e.g. 2GiB)"
+        },
+        "disk": {
+          "type": "string",
+          "description": "New root disk size such as 20GiB. Refused when the instance pool cannot enforce it, and when smaller than the observed size."
         },
         "uri": {
           "type": "string",
@@ -5410,6 +5414,21 @@
         "memory": {
           "type": "string"
         },
+        "disk": {
+          "type": "string"
+        },
+        "enforced": {
+          "type": "string"
+        },
+        "pool": {
+          "type": "string"
+        },
+        "driver": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
         "uri": {
           "type": "string"
         }
@@ -5433,7 +5452,18 @@
           "resourceType": "container",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1,
+        "argumentBindings": {
+          "cpuCores": "cpus",
+          "memoryBytes": "memory",
+          "diskBytes": "disk"
+        }
+      }
     }
   },
   {

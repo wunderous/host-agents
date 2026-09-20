@@ -247,11 +247,12 @@ func init() {
 			VMName: vmNameFromBinding(binding),
 			CPUs:   intField(args, "cpus"),
 			Memory: stringField(args, "memory"),
+			Disk:   stringField(args, "disk"),
 		}, onData)
 		if err != nil {
 			return nil, err
 		}
-		return structuredResult(out, fmt.Sprintf("Updated resources for '%s' (cpus=%s, memory=%s).", out["vmName"], out["cpus"], out["memory"])), nil
+		return structuredResult(out, fmt.Sprintf("Updated resources for '%s'.", out["vmName"])), nil
 	})
 }
 

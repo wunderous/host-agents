@@ -149,6 +149,17 @@ func parsePositiveCapacity(value any) (float64, error) {
 	return bytes, nil
 }
 
+// ParseByteCapacity converts a capacity string such as 10GiB or 20Gi into an
+// integer byte count. Domains use it to compare requested and observed sizes
+// without each reimplementing unit parsing.
+func ParseByteCapacity(value string) (int64, error) {
+	bytes, err := parsePositiveCapacity(value)
+	if err != nil {
+		return 0, err
+	}
+	return int64(bytes), nil
+}
+
 func numberValue(value any) (float64, error) {
 	var number float64
 	switch typed := value.(type) {

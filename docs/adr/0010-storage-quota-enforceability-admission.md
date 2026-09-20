@@ -32,9 +32,11 @@ at its root rather than compensated for by a caller-side heuristic.
 Root disk quotas are admitted, not assumed.
 
 Before applying a root disk size, the Host Agent resolves the storage pool the
-instance will actually use — the default profile's root pool when it declares
-one, otherwise the resolved default pool — and determines whether that pool
-enforces quotas:
+instance will actually use. A create/provision call uses the default profile's
+root pool when it declares one, otherwise the resolved default pool. A
+post-create `update_vm_resources` disk mutation uses the instance's own root
+device pool, which may differ from the profile default. Admission then
+determines whether that pool enforces quotas:
 
 - `btrfs`, `zfs`, `lvm`, and `ceph` enforce a size unconditionally.
 - `dir` enforces a size only when its source path resolves to an ext4 or XFS
@@ -55,6 +57,15 @@ Admission then splits on whether the caller asked for the bound:
 A quota that admission declined is never written to instance config, and the
 post-create resize is skipped, so no projection can restate it.
 
+`update_vm_resources` is the post-create setter for the same bound. It takes
+an optional `disk` field alongside `cpus` and `memory`, requires at least one
+of the three, and runs the same admission function against the instance's
+actual pool. Disk updates are grow-only: a requested size smaller than the
+observed root device is refused rather than applied as a number Incus or the
+backing driver will ignore. The applied result reports `disk`, `enforced`,
+pool, driver, and reason so a recipe cannot claim a bound the host did not
+obtain.
+
 ## Consequences
 
 On a host whose only pool is a non-quota `dir` pool, callers that explicitly
@@ -67,12 +78,19 @@ Callers that request no disk size continue to provision, now without a
 fabricated limit in their observed state.
 
 Enforcement lives in one admission function shared by the VM and system
-container paths, so a future runtime kind cannot acquire an unchecked quota
-path. The invariant is recorded as `storage-quota-enforceability` in the Opute
-decision store, with driver, filesystem, mount-resolution, and fail-closed
-tests as its verifier.
+container create paths and by `update_vm_resources`, so a future runtime kind
+cannot acquire an unchecked quota path. High-availability recipes that
+provision Incus guests declare an explicit disk and fail closed when
+`get_host_info.rootDiskQuota.enforced` is false; they do not omit `disk` to
+bypass admission. The invariant is recorded as `storage-quota-enforceability`
+in the Opute decision store, with driver, filesystem, mount-resolution,
+post-create update, grow-only, and fail-closed tests as its verifier.
+
+In-cluster PVC bounds (PostgreSQL, OCI registry) are a separate plane. See
+ADR 0014.
 
 ## Related
 
 - ADR-0007 — runtime-kind admission and target boundaries
+- ADR-0014 — in-cluster PVC storage limits and HA recipe-declared bounds
 - Cordis invariant C-07 — durable truth

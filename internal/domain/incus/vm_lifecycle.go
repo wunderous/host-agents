@@ -366,25 +366,28 @@ func (s *Service) RestartVM(args VMScopedArgs, onData func(string)) (map[string]
 }
 
 // UpdateVMResourcesArgs selects the instance and the limits to apply. At least
-// one of CPUs or Memory must be set; both are optional so callers can adjust
-// a single limit without touching the other.
+// one of CPUs, Memory, or Disk must be set so callers can adjust a single
+// limit without touching the others.
 type UpdateVMResourcesArgs struct {
 	VMName string `json:"vmName"`
 	CPUs   int    `json:"cpus,omitempty"`
 	Memory string `json:"memory,omitempty"`
+	Disk   string `json:"disk,omitempty"`
 }
 
-// UpdateVMResources applies limits.cpu / limits.memory to an existing VM or
-// system container. CPU and memory limits are live-applied by Incus for
-// containers; QEMU guests pick them up on the next start.
+// UpdateVMResources applies limits.cpu / limits.memory and an optional root
+// disk size to an existing VM or system container. CPU and memory limits are
+// live-applied by Incus for containers; QEMU guests pick them up on the next
+// start. Disk uses the same admission seam as provision and is grow-only.
 func (s *Service) UpdateVMResources(args UpdateVMResourcesArgs, onData func(string)) (map[string]string, error) {
 	vmName := strings.TrimSpace(args.VMName)
 	if vmName == "" {
 		return nil, errors.New("vmName is required")
 	}
 	memory := strings.TrimSpace(args.Memory)
-	if args.CPUs <= 0 && memory == "" {
-		return nil, errors.New("at least one of cpus or memory is required")
+	disk := strings.TrimSpace(args.Disk)
+	if args.CPUs <= 0 && memory == "" && disk == "" {
+		return nil, errors.New("at least one of cpus, memory, or disk is required")
 	}
 	if err := s.assertIncusOwnership(vmName, "update_vm_resources"); err != nil {
 		return nil, err
@@ -405,7 +408,56 @@ func (s *Service) UpdateVMResources(args UpdateVMResourcesArgs, onData func(stri
 		}
 		applied["memory"] = memory
 	}
+	if disk != "" {
+		quota, err := s.applyInstanceRootDiskQuota(vmName, disk, onData)
+		if err != nil {
+			return nil, err
+		}
+		applied["disk"] = quota.Size
+		applied["enforced"] = strconv.FormatBool(quota.Enforced)
+		applied["pool"] = quota.Pool
+		applied["driver"] = quota.Driver
+		if quota.Reason != "" {
+			applied["reason"] = quota.Reason
+		}
+	}
 	return applied, nil
+}
+
+func (s *Service) applyInstanceRootDiskQuota(vmName, disk string, onData func(string)) (rootDiskQuota, error) {
+	current, err := s.readInstanceRootDevice(vmName)
+	if err != nil {
+		return rootDiskQuota{}, err
+	}
+	quota, err := s.admitRootDiskQuotaForPool(disk, true, current.Pool)
+	if err != nil {
+		return rootDiskQuota{}, err
+	}
+	if quota.Size == "" {
+		return rootDiskQuota{}, fmt.Errorf("root disk quota %q cannot be enforced: %s", disk, quota.Reason)
+	}
+	if err := refuseRootDiskShrink(quota.Size, current.Size); err != nil {
+		return rootDiskQuota{}, err
+	}
+	if current.Size != "" {
+		want, wantErr := resource.ParseByteCapacity(quota.Size)
+		have, haveErr := resource.ParseByteCapacity(current.Size)
+		if wantErr == nil && haveErr == nil && want == have {
+			return quota, nil
+		}
+	}
+	device := map[string]any{
+		"type": textutil.FirstNonEmpty(current.Type, "disk"),
+		"path": textutil.FirstNonEmpty(current.Path, "/"),
+		"size": quota.Size,
+	}
+	if current.Pool != "" {
+		device["pool"] = current.Pool
+	}
+	if err := s.patchInstanceRootDisk(vmName, device, onData, 2*time.Minute); err != nil {
+		return rootDiskQuota{}, err
+	}
+	return quota, nil
 }
 
 func (s *Service) DeleteVM(args VMScopedArgs, onData func(string)) (map[string]any, error) {
