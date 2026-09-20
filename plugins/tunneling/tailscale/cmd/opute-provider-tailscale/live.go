@@ -1,0 +1,1096 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/url"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
+	"github.com/wunderous/host-agents/internal/resourceid"
+	"github.com/wunderous/host-agents/pkg/hostagentclient"
+)
+
+const (
+	defaultTailscaleEnvFile     = "/home/houman/.config/opute/tailscale.env"
+	defaultTailscaleAuthKeyFile = "/home/houman/.config/opute/tailscale.authkey"
+	tailscaleCGNATPrefix        = "100."
+)
+
+var livePendingAuthKeys = struct {
+	sync.Mutex
+	byRef map[string]string
+}{byRef: make(map[string]string)}
+
+var liveEnvOnce sync.Once
+
+func ensureTailscaleEnvLoaded() {
+	liveEnvOnce.Do(func() {
+		loadTailscaleEnvFile(firstNonEmpty(os.Getenv("OPUTE_TAILSCALE_ENV_FILE"), defaultTailscaleEnvFile))
+		if strings.TrimSpace(os.Getenv("TAILSCALE_AUTH_KEY")) == "" {
+			authFile := firstNonEmpty(os.Getenv("TAILSCALE_AUTH_KEY_FILE"), defaultTailscaleAuthKeyFile)
+			if raw, err := os.ReadFile(authFile); err == nil {
+				key := strings.TrimSpace(string(raw))
+				if key != "" {
+					_ = os.Setenv("TAILSCALE_AUTH_KEY", key)
+				}
+			}
+		}
+	})
+}
+
+func loadTailscaleEnvFile(path string) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return
+	}
+	if strings.TrimSpace(os.Getenv("TAILSCALE_API_KEY")) != "" {
+		return
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(strings.Trim(value, `"'`))
+		if key == "" || value == "" {
+			continue
+		}
+		if strings.TrimSpace(os.Getenv(key)) == "" {
+			_ = os.Setenv(key, value)
+		}
+	}
+}
+
+func dispatchLiveOverlayOperation(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
+	ensureTailscaleEnvLoaded()
+	switch operation {
+	case capabilitycontract.NetworkOverlayValidateOperation:
+		return liveValidateOverlay(ctx, args)
+	case capabilitycontract.NetworkOverlayPrepareMembershipOperation:
+		return livePrepareMembership(ctx, args)
+	case capabilitycontract.NetworkOverlayAttachTargetOperation:
+		return liveAttachTarget(ctx, args)
+	case capabilitycontract.NetworkOverlayEnrollOperation:
+		return liveEnrollOverlay(ctx, args)
+	case capabilitycontract.NetworkOverlayProbeReachabilityOperation:
+		return liveProbeReachability(ctx, args)
+	case capabilitycontract.NetworkOverlayProbeOperation:
+		return liveProbePathAware(ctx, args)
+	case capabilitycontract.NetworkOverlayReportTwoNodeReadinessOperation:
+		return reportTwoNodeReadiness(args)
+	case capabilitycontract.NetworkOverlayEnsurePrivateMeshOperation:
+		return liveEnsurePrivateMesh(ctx, args)
+	case capabilitycontract.NetworkOverlayEnsurePrivateServiceOperation:
+		return liveEnsurePrivateService(ctx, args)
+	case capabilitycontract.NetworkOverlayEnsurePublicIngressOperation, capabilitycontract.NetworkOverlayEnsureHAEndpointOperation:
+		return liveEnsurePublicIngress(ctx, args)
+	case capabilitycontract.NetworkOverlayPromotePublicIngressOperation:
+		return livePromotePublicIngress(ctx, args)
+	case capabilitycontract.NetworkOverlayRemoveHAEndpointOperation:
+		return liveRemoveHAEndpoint(ctx, args)
+	case capabilitycontract.NetworkOverlayRemoveMembershipOperation:
+		return liveRemoveMembership(ctx, args)
+	default:
+		return nil, fmt.Errorf("unknown network overlay operation %q", operation)
+	}
+}
+
+func liveAPIClient() (*tailscaleAPIClient, error) {
+	ensureTailscaleEnvLoaded()
+	apiKey := strings.TrimSpace(os.Getenv("TAILSCALE_API_KEY"))
+	if apiKey == "" {
+		return nil, fmt.Errorf("TAILSCALE_API_KEY is required for the live Tailscale backend")
+	}
+	return newTailscaleAPIClient(apiKey, os.Getenv("TAILSCALE_TAILNET"), os.Getenv("TAILSCALE_API_BASE")), nil
+}
+
+func resolveAuthKey(ctx context.Context, args map[string]any) (string, error) {
+	ensureTailscaleEnvLoaded()
+	key := firstNonEmpty(
+		stringInput(args, "authKey", ""),
+		stringInput(args, "credential", ""),
+		os.Getenv("TAILSCALE_AUTH_KEY"),
+	)
+	if key != "" {
+		return key, nil
+	}
+	client, err := liveAPIClient()
+	if err != nil {
+		return "", fmt.Errorf("auth key unavailable and API client failed: %w", err)
+	}
+	created, err := client.CreateAuthKey(ctx, 24*60*60)
+	if err != nil {
+		return "", err
+	}
+	return created.Key, nil
+}
+
+func resolveAPIKey(args map[string]any) string {
+	ensureTailscaleEnvLoaded()
+	return firstNonEmpty(stringInput(args, "apiKey", ""), stringInput(args, "credential", ""), os.Getenv("TAILSCALE_API_KEY"))
+}
+
+func liveValidateOverlay(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	kind, err := requireCredentialKind(args, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := assertCredentialPresence(args, kind); err != nil {
+		return nil, err
+	}
+	if kind == credKindAPIKey || kind == "" {
+		if key := resolveAPIKey(args); key != "" {
+			_ = os.Setenv("TAILSCALE_API_KEY", key)
+		}
+	}
+	client, err := liveAPIClient()
+	if err != nil {
+		return nil, err
+	}
+	devices, err := client.ListDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return structured(map[string]any{
+		"contractVersion": capabilitycontract.NetworkOverlay,
+		"ready":           true,
+		"provider":        providerName,
+		"generation":      providerGeneration,
+		"targetUri":       instanceURI.String(),
+		"nodeCount":       len(devices),
+		"credentialKind":  firstNonEmpty(kind, credKindAPIKey),
+	})
+}
+
+func livePrepareMembership(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := requireCredentialKind(args, credKindAuthKey); err != nil {
+		return nil, err
+	}
+	if err := assertCredentialPresence(args, credKindAuthKey); err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(stringInput(args, "name", ""))
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	authKey, err := resolveAuthKey(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	record, err := upsertMembership(instanceURI.String(), name, false)
+	if err != nil {
+		return nil, err
+	}
+	livePendingAuthKeys.Lock()
+	livePendingAuthKeys.byRef[record.Ref] = authKey
+	livePendingAuthKeys.Unlock()
+	return structured(overlayBase(record, map[string]any{
+		"ready":         true,
+		"membershipRef": record.Ref,
+		"nodeId":        record.NodeID,
+		"nodeName":      record.NodeName,
+		"overlayUri":    record.OverlayURI,
+	}))
+}
+
+func liveAttachTarget(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	ref := strings.TrimSpace(stringInput(args, "membershipRef", ""))
+	if ref == "" {
+		return nil, fmt.Errorf("membershipRef is required")
+	}
+	ownershipStore.Lock()
+	record, ok := ownershipStore.memberships[ref]
+	ownershipStore.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("network overlay membership reference is unknown or expired")
+	}
+	if record.Generation != providerGeneration {
+		return nil, fmt.Errorf("stale provider generation for membership")
+	}
+	if record.TargetURI != instanceURI.String() {
+		return nil, fmt.Errorf("network overlay membership is bound to another instance")
+	}
+	livePendingAuthKeys.Lock()
+	authKey := livePendingAuthKeys.byRef[ref]
+	livePendingAuthKeys.Unlock()
+	if authKey == "" {
+		authKey, err = resolveAuthKey(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return liveEnrollGuest(ctx, args, instanceURI, record.NodeName, ref, authKey)
+}
+
+func liveEnrollOverlay(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := requireCredentialKind(args, credKindAuthKey); err != nil {
+		return nil, err
+	}
+	if err := assertCredentialPresence(args, credKindAuthKey); err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(stringInput(args, "name", ""))
+	if name == "" {
+		name = "node"
+	}
+	refHint := strings.TrimSpace(stringInput(args, "membershipRef", ""))
+	ownershipStore.Lock()
+	existingRef, hasExisting := ownershipStore.byTarget[instanceURI.String()]
+	var existing membershipRecord
+	if hasExisting {
+		existing = ownershipStore.memberships[existingRef]
+	}
+	ownershipStore.Unlock()
+	if hasExisting {
+		if existing.Generation != providerGeneration {
+			return nil, fmt.Errorf("stale provider generation for membership")
+		}
+		if refHint != "" && refHint != existingRef {
+			return nil, fmt.Errorf("membershipRef does not match owned enrollment for target")
+		}
+		if existing.Attached && existing.MeshIP != "" && existing.NodeID != "" && !strings.HasPrefix(existing.NodeID, "node-") {
+			return structured(overlayBase(existing, map[string]any{
+				"ready":         true,
+				"membershipRef": existing.Ref,
+				"nodeId":        existing.NodeID,
+				"nodeName":      existing.NodeName,
+				"meshIp":        existing.MeshIP,
+				"meshInterface": firstNonEmpty(existing.MeshInterface, "tailscale0"),
+				"overlayUri":    existing.OverlayURI,
+			}))
+		}
+		if name == "" {
+			name = existing.NodeName
+		}
+		refHint = existing.Ref
+	}
+	authKey, err := resolveAuthKey(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	if refHint == "" {
+		record, err := upsertMembership(instanceURI.String(), name, false)
+		if err != nil {
+			return nil, err
+		}
+		refHint = record.Ref
+	}
+	return liveEnrollGuest(ctx, args, instanceURI, name, refHint, authKey)
+}
+
+func liveEnrollGuest(ctx context.Context, args map[string]any, instanceURI resourceid.URI, hostname, membershipRef, authKey string) (*mcp.CallToolResult, error) {
+	hostname = sanitizeHostname(hostname)
+	if hostname == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	client, err := connectHostAgent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	if err := waitForGuestExec(ctx, client, instanceURI); err != nil {
+		return nil, err
+	}
+	installScript := tailscaleEnrollScript(hostname)
+	result, err := callHost(ctx, client, "run_instance_command", map[string]any{
+		"uri":       instanceURI.String(),
+		"command":   "bash",
+		"args":      []string{"-lc", installScript},
+		"stdin":     authKey + "\n",
+		"timeoutMs": 10 * 60 * 1000,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resultContent, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("Tailscale enrollment returned no structured command result")
+	}
+	output := stringInput(resultContent, "stdout", "")
+	stderr := stringInput(resultContent, "stderr", "")
+	if exitCode, present := numericInput(resultContent, "exitCode"); present && exitCode != 0 {
+		return nil, fmt.Errorf("Tailscale guest enrollment failed with exit code %d: %s", exitCode, redactSecret(output+"\n"+stderr, authKey))
+	}
+	meshIP := findTailscaleIPv4(output)
+	if meshIP == "" {
+		return nil, fmt.Errorf("Tailscale node connected but no Mesh IP was observed: %s", redactSecret(output+"\n"+stderr, authKey))
+	}
+	api, err := liveAPIClient()
+	if err != nil {
+		return nil, err
+	}
+	var device TailscaleDevice
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		devices, listErr := api.ListDevices(ctx)
+		if listErr != nil {
+			return nil, listErr
+		}
+		found, ok := findDeviceByHostname(devices, hostname)
+		if ok {
+			device = found
+			break
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("Tailscale device with hostname %q was not observed in the API after enrollment", hostname)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	if device.ID == "" {
+		return nil, fmt.Errorf("Tailscale device response did not include an id")
+	}
+	if apiIP := deviceIPv4(device); apiIP != "" {
+		meshIP = apiIP
+	}
+	ownershipStore.Lock()
+	defer ownershipStore.Unlock()
+	record, ok := ownershipStore.memberships[membershipRef]
+	if !ok {
+		created, upsertErr := upsertMembershipLocked(instanceURI.String(), hostname, true)
+		if upsertErr != nil {
+			return nil, upsertErr
+		}
+		record = created
+		membershipRef = record.Ref
+	}
+	if record.TargetURI != instanceURI.String() {
+		return nil, fmt.Errorf("network overlay membership is bound to another instance")
+	}
+	record.NodeName = hostname
+	record.NodeID = device.ID
+	record.MeshIP = meshIP
+	record.MeshInterface = "tailscale0"
+	record.Attached = true
+	record.Generation = providerGeneration
+	ownershipStore.memberships[membershipRef] = record
+	ownershipStore.byTarget[record.TargetURI] = membershipRef
+	livePendingAuthKeys.Lock()
+	delete(livePendingAuthKeys.byRef, membershipRef)
+	livePendingAuthKeys.Unlock()
+	return structured(overlayBase(record, map[string]any{
+		"ready":         true,
+		"membershipRef": record.Ref,
+		"nodeId":        record.NodeID,
+		"nodeName":      record.NodeName,
+		"meshIp":        record.MeshIP,
+		"meshInterface": record.MeshInterface,
+		"overlayUri":    record.OverlayURI,
+	}))
+}
+
+func tailscaleEnrollScript(hostname string) string {
+	quotedHost := shellQuote(hostname)
+	return `set -euo pipefail
+IFS= read -r auth_key || true
+if [ -z "$auth_key" ]; then
+  echo 'Tailscale auth key was not received on stdin' >&2
+  exit 1
+fi
+if ! command -v tailscale >/dev/null 2>&1 || ! command -v tailscaled >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  if command -v apt-get >/dev/null 2>&1; then
+    timeout 180s apt-get update -qq || true
+    timeout 180s apt-get install -y -qq curl ca-certificates gnupg || true
+  fi
+  if ! command -v tailscale >/dev/null 2>&1; then
+    timeout 180s curl -fsSL https://tailscale.com/install.sh | sh
+  fi
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  timeout 30s systemctl enable --now tailscaled >/dev/null 2>&1 || true
+fi
+if ! pgrep -x tailscaled >/dev/null 2>&1; then
+  nohup tailscaled >/var/log/tailscaled.log 2>&1 &
+  sleep 2
+fi
+timeout 120s tailscale up --authkey="$auth_key" --hostname=` + quotedHost + ` --accept-routes=false --reset
+mesh_ip=""
+for attempt in $(seq 1 60); do
+  mesh_ip="$(tailscale ip -4 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"
+  if [ -n "$mesh_ip" ]; then
+    break
+  fi
+  sleep 2
+done
+if [ -z "$mesh_ip" ]; then
+  echo 'Tailscale did not assign an IPv4 address before the bounded wait' >&2
+  tailscale status 2>&1 || true
+  exit 1
+fi
+printf 'mesh_ip=%s\n' "$mesh_ip"
+ip -4 -o addr show tailscale0 2>/dev/null || true
+tailscale status 2>/dev/null || true
+`
+}
+
+func liveEnsurePrivateMesh(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	peerURIRaw := strings.TrimSpace(stringInput(args, "peerTargetUri", ""))
+	peerURI, err := resourceid.Parse(peerURIRaw)
+	if err != nil {
+		return nil, fmt.Errorf("peerTargetUri must be a canonical VM or container resource URI: %w", err)
+	}
+	if peerURI.ResourceType != resourceid.TypeVM && peerURI.ResourceType != resourceid.TypeContainer {
+		return nil, fmt.Errorf("peerTargetUri requires resource type %q or %q", resourceid.TypeVM, resourceid.TypeContainer)
+	}
+	peerMeshIP := strings.TrimSpace(stringInput(args, "peerMeshIp", ""))
+	if net.ParseIP(peerMeshIP) == nil {
+		return nil, fmt.Errorf("peerMeshIp must be an IPv4 address")
+	}
+	ownershipStore.Lock()
+	sourceRef, ok := ownershipStore.byTarget[instanceURI.String()]
+	if !ok {
+		ownershipStore.Unlock()
+		return nil, fmt.Errorf("source target is not enrolled")
+	}
+	source := ownershipStore.memberships[sourceRef]
+	peerRef, peerOK := ownershipStore.byTarget[peerURI.String()]
+	if !peerOK {
+		ownershipStore.Unlock()
+		return nil, fmt.Errorf("peer target is not enrolled")
+	}
+	peer := ownershipStore.memberships[peerRef]
+	ownershipStore.Unlock()
+	if source.Generation != providerGeneration || !source.Attached {
+		return nil, fmt.Errorf("source membership is not attached for this generation")
+	}
+	if peer.Generation != providerGeneration || !peer.Attached {
+		return nil, fmt.Errorf("peer membership is not attached for this generation")
+	}
+	if peer.MeshIP != peerMeshIP {
+		return nil, fmt.Errorf("ambiguous peer: peerMeshIp does not match enrolled peer")
+	}
+	client, err := connectHostAgent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	if err := pingFromGuest(ctx, client, instanceURI, peer.MeshIP); err != nil {
+		return nil, fmt.Errorf("forward private-mesh probe failed: %w", err)
+	}
+	if err := pingFromGuest(ctx, client, peerURI, source.MeshIP); err != nil {
+		return nil, fmt.Errorf("reverse private-mesh probe failed: %w", err)
+	}
+	ownershipStore.Lock()
+	defer ownershipStore.Unlock()
+	forwardKey := meshKey(instanceURI.String(), peerURI.String())
+	reverseKey := meshKey(peerURI.String(), instanceURI.String())
+	ownershipStore.meshEdges[forwardKey] = meshEdge{SourceURI: instanceURI.String(), PeerURI: peerURI.String(), PeerMeshIP: peer.MeshIP, Ready: true, Generation: providerGeneration}
+	ownershipStore.meshEdges[reverseKey] = meshEdge{SourceURI: peerURI.String(), PeerURI: instanceURI.String(), PeerMeshIP: source.MeshIP, Ready: true, Generation: providerGeneration}
+	return structured(overlayBase(source, map[string]any{
+		"ready":               true,
+		"pathClass":           pathClassPrivateMesh,
+		"peerMeshIp":          peer.MeshIP,
+		"overlayUri":          source.OverlayURI,
+		"datastoreMode":       stringInput(args, "datastoreMode", "external-datastore"),
+		"availabilityClass":   stringInput(args, "availabilityClass", "serving-continuity"),
+		"recoveryPolicy":      stringInput(args, "recoveryPolicy", "explicit-acknowledgement"),
+		"bothDirectionsReady": true,
+	}))
+}
+
+func pingFromGuest(ctx context.Context, client *hostagentclient.Client, guest resourceid.URI, peerIP string) error {
+	result, err := callHost(ctx, client, "run_instance_command", map[string]any{
+		"uri":       guest.String(),
+		"command":   "ping",
+		"args":      []string{"-c", "1", "-W", "3", peerIP},
+		"timeoutMs": 15 * 1000,
+	})
+	if err != nil {
+		return err
+	}
+	content, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		return fmt.Errorf("ping returned no structured command result")
+	}
+	exitCode, present := numericInput(content, "exitCode")
+	if !present || exitCode != 0 {
+		return fmt.Errorf("ping %s from %s failed with exit code %d", peerIP, guest.String(), exitCode)
+	}
+	return nil
+}
+
+func liveEnsurePrivateService(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	localTarget := strings.TrimSpace(stringInput(args, "localTarget", ""))
+	if localTarget == "" {
+		return nil, fmt.Errorf("localTarget is required")
+	}
+	ownershipStore.Lock()
+	record, err := requireOwnedMembershipLocked(args, instanceURI.String())
+	ownershipStore.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	serveURL, err := normalizeLoopbackHTTP(localTarget)
+	if err != nil {
+		return nil, err
+	}
+	client, err := connectHostAgent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	script := fmt.Sprintf(`set -euo pipefail
+timeout 60s tailscale serve --bg %s
+tailscale serve status || true
+`, shellQuote(serveURL))
+	result, err := callHost(ctx, client, "run_instance_command", map[string]any{
+		"uri": instanceURI.String(), "command": "bash", "args": []string{"-lc", script}, "timeoutMs": 90 * 1000,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if content, ok := result.StructuredContent.(map[string]any); ok {
+		if exitCode, present := numericInput(content, "exitCode"); present && exitCode != 0 {
+			return nil, fmt.Errorf("tailscale serve failed with exit code %d: %s", exitCode, stringInput(content, "stderr", "")+" "+stringInput(content, "stdout", ""))
+		}
+	}
+	ownershipStore.Lock()
+	defer ownershipStore.Unlock()
+	ownershipStore.services[record.OverlayURI] = privateServiceRecord{
+		OverlayURI: record.OverlayURI, TargetURI: record.TargetURI, LocalTarget: localTarget,
+		PathClass: pathClassPrivateMesh, Generation: providerGeneration,
+	}
+	return structured(overlayBase(record, map[string]any{
+		"ready": true, "pathClass": pathClassPrivateMesh, "endpoint": localTarget, "stable": true,
+	}))
+}
+
+func liveEnsurePublicIngress(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	localTarget := strings.TrimSpace(stringInput(args, "localTarget", ""))
+	if localTarget == "" {
+		return nil, fmt.Errorf("localTarget is required")
+	}
+	if err := rejectControlPlanePublicTarget(localTarget, stringInput(args, "targetKind", "")); err != nil {
+		return nil, err
+	}
+	ownershipStore.Lock()
+	record, err := requireOwnedMembershipLocked(args, instanceURI.String())
+	ownershipStore.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	serveURL, err := normalizeLoopbackHTTP(localTarget)
+	if err != nil {
+		return nil, err
+	}
+	operatorMode := boolInput(args, "operatorMode", false)
+	client, err := connectHostAgent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	script := fmt.Sprintf(`set -euo pipefail
+timeout 60s tailscale serve --bg %s
+timeout 60s tailscale funnel --bg on || timeout 60s tailscale funnel --bg 443 || true
+DNS_NAME="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("Self") or {}).get("DNSName") or "")' 2>/dev/null || true)"
+if [ -z "$DNS_NAME" ]; then
+  DNS_NAME="$(tailscale status --json 2>/dev/null | sed -n 's/.*"DNSName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+fi
+printf 'dns_name=%%s\n' "$DNS_NAME"
+tailscale funnel status 2>/dev/null || true
+tailscale serve status 2>/dev/null || true
+`, shellQuote(serveURL))
+	result, err := callHost(ctx, client, "run_instance_command", map[string]any{
+		"uri": instanceURI.String(), "command": "bash", "args": []string{"-lc", script}, "timeoutMs": 120 * 1000,
+	})
+	if err != nil {
+		return nil, err
+	}
+	content, _ := result.StructuredContent.(map[string]any)
+	if exitCode, present := numericInput(content, "exitCode"); present && exitCode != 0 {
+		return nil, fmt.Errorf("tailscale funnel failed with exit code %d: %s", exitCode, stringInput(content, "stderr", "")+" "+stringInput(content, "stdout", ""))
+	}
+	hostname := firstNonEmpty(stringInput(args, "hostname", ""), findDNSName(stringInput(content, "stdout", "")), record.NodeName+".ts.net")
+	hostname = strings.TrimSuffix(hostname, ".")
+	endpoint := "https://" + hostname
+	endpointRef, err := newOpaqueRef("ingress")
+	if err != nil {
+		return nil, err
+	}
+	ownershipStore.Lock()
+	defer ownershipStore.Unlock()
+	ingress := publicIngressRecord{
+		EndpointRef: endpointRef, OverlayURI: record.OverlayURI, TargetURI: record.TargetURI,
+		LocalTarget: localTarget, Endpoint: endpoint, Stable: operatorMode,
+		PathClass: pathClassPublicIngress, Generation: providerGeneration, Hostname: hostname,
+	}
+	ownershipStore.ingresses[endpointRef] = ingress
+	return structured(overlayBase(record, map[string]any{
+		"ready": true, "pathClass": pathClassPublicIngress, "endpoint": endpoint,
+		"endpointRef": endpointRef, "stable": ingress.Stable,
+	}))
+}
+
+func livePromotePublicIngress(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	_ = ctx
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	endpointRef := strings.TrimSpace(stringInput(args, "endpointRef", ""))
+	if endpointRef == "" {
+		return nil, fmt.Errorf("endpointRef is required")
+	}
+	ownershipStore.Lock()
+	defer ownershipStore.Unlock()
+	ingress, ok := ownershipStore.ingresses[endpointRef]
+	if !ok {
+		return nil, fmt.Errorf("endpoint reference is unknown")
+	}
+	if ingress.Generation != providerGeneration {
+		return nil, fmt.Errorf("stale provider generation for endpoint")
+	}
+	record, err := requireOwnedMembershipLocked(args, instanceURI.String())
+	if err != nil {
+		return nil, err
+	}
+	operatorMode := boolInput(args, "operatorMode", false)
+	ingress.TargetURI = record.TargetURI
+	ingress.OverlayURI = record.OverlayURI
+	ingress.Endpoint = "https://" + firstNonEmpty(ingress.Hostname, "node.ingress.example") + "/promoted"
+	// operatorMode may claim stable=true without requiring Tailscale Operator to be installed yet.
+	ingress.Stable = operatorMode
+	ownershipStore.ingresses[endpointRef] = ingress
+	return structured(overlayBase(record, map[string]any{
+		"ready": true, "pathClass": pathClassPublicIngress, "endpoint": ingress.Endpoint,
+		"endpointRef": endpointRef, "stable": ingress.Stable,
+	}))
+}
+
+func liveRemoveHAEndpoint(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	endpointRef := strings.TrimSpace(stringInput(args, "endpointRef", ""))
+	if endpointRef == "" {
+		return nil, fmt.Errorf("endpointRef is required")
+	}
+	ownershipStore.Lock()
+	ingress, ok := ownershipStore.ingresses[endpointRef]
+	if ok {
+		delete(ownershipStore.ingresses, endpointRef)
+	}
+	ownershipStore.Unlock()
+	if !ok {
+		return structured(map[string]any{
+			"contractVersion": capabilitycontract.NetworkOverlay, "ready": true, "provider": providerName,
+			"generation": providerGeneration, "deleted": true, "targetUri": "vm:local:placeholder",
+		})
+	}
+	if ingress.Generation != providerGeneration {
+		return nil, fmt.Errorf("refusing to delete endpoint owned by a foreign generation")
+	}
+	if client, err := connectHostAgent(ctx); err == nil {
+		defer client.Close()
+		_, _ = callHost(ctx, client, "run_instance_command", map[string]any{
+			"uri": ingress.TargetURI, "command": "bash",
+			"args":      []string{"-lc", "tailscale funnel --bg=false || true; tailscale serve reset || true"},
+			"timeoutMs": 30 * 1000,
+		})
+	}
+	return structured(map[string]any{
+		"contractVersion": capabilitycontract.NetworkOverlay, "ready": true, "provider": providerName,
+		"generation": providerGeneration, "deleted": true, "targetUri": ingress.TargetURI, "endpointRef": endpointRef,
+	})
+}
+
+func liveRemoveMembership(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	ref := strings.TrimSpace(stringInput(args, "membershipRef", ""))
+	if ref == "" {
+		return nil, fmt.Errorf("membershipRef is required")
+	}
+	ownershipStore.Lock()
+	record, ok := ownershipStore.memberships[ref]
+	ownershipStore.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("network overlay membership reference is unknown or expired")
+	}
+	if record.Generation != providerGeneration {
+		return nil, fmt.Errorf("refusing to remove membership owned by a foreign generation")
+	}
+	if record.TargetURI != instanceURI.String() {
+		return nil, fmt.Errorf("network overlay membership is bound to another instance")
+	}
+	if client, err := connectHostAgent(ctx); err == nil {
+		defer client.Close()
+		_, _ = callHost(ctx, client, "run_instance_command", map[string]any{
+			"uri": instanceURI.String(), "command": "bash",
+			"args": []string{"-lc", "tailscale logout || true"}, "timeoutMs": 30 * 1000,
+		})
+	}
+	if api, err := liveAPIClient(); err == nil && record.NodeID != "" && !strings.HasPrefix(record.NodeID, "node-") {
+		_ = api.DeleteDevice(ctx, record.NodeID)
+	}
+	ownershipStore.Lock()
+	deleteOwnedForTargetLocked(record.TargetURI, ref)
+	ownershipStore.Unlock()
+	return structured(map[string]any{
+		"contractVersion": capabilitycontract.NetworkOverlay, "ready": true, "provider": providerName,
+		"generation": providerGeneration, "deleted": true, "membershipRef": ref, "targetUri": instanceURI.String(),
+	})
+}
+
+func liveProbeReachability(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	args = cloneArgs(args)
+	if stringInput(args, "pathClass", "") == "" {
+		args["pathClass"] = pathClassPrivateMesh
+	}
+	return liveProbePathAware(ctx, args)
+}
+
+func liveProbePathAware(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	pathClass := strings.TrimSpace(stringInput(args, "pathClass", ""))
+	if pathClass != pathClassPrivateMesh && pathClass != pathClassPublicIngress {
+		return nil, fmt.Errorf("pathClass must be %q or %q", pathClassPrivateMesh, pathClassPublicIngress)
+	}
+	peerMeshIP := strings.TrimSpace(stringInput(args, "peerMeshIp", ""))
+	ownershipStore.Lock()
+	ref, ok := ownershipStore.byTarget[instanceURI.String()]
+	if !ok {
+		ownershipStore.Unlock()
+		return nil, fmt.Errorf("target is not enrolled in the overlay")
+	}
+	record := ownershipStore.memberships[ref]
+	if record.Generation != providerGeneration {
+		ownershipStore.Unlock()
+		return nil, fmt.Errorf("stale provider generation for membership")
+	}
+	result := overlayBase(record, map[string]any{"pathClass": pathClass, "probe": map[string]any{"pathClass": pathClass}})
+	switch pathClass {
+	case pathClassPrivateMesh:
+		if peerMeshIP == "" {
+			ownershipStore.Unlock()
+			return nil, fmt.Errorf("peerMeshIp is required for private-mesh probes")
+		}
+		if net.ParseIP(peerMeshIP) == nil {
+			ownershipStore.Unlock()
+			return nil, fmt.Errorf("peerMeshIp must be an IPv4 address")
+		}
+		ready := privateMeshReadyLocked(instanceURI.String(), peerMeshIP)
+		ownershipStore.Unlock()
+		if !ready {
+			if client, err := connectHostAgent(ctx); err == nil {
+				defer client.Close()
+				if err := pingFromGuest(ctx, client, instanceURI, peerMeshIP); err == nil {
+					ready = true
+				}
+			}
+		}
+		result["ready"] = ready
+		result["peerMeshIp"] = peerMeshIP
+		probe := result["probe"].(map[string]any)
+		probe["ready"] = ready
+		probe["peerMeshIp"] = peerMeshIP
+		if !ready {
+			ownershipStore.Lock()
+			if publicReadyLocked(instanceURI.String()) {
+				probe["publicIngressPresent"] = true
+				probe["privateSatisfiedByPublic"] = false
+			}
+			ownershipStore.Unlock()
+			result["error"] = "private-mesh peer reachability is not ready"
+		}
+		return structured(result)
+	case pathClassPublicIngress:
+		ready := publicReadyLocked(instanceURI.String())
+		stable := false
+		endpoint := ""
+		if ready {
+			for _, ingress := range ownershipStore.ingresses {
+				if ingress.TargetURI == instanceURI.String() && ingress.Generation == providerGeneration {
+					endpoint = ingress.Endpoint
+					stable = ingress.Stable
+					break
+				}
+			}
+		}
+		ownershipStore.Unlock()
+		result["ready"] = ready
+		result["stable"] = stable
+		if endpoint != "" {
+			result["endpoint"] = endpoint
+		}
+		probe := result["probe"].(map[string]any)
+		probe["ready"] = ready
+		if !ready {
+			result["error"] = "public-ingress endpoint is not ready"
+		}
+		return structured(result)
+	default:
+		ownershipStore.Unlock()
+		return nil, fmt.Errorf("unsupported pathClass %q", pathClass)
+	}
+}
+
+func liveFinalizeOwnedTeardown(ctx context.Context, inputs map[string]any) error {
+	generation := firstNonEmpty(stringInput(inputs, "generation", ""), providerGeneration)
+	if generation != providerGeneration {
+		return fmt.Errorf("refusing teardown for foreign provider generation")
+	}
+	ensureTailscaleEnvLoaded()
+	ownershipStore.Lock()
+	records := make([]membershipRecord, 0, len(ownershipStore.memberships))
+	for _, record := range ownershipStore.memberships {
+		if record.Generation == generation {
+			records = append(records, record)
+		}
+	}
+	ownershipStore.Unlock()
+	var client *hostagentclient.Client
+	if len(records) > 0 {
+		if c, err := connectHostAgent(ctx); err == nil {
+			client = c
+			defer client.Close()
+		}
+	}
+	api, _ := liveAPIClient()
+	for _, record := range records {
+		if client != nil {
+			_, _ = callHost(ctx, client, "run_instance_command", map[string]any{
+				"uri": record.TargetURI, "command": "bash",
+				"args": []string{"-lc", "tailscale logout || true"}, "timeoutMs": 30 * 1000,
+			})
+		}
+		if api != nil && record.NodeID != "" && !strings.HasPrefix(record.NodeID, "node-") {
+			_ = api.DeleteDevice(ctx, record.NodeID)
+		}
+	}
+	ownershipStore.Lock()
+	defer ownershipStore.Unlock()
+	for ref, record := range ownershipStore.memberships {
+		if record.Generation == generation {
+			deleteOwnedForTargetLocked(record.TargetURI, ref)
+		}
+	}
+	return nil
+}
+
+func connectHostAgent(ctx context.Context) (*hostagentclient.Client, error) {
+	endpoint := strings.TrimSpace(os.Getenv("OPUTE_HOST_AGENT_ENDPOINT"))
+	if endpoint == "" {
+		return nil, fmt.Errorf("OPUTE_HOST_AGENT_ENDPOINT is required for Tailscale provider callbacks")
+	}
+	bearerToken := firstNonEmpty(os.Getenv("OPUTE_HOST_AGENT_BEARER_TOKEN"), os.Getenv("MCP_AUTH_TOKEN"))
+	return hostagentclient.Connect(ctx, endpoint, bearerToken)
+}
+
+func callHost(ctx context.Context, client *hostagentclient.Client, name string, args map[string]any) (*mcp.CallToolResult, error) {
+	result, err := client.Call(ctx, name, args)
+	if err != nil {
+		return nil, fmt.Errorf("host callback %s: %w", name, err)
+	}
+	if result == nil {
+		return nil, fmt.Errorf("host callback %s returned no result", name)
+	}
+	if result.IsError {
+		detail := ""
+		for _, content := range result.Content {
+			if text, ok := content.(*mcp.TextContent); ok && strings.TrimSpace(text.Text) != "" {
+				detail = strings.TrimSpace(text.Text)
+				break
+			}
+		}
+		if detail == "" {
+			detail = "host callback returned an error result"
+		}
+		return nil, fmt.Errorf("host callback %s failed: %s", name, detail)
+	}
+	return result, nil
+}
+
+func waitForGuestExec(ctx context.Context, client *hostagentclient.Client, instanceURI resourceid.URI) error {
+	deadline := time.Now().Add(5 * time.Minute)
+	for time.Now().Before(deadline) {
+		result, err := callHost(ctx, client, "run_instance_command", map[string]any{
+			"uri": instanceURI.String(), "command": "true", "timeoutMs": 30 * 1000,
+		})
+		if err == nil {
+			if content, ok := result.StructuredContent.(map[string]any); ok {
+				if exitCode, present := numericInput(content, "exitCode"); present && exitCode == 0 {
+					return nil
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	return fmt.Errorf("timed out waiting for Incus guest agent on %s", instanceURI.String())
+}
+
+func numericInput(values map[string]any, key string) (int, bool) {
+	value, ok := values[key]
+	switch number := value.(type) {
+	case int:
+		return number, true
+	case int64:
+		return int(number), true
+	case float64:
+		return int(number), true
+	default:
+		return 0, ok && value != nil
+	}
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+}
+
+func sanitizeHostname(name string) string {
+	name = strings.TrimSpace(strings.ToLower(name))
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			return r
+		default:
+			return '-'
+		}
+	}, name)
+	return strings.Trim(name, "-.")
+}
+
+func findTailscaleIPv4(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "mesh_ip=") {
+			ip := strings.TrimSpace(strings.TrimPrefix(line, "mesh_ip="))
+			if net.ParseIP(ip) != nil && net.ParseIP(ip).To4() != nil {
+				return ip
+			}
+		}
+	}
+	for _, field := range strings.Fields(output) {
+		candidate := strings.Trim(field, "(),=")
+		ip := net.ParseIP(strings.SplitN(candidate, "/", 2)[0])
+		if ip != nil && ip.To4() != nil && strings.HasPrefix(ip.String(), tailscaleCGNATPrefix) {
+			return ip.String()
+		}
+	}
+	return ""
+}
+
+func findDNSName(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "dns_name=") {
+			return strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(line, "dns_name=")), ".")
+		}
+	}
+	return ""
+}
+
+func normalizeLoopbackHTTP(localTarget string) (string, error) {
+	localTarget = strings.TrimSpace(localTarget)
+	if localTarget == "" {
+		return "", fmt.Errorf("localTarget is required")
+	}
+	if !strings.Contains(localTarget, "://") {
+		if _, err := net.LookupPort("tcp", localTarget); err == nil || isDigits(localTarget) {
+			return "http://127.0.0.1:" + localTarget, nil
+		}
+		return "", fmt.Errorf("localTarget must be an HTTP URL or port")
+	}
+	parsed, err := url.ParseRequestURI(localTarget)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", fmt.Errorf("localTarget must be an HTTP(S) URL")
+	}
+	host := parsed.Hostname()
+	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		return "", fmt.Errorf("localTarget must target loopback")
+	}
+	return localTarget, nil
+}
+
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func redactSecret(text, secret string) string {
+	if secret == "" {
+		return text
+	}
+	return strings.ReplaceAll(text, secret, "[redacted]")
+}

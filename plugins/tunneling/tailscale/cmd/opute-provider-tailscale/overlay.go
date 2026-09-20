@@ -106,8 +106,8 @@ func reportTwoNodeReadiness(args map[string]any) (*mcp.CallToolResult, error) {
 		return nil, fmt.Errorf("peer target is not enrolled")
 	}
 	peer := ownershipStore.memberships[peerRef]
-	forwardKey := record.TargetURI + "|" + peer.MeshIP
-	reverseKey := peer.TargetURI + "|" + record.MeshIP
+	forwardKey := meshKey(record.TargetURI, peer.TargetURI)
+	reverseKey := meshKey(peer.TargetURI, record.TargetURI)
 	forward := ownershipStore.meshEdges[forwardKey]
 	reverse := ownershipStore.meshEdges[reverseKey]
 	meshReady := forward.Ready && reverse.Ready
@@ -187,10 +187,14 @@ func useFakeBackend() bool {
 }
 
 func dispatchOverlayOperation(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
-	_ = ctx
-	if !useFakeBackend() {
-		return nil, fmt.Errorf("live Tailscale backend is not configured in this environment; set OPUTE_TAILSCALE_BACKEND=fake for contract tests")
+	if useFakeBackend() {
+		return dispatchFakeOverlayOperation(ctx, operation, args)
 	}
+	return dispatchLiveOverlayOperation(ctx, operation, args)
+}
+
+func dispatchFakeOverlayOperation(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
+	_ = ctx
 	switch operation {
 	case capabilitycontract.NetworkOverlayValidateOperation:
 		return validateOverlay(args)
@@ -716,6 +720,9 @@ func removeMembership(args map[string]any) (*mcp.CallToolResult, error) {
 }
 
 func finalizeOwnedTeardown(inputs map[string]any) error {
+	if !useFakeBackend() {
+		return liveFinalizeOwnedTeardown(context.Background(), inputs)
+	}
 	generation := firstNonEmpty(stringInput(inputs, "generation", ""), providerGeneration)
 	if generation != providerGeneration {
 		return fmt.Errorf("refusing teardown for foreign provider generation")

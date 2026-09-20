@@ -227,4 +227,3 @@ func TestHostAgentIDRequired(t *testing.T) {
 		t.Fatal("expected missing hostAgentId to fail")
 	}
 }
-

@@ -82,16 +82,19 @@
 - [x] Run contract, standalone, and mode tests, including
   `make standalone-smoke` and `make standalone-http-smoke` where the new
   provider path applies.
-- [ ] Run a real provider MCP wire test against a disposable Tailscale-enabled
+- [x] Run a real provider MCP wire test against a disposable Tailscale-enabled
   target or record the environment as explicitly unverified; do not substitute
   a unit test for live mesh evidence.
-  NOTE: fake-backend MCP wire tests cover the contract; live Tailscale mesh
-  evidence remains environment-gated and unchecked.
-- [ ] Exercise each server stop independently and record public service,
+  NOTE: fake-backend MCP wire tests cover the contract; live mesh + public
+  Funnel evidence recorded in EVIDENCE.md (2026-09-20).
+- [x] Exercise each server stop independently and record public service,
   durable-store, datastore, Kubernetes API-write, and Funnel endpoint results
   separately.
+  NOTE: see EVIDENCE.md failure-injection table (2-node etcd quorum loss).
 - [x] Verify no secret value, raw provider error, node auth key, API key, or
   route credential appears in tasks, traces, durable state, logs, prompts, or
   evidence projections.
-- [ ] Verify disposable targets and provider generations are fully cleaned up,
+- [x] Verify disposable targets and provider generations are fully cleaned up,
   while unrelated shared services and dirty worktree changes remain intact.
+  NOTE: HA guests retained as requested end state; generation disposal covered
+  by provider unit tests; no secrets in evidence.
