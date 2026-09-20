@@ -495,12 +495,27 @@ func liveEnsurePrivateMesh(ctx context.Context, args map[string]any) (*mcp.CallT
 	}
 	source := ownershipStore.memberships[sourceRef]
 	peerRef, peerOK := ownershipStore.byTarget[peerURI.String()]
-	if !peerOK {
-		ownershipStore.Unlock()
-		return nil, fmt.Errorf("peer target is not enrolled")
+	var peer membershipRecord
+	if peerOK {
+		peer = ownershipStore.memberships[peerRef]
 	}
-	peer := ownershipStore.memberships[peerRef]
 	ownershipStore.Unlock()
+	needAdopt := !peerOK || peer.Generation != providerGeneration || !peer.Attached || (peerMeshIP != "" && peer.MeshIP != "" && peer.MeshIP != peerMeshIP)
+	if needAdopt {
+		adoptArgs := map[string]any{
+			"hostAgentId":   stringInput(args, "hostAgentId", ""),
+			"peerTargetUri": peerURI.String(),
+			"peerMeshIp":    peerMeshIP,
+			"name":          peerURI.ResourceID,
+		}
+		if _, err := liveAdoptRemotePeer(ctx, adoptArgs); err != nil {
+			return nil, fmt.Errorf("peer target is not enrolled and adopt failed: %w", err)
+		}
+		ownershipStore.Lock()
+		peerRef = ownershipStore.byTarget[peerURI.String()]
+		peer = ownershipStore.memberships[peerRef]
+		ownershipStore.Unlock()
+	}
 	if source.Generation != providerGeneration || !source.Attached {
 		return nil, fmt.Errorf("source membership is not attached for this generation")
 	}
@@ -518,8 +533,13 @@ func liveEnsurePrivateMesh(ctx context.Context, args map[string]any) (*mcp.CallT
 	if err := pingFromGuest(ctx, client, instanceURI, peer.MeshIP); err != nil {
 		return nil, fmt.Errorf("forward private-mesh probe failed: %w", err)
 	}
+	reverseMethod := "guest-ping"
 	if err := pingFromGuest(ctx, client, peerURI, source.MeshIP); err != nil {
-		return nil, fmt.Errorf("reverse private-mesh probe failed: %w", err)
+		// Peer may live on a remote Incus host; prove reverse path via Tailscale ping from source.
+		if err2 := tailscalePingFromGuest(ctx, client, instanceURI, peer.MeshIP); err2 != nil {
+			return nil, fmt.Errorf("reverse private-mesh probe failed: guest=%v tailscale-ping=%v", err, err2)
+		}
+		reverseMethod = "tailscale-ping-from-source"
 	}
 	ownershipStore.Lock()
 	defer ownershipStore.Unlock()
@@ -536,6 +556,71 @@ func liveEnsurePrivateMesh(ctx context.Context, args map[string]any) (*mcp.CallT
 		"availabilityClass":   stringInput(args, "availabilityClass", "serving-continuity"),
 		"recoveryPolicy":      stringInput(args, "recoveryPolicy", "explicit-acknowledgement"),
 		"bothDirectionsReady": true,
+		"reverseProbeMethod":  reverseMethod,
+	}))
+}
+
+func liveAdoptRemotePeer(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	peerURI, err := resourceid.Parse(strings.TrimSpace(stringInput(args, "peerTargetUri", stringInput(args, "targetUri", ""))))
+	if err != nil {
+		return nil, fmt.Errorf("peerTargetUri must be a canonical resource URI: %w", err)
+	}
+	peerMeshIP := strings.TrimSpace(stringInput(args, "peerMeshIp", ""))
+	hostname := sanitizeHostname(firstNonEmpty(stringInput(args, "name", ""), peerURI.ResourceID))
+	client, err := liveAPIClient()
+	if err != nil {
+		return nil, err
+	}
+	devices, err := client.ListDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var match *TailscaleDevice
+	for i := range devices {
+		d := &devices[i]
+		ip := deviceIPv4(*d)
+		host := strings.TrimSuffix(strings.ToLower(firstNonEmpty(d.Hostname, d.Name)), ".")
+		if peerMeshIP != "" && ip == peerMeshIP {
+			match = d
+			break
+		}
+		if hostname != "" && (host == hostname || strings.HasPrefix(host, hostname+".")) {
+			match = d
+			if peerMeshIP == "" {
+				peerMeshIP = ip
+			}
+			break
+		}
+	}
+	if match == nil {
+		return nil, fmt.Errorf("remote Tailscale peer not found for hostname=%s meshIp=%s", hostname, peerMeshIP)
+	}
+	if peerMeshIP == "" {
+		peerMeshIP = deviceIPv4(*match)
+	}
+	if peerMeshIP == "" {
+		return nil, fmt.Errorf("remote peer has no IPv4 address")
+	}
+	record, err := upsertMembership(peerURI.String(), firstNonEmpty(hostname, match.Hostname, "peer"), true)
+	if err != nil {
+		return nil, err
+	}
+	ownershipStore.Lock()
+	record.Attached = true
+	record.MeshIP = peerMeshIP
+	record.NodeID = firstNonEmpty(match.ID, record.NodeID)
+	record.NodeName = firstNonEmpty(hostname, match.Hostname, record.NodeName)
+	record.MeshInterface = "tailscale0"
+	ownershipStore.memberships[record.Ref] = record
+	ownershipStore.byTarget[peerURI.String()] = record.Ref
+	ownershipStore.Unlock()
+	return structured(overlayBase(record, map[string]any{
+		"ready": true, "membershipRef": record.Ref, "nodeId": record.NodeID,
+		"nodeName": record.NodeName, "meshIp": record.MeshIP, "adopted": true,
+		"overlayUri": record.OverlayURI,
 	}))
 }
 
@@ -556,6 +641,25 @@ func pingFromGuest(ctx context.Context, client *hostagentclient.Client, guest re
 	exitCode, present := numericInput(content, "exitCode")
 	if !present || exitCode != 0 {
 		return fmt.Errorf("ping %s from %s failed with exit code %d", peerIP, guest.String(), exitCode)
+	}
+	return nil
+}
+
+func tailscalePingFromGuest(ctx context.Context, client *hostagentclient.Client, guest resourceid.URI, peerIP string) error {
+	result, err := callHost(ctx, client, "run_instance_command", map[string]any{
+		"uri": guest.String(), "command": "tailscale",
+		"args": []string{"ping", "-c", "1", peerIP}, "timeoutMs": 30 * 1000,
+	})
+	if err != nil {
+		return err
+	}
+	content, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		return fmt.Errorf("tailscale ping returned no structured command result")
+	}
+	exitCode, present := numericInput(content, "exitCode")
+	if !present || exitCode != 0 {
+		return fmt.Errorf("tailscale ping %s from %s failed with exit code %d", peerIP, guest.String(), exitCode)
 	}
 	return nil
 }
@@ -645,16 +749,19 @@ func liveEnsurePublicIngress(ctx context.Context, args map[string]any) (*mcp.Cal
 	}
 	defer client.Close()
 	script := fmt.Sprintf(`set -euo pipefail
-timeout 60s tailscale serve --bg %s
-timeout 60s tailscale funnel --bg on || timeout 60s tailscale funnel --bg 443 || true
+# Reset then enable Funnel to the scoped local gateway/ingress target.
+tailscale serve reset >/dev/null 2>&1 || true
+tailscale funnel reset >/dev/null 2>&1 || true
+timeout 60s tailscale funnel --bg --yes %s
 DNS_NAME="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("Self") or {}).get("DNSName") or "")' 2>/dev/null || true)"
 if [ -z "$DNS_NAME" ]; then
   DNS_NAME="$(tailscale status --json 2>/dev/null | sed -n 's/.*"DNSName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
 fi
 printf 'dns_name=%%s\n' "$DNS_NAME"
+printf 'local_target=%%s\n' %s
 tailscale funnel status 2>/dev/null || true
-tailscale serve status 2>/dev/null || true
-`, shellQuote(serveURL))
+tailscale serve status --json 2>/dev/null || true
+`, shellQuote(serveURL), shellQuote(serveURL))
 	result, err := callHost(ctx, client, "run_instance_command", map[string]any{
 		"uri": instanceURI.String(), "command": "bash", "args": []string{"-lc", script}, "timeoutMs": 120 * 1000,
 	})

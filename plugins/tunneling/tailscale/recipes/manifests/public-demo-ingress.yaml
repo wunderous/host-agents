@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opute-public
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: public-demo
+  namespace: opute-public
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: public-demo}
+  template:
+    metadata:
+      labels: {app: public-demo}
+    spec:
+      containers:
+      - name: demo
+        image: hashicorp/http-echo:1.0
+        args: ["-text=opute-public-ingress ok"]
+        ports: [{containerPort: 5678}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-demo
+  namespace: opute-public
+spec:
+  selector: {app: public-demo}
+  ports:
+  - name: http
+    port: 80
+    targetPort: 5678
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: public-demo
+  namespace: opute-public
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: opute-ha-a.tail229553.ts.net
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: public-demo
+            port: {number: 80}
