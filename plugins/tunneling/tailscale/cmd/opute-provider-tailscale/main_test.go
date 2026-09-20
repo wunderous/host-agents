@@ -33,23 +33,25 @@ func TestTailscaleManifestValidatesAndUsesNeutralOperationIDs(t *testing.T) {
 		}
 	}
 	for _, id := range []string{
-		capabilitycontract.NetworkOverlayValidateOperation,
 		capabilitycontract.NetworkOverlayEnrollOperation,
 		capabilitycontract.NetworkOverlayEnsurePrivateMeshOperation,
 		capabilitycontract.NetworkOverlayEnsurePrivateServiceOperation,
 		capabilitycontract.NetworkOverlayEnsurePublicIngressOperation,
 		capabilitycontract.NetworkOverlayPromotePublicIngressOperation,
 		capabilitycontract.NetworkOverlayProbeOperation,
-		capabilitycontract.NetworkOverlayPrepareMembershipOperation,
-		capabilitycontract.NetworkOverlayAttachTargetOperation,
-		capabilitycontract.NetworkOverlayProbeReachabilityOperation,
-		capabilitycontract.NetworkOverlayEnsureHAEndpointOperation,
-		capabilitycontract.NetworkOverlayRemoveHAEndpointOperation,
-		capabilitycontract.NetworkOverlayRemoveMembershipOperation,
-		"opute.capability.tunneling.validate",
+		capabilitycontract.NetworkOverlayReportTwoNodeReadinessOperation,
 	} {
 		if !seen[id] {
 			t.Fatalf("manifest missing operation %q", id)
+		}
+	}
+	for _, id := range []string{
+		capabilitycontract.NetworkOverlayValidateOperation,
+		capabilitycontract.NetworkOverlayPrepareMembershipOperation,
+		capabilitycontract.NetworkOverlayAttachTargetOperation,
+	} {
+		if seen[id] {
+			t.Fatalf("manifest must not claim Cloudflare-owned operation %q", id)
 		}
 	}
 }

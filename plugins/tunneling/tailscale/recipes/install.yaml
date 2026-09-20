@@ -26,7 +26,7 @@ inputs:
     default: com.opute.tailscale
     schema: {type: string, const: com.opute.tailscale}
   providerPort:
-    default: 4321
+    default: 4323
     schema: {type: integer, minimum: 1024, maximum: 65535}
   runNonce:
     default: default
@@ -154,19 +154,24 @@ plan:
             capabilities:
               - id: opute.capability.network-overlay.v1
                 version: 1
-              - id: opute.capability.tunneling.v1
-                version: 1
             server:
               transport: streamable_http
               endpoint: http://127.0.0.1:${vars.inputs.providerPort}/mcp
           endpoint: http://127.0.0.1:${vars.inputs.providerPort}/mcp
           mode: activate
-          activationRecipe:
-            source: ${vars.inputs.activationRecipeSource}
-            sha256: ${vars.inputs.activationRecipeSha256}
+          recipeSource: ${vars.inputs.activationRecipeSource}
+          sha256: ${vars.inputs.activationRecipeSha256}
+          inputs:
+            providerId: ${vars.inputs.providerId}
+            activationNonce: ${vars.inputs.runNonce}
+          activate: true
+      timeoutMs: 1800000
       validate:
         tool: opute.provider.status
         args:
-          providerId: ${vars.inputs.providerId}
+          provider: ${vars.inputs.providerId}
         assert:
-          - {path: /ready, op: eq, value: true}
+          - {path: /active, op: eq, value: true}
+          - {path: /connected, op: eq, value: true}
+        pollIntervalMs: 3000
+        timeoutMs: 600000

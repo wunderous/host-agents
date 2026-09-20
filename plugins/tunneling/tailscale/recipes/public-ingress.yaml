@@ -1,11 +1,12 @@
 contractVersion: host-recipe.v1
 recipeId: com.opute.tailscale.public-ingress
-recipeVersion: 1.0.0
+recipeVersion: 1.0.2
 execution:
   coordinator: host-agent
   mode: local
 compatibility:
   requiredTools:
+    - get_host_info
     - opute.capability.network-overlay.enroll
     - opute.capability.network-overlay.ensure-public-ingress
     - opute.capability.network-overlay.probe
@@ -38,20 +39,36 @@ plan:
   contractVersion: host-plan.v1
   planId: com.opute.tailscale.public-ingress
   generation: 1
-  idempotencyKey: com.opute.tailscale.public-ingress-${vars.inputs.targetUri}
+  idempotencyKey: com.opute.tailscale.public-ingress-${vars.inputs.targetUri}-${vars.inputs.endpoint}-v5
   nodes:
+    - id: agent
+      action:
+        tool: get_host_info
     - id: enroll
+      dependsOn: [agent]
       action:
         tool: opute.capability.network-overlay.enroll
         args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
           targetUri: ${vars.inputs.targetUri}
           name: ${vars.inputs.name}
           credentialKind: auth-key
+      validate:
+        tool: opute.capability.network-overlay.probe
+        args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
+          targetUri: ${vars.inputs.targetUri}
+          pathClass: private-mesh
+        assert:
+          - {path: /ready, op: eq, value: true}
+        pollIntervalMs: 2000
+        timeoutMs: 180000
     - id: ingress
       dependsOn: [enroll]
       action:
         tool: opute.capability.network-overlay.ensure-public-ingress
         args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
           targetUri: ${vars.inputs.targetUri}
           localTarget: ${vars.inputs.localTarget}
           membershipRef: ${nodes.enroll.output.membershipRef}
@@ -60,10 +77,22 @@ plan:
           operatorEvidence: ${vars.inputs.operatorEvidence}
           hostname: ${vars.inputs.hostname}
           endpoint: ${vars.inputs.endpoint}
+      validate:
+        tool: opute.capability.network-overlay.probe
+        args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
+          targetUri: ${vars.inputs.targetUri}
+          pathClass: public-ingress
+        assert:
+          - {path: /ready, op: eq, value: true}
+          - {path: /stable, op: eq, value: true}
+        pollIntervalMs: 3000
+        timeoutMs: 180000
     - id: probe
       dependsOn: [ingress]
       action:
         tool: opute.capability.network-overlay.probe
         args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
           targetUri: ${vars.inputs.targetUri}
           pathClass: public-ingress

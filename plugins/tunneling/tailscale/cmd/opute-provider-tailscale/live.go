@@ -763,10 +763,6 @@ func liveEnsurePublicIngress(ctx context.Context, args map[string]any) (*mcp.Cal
 	if err != nil {
 		return nil, err
 	}
-	serveURL, err := normalizeLoopbackHTTP(localTarget)
-	if err != nil {
-		return nil, err
-	}
 	operatorMode := boolInput(args, "operatorMode", false)
 	if err := requireOperatorStableEvidence(args); err != nil {
 		return nil, err
@@ -809,6 +805,10 @@ func liveEnsurePublicIngress(ctx context.Context, args map[string]any) (*mcp.Cal
 		}))
 	}
 	// operatorMode short-circuit above records Operator-managed stable ingress without node Funnel CLI.
+	serveURL, err := normalizeLoopbackHTTP(localTarget)
+	if err != nil {
+		return nil, err
+	}
 	client, err := connectHostAgent(ctx)
 	if err != nil {
 		return nil, err
@@ -997,19 +997,44 @@ func liveProbePathAware(ctx context.Context, args map[string]any) (*mcp.CallTool
 	ref, ok := ownershipStore.byTarget[instanceURI.String()]
 	if !ok {
 		ownershipStore.Unlock()
-		return nil, fmt.Errorf("target is not enrolled in the overlay")
+		return structured(map[string]any{
+			"contractVersion": capabilitycontract.NetworkOverlay,
+			"ready":           false,
+			"provider":        providerName,
+			"generation":      providerGeneration,
+			"targetUri":       instanceURI.String(),
+			"pathClass":       pathClass,
+			"probe":           map[string]any{"pathClass": pathClass, "ready": false},
+			"error":           "target is not enrolled in the overlay",
+			"stable":          false,
+		})
 	}
 	record := ownershipStore.memberships[ref]
 	if record.Generation != providerGeneration {
 		ownershipStore.Unlock()
-		return nil, fmt.Errorf("stale provider generation for membership")
+		return structured(map[string]any{
+			"contractVersion": capabilitycontract.NetworkOverlay,
+			"ready":           false,
+			"provider":        providerName,
+			"generation":      providerGeneration,
+			"targetUri":       instanceURI.String(),
+			"pathClass":       pathClass,
+			"probe":           map[string]any{"pathClass": pathClass, "ready": false},
+			"error":           "stale provider generation for membership",
+			"stable":          false,
+		})
 	}
 	result := overlayBase(record, map[string]any{"pathClass": pathClass, "probe": map[string]any{"pathClass": pathClass}})
 	switch pathClass {
 	case pathClassPrivateMesh:
 		if peerMeshIP == "" {
+			// Membership-presence probe (used as enroll readiness without a peer).
 			ownershipStore.Unlock()
-			return nil, fmt.Errorf("peerMeshIp is required for private-mesh probes")
+			result["ready"] = true
+			probe := result["probe"].(map[string]any)
+			probe["ready"] = true
+			probe["membershipOnly"] = true
+			return structured(result)
 		}
 		if net.ParseIP(peerMeshIP) == nil {
 			ownershipStore.Unlock()

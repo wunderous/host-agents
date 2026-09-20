@@ -13,7 +13,7 @@ import (
 	"github.com/wunderous/host-agents/internal/mcphttp"
 )
 
-func TestTailscaleMCPWireValidateAndEnroll(t *testing.T) {
+func TestTailscaleMCPWireEnroll(t *testing.T) {
 	t.Setenv("OPUTE_TAILSCALE_BACKEND", "fake")
 	resetOwnershipStoreForTest()
 
@@ -37,22 +37,11 @@ func TestTailscaleMCPWireValidateAndEnroll(t *testing.T) {
 		t.Fatal(err)
 	}
 	encodedTools := mustJSON(t, tools)
-	if !strings.Contains(encodedTools, capabilitycontract.NetworkOverlayValidateOperation) {
-		t.Fatalf("tools/list missing validate: %s", encodedTools)
-	}
 	if !strings.Contains(encodedTools, capabilitycontract.NetworkOverlayEnrollOperation) {
 		t.Fatalf("tools/list missing enroll: %s", encodedTools)
 	}
-
-	validateResult, err := raw.CallTool(ctx, capabilitycontract.NetworkOverlayValidateOperation, map[string]any{
-		"hostAgentId": "host-a", "targetUri": "vm:local:wire-a", "credentialKind": "auth-key",
-	})
-	if err != nil || validateResult == nil || validateResult.IsError {
-		t.Fatalf("validate wire call failed: %#v err=%v", validateResult, err)
-	}
-	validateBody := asMap(t, validateResult.StructuredContent)
-	if validateBody["ready"] != true {
-		t.Fatalf("validate not ready: %#v", validateBody)
+	if !strings.Contains(encodedTools, capabilitycontract.NetworkOverlayEnsurePublicIngressOperation) {
+		t.Fatalf("tools/list missing ensure-public-ingress: %s", encodedTools)
 	}
 
 	enrollResult, err := raw.CallTool(ctx, capabilitycontract.NetworkOverlayEnrollOperation, map[string]any{

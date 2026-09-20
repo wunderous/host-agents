@@ -1,12 +1,12 @@
 contractVersion: host-recipe.v1
 recipeId: com.opute.tailscale.overlay-mesh
-recipeVersion: 1.0.0
+recipeVersion: 1.0.2
 execution:
   coordinator: host-agent
   mode: local
 compatibility:
   requiredTools:
-    - opute.capability.network-overlay.validate
+    - get_host_info
     - opute.capability.network-overlay.enroll
     - opute.capability.network-overlay.ensure-private-mesh
     - opute.capability.network-overlay.probe
@@ -27,35 +27,58 @@ plan:
   contractVersion: host-plan.v1
   planId: com.opute.tailscale.overlay-mesh
   generation: 1
-  idempotencyKey: com.opute.tailscale.overlay-mesh-${vars.inputs.targetUri}
+  idempotencyKey: com.opute.tailscale.overlay-mesh-${vars.inputs.targetUri}-v2
   nodes:
-    - id: validate
+    - id: agent
       action:
-        tool: opute.capability.network-overlay.validate
-        args:
-          targetUri: ${vars.inputs.targetUri}
-          credentialKind: auth-key
+        tool: get_host_info
     - id: enroll
-      dependsOn: [validate]
+      dependsOn: [agent]
       action:
         tool: opute.capability.network-overlay.enroll
         args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
           targetUri: ${vars.inputs.targetUri}
           name: ${vars.inputs.name}
           credentialKind: auth-key
+      validate:
+        tool: opute.capability.network-overlay.probe
+        args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
+          targetUri: ${vars.inputs.targetUri}
+          pathClass: private-mesh
+        assert:
+          - {path: /ready, op: eq, value: true}
+        pollIntervalMs: 2000
+        timeoutMs: 180000
     - id: mesh
       dependsOn: [enroll]
       action:
         tool: opute.capability.network-overlay.ensure-private-mesh
         args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
           targetUri: ${vars.inputs.targetUri}
+          membershipRef: ${nodes.enroll.output.membershipRef}
           peerTargetUri: ${vars.inputs.peerTargetUri}
           peerMeshIp: ${vars.inputs.peerMeshIp}
+          credentialKind: auth-key
+      validate:
+        tool: opute.capability.network-overlay.probe
+        args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
+          targetUri: ${vars.inputs.targetUri}
+          peerMeshIp: ${vars.inputs.peerMeshIp}
+          pathClass: private-mesh
+        assert:
+          - {path: /ready, op: eq, value: true}
+        pollIntervalMs: 2000
+        timeoutMs: 180000
     - id: probe
       dependsOn: [mesh]
       action:
         tool: opute.capability.network-overlay.probe
         args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
           targetUri: ${vars.inputs.targetUri}
           peerMeshIp: ${vars.inputs.peerMeshIp}
           pathClass: private-mesh

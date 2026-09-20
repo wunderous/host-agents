@@ -308,9 +308,10 @@ func validateEnvelope(doc Document) error {
 		return fmt.Errorf("runtime.servingContract is required")
 	}
 	supportedServingContracts := map[string]struct{}{
-		"openai-chat.v1":   {},
-		"http-exposure.v1": {},
-		"kubernetes.v1":    {},
+		"openai-chat.v1":     {},
+		"http-exposure.v1":   {},
+		"kubernetes.v1":      {},
+		"network-overlay.v1": {},
 	}
 	if _, ok := supportedServingContracts[doc.Runtime.ServingContract]; !ok {
 		return fmt.Errorf("unsupported runtime serving contract %q", doc.Runtime.ServingContract)

@@ -47,16 +47,15 @@ func tailscaleManifest() providercontract.InstallManifest {
 		Schema:   providercontract.InstallManifestVersion,
 		Provider: providercontract.ProviderRef{ID: providerPluginID, Version: providerPluginVer},
 		Provides: []providercontract.CapabilityRef{
-			{ID: tunnelingCapability, Version: 1},
 			{ID: capabilitycontract.NetworkOverlay, Version: 1},
 		},
 		Recipes: []providercontract.RecipeRef{
-			{ID: "com.opute.tailscale.overlay-mesh", Source: providercontract.RecipeSource{URI: "recipes/overlay-mesh.yaml", Revision: "working-tree", SHA256: "sha256:d69e7afff15d7e9bf9990fd0bb8d85686a8efb73d00b21048a01f95a6ffa8c36"}, Mode: "private-mesh"},
-			{ID: "com.opute.tailscale.public-ingress", Source: providercontract.RecipeSource{URI: "recipes/public-ingress.yaml", Revision: "working-tree", SHA256: "sha256:f6245b0462e2faf31a037531215b39969cbe2b8bd277a7a5ffc2bff30326544c"}, Mode: "public-ingress"},
-			{ID: "com.opute.tailscale.install", Source: providercontract.RecipeSource{URI: "recipes/install.yaml", Revision: "working-tree", SHA256: "sha256:c6e955fb74212182746cee4038554d91091746704b3bd0dc7ad9fcd03c3602e6"}, Mode: "install"},
+			{ID: "com.opute.tailscale.activate", Source: providercontract.RecipeSource{URI: "recipes/activate.yaml", Revision: "working-tree", SHA256: "sha256:f072795ab73d50db2b5ba38ed4b97f4dd63bd996b079cd01679220f10008545d"}, Mode: "activate"},
+			{ID: "com.opute.tailscale.overlay-mesh", Source: providercontract.RecipeSource{URI: "recipes/overlay-mesh.yaml", Revision: "working-tree", SHA256: "sha256:963c28a7675a95f1630877dc0b363a70d699e8ee0b6758caa2211335ba9e1d04"}, Mode: "private-mesh"},
+			{ID: "com.opute.tailscale.public-ingress", Source: providercontract.RecipeSource{URI: "recipes/public-ingress.yaml", Revision: "working-tree", SHA256: "sha256:817d4098916d5fd4337f5041fbdcd95e43adb6caca78fd504fa5c3b2d029d1bc"}, Mode: "public-ingress"},
+			{ID: "com.opute.tailscale.install", Source: providercontract.RecipeSource{URI: "recipes/install.yaml", Revision: "working-tree", SHA256: "sha256:8f9b04efb996af440109dffaa280482f19f843752f24a30210e664f84a5c6f16"}, Mode: "install"},
 		},
 		Services: []providercontract.ServiceDefinition{
-			{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: tunnelingOperations()},
 			{ID: "opute.capability.network-overlay", CapabilityID: capabilitycontract.NetworkOverlay, Version: 1, Operations: networkOverlayOperations()},
 		},
 		Teardown: &providercontract.Operation{
@@ -64,18 +63,10 @@ func tailscaleManifest() providercontract.InstallManifest {
 			Effect: "destructive", ResourceKinds: []string{"service", "network"}, Idempotent: true, SupportsReadiness: true, TaskSupport: "sync_only",
 			ResourceCost: &providercontract.ResourceCost{Class: "control"},
 		},
-		Validation: providercontract.ValidationRef{Capability: capabilitycontract.NetworkOverlay, Operation: capabilitycontract.NetworkOverlayValidateOperation},
+		Validation: providercontract.ValidationRef{Capability: capabilitycontract.NetworkOverlay, Operation: capabilitycontract.NetworkOverlayProbeOperation},
 	}
 }
 
-func tunnelingOperations() []providercontract.Operation {
-	return []providercontract.Operation{
-		providerOperation("opute.capability.tunneling.validate", "read", map[string]any{
-			"type": "object", "required": []string{"bindings"},
-			"properties": map[string]any{"bindings": map[string]any{"type": "array"}, "placement": map[string]any{"type": "string", "enum": []string{"host", "kubernetes", "container"}}},
-		}, map[string]any{"type": "object"}, nil, nil),
-	}
-}
 
 func networkOverlayOperations() []providercontract.Operation {
 	read := func(id string, input map[string]any) providercontract.Operation {
@@ -84,34 +75,17 @@ func networkOverlayOperations() []providercontract.Operation {
 	mutation := func(id string, input map[string]any) providercontract.Operation {
 		return providerOperation(id, "mutation", input, map[string]any{"type": "object"}, []string{"host", "network"}, overlayTargetBinding())
 	}
-	destructive := func(id string, input map[string]any) providercontract.Operation {
-		return providerOperation(id, "destructive", input, map[string]any{"type": "object"}, []string{"host", "network"}, overlayTargetBinding())
-	}
 	credProps := map[string]any{
+		"hostAgentId":    map[string]any{"type": "string", "minLength": 1},
 		"credentialKind": map[string]any{"type": "string", "enum": []string{"api-key", "auth-key"}},
 		"credential":     map[string]any{"type": "string", "writeOnly": true},
 		"apiKey":         map[string]any{"type": "string", "writeOnly": true},
 		"authKey":        map[string]any{"type": "string", "writeOnly": true},
 	}
+	// Publish Tailscale-native overlay ops only. Cloudflare already owns the
+	// legacy shared validate/prepare-membership/attach-target OperationIDs;
+	// coexisting beside it requires non-overlapping IDs.
 	return []providercontract.Operation{
-		read(capabilitycontract.NetworkOverlayValidateOperation, map[string]any{
-			"type": "object", "required": []string{"targetUri"},
-			"properties": mergeProps(map[string]any{"targetUri": targetURISchema()}, credProps),
-		}),
-		mutation(capabilitycontract.NetworkOverlayPrepareMembershipOperation, map[string]any{
-			"type": "object", "required": []string{"targetUri", "name"},
-			"properties": mergeProps(map[string]any{
-				"targetUri": targetURISchema(),
-				"name":      map[string]any{"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$"},
-			}, credProps),
-		}),
-		mutation(capabilitycontract.NetworkOverlayAttachTargetOperation, map[string]any{
-			"type": "object", "required": []string{"membershipRef", "targetUri"},
-			"properties": mergeProps(map[string]any{
-				"membershipRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
-				"targetUri":     targetURISchema(),
-			}, credProps),
-		}),
 		mutation(capabilitycontract.NetworkOverlayEnrollOperation, map[string]any{
 			"type": "object", "required": []string{"targetUri", "name"},
 			"properties": mergeProps(map[string]any{
@@ -120,98 +94,91 @@ func networkOverlayOperations() []providercontract.Operation {
 				"membershipRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
 			}, credProps),
 		}),
-		read(capabilitycontract.NetworkOverlayProbeReachabilityOperation, map[string]any{
-			"type": "object", "required": []string{"targetUri", "peerMeshIp"},
-			"properties": map[string]any{
-				"targetUri":  targetURISchema(),
-				"peerMeshIp": map[string]any{"type": "string", "format": "ipv4"},
-				"pathClass":  map[string]any{"type": "string", "enum": []string{"private-mesh", "public-ingress"}},
-			},
-		}),
-		read(capabilitycontract.NetworkOverlayProbeOperation, map[string]any{
-			"type": "object", "required": []string{"targetUri", "pathClass"},
-			"properties": map[string]any{
-				"targetUri":  targetURISchema(),
-				"peerMeshIp": map[string]any{"type": "string", "format": "ipv4"},
-				"pathClass":  map[string]any{"type": "string", "enum": []string{"private-mesh", "public-ingress"}},
-			},
-		}),
-		read(capabilitycontract.NetworkOverlayReportTwoNodeReadinessOperation, map[string]any{
-			"type":     "object",
-			"required": []string{"targetUri", "peerTargetUri", "hostAgentId", "datastoreMode"},
-			"properties": map[string]any{
-				"targetUri":         targetURISchema(),
-				"peerTargetUri":     targetURISchema(),
-				"hostAgentId":       map[string]any{"type": "string", "minLength": 1},
-				"datastoreMode":     map[string]any{"type": "string", "enum": []string{"external-datastore", "embedded-etcd-two-node"}},
-				"datastoreEvidence": map[string]any{"type": "boolean"},
-			},
-		}),
 		mutation(capabilitycontract.NetworkOverlayEnsurePrivateMeshOperation, map[string]any{
-			"type": "object", "required": []string{"targetUri", "peerTargetUri", "peerMeshIp"},
-			"properties": map[string]any{
+			"type": "object", "required": []string{"targetUri", "membershipRef", "peerTargetUri"},
+			"properties": mergeProps(map[string]any{
 				"targetUri":     targetURISchema(),
+				"membershipRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
 				"peerTargetUri": targetURISchema(),
 				"peerMeshIp":    map[string]any{"type": "string", "format": "ipv4"},
-			},
+			}, credProps),
 		}),
 		mutation(capabilitycontract.NetworkOverlayEnsurePrivateServiceOperation, map[string]any{
-			"type": "object", "required": []string{"targetUri", "localTarget"},
-			"properties": map[string]any{
+			"type": "object", "required": []string{"targetUri", "membershipRef", "serviceName", "port"},
+			"properties": mergeProps(map[string]any{
 				"targetUri":     targetURISchema(),
-				"localTarget":   map[string]any{"type": "string", "minLength": 1},
 				"membershipRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
-			},
+				"serviceName":   map[string]any{"type": "string", "minLength": 1},
+				"port":          map[string]any{"type": "integer", "minimum": 1, "maximum": 65535},
+			}, credProps),
 		}),
 		mutation(capabilitycontract.NetworkOverlayEnsurePublicIngressOperation, map[string]any{
-			"type": "object", "required": []string{"targetUri", "localTarget"},
-			"properties": map[string]any{
-				"targetUri":     targetURISchema(),
-				"localTarget":   map[string]any{"type": "string", "minLength": 1},
-				"membershipRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
-				"hostname":      map[string]any{"type": "string"},
-				"targetKind":    map[string]any{"type": "string"},
-				"operatorMode":  map[string]any{"type": "boolean"},
-			},
-		}),
-		mutation(capabilitycontract.NetworkOverlayEnsureHAEndpointOperation, map[string]any{
-			"type": "object", "required": []string{"targetUri", "localTarget"},
-			"properties": map[string]any{
-				"targetUri":      targetURISchema(),
-				"peerTargetUris": map[string]any{"type": "array", "items": targetURISchema()},
-				"localTarget":    map[string]any{"type": "string", "minLength": 1},
-				"hostname":       map[string]any{"type": "string"},
-				"tunnelName":     map[string]any{"type": "string"},
-				"membershipRef":  map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
-				"targetKind":     map[string]any{"type": "string"},
-			},
+			"type": "object", "required": []string{"targetUri", "membershipRef", "localTarget"},
+			"properties": mergeProps(map[string]any{
+				"targetUri":        targetURISchema(),
+				"membershipRef":    map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+				"localTarget":      map[string]any{"type": "string", "format": "uri"},
+				"hostname":         map[string]any{"type": "string"},
+				"endpoint":         map[string]any{"type": "string"},
+				"operatorMode":     map[string]any{"type": "boolean"},
+				"ingressClassName": map[string]any{"type": "string"},
+				"operatorEvidence": map[string]any{"type": "string"},
+			}, credProps),
 		}),
 		mutation(capabilitycontract.NetworkOverlayPromotePublicIngressOperation, map[string]any{
-			"type": "object", "required": []string{"endpointRef", "targetUri"},
-			"properties": map[string]any{
-				"endpointRef":  map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
-				"targetUri":    targetURISchema(),
-				"operatorMode": map[string]any{"type": "boolean"},
-			},
-		}),
-		providerOperation(capabilitycontract.NetworkOverlayRemoveHAEndpointOperation, "destructive", map[string]any{
-			"type": "object", "required": []string{"endpointRef"},
-			"properties": map[string]any{"endpointRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true}},
-		}, map[string]any{"type": "object"}, []string{"host", "network"}, nil),
-		destructive(capabilitycontract.NetworkOverlayRemoveMembershipOperation, map[string]any{
-			"type": "object", "required": []string{"membershipRef", "targetUri"},
-			"properties": map[string]any{
-				"membershipRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+			"type": "object", "required": []string{"targetUri", "membershipRef"},
+			"properties": mergeProps(map[string]any{
 				"targetUri":     targetURISchema(),
-			},
+				"membershipRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+			}, credProps),
+		}),
+		read(capabilitycontract.NetworkOverlayProbeOperation, map[string]any{
+			"type": "object", "required": []string{"targetUri"},
+			"properties": mergeProps(map[string]any{
+				"targetUri":  targetURISchema(),
+				"pathClass":  map[string]any{"type": "string"},
+				"peerMeshIp": map[string]any{"type": "string", "format": "ipv4"},
+			}, credProps),
+		}),
+		read(capabilitycontract.NetworkOverlayReportTwoNodeReadinessOperation, map[string]any{
+			"type": "object", "required": []string{"targetUri", "peerTargetUri"},
+			"properties": mergeProps(map[string]any{
+				"targetUri":     targetURISchema(),
+				"peerTargetUri": targetURISchema(),
+			}, credProps),
 		}),
 	}
 }
 
+
 func providerOperation(id, effect string, input, output map[string]any, resources []string, requires []providercontract.ResourceBinding) providercontract.Operation {
 	taskSupport := "sync_only"
-	if effect != "read" {
-		taskSupport = "bridged"
+	// Overlay ops stay synchronous so host-local recipes can validate readiness
+	// against the same in-process ownership store without bridged-task races.
+	_ = effect
+	if output == nil || (len(output) == 1 && fmt.Sprint(output["type"]) == "object") {
+		output = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"membershipRef":    map[string]any{"type": "string"},
+				"ready":            map[string]any{"type": "boolean"},
+				"meshIp":           map[string]any{"type": "string"},
+				"overlayUri":       map[string]any{"type": "string"},
+				"targetUri":        map[string]any{"type": "string"},
+				"endpoint":         map[string]any{"type": "string"},
+				"stable":           map[string]any{"type": "boolean"},
+				"pathClass":        map[string]any{"type": "string"},
+				"endpointRef":      map[string]any{"type": "string"},
+				"operatorMode":     map[string]any{"type": "boolean"},
+				"operatorEvidence": map[string]any{"type": "string"},
+				"ingressClassName": map[string]any{"type": "string"},
+				"probe":            map[string]any{"type": "object"},
+				"contractVersion":  map[string]any{"type": "string"},
+				"generation":       map[string]any{"type": "string"},
+				"provider":         map[string]any{"type": "string"},
+				"error":            map[string]any{"type": "string"},
+			},
+		}
 	}
 	op := providercontract.Operation{
 		ID: id, Version: 1, InputSchema: input, OutputSchema: output, Effect: effect,
@@ -270,7 +237,7 @@ func addManifestTool(server *mcp.Server, manifest providercontract.InstallManife
 }
 
 func addTailscaleOperations(server *mcp.Server) {
-	operations := append(tunnelingOperations(), networkOverlayOperations()...)
+	operations := networkOverlayOperations()
 	for _, schema := range operations {
 		operation := schema
 		server.AddTool(&mcp.Tool{Name: operation.ID, Description: "Network overlay provider operation", InputSchema: operation.InputSchema, OutputSchema: operation.OutputSchema}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
