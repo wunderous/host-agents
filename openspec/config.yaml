@@ -1,0 +1,21 @@
+schema: spec-driven
+
+context: |
+  This OpenSpec change belongs to the Go Host Agent repository. The Host Agent
+  executes explicit typed assignments and owns provider-neutral capability
+  contracts, provider lifecycle, canonical resource admission, redacted
+  observations, and MCP transport boundaries. Opute owns intent, authorization,
+  durable orchestration, routing, and semantic outcomes. Tailscale is a
+  replaceable provider implementation, not a neutral operation namespace.
+  Validation must fail closed on ambiguous identity, missing readiness,
+  unscoped credentials, node-pinned cluster endpoints, or unproven HA claims.
+
+rules:
+  proposal:
+    - State the two-node availability boundary and the Cloudflare coexistence decision explicitly.
+  specs:
+    - Use exact opaque Host Agent identities and schema-redacted evidence requirements.
+    - Distinguish private mesh transport, public Funnel ingress, and Host Agent MCP control paths.
+    - Record blocked or unavailable validation outcomes as non-pass states.
+  tasks:
+    - Include the owning repository/package and the evidence command or source for each validation task.
