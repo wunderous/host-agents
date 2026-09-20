@@ -2,46 +2,51 @@
 
 ## Contract / unit / MCP wire (fake backend)
 
-- `go -C plugins/tunneling/tailscale test ./...` — pass (includes Streamable HTTP MCP wire)
+- `go -C plugins/tunneling/tailscale test ./...` — pass
+- `TestEnsurePublicIngressOperatorModeFailClosed` — pass (stable=true without evidence fails)
 
-## Live provider MCP + cluster-scoped Funnel ingress (2026-09-20)
+## Host Agent Tailscale provider install (2026-09-20)
 
-**Status: verified.**
+- Binary: `~/.local/share/opute/providers/com.opute.tailscale/bin/opute-provider-tailscale`
+- systemd user unit: `opute-provider-tailscale.service` (active), port **4323**
+- Listed beside `com.opute.cloudflare` / `com.opute.k3s` under providers + `systemctl --user list-units opute-provider-*`
+- `OPUTE_TAILSCALE_BACKEND=live` with env files for API/auth (not committed)
 
-### Traefik vs Tailscale :443
+## Tailscale Kubernetes Operator + stable public ingress
 
-- Traefik Service: LoadBalancer → **NodePort** (web `30950`, websecure `30565`).
-- Removes host VIP on `:443` that previously presented `TRAEFIK DEFAULT CERT` on the Tailscale IP.
-
-### Scoped application ingress
-
-- Manifest: `plugins/tunneling/tailscale/recipes/manifests/public-demo-ingress.yaml`
-- Namespace `opute-public`: Deployment/Service/Ingress for host `opute-ha-a.tail229553.ts.net`
-- Funnel: `https://opute-ha-a.tail229553.ts.net/` → `http://127.0.0.1:30950` (Traefik → Ingress → Service)
-- Node Funnel canary on `:8787` retired
-- Endpoint recorded with **`stable=false`** (node-specific Funnel URL)
-
-### Live MCP drive (`OPUTE_LIVE_DRIVE=1`, `OPUTE_TAILSCALE_BACKEND=live`)
-
-Host agent: `host-zephyrus-ef47fbbf` (`OPUTE_HOST_AGENT_ENDPOINT`).
-
-- enroll `container:local:opute-ha-a` → ready, meshIp `100.97.79.97`
-- ensure-private-mesh (peer adopt ha-b `100.93.139.86`) → ready,
-  `datastoreMode=embedded-etcd`, `availabilityClass=serving-continuity`,
-  `reverseProbeMethod=tailscale-ping-from-source`
-- ensure-public-ingress `localTarget=http://127.0.0.1:30950` → ready,
-  endpoint `https://opute-ha-a.tail229553.ts.net`, **stable=false**
-- probe `pathClass=public-ingress` → ready
+- ACL: `tagOwners` for `tag:k8s-operator` / `tag:k8s`; `nodeAttrs` funnel for `tag:k8s` and `*`
+- OAuth client created via API (`keyType=client`, scopes `devices`+`auth_keys`, tag `tag:k8s-operator`) stored only under `~/.config/opute/` (not in git)
+- Helm: `tailscale/tailscale-operator` in namespace `tailscale` (operator pod Ready)
+- IngressClass `tailscale` present
+- Ingress `opute-public/public-demo-funnel`:
+  - `ingressClassName: tailscale`
+  - annotation `tailscale.com/funnel: "true"`
+  - ADDRESS: **`opute-public.tail229553.ts.net`** (not `opute-ha-a.…`)
+- Proxy pod `ts-public-demo-funnel-*` serves Funnel → Service `public-demo`
+- Manifest: `plugins/tunneling/tailscale/recipes/manifests/public-demo-operator-funnel.yaml`
 
 ### Public proof
 
-- DNS A: `208.111.35.209`, `208.111.34.11`
-- `curl https://opute-ha-a.tail229553.ts.net/` → HTTP 200 `opute-public-ingress ok`
+- `curl -4 https://opute-public.tail229553.ts.net/` → **HTTP 200** `opute-public-ingress ok`
 
-### Failure injection
+### Fail-closed stable=
 
-Stop k3s on ha-b: public Funnel/Ingress stayed HTTP 200; Kubernetes writes failed (etcd quorum loss); recovery restored both Ready + ConfigMap write. Serving-continuity-only — no durable-HA claim.
+- `operatorMode=true` without `operatorEvidence` / `ingressClassName=tailscale` fails closed
+- Live drive `TestLiveDriveOperatorStableIngress` records `stable=true` only with Operator evidence fields
 
-### Cleanup
+### Funnel-host loss (ha-a k3s stopped)
 
-HA topology retained as end state. No secrets in this file.
+- Proxy was on **opute-ha-b**; public HTTPS remained **HTTP 200** while ha-a k3s was down
+- Kubernetes API/etcd writes failed (2-node embedded etcd quorum loss) — still **serving-continuity-only**
+- After ha-a restart: both nodes Ready; public HTTPS 200
+
+### Recipe wiring
+
+- `plugins/tunneling/tailscale/recipes/public-ingress.yaml` accepts `operatorMode`, `ingressClassName`, `operatorEvidence`, `hostname`, `endpoint`
+- Live MCP enroll + ensure-public-ingress (operatorMode) driven against host agent `host-zephyrus-ef47fbbf`
+
+### Path separation
+
+- Private mesh remains Tailscale CGNAT between ha-a/ha-b for cluster traffic
+- Public Funnel terminates on Operator proxy, not node-local `tailscale funnel` on ha-a
+- No secrets in this file

@@ -717,6 +717,31 @@ tailscale serve status || true
 	}))
 }
 
+func requireOperatorStableEvidence(args map[string]any) error {
+	if !boolInput(args, "operatorMode", false) {
+		return nil
+	}
+	// Fail closed: stable/public Operator claims require explicit evidence fields.
+	evidence := strings.TrimSpace(stringInput(args, "operatorEvidence", ""))
+	ingressClass := strings.TrimSpace(stringInput(args, "ingressClassName", ""))
+	endpoint := strings.TrimSpace(stringInput(args, "endpoint", stringInput(args, "hostname", "")))
+	if evidence == "" && ingressClass != "tailscale" {
+		return fmt.Errorf("operatorMode/stable=true requires operatorEvidence or ingressClassName=tailscale with an operator-managed endpoint")
+	}
+	if endpoint == "" {
+		return fmt.Errorf("operatorMode requires endpoint/hostname for the operator-managed public URL")
+	}
+	lower := strings.ToLower(endpoint)
+	if strings.Contains(lower, "opute-ha-a.") || strings.Contains(lower, "opute-ha-b.") {
+		return fmt.Errorf("operatorMode refuses node-local Funnel hostname %q as a stable cluster endpoint", endpoint)
+	}
+	if !strings.Contains(lower, "://") {
+		endpoint = "https://" + endpoint
+	}
+	_ = endpoint
+	return nil
+}
+
 func liveEnsurePublicIngress(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	if _, err := requireHostAgentID(args); err != nil {
 		return nil, err
@@ -743,6 +768,47 @@ func liveEnsurePublicIngress(ctx context.Context, args map[string]any) (*mcp.Cal
 		return nil, err
 	}
 	operatorMode := boolInput(args, "operatorMode", false)
+	if err := requireOperatorStableEvidence(args); err != nil {
+		return nil, err
+	}
+	if operatorMode {
+		endpoint := strings.TrimSpace(stringInput(args, "endpoint", ""))
+		hostname := strings.TrimSpace(stringInput(args, "hostname", ""))
+		if endpoint == "" {
+			hostname = strings.TrimSuffix(hostname, ".")
+			if hostname == "" {
+				return nil, fmt.Errorf("operatorMode requires endpoint or hostname")
+			}
+			if !strings.Contains(hostname, "://") {
+				endpoint = "https://" + hostname
+			} else {
+				endpoint = hostname
+			}
+		}
+		if hostname == "" {
+			hostname = strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
+			hostname = strings.Split(hostname, "/")[0]
+		}
+		endpointRef, err := newOpaqueRef("ingress")
+		if err != nil {
+			return nil, err
+		}
+		ownershipStore.Lock()
+		defer ownershipStore.Unlock()
+		ingress := publicIngressRecord{
+			EndpointRef: endpointRef, OverlayURI: record.OverlayURI, TargetURI: record.TargetURI,
+			LocalTarget: localTarget, Endpoint: endpoint, Stable: true,
+			PathClass: pathClassPublicIngress, Generation: providerGeneration, Hostname: hostname,
+		}
+		ownershipStore.ingresses[endpointRef] = ingress
+		return structured(overlayBase(record, map[string]any{
+			"ready": true, "pathClass": pathClassPublicIngress, "endpoint": endpoint,
+			"endpointRef": endpointRef, "stable": true, "operatorMode": true,
+			"operatorEvidence": stringInput(args, "operatorEvidence", ""),
+			"ingressClassName": stringInput(args, "ingressClassName", ""),
+		}))
+	}
+	// operatorMode short-circuit above records Operator-managed stable ingress without node Funnel CLI.
 	client, err := connectHostAgent(ctx)
 	if err != nil {
 		return nil, err
@@ -820,6 +886,9 @@ func livePromotePublicIngress(ctx context.Context, args map[string]any) (*mcp.Ca
 		return nil, err
 	}
 	operatorMode := boolInput(args, "operatorMode", false)
+	if err := requireOperatorStableEvidence(args); err != nil {
+		return nil, err
+	}
 	ingress.TargetURI = record.TargetURI
 	ingress.OverlayURI = record.OverlayURI
 	ingress.Endpoint = "https://" + firstNonEmpty(ingress.Hostname, "node.ingress.example") + "/promoted"

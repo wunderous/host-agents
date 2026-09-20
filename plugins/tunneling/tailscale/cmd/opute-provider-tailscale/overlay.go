@@ -586,6 +586,9 @@ func ensurePublicIngress(args map[string]any) (*mcp.CallToolResult, error) {
 		return nil, err
 	}
 	operatorMode := boolInput(args, "operatorMode", false)
+	if err := requireOperatorStableEvidence(args); err != nil {
+		return nil, err
+	}
 	hostname := firstNonEmpty(stringInput(args, "hostname", ""), "node.ingress.example")
 	endpointRef, err := newOpaqueRef("ingress")
 	if err != nil {

@@ -19,6 +19,21 @@ inputs:
   localTarget:
     required: true
     schema: {type: string, format: uri}
+  operatorMode:
+    default: false
+    schema: {type: boolean}
+  ingressClassName:
+    default: ""
+    schema: {type: string}
+  operatorEvidence:
+    default: ""
+    schema: {type: string}
+  hostname:
+    default: ""
+    schema: {type: string}
+  endpoint:
+    default: ""
+    schema: {type: string}
 plan:
   contractVersion: host-plan.v1
   planId: com.opute.tailscale.public-ingress
@@ -40,6 +55,11 @@ plan:
           targetUri: ${vars.inputs.targetUri}
           localTarget: ${vars.inputs.localTarget}
           membershipRef: ${nodes.enroll.output.membershipRef}
+          operatorMode: ${vars.inputs.operatorMode}
+          ingressClassName: ${vars.inputs.ingressClassName}
+          operatorEvidence: ${vars.inputs.operatorEvidence}
+          hostname: ${vars.inputs.hostname}
+          endpoint: ${vars.inputs.endpoint}
     - id: probe
       dependsOn: [ingress]
       action:

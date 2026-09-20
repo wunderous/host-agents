@@ -227,3 +227,16 @@ func TestHostAgentIDRequired(t *testing.T) {
 		t.Fatal("expected missing hostAgentId to fail")
 	}
 }
+
+func TestEnsurePublicIngressOperatorModeFailClosed(t *testing.T) {
+	t.Setenv("OPUTE_TAILSCALE_BACKEND", "fake")
+	resetOwnershipStoreForTest()
+	enroll := mustEnroll(t, "vm:local:server-a", "server-a")
+	_, err := dispatchOverlayOperation(t.Context(), capabilitycontract.NetworkOverlayEnsurePublicIngressOperation, map[string]any{
+		"hostAgentId": "host-a", "targetUri": "vm:local:server-a", "localTarget": "http://127.0.0.1:8080/",
+		"membershipRef": enroll["membershipRef"], "operatorMode": true,
+	})
+	if err == nil {
+		t.Fatal("expected operatorMode without evidence to fail")
+	}
+}
