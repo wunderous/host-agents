@@ -17,6 +17,14 @@
     "nodeCount": {"type": "integer", "minimum": 0},
     "probe": {"type": "object"},
     "deleted": {"type": "boolean"},
-    "error": {"type": "string"}
+    "error": {"type": "string"},
+    "pathClass": {"type": "string", "enum": ["private-mesh", "public-ingress"]},
+    "stable": {"type": "boolean"},
+    "overlayUri": {"type": "string"},
+    "generation": {"type": "string"},
+    "datastoreMode": {"type": "string", "enum": ["external-datastore", "embedded-etcd-two-node"]},
+    "availabilityClass": {"type": "string"},
+    "recoveryPolicy": {"type": "string"},
+    "endpoint": {"type": "string"}
   }
 }

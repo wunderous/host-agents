@@ -47,6 +47,8 @@ type membershipObservation struct {
 	ReadyServers         int              `json:"readyServers"`
 	Ready                bool             `json:"ready"`
 	EndpointConfigured   bool             `json:"endpointConfigured"`
+	AvailabilityClass    string           `json:"availabilityClass"`
+	RecoveryPolicy       string           `json:"recoveryPolicy"`
 }
 
 type joinInvitation struct {
@@ -156,6 +158,8 @@ func prepareHA(ctx context.Context, args map[string]any) (*mcp.CallToolResult, e
 		"clusterIdentity":         observation.ClusterIdentity,
 		"version":                 observation.Version,
 		"datastoreMode":           observation.DatastoreMode,
+		"availabilityClass":       observation.AvailabilityClass,
+		"recoveryPolicy":          observation.RecoveryPolicy,
 		"currentServerCount":      observation.ServerCount,
 		"expectedServerCount":     expectedServers,
 		"readyForServerPromotion": true,
@@ -456,6 +460,8 @@ func joinNode(ctx context.Context, args map[string]any) (*mcp.CallToolResult, er
 		"clusterIdentity":        observation.ClusterIdentity,
 		"version":                observation.Version,
 		"datastoreMode":          observation.DatastoreMode,
+		"availabilityClass":      observation.AvailabilityClass,
+		"recoveryPolicy":         observation.RecoveryPolicy,
 		"serverCount":            observation.ServerCount,
 		"readyServers":           observation.ReadyServers,
 		"installerExitedNonZero": installErr != nil,
@@ -531,6 +537,8 @@ func ensureHAEndpoint(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 		"serverCount":        observation.ServerCount,
 		"readyServers":       observation.ReadyServers,
 		"datastoreMode":      observation.DatastoreMode,
+		"availabilityClass":  observation.AvailabilityClass,
+		"recoveryPolicy":     observation.RecoveryPolicy,
 	})
 }
 
@@ -617,6 +625,8 @@ func removeNode(ctx context.Context, args map[string]any) (*mcp.CallToolResult, 
 		"removedNode":           nodeName,
 		"removedNodeWasReady":   member["ready"] == true,
 		"datastoreMode":         after.DatastoreMode,
+		"availabilityClass":     after.AvailabilityClass,
+		"recoveryPolicy":        after.RecoveryPolicy,
 		"serverCountBefore":     observation.ServerCount,
 		"readyServersBefore":    observation.ReadyServers,
 		"projectedServerCount":  remainingServers,
@@ -708,11 +718,16 @@ func readMembershipForTarget(ctx context.Context, args map[string]any, requireTa
 			}
 		}
 	}
+	availabilityClass, recoveryPolicy := classifyTwoNodeAvailability(datastoreMode, serverCount, stringInput(args, "datastoreMode"))
+	mode := datastoreMode
+	if requested := strings.TrimSpace(stringInput(args, "datastoreMode")); requested != "" {
+		mode = requested
+	}
 	return membershipObservation{
 		TargetURI:            stringInput(args, "targetUri"),
 		ClusterIdentity:      identity,
 		ClusterIdentityKnown: identity != "",
-		DatastoreMode:        datastoreMode,
+		DatastoreMode:        mode,
 		Version:              parseK3sVersion(string(versionOutput)),
 		Hostname:             strings.TrimSpace(string(hostnameOutput)),
 		Nodes:                nodes,
@@ -720,7 +735,27 @@ func readMembershipForTarget(ctx context.Context, args map[string]any, requireTa
 		ReadyServers:         readyServers,
 		Ready:                readyServers > 0,
 		EndpointConfigured:   stringInput(args, "endpoint") != "",
+		AvailabilityClass:    availabilityClass,
+		RecoveryPolicy:       recoveryPolicy,
 	}, nil
+}
+
+func classifyTwoNodeAvailability(observedMode string, serverCount int, requestedMode string) (availabilityClass, recoveryPolicy string) {
+	mode := strings.TrimSpace(requestedMode)
+	if mode == "" {
+		mode = observedMode
+	}
+	switch mode {
+	case "external-datastore":
+		return "control-plane-write-continuity", "datastore-failover"
+	case "embedded-etcd-two-node", "embedded-etcd":
+		if serverCount <= 2 {
+			return "serving-continuity-only", "acknowledge-single-member-reset"
+		}
+		return "control-plane-write-continuity", "etcd-quorum"
+	default:
+		return "unproven", "none"
+	}
 }
 
 func parseNativeMembership(raw []byte) ([]map[string]any, error) {
@@ -941,6 +976,8 @@ func recoverQuorum(ctx context.Context, args map[string]any) (*mcp.CallToolResul
 		"targetUri":         observation.TargetURI,
 		"clusterIdentity":   observation.ClusterIdentity,
 		"datastoreMode":     observation.DatastoreMode,
+		"availabilityClass": observation.AvailabilityClass,
+		"recoveryPolicy":    observation.RecoveryPolicy,
 		"recoveredServer":   survivor,
 		"serverCount":       observation.ServerCount,
 		"readyServers":      observation.ReadyServers,

@@ -1,0 +1,172 @@
+contractVersion: host-recipe.v1
+recipeId: com.opute.tailscale.install
+recipeVersion: 1.0.0
+execution:
+  coordinator: host-agent
+  mode: local
+compatibility:
+  requiredTools:
+    - get_host_info
+    - ensure_host_artifact
+    - ensure_host_file
+    - ensure_host_service_supervisor
+    - set_host_service_state
+    - inspect_host_service
+    - inspect_host_service_supervisor
+    - opute.provider.install
+    - opute.provider.status
+inputs:
+  artifactUri:
+    required: true
+    schema: {type: string, minLength: 1}
+  artifactSha256:
+    required: true
+    schema: {type: string, pattern: "^[0-9a-f]{64}$"}
+  providerId:
+    default: com.opute.tailscale
+    schema: {type: string, const: com.opute.tailscale}
+  providerPort:
+    default: 4321
+    schema: {type: integer, minimum: 1024, maximum: 65535}
+  runNonce:
+    default: default
+    schema: {type: string, minLength: 1, maxLength: 128}
+  activationRecipeSource:
+    required: true
+    schema: {type: string, minLength: 1}
+  activationRecipeSha256:
+    required: true
+    schema: {type: string, pattern: "^[0-9a-f]{64}$"}
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.tailscale.install
+  generation: 1
+  idempotencyKey: com.opute.tailscale.install-${vars.inputs.providerId}-${vars.inputs.runNonce}
+  defaults:
+    timeoutMs: 600000
+  nodes:
+    - id: agent
+      action:
+        tool: get_host_info
+    - id: binary
+      dependsOn: [agent]
+      action:
+        tool: ensure_host_artifact
+        args:
+          uri: ${vars.inputs.artifactUri}
+          sha256: ${vars.inputs.artifactSha256}
+          destination: ${nodes.agent.output.agent.providerRoot}/com.opute.tailscale/bin/opute-provider-tailscale
+          executable: true
+      timeoutMs: 900000
+      validate:
+        tool: inspect_host_file
+        args:
+          path: ${nodes.agent.output.agent.providerRoot}/com.opute.tailscale/bin/opute-provider-tailscale
+        assert:
+          - {path: /exists, op: eq, value: true}
+          - {path: /executable, op: eq, value: true}
+    - id: unit
+      dependsOn: [agent, binary]
+      action:
+        tool: ensure_host_file
+        args:
+          scope: ${nodes.agent.output.agent.serviceScope}
+          path: ${nodes.agent.output.agent.serviceUnitDir}/opute-provider-tailscale.service
+          mode: 420
+          content: |
+            [Unit]
+            Description=Opute Tailscale provider MCP
+            After=network-online.target
+
+            [Service]
+            Type=simple
+            Environment=HOME=${nodes.agent.output.agent.homeDir}
+            Environment=OPUTE_PROVIDER_PORT=${vars.inputs.providerPort}
+            Environment=OPUTE_HOST_AGENT_ENDPOINT=${nodes.agent.output.agent.mcpEndpoint}
+            Environment=OPUTE_TAILSCALE_BACKEND=fake
+            ExecStart=${nodes.agent.output.agent.providerRoot}/com.opute.tailscale/bin/opute-provider-tailscale serve
+            EnvironmentFile=${nodes.agent.output.agent.environmentFile}
+            Restart=always
+            RestartSec=3
+
+            [Install]
+            WantedBy=${nodes.agent.output.agent.serviceWantedBy}
+      validate:
+        tool: inspect_host_file
+        args:
+          scope: ${nodes.agent.output.agent.serviceScope}
+          path: ${nodes.agent.output.agent.serviceUnitDir}/opute-provider-tailscale.service
+        assert:
+          - {path: /exists, op: eq, value: true}
+    - id: supervisor
+      dependsOn: [agent]
+      action:
+        tool: ensure_host_service_supervisor
+        args:
+          scope: ${nodes.agent.output.agent.serviceScope}
+      validate:
+        tool: inspect_host_service_supervisor
+        args:
+          scope: ${nodes.agent.output.agent.serviceScope}
+        assert:
+          - {path: /persistent, op: eq, value: true}
+    - id: enable
+      dependsOn: [unit, supervisor]
+      action:
+        tool: set_host_service_state
+        args:
+          uri: host-service:local:${nodes.agent.output.agent.serviceScope}/opute-provider-tailscale.service
+          state: enable
+          scope: ${nodes.agent.output.agent.serviceScope}
+      validate:
+        tool: inspect_host_service
+        args:
+          uri: host-service:local:${nodes.agent.output.agent.serviceScope}/opute-provider-tailscale.service
+          scope: ${nodes.agent.output.agent.serviceScope}
+        assert:
+          - {path: /enabled, op: eq, value: true}
+    - id: start
+      dependsOn: [enable]
+      action:
+        tool: set_host_service_state
+        args:
+          uri: host-service:local:${nodes.agent.output.agent.serviceScope}/opute-provider-tailscale.service
+          state: start
+          scope: ${nodes.agent.output.agent.serviceScope}
+      validate:
+        tool: inspect_host_service
+        args:
+          uri: host-service:local:${nodes.agent.output.agent.serviceScope}/opute-provider-tailscale.service
+          scope: ${nodes.agent.output.agent.serviceScope}
+        assert:
+          - {path: /active, op: eq, value: true}
+        pollIntervalMs: 2000
+        timeoutMs: 120000
+    - id: install
+      dependsOn: [start]
+      action:
+        tool: opute.provider.install
+        args:
+          descriptor:
+            schema: opute-provider-plugin.v1
+            pluginId: ${vars.inputs.providerId}
+            version: 1.0.0
+            capabilities:
+              - id: opute.capability.network-overlay.v1
+                version: 1
+              - id: opute.capability.tunneling.v1
+                version: 1
+            server:
+              transport: streamable_http
+              endpoint: http://127.0.0.1:${vars.inputs.providerPort}/mcp
+          endpoint: http://127.0.0.1:${vars.inputs.providerPort}/mcp
+          mode: activate
+          activationRecipe:
+            source: ${vars.inputs.activationRecipeSource}
+            sha256: ${vars.inputs.activationRecipeSha256}
+      validate:
+        tool: opute.provider.status
+        args:
+          providerId: ${vars.inputs.providerId}
+        assert:
+          - {path: /ready, op: eq, value: true}

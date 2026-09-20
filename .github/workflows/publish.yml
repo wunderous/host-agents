@@ -60,7 +60,7 @@ jobs:
           make artifacts VERSION="$version"
 
       - name: Generate release checksums
-        run: (cd dist && sha256sum host-agent-linux-x64.gz host-agent-linux-arm64.gz host-agent-windows-x64.gz opute-provider-k3s-linux-x64 opute-provider-cloudflare-linux-x64 > SHA256SUMS)
+        run: (cd dist && sha256sum host-agent-linux-x64.gz host-agent-linux-arm64.gz host-agent-windows-x64.gz opute-provider-k3s-linux-x64 opute-provider-cloudflare-linux-x64 opute-provider-tailscale-linux-x64 > SHA256SUMS)
 
       - name: Verify release checksums
         run: (cd dist && sha256sum -c SHA256SUMS)
@@ -89,6 +89,7 @@ jobs:
             dist/host-agent-windows-x64.gz
             dist/opute-provider-k3s-linux-x64
             dist/opute-provider-cloudflare-linux-x64
+            dist/opute-provider-tailscale-linux-x64
             dist/SHA256SUMS
             dist/sbom.spdx.json
 
@@ -112,6 +113,7 @@ jobs:
             dist/host-agent-windows-x64.gz
             dist/opute-provider-k3s-linux-x64
             dist/opute-provider-cloudflare-linux-x64
+            dist/opute-provider-tailscale-linux-x64
             dist/SHA256SUMS
             dist/sbom.spdx.json
           generate_release_notes: true

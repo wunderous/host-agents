@@ -18,6 +18,7 @@ func TestProviderAndClientBoundariesHaveNoConcreteCrossImports(t *testing.T) {
 		assertImportsExclude(t, filepath.Join(root, relative), map[string]bool{
 			"github.com/wunderous/host-agents/plugins/llm/ollama":           true,
 			"github.com/wunderous/host-agents/plugins/tunneling/cloudflare": true,
+			"github.com/wunderous/host-agents/plugins/tunneling/tailscale":  true,
 		})
 	}
 	assertImportsExclude(t, filepath.Join(root, "plugins"), map[string]bool{

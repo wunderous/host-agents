@@ -1,0 +1,49 @@
+contractVersion: host-recipe.v1
+recipeId: com.opute.tailscale.public-ingress
+recipeVersion: 1.0.0
+execution:
+  coordinator: host-agent
+  mode: local
+compatibility:
+  requiredTools:
+    - opute.capability.network-overlay.enroll
+    - opute.capability.network-overlay.ensure-public-ingress
+    - opute.capability.network-overlay.probe
+inputs:
+  targetUri:
+    required: true
+    schema: {type: string, minLength: 1}
+  name:
+    required: true
+    schema: {type: string, minLength: 1}
+  localTarget:
+    required: true
+    schema: {type: string, format: uri}
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.tailscale.public-ingress
+  generation: 1
+  idempotencyKey: com.opute.tailscale.public-ingress-${vars.inputs.targetUri}
+  nodes:
+    - id: enroll
+      action:
+        tool: opute.capability.network-overlay.enroll
+        args:
+          targetUri: ${vars.inputs.targetUri}
+          name: ${vars.inputs.name}
+          credentialKind: auth-key
+    - id: ingress
+      dependsOn: [enroll]
+      action:
+        tool: opute.capability.network-overlay.ensure-public-ingress
+        args:
+          targetUri: ${vars.inputs.targetUri}
+          localTarget: ${vars.inputs.localTarget}
+          membershipRef: ${nodes.enroll.output.membershipRef}
+    - id: probe
+      dependsOn: [ingress]
+      action:
+        tool: opute.capability.network-overlay.probe
+        args:
+          targetUri: ${vars.inputs.targetUri}
+          pathClass: public-ingress

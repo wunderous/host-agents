@@ -45,6 +45,14 @@ const (
 	NetworkOverlayEnsureHAEndpointOperation  = "opute.capability.network-overlay.ensure-ha-endpoint"
 	NetworkOverlayRemoveHAEndpointOperation  = "opute.capability.network-overlay.remove-ha-endpoint"
 	NetworkOverlayRemoveMembershipOperation  = "opute.capability.network-overlay.remove-membership"
+
+	NetworkOverlayEnrollOperation                 = "opute.capability.network-overlay.enroll"
+	NetworkOverlayEnsurePrivateMeshOperation      = "opute.capability.network-overlay.ensure-private-mesh"
+	NetworkOverlayEnsurePrivateServiceOperation   = "opute.capability.network-overlay.ensure-private-service"
+	NetworkOverlayEnsurePublicIngressOperation    = "opute.capability.network-overlay.ensure-public-ingress"
+	NetworkOverlayPromotePublicIngressOperation   = "opute.capability.network-overlay.promote-public-ingress"
+	NetworkOverlayProbeOperation                  = "opute.capability.network-overlay.probe"
+	NetworkOverlayReportTwoNodeReadinessOperation = "opute.capability.network-overlay.report-two-node-readiness"
 )
 
 type Validation struct {

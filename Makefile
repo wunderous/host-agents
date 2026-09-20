@@ -1,4 +1,4 @@
-.PHONY: build build-agent test test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary npm-test artifacts build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-windows-x64 clean agent-work
+.PHONY: build build-agent test test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary npm-test artifacts build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-provider-tailscale-linux-x64 build-windows-x64 clean agent-work
 
 BINARY=opute-host-agent
 DIST=dist
@@ -19,6 +19,7 @@ test-all-modules: test
 	cd plugins/kubernetes/k3s && go test ./...
 	cd plugins/llm/ollama && go test ./...
 	cd plugins/tunneling/cloudflare && go test ./...
+	cd plugins/tunneling/tailscale && go test ./...
 	cd plugins/platform/hostos && go test ./...
 
 openrouter-llm-smoke:
@@ -44,7 +45,7 @@ standalone-lifecycle-gate: build-linux-x64
 published-npm-canary:
 	cd npm/local-host-agent && PUBLISHED_NPM_VERSION=$(VERSION) npm run test:published-canary
 
-artifacts: build-linux-x64 build-linux-arm64 build-windows-x64 build-provider-linux-x64 build-provider-cloudflare-linux-x64 checksums
+artifacts: build-linux-x64 build-linux-arm64 build-windows-x64 build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-provider-tailscale-linux-x64 checksums
 
 build-linux-x64:
 	mkdir -p $(DIST)
@@ -70,8 +71,12 @@ build-provider-cloudflare-linux-x64:
 	mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go -C plugins/tunneling/cloudflare build -a -ldflags='-s -w' -o $(CURDIR)/$(DIST)/opute-provider-cloudflare-linux-x64 ./cmd/opute-provider-cloudflare
 
+build-provider-tailscale-linux-x64:
+	mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go -C plugins/tunneling/tailscale build -a -ldflags='-s -w' -o $(CURDIR)/$(DIST)/opute-provider-tailscale-linux-x64 ./cmd/opute-provider-tailscale
+
 checksums:
-	(cd $(DIST) && sha256sum host-agent-linux-x64.gz host-agent-linux-arm64.gz host-agent-windows-x64.gz opute-provider-k3s-linux-x64 opute-provider-cloudflare-linux-x64 > SHA256SUMS)
+	(cd $(DIST) && sha256sum host-agent-linux-x64.gz host-agent-linux-arm64.gz host-agent-windows-x64.gz opute-provider-k3s-linux-x64 opute-provider-cloudflare-linux-x64 opute-provider-tailscale-linux-x64 > SHA256SUMS)
 
 clean:
 	rm -rf $(DIST)
