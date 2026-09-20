@@ -143,6 +143,14 @@ func ErrorResult(err error) *mcp.CallToolResult {
 			IsError: true,
 		}
 	}
+	var compactErr *host.CompactClosedError
+	if errors.As(err, &compactErr) {
+		return &mcp.CallToolResult{
+			Content:           []mcp.Content{&mcp.TextContent{Text: "Error: " + compactErr.Error()}},
+			StructuredContent: compactErr.StructuredReport(),
+			IsError:           true,
+		}
+	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: "Error: " + err.Error()}},
 		IsError: true,

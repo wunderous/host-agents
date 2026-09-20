@@ -53,6 +53,10 @@ func TestK3sManifestDeclaresNeutralCapabilityAndOperations(t *testing.T) {
 		capabilitycontract.KubernetesEnsureHAEndpointOperation,
 		capabilitycontract.KubernetesRemoveNodeOperation,
 		capabilitycontract.KubernetesExecCommandOperation,
+		capabilitycontract.KubernetesInspectGuestStorageOperation,
+		capabilitycontract.KubernetesPruneUnusedImagesOperation,
+		capabilitycontract.KubernetesGarbageCollectRegistryOperation,
+		capabilitycontract.KubernetesTrimGuestStorageOperation,
 	} {
 		if !seen[operation] {
 			t.Fatalf("missing provider operation %q", operation)

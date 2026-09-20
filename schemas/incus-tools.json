@@ -5370,7 +5370,7 @@
   {
     "name": "update_vm_resources",
     "title": "Update VM Resources",
-    "description": "Update CPU and/or memory limits of an existing VM or system container on the host",
+    "description": "Update CPU, memory, and/or root disk limits of an existing VM or system container. Disk is admitted only when the instance's storage pool can enforce it, and is grow-only.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5381,6 +5381,10 @@
         "memory": {
           "type": "string",
           "description": "New memory limit (e.g. 2GiB)"
+        },
+        "disk": {
+          "type": "string",
+          "description": "New root disk size such as 20GiB. Refused when the instance pool cannot enforce it, and when smaller than the observed size."
         },
         "uri": {
           "type": "string",
@@ -5410,6 +5414,21 @@
         "memory": {
           "type": "string"
         },
+        "disk": {
+          "type": "string"
+        },
+        "enforced": {
+          "type": "string"
+        },
+        "pool": {
+          "type": "string"
+        },
+        "driver": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
         "uri": {
           "type": "string"
         }
@@ -5433,7 +5452,18 @@
           "resourceType": "container",
           "required": true
         }
-      ]
+      ],
+      "resourceCost": {
+        "class": "normal",
+        "cpuCores": 0.25,
+        "memoryBytes": 268435456,
+        "tasks": 1,
+        "argumentBindings": {
+          "cpuCores": "cpus",
+          "memoryBytes": "memory",
+          "diskBytes": "disk"
+        }
+      }
     }
   },
   {
@@ -6972,6 +7002,230 @@
         "scope",
         "serviceName",
         "attempts"
+      ]
+    },
+    "_meta": {
+      "effect": "destructive",
+      "needsApproval": true,
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      }
+    }
+  },
+  {
+    "name": "inspect_guest_storage",
+    "title": "Inspect guest cluster storage",
+    "description": "Inspect k3s/containerd image, snapshot, and PVC usage inside the bound cluster guest without changing state. Optional registry tag inventory.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "uri"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery.",
+          "x-opute-resource-type": "cluster"
+        },
+        "includeRegistry": {
+          "type": "boolean"
+        },
+        "extraKeepTags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "registryNamespace": {
+          "type": "string"
+        },
+        "registryName": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    },
+    "_meta": {
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "prune_unused_cluster_images",
+    "title": "Prune unused cluster images",
+    "description": "Age-gated removal of unused k3s/containerd images not referenced by current pods. Dry-run first. Never deletes PVCs or Incus instances.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "uri"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery.",
+          "x-opute-resource-type": "cluster"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "minAgeSeconds": {
+          "type": "integer",
+          "minimum": 3600
+        },
+        "extraKeepTags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    },
+    "_meta": {
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      },
+      "effect": "destructive"
+    }
+  },
+  {
+    "name": "garbage_collect_cluster_registry",
+    "title": "Garbage-collect cluster registry",
+    "description": "Delete untagged/unkept in-cluster registry manifests, scale the registry to zero, run registry garbage-collect --delete-untagged, restore, and wait Ready. Default off via includeRegistry.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "uri"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery.",
+          "x-opute-resource-type": "cluster"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "includeRegistry": {
+          "type": "boolean"
+        },
+        "extraKeepTags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "registryNamespace": {
+          "type": "string"
+        },
+        "registryName": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    },
+    "_meta": {
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "resourceCost": {
+        "class": "heavy",
+        "cpuCores": 2,
+        "memoryBytes": 2147483648,
+        "tasks": 8
+      },
+      "effect": "destructive"
+    }
+  },
+  {
+    "name": "trim_guest_storage",
+    "title": "TRIM guest filesystem",
+    "description": "Run fstrim inside the bound k3s Incus guest after reclaim so unused blocks are punched before VHDX compact.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "uri"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Host Agent resource URI returned by discovery.",
+          "x-opute-resource-type": "cluster"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object"
+    },
+    "_meta": {
+      "needsApproval": true,
+      "requires": [
+        {
+          "argument": "uri",
+          "resourceType": "cluster",
+          "required": true
+        }
+      ],
+      "effect": "mutation"
+    }
+  },
+  {
+    "name": "compact_wsl_disk",
+    "title": "Compact WSL VHDX",
+    "description": "Inspect and compact a Stopped WSL2 distro VHDX with Optimize-VHD Full. Fails closed if the file is still locked by a sibling WSL VM; compact then needs shutdown_wsl (kills this agent). Does not enable sparse VHDX.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "distro"
+      ],
+      "properties": {
+        "distro": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dryRun": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "distro"
       ]
     },
     "_meta": {

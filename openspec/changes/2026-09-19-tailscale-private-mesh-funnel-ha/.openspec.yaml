@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-09-19
+goal: Add a provider-neutral Tailscale private mesh and Funnel ingress alternative
+  for two-server Kubernetes deployments without overstating two-node quorum
+  availability or coupling Cordis consumers to Tailscale.

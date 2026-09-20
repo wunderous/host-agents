@@ -69,6 +69,13 @@ func (s *Service) InstallOCIRegistry(args InstallOCIRegistryArgs, onData func(st
 	if nodePort < 30000 || nodePort > 32767 {
 		return nil, errors.New("nodePort must be between 30000 and 32767")
 	}
+	targetURI, err := s.deps.KubernetesTargetURI(vmName)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.admitRegistryStorage(targetURI, namespace, name, storageClass, storageSize); err != nil {
+		return nil, err
+	}
 	manifest := fmt.Sprintf(`apiVersion: v1
 kind: Namespace
 metadata:
@@ -134,10 +141,6 @@ spec:
       targetPort: registry
       nodePort: %d
 `, namespace, name, namespace, storageClass, storageSize, name, namespace, name, name, image, name, name, namespace, name, nodePort)
-	targetURI, err := s.deps.KubernetesTargetURI(vmName)
-	if err != nil {
-		return nil, err
-	}
 	out, err := s.deps.ApplyManifest(targetURI, manifest, onData)
 	if err != nil {
 		return nil, err
@@ -145,6 +148,8 @@ spec:
 	out["namespace"] = namespace
 	out["name"] = name
 	out["nodePort"] = nodePort
+	out["storageSize"] = storageSize
+	out["storageClass"] = storageClass
 	out["endpointHint"] = fmt.Sprintf("<vm-ip>:%d", nodePort)
 	return out, nil
 }

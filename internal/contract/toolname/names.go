@@ -19,6 +19,7 @@ const (
 	CheckLocalLLMPrerequisites    = "check_local_llm_prerequisites"
 	CheckLocalPrerequisites       = "check_local_prerequisites"
 	CleanupContainerStorage       = "cleanup_container_storage"
+	CompactWSLDisk                = "compact_wsl_disk"
 	ConfigureAgentConnection      = "configure_agent_connection"
 	ConfigureLocalLLMModel        = "configure_local_llm_model"
 	ConfigureLocalLLMRuntime      = "configure_local_llm_runtime"
@@ -63,7 +64,9 @@ const (
 	GetSqlConnectorStatus         = "get_sql_connector_status"
 	GetSQLiteDatabaseStatus       = "get_sqlite_database_status"
 	GetVMInfo                     = "get_vm_info"
+	GarbageCollectClusterRegistry = "garbage_collect_cluster_registry"
 	InspectContainerStorage       = "inspect_container_storage"
+	InspectGuestStorage           = "inspect_guest_storage"
 	InspectHostFile               = "inspect_host_file"
 	InspectHostService            = "inspect_host_service"
 	InspectHostServiceSupervisor  = "inspect_host_service_supervisor"
@@ -88,6 +91,7 @@ const (
 	ListStorageClasses            = "list_storage_classes"
 	ListVMs                       = "list_vms"
 	PrepareHostAgentArtifacts     = "prepare_host_agent_artifacts"
+	PruneUnusedClusterImages      = "prune_unused_cluster_images"
 	ProbeGPUContainer             = "probe_gpu_container"
 	ProbeHTTPEndpoint             = "probe_http_endpoint"
 	ProbeIncusGPU                 = "probe_incus_gpu"
@@ -122,6 +126,7 @@ const (
 	StartLocalLLMRuntime          = "start_local_llm_runtime"
 	StartVM                       = "start_vm"
 	TerminateWSLDistribution      = "terminate_wsl_distribution"
+	TrimGuestStorage              = "trim_guest_storage"
 	ShutdownWSL                   = "shutdown_wsl"
 	StopLocalLLMRuntime           = "stop_local_llm_runtime"
 	StopVM                        = "stop_vm"
@@ -140,6 +145,7 @@ func All() []string {
 		CheckLocalLLMPrerequisites,
 		CheckLocalPrerequisites,
 		CleanupContainerStorage,
+		CompactWSLDisk,
 		ConfigureAgentConnection,
 		ConfigureLocalLLMModel,
 		ConfigureLocalLLMRuntime,
@@ -184,7 +190,9 @@ func All() []string {
 		GetSqlConnectorStatus,
 		GetSQLiteDatabaseStatus,
 		GetVMInfo,
+		GarbageCollectClusterRegistry,
 		InspectContainerStorage,
+		InspectGuestStorage,
 		InspectHostFile,
 		InspectHostService,
 		InspectHostServiceSupervisor,
@@ -209,6 +217,7 @@ func All() []string {
 		ListStorageClasses,
 		ListVMs,
 		PrepareHostAgentArtifacts,
+		PruneUnusedClusterImages,
 		ProbeGPUContainer,
 		ProbeHTTPEndpoint,
 		ProbeIncusGPU,
@@ -243,6 +252,7 @@ func All() []string {
 		StartLocalLLMRuntime,
 		StartVM,
 		TerminateWSLDistribution,
+		TrimGuestStorage,
 		ShutdownWSL,
 		StopLocalLLMRuntime,
 		StopVM,

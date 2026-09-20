@@ -204,6 +204,10 @@ func (s *Service) DescribeRootDiskQuotaSupport() (*RootDiskQuotaSupport, error) 
 	if err != nil {
 		return nil, err
 	}
+	return s.describePoolQuotaSupport(poolName)
+}
+
+func (s *Service) describePoolQuotaSupport(poolName string) (*RootDiskQuotaSupport, error) {
 	pool, err := s.readIncusStoragePool(poolName)
 	if err != nil {
 		return nil, err
@@ -216,18 +220,28 @@ func (s *Service) DescribeRootDiskQuotaSupport() (*RootDiskQuotaSupport, error) 
 	return &RootDiskQuotaSupport{Pool: pool.Name, Driver: pool.Driver, Enforced: enforced, Reason: reason}, nil
 }
 
-// admitRootDiskQuota decides whether requested can be applied as a real bound.
-//
-// An explicitly requested quota that cannot be enforced fails closed: silently
-// accepting it would report a limit the guest does not have. An implicit
-// default is dropped instead of failing, because the caller asked for no bound
-// and must not be told it received one.
+// admitRootDiskQuota decides whether requested can be applied as a real bound
+// on the pool a new instance would land on.
 func (s *Service) admitRootDiskQuota(requested string, explicit bool) (rootDiskQuota, error) {
+	return s.admitRootDiskQuotaForPool(requested, explicit, "")
+}
+
+// admitRootDiskQuotaForPool admits against a named pool. An empty poolName
+// resolves the default-profile/default pool used at create time. Post-create
+// updates pass the instance's own root pool so a guest that landed elsewhere
+// is not admitted against a different driver.
+func (s *Service) admitRootDiskQuotaForPool(requested string, explicit bool, poolName string) (rootDiskQuota, error) {
 	requested = strings.TrimSpace(requested)
 	if requested == "" {
 		return rootDiskQuota{}, nil
 	}
-	support, err := s.DescribeRootDiskQuotaSupport()
+	var support *RootDiskQuotaSupport
+	var err error
+	if strings.TrimSpace(poolName) == "" {
+		support, err = s.DescribeRootDiskQuotaSupport()
+	} else {
+		support, err = s.describePoolQuotaSupport(poolName)
+	}
 	if err != nil {
 		return rootDiskQuota{}, err
 	}

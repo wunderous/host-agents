@@ -47,6 +47,7 @@ invocation) when an external MCP client needs the Host Agent.
 | **codex-wsl** | Configuring, diagnosing, or executing OpenAI Codex CLI in WSL or across the Windows-WSL boundary, Host Agent MCP integration, and headless execution. |
 | **cordis-go** | `internal/cordis`, `internal/cordis/mcp`, `internal/hostmcp`, provider generations, C-01–C-24 catalog. Normative guide: [`docs/cordis-development-guide.md`](docs/cordis-development-guide.md) |
 | **host-agent-boundaries** | Identity, runtime-kind (`vm:` vs `container:`), provider-neutral MCP, E2E evidence, relay ownership. ADRs 0006 and 0007 |
+| **host-agent-storage-reclaim** | Host Podman vs k3s guest vs WSL VHDX compact; recipe `storage-reclaim.yaml`; fail-closed compact; no sparse VHDX |
 | Sibling **opute/.agents/skills/host-agent** | Control-plane enrollment, HTTP liveness/reconciliation, dogfood recovery |
 | Sibling **opute/.agents/skills/agent-work-coordination** | Beads ledger — native Windows is authoritative |
 | Sibling **opute/.agents/skills/shared-runtime-leases** | Shared WSL/Incus/dev-stack/production-roll ownership |

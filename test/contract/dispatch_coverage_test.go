@@ -159,6 +159,41 @@ func TestContainerStorageToolsHaveDispatchAndStandaloneCoverage(t *testing.T) {
 	}
 }
 
+func TestGuestStorageToolsHaveDispatchAndStandaloneCoverage(t *testing.T) {
+	dispatched := loadDispatchToolNames(t)
+	incus, err := tools.HostToolDefinitionsForProvider("incus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := make(map[string]bool, len(incus))
+	for _, tool := range incus {
+		catalog[tool.Name] = true
+	}
+	definitions := make(map[string]bool)
+	for _, tool := range tools.StandaloneToolDefinitions() {
+		definitions[tool.Name] = true
+	}
+	for _, name := range []string{"inspect_guest_storage", "prune_unused_cluster_images", "garbage_collect_cluster_registry", "trim_guest_storage", "compact_wsl_disk"} {
+		if !dispatched[name] {
+			t.Fatalf("guest storage tool %q is not registered in the dispatch registry", name)
+		}
+		if !catalog[name] {
+			t.Fatalf("guest storage tool %q missing from the Incus catalog", name)
+		}
+		if !tools.StandaloneToolNames[name] || !definitions[name] {
+			t.Fatalf("guest storage tool %q missing from standalone coverage", name)
+		}
+	}
+	if tools.IsStandaloneMutation("inspect_guest_storage") {
+		t.Fatal("inspect_guest_storage must remain read-only")
+	}
+	for _, name := range []string{"prune_unused_cluster_images", "garbage_collect_cluster_registry", "trim_guest_storage", "compact_wsl_disk"} {
+		if !tools.IsStandaloneMutation(name) {
+			t.Fatalf("%s must be a standalone mutation", name)
+		}
+	}
+}
+
 func TestListVmNetworkDevicesOmittedFromCatalog(t *testing.T) {
 	got, err := tools.HostToolDefinitionsForProvider("incus")
 	if err != nil {

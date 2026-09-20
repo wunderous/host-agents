@@ -497,7 +497,8 @@ func (s *Service) postgresqlServiceClusterConfigurationReady(ctx context.Context
 	}
 	metadata, _ := cluster["metadata"].(map[string]any)
 	annotations, _ := metadata["annotations"].(map[string]any)
-	return annotations["host-agent.io/resource-profile"] == postgresqlServiceResourceProfile, nil
+	return annotations["host-agent.io/resource-profile"] == postgresqlServiceResourceProfile &&
+		nestedString(cluster, "spec", "storage", "size") == spec.StorageSize, nil
 }
 
 func (s *Service) postgresqlServiceOperatorConfigurationReady(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
@@ -1013,6 +1014,9 @@ func (s *Service) probePostgreSQLServiceStable(ctx context.Context, spec postgre
 func (s *Service) ReconcilePostgreSQLService(ctx context.Context, args PostgreSQLServiceArgs, _ func(string)) (map[string]any, error) {
 	spec, err := validatePostgreSQLServiceSpec(args)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.admitPostgreSQLStorage(ctx, spec); err != nil {
 		return nil, err
 	}
 	if err := s.ensurePostgreSQLServiceNamespace(ctx, spec); err != nil {

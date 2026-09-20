@@ -95,3 +95,17 @@ func TestResolveArgumentCostRejectsInvalidValuesAndPaths(t *testing.T) {
 		})
 	}
 }
+
+func TestParseByteCapacityAcceptsIncusAndKubernetesUnits(t *testing.T) {
+	gib, err := ParseByteCapacity("20GiB")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gi, err := ParseByteCapacity("20Gi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gib != gi {
+		t.Fatalf("20GiB=%d 20Gi=%d", gib, gi)
+	}
+}

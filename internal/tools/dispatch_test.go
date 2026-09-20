@@ -1,6 +1,13 @@
 package tools
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/wunderous/host-agents/internal/domain/host"
+)
 
 func TestListClustersDefaultsToFastInventory(t *testing.T) {
 	if !listClustersFastArg(map[string]any{}) {
@@ -18,6 +25,28 @@ func TestRawStringFieldPreservesManagedBytes(t *testing.T) {
 	content := "[Service]\nExecStart=/bin/true\n\n"
 	if got := rawStringField(map[string]any{"content": content}, "content"); got != content {
 		t.Fatalf("raw managed content = %q, want exact bytes %q", got, content)
+	}
+}
+
+func TestErrorResultIncludesCompactClosedReport(t *testing.T) {
+	err := host.NewCompactClosedError(map[string]any{"distro": "Opute-HA-B", "locked": true}, "sibling WSL VM still attached — compact needs shutdown_wsl (kills this agent)")
+	result := ErrorResult(err)
+	if result == nil || !result.IsError {
+		t.Fatalf("result = %#v", result)
+	}
+	report, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structuredContent = %#v", result.StructuredContent)
+	}
+	if report["code"] != "wsl_compact_closed" || report["locked"] != true || report["compacted"] != false {
+		t.Fatalf("report = %#v", report)
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("missing error text")
+	}
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok || !strings.Contains(text.Text, "shutdown_wsl") {
+		t.Fatalf("text = %#v", result.Content)
 	}
 }
 

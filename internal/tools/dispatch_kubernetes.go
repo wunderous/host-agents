@@ -174,3 +174,65 @@ func init() {
 		return structuredResult(out, ""), nil
 	})
 }
+
+func init() {
+	register(toolname.InspectGuestStorage, EffectRead, resource.ClassControl, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Kubernetes().InspectGuestStorage(kubernetes.GuestStorageArgs{
+			URI:               resourceURIFromBinding(binding),
+			IncludeRegistry:   boolField(args, "includeRegistry"),
+			ExtraKeepTags:     stringSliceField(args, "extraKeepTags"),
+			RegistryNamespace: stringField(args, "registryNamespace"),
+			RegistryName:      stringField(args, "registryName"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = withBindingURI(out, binding, "cluster")
+		return structuredResult(out, ""), nil
+	})
+}
+
+func init() {
+	register(toolname.PruneUnusedClusterImages, EffectDestructive, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Kubernetes().PruneUnusedClusterImages(kubernetes.GuestStorageArgs{
+			URI:           resourceURIFromBinding(binding),
+			DryRun:        boolField(args, "dryRun"),
+			MinAgeSeconds: optionalInt64Field(args, "minAgeSeconds"),
+			ExtraKeepTags: stringSliceField(args, "extraKeepTags"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = withBindingURI(out, binding, "cluster")
+		return structuredResult(out, "Unused cluster images pruned."), nil
+	})
+}
+
+func init() {
+	register(toolname.GarbageCollectClusterRegistry, EffectDestructive, resource.ClassHeavy, TaskAware, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Kubernetes().GarbageCollectClusterRegistry(kubernetes.GuestStorageArgs{
+			URI:               resourceURIFromBinding(binding),
+			DryRun:            boolField(args, "dryRun"),
+			IncludeRegistry:   boolField(args, "includeRegistry"),
+			ExtraKeepTags:     stringSliceField(args, "extraKeepTags"),
+			RegistryNamespace: stringField(args, "registryNamespace"),
+			RegistryName:      stringField(args, "registryName"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = withBindingURI(out, binding, "cluster")
+		return structuredResult(out, "Cluster registry garbage collection completed."), nil
+	})
+}
+
+func init() {
+	register(toolname.TrimGuestStorage, EffectMutation, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
+		out, err := svc.Kubernetes().TrimGuestStorage(kubernetes.GuestStorageArgs{URI: resourceURIFromBinding(binding)})
+		if err != nil {
+			return nil, err
+		}
+		out = withBindingURI(out, binding, "cluster")
+		return structuredResult(out, "Guest filesystem trimmed."), nil
+	})
+}
