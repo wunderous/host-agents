@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Install & run — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Install & run" />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <nav>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/get-started/">Get started</a>
+  </nav>
+</header>
+<div class="doc-shell">
+
+<aside class="doc-nav" aria-label="Documentation">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/" aria-current="page">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+  </ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+  </ul>
+</aside>
+<main class="doc">
+
+<p class="badge">How-to</p>
+<h1>Install &amp; run</h1>
+<p class="meta">Goal-oriented procedures for getting a Host Agent listening. Choose the path that matches your environment.</p>
+
+<h2>From source</h2>
+<pre><code>make build
+export OPUTE_REMOTE_AGENT_ID=local-host-agent
+export OPUTE_INFRA_PROVIDER_ID=incus
+export OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone"
+export MCP_AUTH_TOKEN=dev-token
+./dist/opute-host-agent --check
+./dist/opute-host-agent serve --mode standalone --transport http</code></pre>
+<p>Bare <code>./dist/opute-host-agent</code> is equivalent (defaults to standalone + http).</p>
+
+<h2>npm launcher</h2>
+<pre><code>export MCP_AUTH_TOKEN=dev-token
+npx -y @opute/host-agent start --background
+npx -y @opute/host-agent url      # http://127.0.0.1:3014/mcp
+npx -y @opute/host-agent status
+npx -y @opute/host-agent stop</code></pre>
+<p>The launcher defaults <code>OPUTE_REMOTE_AGENT_ID</code> to <code>local-host-agent</code> when unset. It strips most other <code>OPUTE_*</code> values so a Platform-enrolled shell cannot leak enrollment secrets into standalone.</p>
+<p>Development binary override:</p>
+<pre><code>OPUTE_HOST_AGENT_BINARY="$PWD/dist/opute-host-agent" \
+  npx -y @opute/host-agent start --background</code></pre>
+
+<h2>Serve modes</h2>
+<table>
+  <thead><tr><th>Mode</th><th>Default bind</th><th>Default port</th><th>Use</th></tr></thead>
+  <tbody>
+    <tr><td><code>standalone</code></td><td><code>127.0.0.1</code></td><td><strong>3014</strong></td><td>Local IDE / laptop</td></tr>
+    <tr><td><code>platform</code></td><td><code>0.0.0.0</code></td><td><strong>3004</strong></td><td>Enrolled host beside Opute control plane</td></tr>
+  </tbody>
+</table>
+<p>Override with <code>HOST_MCP_BIND_HOST</code> and <code>HOST_MCP_PORT</code>. Do not copy a platform <code>:3004</code> snippet into a standalone laptop config unless you intend that collision.</p>
+
+<h2>Mutations</h2>
+<pre><code>export OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code></pre>
+<p>Without this, standalone mutation tools fail closed with an explicit error.</p>
+
+<h2>WSL</h2>
+<p>Run the <strong>Linux</strong> binary inside WSL. Point the Windows MCP client at <code>http://127.0.0.1:3014/mcp</code> (enable localhost forwarding / portproxy as needed). Native Windows is not an Incus host runtime.</p>
+
+<h2>Production hosts</h2>
+<p>Remote production installs come from the Opute platform UI (<strong>Connect Remote Host</strong>). The generated script writes <code>host-agent.env</code> with canonical <code>OPUTE_REMOTE_AGENT_ID</code> and <code>MCP_AUTH_TOKEN</code>, then starts the systemd unit. GitHub Releases are for CI and manual smoke — not the primary production credential path.</p>
+
+<div class="note">Release artifacts from <code>make artifacts</code> include <code>host-agent-linux-*.gz</code>, Windows gzip, k3s/cloudflare/tailscale provider binaries, and <code>SHA256SUMS</code>. The day-to-day build product remains <code>dist/opute-host-agent</code>.</div>
+
+</main>
+</div>
+<footer>
+  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <a href="/docs/architecture/">Architecture</a>
+</footer>
+
+</body>
+</html>

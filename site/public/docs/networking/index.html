@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Networking — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Networking" />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <nav>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/get-started/">Get started</a>
+  </nav>
+</header>
+<div class="doc-shell">
+
+<aside class="doc-nav" aria-label="Documentation">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+  </ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/" aria-current="page">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+  </ul>
+</aside>
+<main class="doc">
+
+<p class="badge">Explanation</p>
+<h1>Networking</h1>
+<p class="meta">HA networking is three exclusive Service Definitions — not one mega “overlay” product. Tunneling and public MCP helpers sit beside those seams.</p>
+
+<h2>Three seams (ADR-0016)</h2>
+<table>
+  <thead><tr><th>Service Definition</th><th>Job</th><th>Neutral ops</th></tr></thead>
+  <tbody>
+    <tr><td><code>mesh-membership.v1</code></td><td>Host joins a trust domain</td><td>enroll, status, leave</td></tr>
+    <tr><td><code>private-mesh.v1</code></td><td>East-west reachability</td><td>ensure, ensure-service, probe</td></tr>
+    <tr><td><code>public-ingress.v1</code></td><td>North-south stable HTTPS</td><td>ensure, promote, probe</td></tr>
+  </tbody>
+</table>
+<p><code>network-overlay.*</code> tools in older catalogs are a <strong>deprecated migration alias</strong>. New consumers bind to the three definitions.</p>
+
+<pre class="mermaid">
+flowchart TB
+  subgraph seams [Service Definitions]
+    M[mesh-membership.v1]
+    Pv[private-mesh.v1]
+    Pu[public-ingress.v1]
+  end
+  TS[Provider: Tailscale<br/>all three]
+  CF[Provider: Cloudflare<br/>membership + public-ingress]
+  TS --> M
+  TS --> Pv
+  TS --> Pu
+  CF --> M
+  CF --> Pu
+  HA[Host Agent recipes / MCP] --> seams
+</pre>
+
+<h2>Exclusivity</h2>
+<p>Exclusivity is <strong>per Service Definition</strong>, not per vendor company. Activating a provider for a definition publishes that definition’s ops and displaces another provider’s catalog entries for the same <code>capabilityId</code>. Ambiguous dual ownership fails closed.</p>
+<p>v1 vendor-bundle policy: activate one recommended bundle (Tailscale for all three, or Cloudflare where parity exists). Mix-and-match across seams is not a supported product path yet.</p>
+
+<h2>Private vs public paths</h2>
+<pre class="mermaid">
+flowchart LR
+  P[Platform] -->|typed MCP| A[Host Agent A]
+  P -->|typed MCP| B[Host Agent B]
+  A <-->|private mesh<br/>K3s API / CNI / probes| B
+  Pub[Public client] --> Funnel[public-ingress / Funnel / CF]
+  Funnel --> Gw[Scoped gateway / Ingress]
+  Gw --> W[Workload]
+</pre>
+<p>Funnel and Cloudflare public ingress are application north-south paths. They are not substitutes for the private mesh, the Kubernetes datastore, or authenticated Host Agent MCP administration.</p>
+
+<h2>Tunneling capability</h2>
+<p><code>opute.capability.tunneling.*</code> owns dedicated host tunnels, probes, removal, and Kubernetes connector install. Dogfood for this site uses a dedicated tunnel <code>opute-www-opute-io</code> — never the Platform tunnel.</p>
+<ul>
+  <li>Stable public hostnames require DNS + TLS readiness probes before calling a surface “done.”</li>
+  <li>Connector run tokens are write-only; MCP clients see <code>[redacted]</code>.</li>
+  <li>Public MCP quick/stable tunnel helpers (<code>ensure_public_mcp_*</code>) are separate from Platform admin MCP.</li>
+</ul>
+
+<div class="note">Reachability of a marketing hostname is not two-node etcd-quorum HA. Keep those claims separate.</div>
+
+</main>
+</div>
+<footer>
+  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <a href="/docs/architecture/">Architecture</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "dark",
+    securityLevel: "strict",
+    themeVariables: {
+      primaryColor: "#1a2e26",
+      primaryTextColor: "#e8f0ea",
+      primaryBorderColor: "#3d9b6e",
+      lineColor: "#9bb0a3",
+      secondaryColor: "#14201c",
+      tertiaryColor: "#0c1210",
+      background: "#0c1210",
+      mainBkg: "#1a2e26",
+      nodeBorder: "#3d9b6e",
+      clusterBkg: "#14201c",
+      titleColor: "#e8f0ea",
+      edgeLabelBackground: "#0c1210"
+    }
+  });
+</script>
+</body>
+</html>

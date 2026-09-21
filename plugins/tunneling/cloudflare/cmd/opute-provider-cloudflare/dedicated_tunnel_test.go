@@ -369,3 +369,76 @@ func TestParseTunnelIDFromCNAME(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// Marketing apex and www share one dedicated tunnel so opute.io and
+// www.opute.io serve the same Host Agent site without touching platform/mcp.
+func TestEnsureDedicatedTunnelPublishesApexAndWWW(t *testing.T) {
+	fake := newFakeCloudflare()
+	withFakeCloudflare(t, fake)
+	created, err := ensureDedicatedTunnel(t.Context(), map[string]any{
+		"hostname":    "www.opute.io",
+		"hostnames":   []any{"www.opute.io", "opute.io"},
+		"localTarget": "http://host-agent-www.host-agent-site.svc.cluster.local:80",
+		"tunnelName":  "opute-www-opute-io",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	ingress := fake.ingress[created.TunnelID]
+	if len(ingress) != 3 || ingress[0].Hostname != "www.opute.io" || ingress[1].Hostname != "opute.io" || ingress[2].Service != "http_status:404" {
+		t.Fatalf("expected www+apex ingress, got %#v", ingress)
+	}
+	var cnames int
+	for _, record := range fake.dns {
+		if strings.EqualFold(record.Type, "CNAME") && (record.Name == "www.opute.io" || record.Name == "opute.io") {
+			cnames++
+			if want := created.TunnelID + ".cfargotunnel.com"; record.Content != want {
+				t.Fatalf("CNAME %s content=%q want %q", record.Name, record.Content, want)
+			}
+		}
+	}
+	if cnames != 2 {
+		t.Fatalf("expected 2 CNAMEs, got %d in %#v", cnames, fake.dns)
+	}
+}
+
+// www.opute.io already owned a proxied A record. Dedicated ensure must replace
+// that conflict with the tunnel CNAME; creating alongside it returns CF 81053.
+func TestEnsureDedicatedTunnelReplacesConflictingARecord(t *testing.T) {
+	fake := newFakeCloudflare()
+	fake.dns["dns-www"] = cloudflareDNSRecord{
+		ID:      "dns-www",
+		Type:    "A",
+		Name:    "www.opute.io",
+		Content: "192.80.162.118",
+	}
+	withFakeCloudflare(t, fake)
+	created, err := ensureDedicatedTunnel(t.Context(), map[string]any{
+		"hostname":    "www.opute.io",
+		"localTarget": "http://host-agent-www.host-agent-site.svc.cluster.local:80",
+		"tunnelName":  "opute-www-opute-io",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if _, stillA := fake.dns["dns-www"]; stillA {
+		t.Fatal("conflicting A record was not removed")
+	}
+	var cname *cloudflareDNSRecord
+	for _, record := range fake.dns {
+		if strings.EqualFold(record.Type, "CNAME") && strings.EqualFold(record.Name, "www.opute.io") {
+			found := record
+			cname = &found
+		}
+	}
+	if cname == nil {
+		t.Fatalf("expected www CNAME, dns=%#v", fake.dns)
+	}
+	if want := created.TunnelID + ".cfargotunnel.com"; cname.Content != want {
+		t.Fatalf("CNAME content=%q want %q", cname.Content, want)
+	}
+}

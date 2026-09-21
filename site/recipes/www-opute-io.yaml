@@ -1,0 +1,214 @@
+# Deploy the Host Agent docs/marketing site to www.opute.io.
+#
+# Isolation invariants (do not regress):
+# - Never mutate namespace opute-platform, ingress platform-opute, or tunnel
+#   opute-platform-opute-io (platform.opute.io / mcp.opute.io).
+# - Dedicated Cloudflare tunnel name opute-www-opute-io only.
+# - Workload namespace host-agent-site; connector namespace host-agent-www-tunnel.
+#
+# Submit with run_host_local_recipe on the owning Host Agent:
+#   source: absolute path to this file
+#   inputs: see below
+contractVersion: host-recipe.v1
+recipeId: com.opute.host-agent.docs-site.www
+recipeVersion: 1.0.0
+execution:
+  coordinator: host-agent
+  mode: local
+compatibility:
+  requiredTools:
+    - build_and_push_oci_image
+    - apply_manifest
+    - get_k8s_resource
+    - list_pods
+    - opute.capability.tunneling.ensure-host-tunnel
+    - opute.capability.tunneling.probe-host-tunnel
+    - probe_http_endpoint
+inputs:
+  host:
+    required: true
+    description: Exact opaque Host Agent id executing this recipe (must be self).
+    schema: {type: string, minLength: 1}
+  clusterUri:
+    required: true
+    description: Admitted canonical cluster URI (e.g. cluster:local:opute-ha-a).
+    schema: {type: string, minLength: 1, pattern: '^cluster:[a-z][a-z0-9-]{0,31}:.+$'}
+  contextDir:
+    required: true
+    description: Absolute path to the site/ package (build context).
+    schema: {type: string, minLength: 1}
+  image:
+    required: true
+    description: Full image reference to build/push (registry/repo:tag).
+    schema: {type: string, minLength: 1}
+  workloadManifest:
+    required: true
+    description: Kubernetes manifest YAML for namespace/deploy/service (image already substituted).
+    schema: {type: string, minLength: 1}
+  hostname:
+    default: www.opute.io
+    schema: {type: string, minLength: 1, maxLength: 253}
+  hostnames:
+    default: ["www.opute.io", "opute.io"]
+    description: Public hostnames owned by the dedicated www tunnel (www + apex).
+    schema:
+      type: array
+      minItems: 1
+      items: {type: string, minLength: 1, maxLength: 253}
+  tunnelName:
+    default: opute-www-opute-io
+    schema: {type: string, minLength: 1, maxLength: 253}
+  bindingId:
+    default: www-opute-io
+    schema: {type: string, minLength: 1}
+  localTarget:
+    default: http://host-agent-www.host-agent-site.svc.cluster.local:80
+    schema: {type: string, format: uri}
+  connectorNamespace:
+    default: host-agent-www-tunnel
+    schema: {type: string, minLength: 1}
+  publicOrigin:
+    default: https://www.opute.io/
+    schema: {type: string, format: uri}
+  registryProbe:
+    required: true
+    description: >
+      HTTP URL that becomes ready only after THIS image tag exists
+      (e.g. http://10.0.100.66:30500/v2/opute/host-agent-www/manifests/<tag>).
+      Do not use the registry root /v2/ — it is always ready and would skip a real push.
+    schema: {type: string, format: uri}
+  runNonce:
+    default: default
+    description: Change to force a fresh plan generation for the same image/hostname.
+    schema: {type: string, minLength: 1, maxLength: 128}
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.host-agent.docs-site.www
+  generation: 1
+  idempotencyKey: com.opute.host-agent.docs-site.www-${vars.inputs.hostname}-${vars.inputs.image}-${vars.inputs.runNonce}
+  defaults:
+    timeoutMs: 900000
+  nodes:
+    - id: build
+      target:
+        hostRef: ${vars.inputs.host}
+      action:
+        tool: build_and_push_oci_image
+        args:
+          contextDir: ${vars.inputs.contextDir}
+          dockerfile: Dockerfile
+          image: ${vars.inputs.image}
+          insecureRegistry: true
+          builder: auto
+      timeoutMs: 1200000
+      validate:
+        tool: get_host_info
+        assert:
+          - path: /providerId
+            op: eq
+            value: incus
+    - id: apply
+      dependsOn: [build]
+      target:
+        hostRef: ${vars.inputs.host}
+      action:
+        tool: apply_manifest
+        args:
+          uri: ${vars.inputs.clusterUri}
+          manifest: ${vars.inputs.workloadManifest}
+      validate:
+        tool: list_pods
+        args:
+          uri: ${vars.inputs.clusterUri}
+          namespace: host-agent-site
+        assert:
+          - path: /pods/0/ready
+            op: eq
+            value: true
+    - id: tunnel
+      dependsOn: [apply]
+      target:
+        hostRef: ${vars.inputs.host}
+      action:
+        tool: opute.capability.tunneling.ensure-host-tunnel
+        args:
+          bindingId: ${vars.inputs.bindingId}
+          hostname: ${vars.inputs.hostname}
+          hostnames: ${vars.inputs.hostnames}
+          tunnelName: ${vars.inputs.tunnelName}
+          localTarget: ${vars.inputs.localTarget}
+          placement: kubernetes
+          targetUri: ${vars.inputs.clusterUri}
+          namespace: ${vars.inputs.connectorNamespace}
+          name: cloudflared-www
+          # Install connector in-process with the minted runToken. External MCP
+          # clients see writeOnly runToken as "[redacted]", so a separate
+          # install-kubernetes-connector step cannot consume it safely.
+          manageHostConnector: true
+      validate:
+        tool: list_pods
+        args:
+          uri: ${vars.inputs.clusterUri}
+          namespace: ${vars.inputs.connectorNamespace}
+        assert:
+          - path: /pods/0/ready
+            op: eq
+            value: true
+    - id: route
+      dependsOn: [tunnel]
+      target:
+        hostRef: ${vars.inputs.host}
+      action:
+        tool: opute.capability.tunneling.probe-host-tunnel
+        args:
+          bindingId: ${vars.inputs.bindingId}
+          hostname: ${vars.inputs.hostname}
+          hostnames: ${vars.inputs.hostnames}
+          localTarget: ${vars.inputs.localTarget}
+          placement: kubernetes
+          tunnelName: ${vars.inputs.tunnelName}
+      validate:
+        tool: opute.capability.tunneling.probe-host-tunnel
+        args:
+          bindingId: ${vars.inputs.bindingId}
+          hostname: ${vars.inputs.hostname}
+          hostnames: ${vars.inputs.hostnames}
+          localTarget: ${vars.inputs.localTarget}
+          placement: kubernetes
+          tunnelName: ${vars.inputs.tunnelName}
+        assert:
+          - path: /routed
+            op: eq
+            value: true
+    - id: probe
+      dependsOn: [route]
+      target:
+        hostRef: ${vars.inputs.host}
+      action:
+        tool: probe_http_endpoint
+        args:
+          endpoint: ${vars.inputs.publicOrigin}
+      validate:
+        tool: probe_http_endpoint
+        args:
+          endpoint: ${vars.inputs.publicOrigin}
+        assert:
+          - path: /ready
+            op: eq
+            value: true
+    - id: probe-apex
+      dependsOn: [route]
+      target:
+        hostRef: ${vars.inputs.host}
+      action:
+        tool: probe_http_endpoint
+        args:
+          endpoint: https://opute.io/
+      validate:
+        tool: probe_http_endpoint
+        args:
+          endpoint: https://opute.io/
+        assert:
+          - path: /ready
+            op: eq
+            value: true

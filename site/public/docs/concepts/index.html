@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Concepts — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Concepts" />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <nav>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/get-started/">Get started</a>
+  </nav>
+</header>
+<div class="doc-shell">
+
+<aside class="doc-nav" aria-label="Documentation">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+  </ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/" aria-current="page">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+  </ul>
+</aside>
+<main class="doc">
+
+<p class="badge">Explanation</p>
+<h1>Concepts</h1>
+<p class="meta">Product boundaries and safety model — not a procedure. For diagrams and package layout see <a href="/docs/architecture/">Architecture</a>.</p>
+
+<h2>Host Agent vs Platform</h2>
+<p>The Host Agent is an execution plane on a single Linux host (or enrolled remote). It speaks Streamable HTTP MCP, admits canonical resource URIs, and runs typed tools. Opute Platform is a separate control plane: it decides <em>what</em> should happen, holds durable orchestration, and issues enrollment credentials.</p>
+<p>Public marketing at <code>opute.io</code> / <code>www.opute.io</code> is Host Agent dogfood. <code>platform.opute.io</code> and <code>mcp.opute.io</code> are Platform surfaces. Collapsing those identities is how operators accidentally take down the control plane while “just fixing docs.”</p>
+
+<pre class="mermaid">
+flowchart LR
+  Client[MCP client / Platform] -->|typed tools/list + call| HA[Host Agent]
+  HA -->|ops| Host[Linux host]
+  HA -->|plugins| Prov[Provider MCP processes]
+  Platform[Opute Platform] -->|intent + enrollment| Client
+  Platform -.->|does not own host exec| HA
+</pre>
+
+<h2>Typed catalog, not folklore</h2>
+<p>Clients do not send free-form shell. They discover a revisioned catalog, validate arguments against schemas, and invoke named tools. That is why memorized tool lists go stale and why <code>tools/list</code> is authoritative.</p>
+
+<h2>Recipes and plans</h2>
+<p>A <strong>recipe</strong> is the cookbook page: which dish, which ingredients, which version. A <strong>plan</strong> is the cooking steps the kitchen actually follows. The Host Agent keeps both so work can be pinned and parameterized, while only one runner ever executes. More: <a href="/docs/recipes/">Recipes &amp; plans</a> · field list: <a href="/docs/recipe-primitives/">primitives</a>.</p>
+
+<h2>Fail-closed identity</h2>
+<p>Every process must carry a canonical <code>OPUTE_REMOTE_AGENT_ID</code>. Standalone mutations stay off until explicitly enabled. Observations that could contain secrets are redacted in MCP results (write-only schema fields become <code>[redacted]</code>).</p>
+
+<h2>Providers as plugins</h2>
+<p>Kubernetes, Cloudflare, Tailscale, Ollama, and Host OS surfaces arrive as provider plugins under <code>plugins/</code>, not as hard-wired product branches inside the MCP server. Shared host seams live in <code>internal/hostruntime</code>; there is no separate <code>internal/provider</code> package.</p>
+
+<h2>Optional LLM layer</h2>
+<p>Core infrastructure tools must work when no LLM provider is installed or healthy. LLM serving is an activated capability, not a dependency of the kernel.</p>
+
+<h2>How this site is written</h2>
+<p>Pages follow <a href="https://diataxis.fr/">Diátaxis</a>: tutorials teach a first success; how-tos accomplish a known goal; reference states facts without narrative; explanation answers <em>why</em> and builds mental models. Mixing those modes produces pages that intimidate without operating — so recipe <em>why</em> lives under Explanation, and the field catalog under Reference.</p>
+
+</main>
+</div>
+<footer>
+  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <a href="/docs/architecture/">Architecture</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "dark",
+    securityLevel: "strict",
+    themeVariables: {
+      primaryColor: "#1a2e26",
+      primaryTextColor: "#e8f0ea",
+      primaryBorderColor: "#3d9b6e",
+      lineColor: "#9bb0a3",
+      secondaryColor: "#14201c",
+      tertiaryColor: "#0c1210",
+      background: "#0c1210",
+      mainBkg: "#1a2e26",
+      nodeBorder: "#3d9b6e",
+      clusterBkg: "#14201c",
+      titleColor: "#e8f0ea",
+      edgeLabelBackground: "#0c1210"
+    }
+  });
+</script>
+</body>
+</html>

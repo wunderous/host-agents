@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Configuration — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Configuration" />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <nav>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/get-started/">Get started</a>
+  </nav>
+</header>
+<div class="doc-shell">
+
+<aside class="doc-nav" aria-label="Documentation">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/" aria-current="page">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+  </ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+  </ul>
+</aside>
+<main class="doc">
+
+<p class="badge">Reference</p>
+<h1>Configuration</h1>
+<p class="meta">Environment and CLI facts. Precedence: CLI <code>--env KEY=VALUE</code> → process environment → <code>--env-file</code> / <code>OPUTE_HOST_AGENT_ENV_FILE</code> (file fills unset keys only).</p>
+
+<h2>Required</h2>
+<table>
+  <thead><tr><th>Variable</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>OPUTE_REMOTE_AGENT_ID</code></td><td>Canonical agent id. Required by <code>Validate()</code>. npm launcher defaults to <code>local-host-agent</code>.</td></tr>
+  </tbody>
+</table>
+
+<h2>Listen</h2>
+<table>
+  <thead><tr><th>Variable</th><th>Standalone default</th><th>Platform default</th></tr></thead>
+  <tbody>
+    <tr><td><code>HOST_MCP_PORT</code></td><td><code>3014</code></td><td><code>3004</code></td></tr>
+    <tr><td><code>HOST_MCP_BIND_HOST</code></td><td><code>127.0.0.1</code></td><td><code>0.0.0.0</code></td></tr>
+    <tr><td><code>OPUTE_AGENT_MODE</code></td><td><code>standalone</code></td><td><code>platform</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Auth &amp; mutations</h2>
+<table>
+  <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>MCP_AUTH_TOKEN</code></td><td>Bootstrap Bearer for <code>/mcp</code></td></tr>
+    <tr><td><code>OPUTE_STANDALONE_ALLOW_MUTATIONS</code></td><td><code>true</code> enables standalone mutations</td></tr>
+    <tr><td><code>OPUTE_STANDALONE_STATE_DIR</code></td><td>Standalone state / journal directory</td></tr>
+    <tr><td><code>OPUTE_MCP_PREFIX_TOOL_NAMES</code></td><td>Prefix wire tool names for multi-agent IDE workspaces</td></tr>
+  </tbody>
+</table>
+
+<h2>Provider / Incus</h2>
+<table>
+  <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>OPUTE_INFRA_PROVIDER_ID</code></td><td>Normalizes to <code>incus</code>; non-incus values are rejected today</td></tr>
+    <tr><td><code>OPUTE_INCUS_BINARY_PATH</code></td><td>Optional path to <code>incus</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Cloudflare provider</h2>
+<table>
+  <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>CLOUDFLARE_API_TOKEN</code></td><td>API auth for tunnel/DNS mutation</td></tr>
+    <tr><td><code>CLOUDFLARE_ACCOUNT_ID</code></td><td>Account scope</td></tr>
+    <tr><td><code>CLOUDFLARE_ZONE_ID</code></td><td>DNS zone scope</td></tr>
+  </tbody>
+</table>
+
+<h2>Retired (rejected)</h2>
+<p>Do not set: <code>OPUTE_CPC_TOKEN</code>, <code>OPUTE_HOST_WS_URL</code>, <code>OPUTE_REMOTE_AGENT_AUTH_TOKEN</code>, <code>OPUTE_ONBOARDING_*</code>, <code>OPUTE_REVERSE_TUNNEL</code>. The Go agent fails closed if they appear.</p>
+
+<h2>CLI</h2>
+<pre><code>opute-host-agent --check
+opute-host-agent serve --mode standalone|platform --transport http
+opute-host-agent public-mcp …
+opute-host-agent recipe …
+opute-host-agent provider …
+opute-host-agent help</code></pre>
+
+</main>
+</div>
+<footer>
+  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <a href="/docs/architecture/">Architecture</a>
+</footer>
+
+</body>
+</html>

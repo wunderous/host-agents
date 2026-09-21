@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Resources & safety — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Resources & safety" />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <nav>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/get-started/">Get started</a>
+  </nav>
+</header>
+<div class="doc-shell">
+
+<aside class="doc-nav" aria-label="Documentation">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+  </ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/" aria-current="page">Resources &amp; safety</a></li>
+  </ul>
+</aside>
+<main class="doc">
+
+<p class="badge">Explanation</p>
+<h1>Resources &amp; safety</h1>
+<p class="meta">Canonical resource URIs, typed edges, effect gates, quotas, and observation redaction — the fail-closed middle of every tool call.</p>
+
+<h2>Canonical resource URIs</h2>
+<p>Resources are identified as <code>type:tenant:id</code> (ADR-0003). Tools declare what they <strong>Require</strong> and <strong>Produce</strong> as typed edges (ADR-0004). Clients pass admitted URIs; the Host Agent does not invent cluster or guest identity from display labels.</p>
+
+<pre class="mermaid">
+flowchart LR
+  Disc[Discovery / list tools] --> URI[Canonical URI]
+  URI --> Admit[Admission]
+  Admit --> Cap[Capacity / quota checks]
+  Cap --> Op[Domain or provider op]
+  Op --> Obs[Typed observation]
+  Obs --> Red[Schema redaction]
+  Red --> Client[MCP client]
+</pre>
+
+<h2>Effects</h2>
+<p>Catalog entries carry effect classifications such as <code>read</code>, <code>mutation</code>, <code>destructive</code>, and <code>credential_bearing</code>. Standalone mode denies mutations until <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Platform mode applies enrollment policy instead of that env flag.</p>
+
+<h2>Quotas and storage bounds</h2>
+<ul>
+  <li>Incus guest storage quotas are admission concerns (ADR-0010).</li>
+  <li>In-cluster PVC / HA storage bounds are constrained so recipes cannot claim unbounded durability (ADR-0014).</li>
+  <li>Reclaim tools (<code>prune_unused_cluster_images</code>, <code>garbage_collect_cluster_registry</code>, <code>trim_guest_storage</code>) are explicit ops — not silent background GC folklore.</li>
+</ul>
+
+<h2>Redaction (write-only)</h2>
+<p>Schema-marked write-only fields never round-trip through MCP results. Tunnel connector tokens, for example, appear as <code>[redacted]</code>. In-process recipe steps that need those secrets must mint or hold them inside the Host Agent (see dogfood <code>manageHostConnector: true</code>), not ask an external client to paste them back.</p>
+
+<pre class="mermaid">
+flowchart LR
+  Mint[ensure-host-tunnel] --> Tok[runToken writeOnly]
+  Tok --> MCP[MCP result]
+  MCP --> R["[redacted]"]
+  Tok --> InProc[In-process connector install]
+  InProc --> K8s[Kubernetes connector Secret]
+</pre>
+
+<h2>Identity</h2>
+<p>Every Host Agent process carries <code>OPUTE_REMOTE_AGENT_ID</code>. Inventory tools omit caller-supplied host id overrides that would impersonate another agent (ADR-0006). Cross-host mutations target exact opaque agent identities — not Tailscale hostnames or display labels.</p>
+
+</main>
+</div>
+<footer>
+  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <a href="/docs/architecture/">Architecture</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "dark",
+    securityLevel: "strict",
+    themeVariables: {
+      primaryColor: "#1a2e26",
+      primaryTextColor: "#e8f0ea",
+      primaryBorderColor: "#3d9b6e",
+      lineColor: "#9bb0a3",
+      secondaryColor: "#14201c",
+      tertiaryColor: "#0c1210",
+      background: "#0c1210",
+      mainBkg: "#1a2e26",
+      nodeBorder: "#3d9b6e",
+      clusterBkg: "#14201c",
+      titleColor: "#e8f0ea",
+      edgeLabelBackground: "#0c1210"
+    }
+  });
+</script>
+</body>
+</html>

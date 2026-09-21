@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Opute Host Agent</title>
+  <meta name="description" content="Typed MCP host agent for guests, Kubernetes, and public exposure — dogfood-hosted on opute.io." />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">Opute Host Agent</a>
+    <nav>
+      <a href="/docs/">Docs</a>
+      <a href="/docs/get-started/">Get started</a>
+    </nav>
+  </header>
+
+  <main class="hero">
+    <p class="eyebrow">Host Agent</p>
+    <h1>Run infrastructure through typed MCP — not shell folklore.</h1>
+    <p class="lede">
+      Opute Host Agent is a Streamable HTTP MCP server that executes explicit
+      assignments: guests, Kubernetes, registries, and public exposure — with
+      fail-closed identity and redacted observations.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="/docs/get-started/">Get started</a>
+      <a class="btn" href="/docs/architecture/">Architecture</a>
+    </div>
+    <div class="visual" aria-hidden="true">
+      <pre class="terminal">$ export OPUTE_REMOTE_AGENT_ID=local-host-agent
+$ export MCP_AUTH_TOKEN=dev-token
+$ npx -y @opute/host-agent start --background
+$ npx -y @opute/host-agent url
+http://127.0.0.1:3014/mcp</pre>
+    </div>
+  </main>
+
+  <footer>
+    <span>Dogfood on <code>opute.io</code> / <code>www.opute.io</code></span>
+    <a href="/docs/dogfood/">How this site is hosted</a>
+  </footer>
+</body>
+</html>

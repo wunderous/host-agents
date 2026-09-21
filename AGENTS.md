@@ -15,8 +15,11 @@ Always-on index for the Go Host Agent. Domain procedures live in
   enforces it. `internal/hostagent` is the composition root that builds them and
   owns no operations; `internal/hostruntime` is the shared seam they all take,
   bounded by the three-part membership rule its tests enforce.
-- `internal/tools`, `internal/provider`, `internal/plan`, and `internal/session`
+- `internal/tools`, `internal/plan`, and `internal/session`
   implement typed capabilities, plans, and durable session contracts.
+  Provider plugins live under `plugins/**` with contracts in
+  `contracts/provider/`; shared host runtime seams live in
+  `internal/hostruntime`.
 - `schemas/` stores versioned capability contracts; `test/` contains contract,
   integration, standalone, and mode tests. `npm/local-host-agent/` is the
   release launcher.

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Architecture — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Architecture" />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <nav>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/get-started/">Get started</a>
+  </nav>
+</header>
+<div class="doc-shell">
+
+<aside class="doc-nav" aria-label="Documentation">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+  </ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/" aria-current="page">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+  </ul>
+</aside>
+<main class="doc">
+
+<p class="badge">Explanation</p>
+<h1>Architecture</h1>
+<p class="meta">How the Host Agent is put together: planes, transport, providers, and the Cordis kernel. Normative ADRs live under <code>docs/adr/</code> in the repository.</p>
+
+<h2>Two planes</h2>
+<table>
+  <thead><tr><th></th><th>Host Agent</th><th>Opute Platform</th></tr></thead>
+  <tbody>
+    <tr><td>Job</td><td>Execute typed assignments on one host</td><td>Intent, authz, durable orchestration</td></tr>
+    <tr><td>Surface</td><td>Streamable HTTP MCP <code>/mcp</code></td><td>Web UI + control plane</td></tr>
+    <tr><td>Public origin (dogfood)</td><td><code>opute.io</code> / <code>www.opute.io</code></td><td><code>platform.opute.io</code>, <code>mcp.opute.io</code></td></tr>
+    <tr><td>Default listen</td><td>standalone <code>127.0.0.1:3014</code></td><td>platform mode <code>0.0.0.0:3004</code></td></tr>
+  </tbody>
+</table>
+
+<pre class="mermaid">
+flowchart TB
+  subgraph control [Control plane]
+    P[Opute Platform]
+  end
+  subgraph exec [Execution plane — one host]
+    HA[Host Agent<br/>internal/hostmcp + cordis]
+    HR[hostruntime]
+    Dom[domain packages<br/>host / incus / k8s / oci / …]
+    HA --> HR
+    HA --> Dom
+  end
+  subgraph plugins [Provider plugins]
+    CF[cloudflare]
+    TS[tailscale]
+    K3[k3s]
+    OL[ollama]
+  end
+  P -->|typed MCP| HA
+  IDE[Local IDE client] -->|Bearer /mcp| HA
+  HA -->|lifecycle install/reload| plugins
+  plugins -->|capability ops| Ext[External APIs / daemons]
+</pre>
+
+<h2>MCP edge</h2>
+<ul>
+  <li><code>POST /mcp</code> — Streamable HTTP; auth via bootstrap <code>MCP_AUTH_TOKEN</code> Bearer and/or OAuth.</li>
+  <li><code>GET /health</code> — open; may expose <code>mcpToolNamePrefix</code> when name prefixing is enabled.</li>
+  <li>stdio transport is not supported for the public Host Agent surface.</li>
+</ul>
+
+<pre class="mermaid">
+sequenceDiagram
+  participant C as MCP client
+  participant HA as Host Agent
+  C->>HA: POST /mcp Authorization Bearer
+  HA-->>C: initialize / capabilities
+  C->>HA: tools/list
+  HA-->>C: revisioned CatalogSnapshot
+  C->>HA: tools/call name + args
+  Note over HA: admit URI · check effects · dispatch
+  HA-->>C: typed result (redacted)
+</pre>
+
+<h2>Catalog → admission → dispatch</h2>
+<p>The catalog is authoritative (ADR-0009). Tool dispatch validates against the revision the client saw, admits resource URIs, and applies effect gates before provider or domain code runs.</p>
+
+<pre class="mermaid">
+flowchart LR
+  List[tools/list] --> Rev[Catalog revision]
+  Call[tools/call] --> Rev
+  Rev --> Admit[Resource URI admission]
+  Admit --> Eff[Effect / mutation gate]
+  Eff --> Dom[Domain or provider op]
+  Dom --> Out[Observation + redaction]
+</pre>
+
+<h2>Providers</h2>
+<p>Providers are separate Streamable HTTP MCP processes under <code>plugins/</code>. The Host Agent owns lifecycle (<code>opute.provider.*</code>), activation, and displace-on-activate exclusivity per Service Definition — not vendor CLI folklore.</p>
+<ul>
+  <li><code>plugins/tunneling/cloudflare</code> — public ingress / tunnels</li>
+  <li><code>plugins/tunneling/tailscale</code> — mesh + Funnel bundle</li>
+  <li><code>plugins/kubernetes/k3s</code> — cluster provision / membership</li>
+  <li><code>plugins/llm/ollama</code> — optional LLM serving</li>
+  <li><code>plugins/platform/hostos</code> — host platform identity</li>
+</ul>
+
+<h2>Package map</h2>
+<table>
+  <thead><tr><th>Path</th><th>Owns</th></tr></thead>
+  <tbody>
+    <tr><td><code>internal/hostmcp</code></td><td>MCP façade, catalog snapshot, tool dispatch</td></tr>
+    <tr><td><code>internal/cordis</code></td><td>Kernel services / fibers (MCP is an edge)</td></tr>
+    <tr><td><code>internal/catalog</code></td><td>Revisioned capability registry</td></tr>
+    <tr><td><code>internal/recipe</code> → <code>internal/plan</code></td><td>Declarative expand then single runner</td></tr>
+    <tr><td><code>internal/hostruntime</code></td><td>Shared host seams for providers</td></tr>
+    <tr><td><code>internal/domain/*</code></td><td>host, incus, kubernetes, oci, llm, postgres, serving, cluster</td></tr>
+    <tr><td><code>contracts/</code> + <code>schemas/</code></td><td>Neutral IDs and JSON schemas</td></tr>
+    <tr><td><code>plugins/**</code></td><td>Provider MCP binaries</td></tr>
+  </tbody>
+</table>
+
+<p>Related: <a href="/docs/recipes/">Recipes &amp; plans</a> · <a href="/docs/networking/">Networking</a> · <a href="/docs/resources/">Resources &amp; safety</a></p>
+
+</main>
+</div>
+<footer>
+  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <a href="/docs/architecture/">Architecture</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "dark",
+    securityLevel: "strict",
+    themeVariables: {
+      primaryColor: "#1a2e26",
+      primaryTextColor: "#e8f0ea",
+      primaryBorderColor: "#3d9b6e",
+      lineColor: "#9bb0a3",
+      secondaryColor: "#14201c",
+      tertiaryColor: "#0c1210",
+      background: "#0c1210",
+      mainBkg: "#1a2e26",
+      nodeBorder: "#3d9b6e",
+      clusterBkg: "#14201c",
+      titleColor: "#e8f0ea",
+      edgeLabelBackground: "#0c1210"
+    }
+  });
+</script>
+</body>
+</html>

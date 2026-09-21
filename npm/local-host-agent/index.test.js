@@ -177,7 +177,7 @@ process.on('SIGINT', stop)
   const childEnv = JSON.parse(fs.readFileSync(envReport, 'utf8'))
   assert.deepEqual(childEnv, {
     mcpUrl: null,
-    mcpAuth: null,
+    mcpAuth: 'platform-secret',
     reverseTunnel: null,
     mode: 'standalone',
     transport: null,

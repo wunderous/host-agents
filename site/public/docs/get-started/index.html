@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Get started — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Get started" />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <nav>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/get-started/">Get started</a>
+  </nav>
+</header>
+<div class="doc-shell">
+
+<aside class="doc-nav" aria-label="Documentation">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/" aria-current="page">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+  </ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+  </ul>
+</aside>
+<main class="doc">
+
+<p class="badge">Tutorial</p>
+<h1>Get started</h1>
+<p class="meta">A learning path: by the end you will have a running standalone Host Agent and a successful authenticated catalog listing. Prefer following steps in order; do not skip ahead to mutations.</p>
+
+<h2>What you will need</h2>
+<ul>
+  <li>Linux or WSL2 (Incus host execution is Linux-only)</li>
+  <li>Go toolchain for a from-source build, <em>or</em> network access for <code>npx @opute/host-agent</code></li>
+  <li>About ten minutes</li>
+</ul>
+
+<ol class="steps">
+  <li>
+    <strong>Build or obtain the binary</strong>
+    <pre><code>git clone https://github.com/wunderous/host-agents.git
+cd host-agents
+make build   # → dist/opute-host-agent</code></pre>
+    <p>Alternatively skip the clone and use the npm launcher in the next step with a downloaded release binary.</p>
+  </li>
+  <li>
+    <strong>Set identity and auth</strong>
+    <pre><code>export OPUTE_REMOTE_AGENT_ID=local-host-agent
+export OPUTE_INFRA_PROVIDER_ID=incus
+export OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone"
+export MCP_AUTH_TOKEN=dev-token</code></pre>
+    <p><code>OPUTE_REMOTE_AGENT_ID</code> is required by configuration validation. <code>MCP_AUTH_TOKEN</code> is the Bearer bootstrap secret your client will send to <code>/mcp</code>.</p>
+  </li>
+  <li>
+    <strong>Check configuration, then serve</strong>
+    <pre><code>./dist/opute-host-agent --check
+./dist/opute-host-agent
+# listens on http://127.0.0.1:3014/mcp by default</code></pre>
+    <p>Leave this process running. In another terminal, confirm health:</p>
+    <pre><code>curl -sS http://127.0.0.1:3014/health</code></pre>
+  </li>
+  <li>
+    <strong>Point an MCP client at the agent</strong>
+    <p>Use the JSON in <a href="/docs/mcp-clients/">Connect an MCP client</a>. Include the Bearer header matching <code>MCP_AUTH_TOKEN</code>.</p>
+  </li>
+  <li>
+    <strong>List tools</strong>
+    <p>From the client, run <code>tools/list</code> (or your client’s equivalent). You should see a revisioned catalog of typed tools. Then try a read-only call such as <code>get_host_info</code>.</p>
+  </li>
+</ol>
+
+<div class="callout warn">
+  <strong>Do not enable mutations yet.</strong> Standalone mutating tools stay denied until
+  <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Finish discovery first.
+</div>
+
+<p>Next: <a href="/docs/install/">Install options</a> · <a href="/docs/architecture/">Architecture</a> · <a href="/docs/capabilities/">Capabilities</a></p>
+
+</main>
+</div>
+<footer>
+  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <a href="/docs/architecture/">Architecture</a>
+</footer>
+
+</body>
+</html>

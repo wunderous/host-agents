@@ -1,284 +1,256 @@
 # Opute Host Agent (Go)
 
-Go implementation of the Opute host agent (replaces `@opute/mcp-host-agent`).
+Go implementation of the Opute Host Agent — a **server-only** Streamable HTTP
+MCP process that executes typed infrastructure assignments on a Linux host.
 
-## Standalone Go experience
+- **Repository:** https://github.com/wunderous/host-agents
+- **Go module:** `github.com/wunderous/host-agents`
+- **npm launcher:** [`@opute/host-agent`](./npm/local-host-agent) (`npm/local-host-agent/`)
+- **Platform monorepo:** sibling checkout at `../opute` when developing against [opute](https://github.com/opute-io/opute)
 
-`opute-host-agent` is a server-only MCP Host Agent. External clients
-communicate with it over Streamable HTTP MCP. Mutations remain denied by
-default.
+This README is the operator-facing source of truth for standalone and local
+dogfood. Prefer it over older blog posts or copied snippets.
 
-Build and launch the standalone server:
+## What it is (and is not)
+
+| | Host Agent | Opute Platform |
+|---|---|---|
+| Surface | Streamable HTTP MCP (`/mcp`) | Web UI + control plane (`platform.opute.io`) |
+| Job | Execute typed tools against this host / cluster | Intent, authorization, durable orchestration |
+| Auth | Bootstrap `MCP_AUTH_TOKEN` and/or OAuth access tokens | Platform sessions |
+| Default bind | Standalone: `127.0.0.1:3014` | Platform mode: `0.0.0.0:3004` |
+
+The Host Agent does **not** infer operations from prose and does **not** require
+an LLM. Clients discover the revisioned capability catalog, validate arguments
+against schemas, and call tools on the public contract.
+
+## Requirements
+
+- Linux (or WSL2). Native Windows/macOS host execution is unsupported.
+- A canonical agent id: `OPUTE_REMOTE_AGENT_ID` (**required** by `Validate()`).
+- Incus for guest/VM work (`OPUTE_INFRA_PROVIDER_ID` defaults/normalizes to `incus`).
+- For usable `/mcp` without an OAuth client: set `MCP_AUTH_TOKEN` and send
+  `Authorization: Bearer …` from the MCP client.
+
+`/health` is always open. `/mcp` rejects missing or invalid tokens.
+
+## Quick start (standalone)
+
+### Option A — from source
 
 ```bash
-make build
-OPUTE_INFRA_PROVIDER_ID=incus \
-OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone" \
+make build   # → dist/opute-host-agent
+
+export OPUTE_REMOTE_AGENT_ID=local-host-agent
+export OPUTE_INFRA_PROVIDER_ID=incus
+export OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone"
+export MCP_AUTH_TOKEN=dev-token   # optional but recommended
+
+# Validate config without listening
+./dist/opute-host-agent --check
+
+# Serve (bare invocation defaults to --mode standalone --transport http)
 ./dist/opute-host-agent
-
-# The bare invocation is also server-only.
-OPUTE_INFRA_PROVIDER_ID=incus ./dist/opute-host-agent
-```
-
-The same binary also supports explicit modes:
-
-```bash
-# MCP server only, for external clients; default HTTP endpoint is :3014/mcp
+# equivalent:
 ./dist/opute-host-agent serve --mode standalone --transport http
-
 ```
 
-Or via the npm helper:
+Default endpoint: **`http://127.0.0.1:3014/mcp`**.
+
+### Option B — npm launcher
 
 ```bash
+export MCP_AUTH_TOKEN=dev-token
+# OPUTE_REMOTE_AGENT_ID defaults to local-host-agent inside the launcher
 npx -y @opute/host-agent start --background
-npx -y @opute/host-agent url   # http://127.0.0.1:3014/mcp
+npx -y @opute/host-agent url
 ```
 
-Generic Streamable HTTP client configuration:
+For a local binary during development:
 
-```json
-{
-  "servers": {
-    "opute-local": {
-      "type": "http",
-      "url": "http://127.0.0.1:3014/mcp"
-    }
-  }
-}
+```bash
+OPUTE_HOST_AGENT_BINARY="$PWD/dist/opute-host-agent" \
+  npx -y @opute/host-agent start --background
 ```
 
-External clients discover the server's revisioned capability catalog, resolve
-explicit authorized entity references, validate arguments against the catalog
-schema, and execute MCP calls against the public contract. The Host Agent does
-not infer operations from prose or require an LLM.
+### MCP client configuration
 
-The following are verified Streamable HTTP MCP client examples for VS Code,
-Claude Desktop, and Cursor (gate: `opute/scripts/validate-standalone-mcp-client.ts`
-→ `tmp/bootstrap-m1/summary.json`). They are not named-product certifications beyond
-that `server/discover` / `tools/list` / read-only tool canary.
-
-Claude Desktop and Cursor use this equivalent `mcpServers` entry:
+Cursor / Claude Desktop (`mcpServers`):
 
 ```json
 {
   "mcpServers": {
     "opute-local": {
       "type": "http",
-      "url": "http://127.0.0.1:3014/mcp"
+      "url": "http://127.0.0.1:3014/mcp",
+      "headers": {
+        "Authorization": "Bearer dev-token"
+      }
     }
   }
 }
 ```
 
-To add two Host Agents to Cursor without colliding `provision_vm` / `list_vms` names, set `OPUTE_MCP_PREFIX_TOOL_NAMES=true` (and the existing `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE=true`) on each agent. `GET /health` then includes `mcpToolNamePrefix`; use a unique Cursor `mcp.json` key such as `host-agent-{prefix}`. Wire names become `{prefix}_{catalogName}` (single `_`). Dispatch stays on the catalog name. **Do not enable this flag on Platform-enrolled instances** — Opute's control plane calls unprefixed catalog names.
-
-The standalone bootstrap helper is maintained in the sibling Opute checkout
-(WSL, and it does not touch production `~/.config/opute/host-agent.env`):
-
-```bash
-# from the opute checkout
-cd ../opute
-./scripts/start-standalone-bootstrap-agent.sh
-# then from Windows Cursor, point MCP at http://127.0.0.1:3014/mcp
-# (enable localhostForwarding / WSL portproxy if needed)
-OPUTE_HOST_AGENT_MCP=http://127.0.0.1:3014/mcp bun scripts/validate-standalone-mcp-client.ts
-```
-
-Start the agent before connecting the client (`start` / `start --background`).
-Set `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` in the agent process environment
-only when infrastructure changes are intended. On Windows, run the Linux
-binary inside WSL and point the Windows MCP client at the forwarded HTTP URL.
-A WSL environment file can be supplied with the launcher's `--env-file`
-argument when starting the agent.
-
-The exact safe first run is: `server/discover` → `tools/list` →
-`check_local_prerequisites` → `get_local_status` → `list_vms` (VM inventory).
-The stable MVP claim covers generic Streamable HTTP behavior, Incus inspection,
-and VM lifecycle; K3s, PostgreSQL/SQL, and Cloudflare Tunnel tools are
-experimental until their end-to-end release gates pass. Native host execution
-is Linux-only; Windows users must run the server inside WSL.
-
-- **Repository:** https://github.com/wunderous/host-agents
-- **Go module:** `github.com/wunderous/host-agents`
-- **Platform monorepo:** sibling checkout at `../opute` when developing against [opute](https://github.com/opute-io/opute)
-
-## Phases
-
-| Phase | Platform | Provider | Validation (from `opute/`) |
-| ----- | -------- | -------- | --------------------------- |
-| **1** | Linux / WSL | Incus | `bun scripts/validate-go-host-agent-phase1.ts` |
-| **3** | Linux / WSL + dev stack | Incus | `bun scripts/validate-go-host-agent-phase3.ts` |
-
-Phase 1 validates the agent in **isolation** (direct HTTP MCP). Phase 3 wires the
-agent into the co-hosted Opute dev stack and onboarding flow over direct HTTP.
-
-## Build
-
-From `opute/`:
-
-```bash
-bun run build:host-agent
-```
-
-Or from this directory:
-
-```bash
-make build
-# builds the server-only dist/opute-host-agent
-make test
-make artifacts   # host-agent-linux-x64.gz, host-agent-linux-arm64.gz, K3s provider
-make standalone-http-smoke
-make standalone-lifecycle-gate   # explicit Incus integration gate
-npm --prefix npm/local-host-agent test
-```
-
-Release artifacts use the platform onboarding names
-`host-agent-linux-x64.gz` and `host-agent-linux-arm64.gz`, plus the CI-built
-`opute-provider-k3s-linux-x64` provider used by the platform image. The two
-`.gz` files contain only the canonical server binary.
-
-## CI and releases
-
-GitHub Actions:
-
-| Workflow | Trigger | What it does |
-| -------- | ------- | ------------ |
-| **CI** (`.github/workflows/ci.yml`) | PR / push to `main` | `gofmt`, `go vet`, all Go modules, optional OpenRouter Granite 4.2 smoke, `make artifacts` |
-| **Publish** (`.github/workflows/publish.yml`) | push to `main`, `v*` tags, manual | build + upload artifacts; **GitHub Release** on version tags |
-
-The committed Go suite is deterministic and does not require Ollama, llama.cpp,
-or another local model process. The provider-backed lane is explicitly tagged
-and uses the `OPENROUTER_API_KEY` repository secret with the exact
-`ibm-granite/granite-4.2-8b` route. It skips when the secret is unavailable,
-such as on fork pull requests. If OpenRouter does not advertise that exact
-model, the smoke is recorded as blocked while artifact generation continues.
-Local-runtime lifecycle coverage remains unit coverage against fakes; live
-local-runtime provisioning is not part of CI.
-
-Publish a release:
-
-```bash
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-The release attaches the host-agent `.gz` binaries, the K3s provider binary,
-and a `SHA256SUMS` manifest.
-Download from the public GitHub Release or use the npm launcher:
-
-```bash
-gh release download v0.2.0 --repo wunderous/host-agents
-```
-
-Unauthenticated `curl` to GitHub release URLs returns **404**.
-
-### Verify a release install
-
-The release workflow verifies checksums, starts the packaged binary, and runs
-the standalone Streamable HTTP smoke before publishing artifacts. For a local
-artifact produced by `make build`, run the same protocol smoke directly:
-
-```bash
-OPUTE_STANDALONE_BINARY="$PWD/dist/opute-host-agent" \
-  go test ./test/standalone -count=1
-```
-
-There is no release-verification helper in this repository; release downloads
-and CI evidence are the supported verification path.
-
-## Run (HTTP mode — Phase 1 local testing)
-
-**Linux + Incus:**
-
-```bash
-export HOST_MCP_PORT=3004
-export MCP_AUTH_TOKEN=dev-token
-export OPUTE_INCUS_BINARY_PATH=/usr/bin/incus
-export OPUTE_INFRA_PROVIDER_ID=incus
-./dist/host-agent-linux-x64
-```
-
-Call MCP with a Bearer token:
-
-```bash
-curl -H "Authorization: Bearer dev-token" \
-  -H "Content-Type: application/json" \
-  -H "MCP-Protocol-Version: 2026-07-28" \
-  -H "Mcp-Method: tools/list" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"client","version":"1.0.0"},"io.modelcontextprotocol/clientCapabilities":{}}}}' \
-  http://127.0.0.1:3004/mcp
-```
-
-`/health` is always open. `/mcp` requires a configured Host Agent bootstrap token
-or an OAuth access token for this resource. Invalid, expired, or incorrectly
-audienced tokens are rejected; the Host Agent does not interpret product token
-formats or validate Platform sessions.
-
-## VS Code / external MCP configuration
-
-The agent accepts configuration from the process environment, an env file, or repeatable CLI overrides. Precedence is CLI `--env KEY=VALUE`, then variables already present in the process, then values loaded from `--env-file` / `OPUTE_HOST_AGENT_ENV_FILE`.
-
-Prefer starting the standalone agent separately, then point VS Code at the
-HTTP URL. Secrets for mutations belong in the agent process environment (or
-`--env-file`), not in the MCP client spawn config:
+VS Code-style (`servers`):
 
 ```json
 {
   "servers": {
     "opute-local": {
       "type": "http",
-      "url": "http://127.0.0.1:3014/mcp"
+      "url": "http://127.0.0.1:3014/mcp",
+      "headers": {
+        "Authorization": "Bearer dev-token"
+      }
     }
   }
 }
 ```
 
+Omit the `headers` block only when the agent has no bootstrap token and the
+client completes OAuth for this resource. A bare URL against a token-gated
+agent returns **401**.
+
+### Mutations
+
+Standalone mutations are **denied by default**. Enable deliberately:
+
 ```bash
-OPUTE_STANDALONE_ALLOW_MUTATIONS=true \
-CLOUDFLARE_API_TOKEN=… \
-npx -y @opute/host-agent start --background
+export OPUTE_STANDALONE_ALLOW_MUTATIONS=true
 ```
 
-For a reusable local file, use `--env-file /path/to/opute-host-agent.env` when
-starting the binary. For one-off non-secret overrides, use
-`--env OPUTE_INFRA_PROVIDER_ID=incus --env HOST_MCP_PORT=3014`. Environment
-variables are inherited by host operations and Cloudflare tooling; never put
-long-lived secrets directly in command-line arguments because process listings
-can expose them. A Cloudflare API token configures account/API operations; a
-Cloudflare Tunnel connection still requires the per-tunnel `runToken` passed
-to the relevant tunnel tool.
+### Safe first calls
 
-On WSL hosts, set `OPUTE_CLOUDFLARED_MODE=wsl` to run a native Linux `cloudflared` binary beside Incus; optionally set `OPUTE_CLOUDFLARED_BINARY_PATH` to its absolute path. This is useful when the Windows artifact cannot execute or when the tunnel origin is only reachable inside WSL. Leave the mode unset to retain the Windows-cloudflared delegation path.
+Prefer read-only discovery before mutating:
 
-## Dev stack (Phase 3)
+1. `tools/list` (or `get_capability_catalog`)
+2. `get_host_info` / `detect_host_platform`
+3. `list_vms` (Incus inventory)
 
-With `bun run dev` in `opute/`:
+Do not treat memorized tool names as authoritative — always use the live catalog.
+
+## Serve modes
+
+| Mode | How | Default bind | Default port | Typical use |
+|------|-----|--------------|--------------|-------------|
+| **standalone** | bare binary, `serve --mode standalone`, or npm launcher | `127.0.0.1` | **3014** | Local IDE / laptop dogfood |
+| **platform** | `serve --mode platform` or `OPUTE_AGENT_MODE=platform` | `0.0.0.0` | **3004** | Enrolled host next to Opute control plane |
+
+Override with `HOST_MCP_BIND_HOST` and `HOST_MCP_PORT`.
+
+Other CLI entrypoints: `public-mcp`, `recipe`, `provider`, `help`, `--check`,
+`--env-file`, repeatable `--env KEY=VALUE`. Precedence: CLI `--env` → process
+environment → `--env-file` / `OPUTE_HOST_AGENT_ENV_FILE` (file only fills unset keys).
+
+### Multiple agents in one Cursor workspace
+
+Set `OPUTE_MCP_PREFIX_TOOL_NAMES=true` (and `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE=true`
+when needed) on each agent so tool names do not collide. `GET /health` then
+includes `mcpToolNamePrefix`. Wire names become `{prefix}_{catalogName}`.
+**Do not enable this on Platform-enrolled instances** — the control plane calls
+unprefixed catalog names.
+
+## Build and test
 
 ```bash
+make build                 # dist/opute-host-agent
+make test                  # go test ./...
+make test-all-modules      # includes provider plugin modules
+make standalone-smoke      # --check with a temp state dir
+make standalone-http-smoke # packaged HTTP smoke
+make npm-test              # npm/local-host-agent tests
+```
+
+From the sibling `opute/` checkout:
+
+```bash
+bun run build:host-agent
+bun run validate:host-agent:phase1   # isolation / direct HTTP
+bun run validate:host-agent:phase3   # wired into local opute dev stack
+```
+
+Phase validators and bootstrap helpers live under `opute/scripts/`. They still
+require a valid `OPUTE_REMOTE_AGENT_ID` in the environment when they spawn the
+Go binary.
+
+## Release artifacts
+
+```bash
+make artifacts
+```
+
+Produces under `dist/`:
+
+| Artifact | Role |
+|----------|------|
+| `host-agent-linux-x64.gz` | Canonical Linux amd64 server binary (gzip) |
+| `host-agent-linux-arm64.gz` | Canonical Linux arm64 server binary (gzip) |
+| `host-agent-windows-x64.gz` | Windows build (not a supported Incus host runtime) |
+| `opute-provider-k3s-linux-x64` | K3s provider plugin |
+| `opute-provider-cloudflare-linux-x64` | Cloudflare tunneling provider |
+| `opute-provider-tailscale-linux-x64` | Tailscale provider |
+| `SHA256SUMS` | Checksums |
+
+`make build` is the **dev** binary (`dist/opute-host-agent`). Release `.gz`
+names are what GitHub Releases and the npm downloader expect.
+
+Publish a tagged release:
+
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+Unauthenticated `curl` to private GitHub release URLs may return **404**. Prefer
+`gh release download … --repo wunderous/host-agents` or the npm launcher.
+
+## Platform / dogfood install
+
+Production remote hosts are onboarded through the Opute platform UI (**Connect
+Remote Host**). The generated install script downloads the binary from the
+**platform** artifact URL, writes `host-agent.env` (including
+`OPUTE_REMOTE_AGENT_ID` and `MCP_AUTH_TOKEN`), and starts the systemd unit.
+
+GitHub releases are for CI distribution and manual smoke testing — not the
+primary production credential path.
+
+Local platform-mode dogfood (sibling `opute/` with `bun run dev`):
+
+```bash
+# from opute/
 bun scripts/dev-host-mcp.ts
 ```
 
-Then run `bun scripts/validate-go-host-agent-phase3.ts` from Linux/WSL. Default dev token is **`dev-token`** (aligned with port-guard / `MCP_AUTH_TOKEN` / `OPUTE_CPC_TOKEN` in the opute repo).
+Default shared bootstrap token in that stack is **`dev-token`** (`MCP_AUTH_TOKEN`).
+`OPUTE_CPC_TOKEN` is **retired** and rejected by the Go agent.
 
-## Production install
+## Cloudflare / public exposure
 
-Remote hosts are onboarded through the Opute platform UI (**Connect Remote Host**). The generated install script:
+Dedicated tunnels and DNS are owned by the Cloudflare provider plugin
+(`plugins/tunneling/cloudflare`). Required API credentials for tunnel/DNS
+mutation:
 
-1. Downloads the binary from the **platform** artifact URL using the authorized onboarding session — not directly from GitHub releases
-2. Writes `host-agent.env` with the host-issued `MCP_AUTH_TOKEN`, canonical host identity, and provider identity
-3. Starts `opute-host-agent.service` (or user-level equivalent)
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_ZONE_ID`
 
-GitHub releases are for CI distribution and manual smoke testing. Production credentials are issued by the platform during onboarding.
+Connector run tokens are minted by
+`opute.capability.tunneling.ensure-host-tunnel` (write-only in MCP results).
+Do **not** put long-lived secrets on CLI argv — process listings can expose them.
 
-## Provider abstraction
+This docs/marketing site is dogfooded on `opute.io` / `www.opute.io` via
+`site/recipes/www-opute-io.yaml` (dedicated tunnel `opute-www-opute-io`). That
+path must not mutate `platform.opute.io` / `mcp.opute.io`.
 
-The agent uses `internal/provider` for provider ID normalization, CLI `Runtime`, and per-provider tool catalogs (`schemas/incus-tools.json`). Linux-only today (Incus); additional providers can plug in via new catalog JSON and inventory/launch ops without changing the MCP surface.
+## Architecture pointers
 
-## Documentation
-
-- **[AGENTS.md](AGENTS.md)** — agent-oriented guide (build, exposure, catalog pointers).
-- **[docs/ddns-vs-cloudflare-tunnel.md](docs/ddns-vs-cloudflare-tunnel.md)** — when to use dynamic DNS vs Cloudflare Tunnel; why they conflict on the same hostname; `blog.opute.io` tunnel path.
+- Composition root: `internal/hostagent`
+- Shared host seam: `internal/hostruntime` (not a separate `internal/provider` package)
+- Provider plugins: `plugins/**` + `contracts/provider/`
+- Capability catalogs / schemas: `schemas/`
+- Agent-oriented notes: [`AGENTS.md`](AGENTS.md)
+- Cordis catalog guide: [`docs/cordis-development-guide.md`](docs/cordis-development-guide.md)
+- Tunnel vs DDNS: [`docs/ddns-vs-cloudflare-tunnel.md`](docs/ddns-vs-cloudflare-tunnel.md)
 
 ## Schema export
 
@@ -287,3 +259,11 @@ When tool schemas change in the opute monorepo:
 ```bash
 cd ../opute && bun scripts/export-host-agent-schemas.ts ../opute-host-agent/schemas
 ```
+
+## Documentation site
+
+Static docs for operators live under [`site/public/docs/`](./site/public/docs)
+and are published to `https://www.opute.io/` / `https://opute.io/` via the Host
+Agent recipe in `site/recipes/`. Content follows [Diátaxis](https://diataxis.fr/)
+(tutorials, how-to guides, reference, explanation) and must track this README —
+not the other way around.

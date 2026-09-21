@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Recipes & plans — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Recipes & plans" />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <nav>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/get-started/">Get started</a>
+  </nav>
+</header>
+<div class="doc-shell">
+
+<aside class="doc-nav" aria-label="Documentation">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+  </ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/" aria-current="page">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+  </ul>
+</aside>
+<main class="doc">
+
+<p class="badge">Explanation</p>
+<h1>Recipes &amp; plans</h1>
+<p class="meta">About why Host Agent has both recipes and plans — and how to choose a family. Field lists live under <a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a>.</p>
+
+<h2>In one sentence</h2>
+<p>A <strong>recipe</strong> is the cookbook page (which dish, which ingredients, which version). A <strong>plan</strong> is the cooking steps the kitchen actually follows. Only the plan runs.</p>
+
+<pre class="mermaid">
+flowchart LR
+  Recipe[Recipe envelope] --> Expand[Pin · inputs · expand]
+  Expand --> Plan[host-plan.v1]
+  Plan --> Runner[plan.Runner]
+  Runner --> Tools[Typed tools]
+</pre>
+
+<h2>Why not one thing?</h2>
+<p>Without recipes, every caller would hand-write expanded plans and lose version pins, input schemas, and family-specific activation. Without plans, each recipe family would invent its own executor — Cordis C-03 forbids that. So recipes <em>package</em> work; plans <em>execute</em> it.</p>
+<ul>
+  <li><strong>Recipe owns</strong> identity (<code>recipeId</code>/<code>recipeVersion</code>), inputs (including secrets), compatibility, source pin (<code>sha256</code>), and an embedded plan.</li>
+  <li><strong>Plan owns</strong> the DAG: nodes, dependsOn, validate/assert, retry, recover, compensate, converge.</li>
+  <li><strong>Bare plans</strong> exist when something already expanded the envelope (for example provider teardown returning <code>host-plan.v1</code>).</li>
+</ul>
+
+<h2>Which family when?</h2>
+<table>
+  <thead><tr><th>You want…</th><th>Use</th><th>MCP entry</th></tr></thead>
+  <tbody>
+    <tr><td>Work on this Host Agent only (dogfood site, local install)</td><td><code>host-recipe.v1</code> local</td><td><code>run_host_local_recipe</code></td></tr>
+    <tr><td>An already-expanded DAG</td><td>bare <code>host-plan.v1</code></td><td><code>run_host_plan</code></td></tr>
+    <tr><td>Activate a serving runtime (LLM, mesh, HTTP exposure)</td><td><code>runtime-recipe.v1</code></td><td><code>run_runtime_recipe</code></td></tr>
+    <tr><td>Public hostname → local target bindings</td><td><code>tunnel-recipe.v1</code></td><td><code>run_tunnel_recipe</code></td></tr>
+    <tr><td>Multi-host coordination with waits</td><td>Platform-distributed host recipe</td><td>Submit to Platform — HA refuses</td></tr>
+  </tbody>
+</table>
+
+<h2>What the runner is doing</h2>
+<p>After expansion, one runner walks topo levels, applies mutating actions only when readiness fails, can recover then revalidate, and on abort runs compensate in reverse order. Host-local recipes cannot use durable <code>wait</code> nodes — those belong to Platform-distributed work.</p>
+
+<pre class="mermaid">
+flowchart TB
+  N[Node] -->|already good| Sat[satisfied]
+  N -->|needs work| Act[action]
+  Act --> Val[validate / assert]
+  Val -->|fail| Rec[recover?]
+  Rec -->|abort| Comp[compensate]
+</pre>
+
+<h2>Where to go next</h2>
+<ul>
+  <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a> — every field, status, assertion op, and cap</li>
+  <li><a href="/docs/dogfood/">Publish this site</a> — host-local recipe in production</li>
+  <li><a href="/docs/networking/">Networking</a> — seams recipes compose</li>
+  <li><a href="/docs/resources/">Resources &amp; safety</a> — redaction and resume</li>
+</ul>
+
+</main>
+</div>
+<footer>
+  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <a href="/docs/architecture/">Architecture</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "dark",
+    securityLevel: "strict",
+    themeVariables: {
+      primaryColor: "#1a2e26",
+      primaryTextColor: "#e8f0ea",
+      primaryBorderColor: "#3d9b6e",
+      lineColor: "#9bb0a3",
+      secondaryColor: "#14201c",
+      tertiaryColor: "#0c1210",
+      background: "#0c1210",
+      mainBkg: "#1a2e26",
+      nodeBorder: "#3d9b6e",
+      clusterBkg: "#14201c",
+      titleColor: "#e8f0ea",
+      edgeLabelBackground: "#0c1210"
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Publish this site — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Publish this site" />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <nav>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/get-started/">Get started</a>
+  </nav>
+</header>
+<div class="doc-shell">
+
+<aside class="doc-nav" aria-label="Documentation">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/" aria-current="page">Publish this site</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+  </ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+  </ul>
+</aside>
+<main class="doc">
+
+<p class="badge">How-to</p>
+<h1>Publish this site</h1>
+<p class="meta">How <code>opute.io</code> and <code>www.opute.io</code> are hosted as Host Agent dogfood — and how to tear them down without touching Platform.</p>
+
+<h2>Goal</h2>
+<p>Serve this static marketing/docs package from a K3s workload via a <strong>Host Agent recipe</strong>, exposed through a dedicated Cloudflare tunnel.</p>
+
+<pre class="mermaid">
+flowchart TB
+  SRC[site/ source] --> BUILD[OCI image build]
+  R[www-opute-io recipe] --> BUILD
+  BUILD --> REG[(Cluster registry)]
+  R --> HA[Host Agent id]
+  HA --> K3S[Admitted K3s cluster]
+  REG --> APPLY[apply_manifest]
+  APPLY --> W[host-agent-www workload]
+  W --> TUN[Dedicated CF tunnel<br/>opute-www-opute-io]
+  CLIENT[Public browser] --> TUN
+  TUN --> W
+</pre>
+
+<h2>Path of record</h2>
+<ul>
+  <li>Recipe: <code>site/recipes/www-opute-io.yaml</code></li>
+  <li>Teardown: <code>site/recipes/www-opute-io-teardown.yaml</code></li>
+  <li>Submit with <code>run_host_local_recipe</code> on the owning Host Agent</li>
+</ul>
+<p>Ad-hoc <code>kubectl</code> is not the deploy path of record.</p>
+
+<h2>Isolation invariants</h2>
+<table>
+  <thead><tr><th>Own</th><th>Never touch</th></tr></thead>
+  <tbody>
+    <tr><td>Namespaces <code>host-agent-site</code>, <code>host-agent-www-tunnel</code></td><td>Namespace <code>opute-platform</code></td></tr>
+    <tr><td>Tunnel <code>opute-www-opute-io</code></td><td>Tunnel <code>opute-platform-opute-io</code></td></tr>
+    <tr><td>Hostnames <code>opute.io</code>, <code>www.opute.io</code></td><td><code>platform.opute.io</code>, <code>mcp.opute.io</code></td></tr>
+  </tbody>
+</table>
+
+<h2>What “pass” means</h2>
+<ul>
+  <li>External HTTPS GET of <code>https://opute.io/</code> and <code>https://www.opute.io/</code> returns this site</li>
+  <li><code>platform.opute.io</code> remains healthy; <code>mcp.opute.io</code> retains its role</li>
+</ul>
+<div class="note">Site reachability is not two-node write / etcd-quorum HA. Do not narrate dogfood pass as consensus HA.</div>
+
+<h2>Cloudflare credentials</h2>
+<p>Tunnel/DNS mutation needs <code>CLOUDFLARE_API_TOKEN</code>, <code>CLOUDFLARE_ACCOUNT_ID</code>, and <code>CLOUDFLARE_ZONE_ID</code> on the Cloudflare provider. Connector run tokens are minted by <code>opute.capability.tunneling.ensure-host-tunnel</code> and are write-only in MCP results (external clients see <code>[redacted]</code>). The recipe therefore installs the Kubernetes connector in-process with <code>manageHostConnector: true</code>.</p>
+
+</main>
+</div>
+<footer>
+  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <a href="/docs/architecture/">Architecture</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "dark",
+    securityLevel: "strict",
+    themeVariables: {
+      primaryColor: "#1a2e26",
+      primaryTextColor: "#e8f0ea",
+      primaryBorderColor: "#3d9b6e",
+      lineColor: "#9bb0a3",
+      secondaryColor: "#14201c",
+      tertiaryColor: "#0c1210",
+      background: "#0c1210",
+      mainBkg: "#1a2e26",
+      nodeBorder: "#3d9b6e",
+      clusterBkg: "#14201c",
+      titleColor: "#e8f0ea",
+      edgeLabelBackground: "#0c1210"
+    }
+  });
+</script>
+</body>
+</html>

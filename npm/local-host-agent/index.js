@@ -292,9 +292,13 @@ function buildAgentEnv(instanceId = '') {
   const env = { ...process.env }
   for (const key of Object.keys(env)) {
     if (key.startsWith('OPUTE_') || key === 'MCP_AUTH_TOKEN') {
-      // Keep launcher-only and standalone-safe vars.
+      // Keep launcher-only, auth, identity, and standalone-safe vars.
+      // Other OPUTE_* values are stripped so a Platform-enrolled shell cannot
+      // leak enrollment secrets into a local standalone process.
       if (
-        key === 'OPUTE_HOST_AGENT_BINARY'
+        key === 'MCP_AUTH_TOKEN'
+        || key === 'OPUTE_REMOTE_AGENT_ID'
+        || key === 'OPUTE_HOST_AGENT_BINARY'
         || key === 'OPUTE_HOST_AGENT_CACHE_DIR'
         || key === 'OPUTE_HOST_AGENT_RELEASE_BASE_URL'
         || key === 'OPUTE_HOST_AGENT_CHECKSUM_URL'
@@ -315,6 +319,11 @@ function buildAgentEnv(instanceId = '') {
   env.HOST_MCP_BIND_HOST = bindHost()
   env.HOST_MCP_PORT = String(mcpPort())
   if (!env.OPUTE_INFRA_PROVIDER_ID) env.OPUTE_INFRA_PROVIDER_ID = 'incus'
+  // Standalone always needs a canonical agent id. Prefer an explicit operator
+  // value; otherwise use a stable local default so `npx … start` works.
+  if (!String(env.OPUTE_REMOTE_AGENT_ID || '').trim()) {
+    env.OPUTE_REMOTE_AGENT_ID = 'local-host-agent'
+  }
   return env
 }
 
@@ -330,11 +339,17 @@ Commands:
 Environment:
   HOST_MCP_PORT            Listen port (default 3014)
   HOST_MCP_BIND_HOST       Bind host (default 127.0.0.1)
+  OPUTE_REMOTE_AGENT_ID    Canonical agent id (default local-host-agent)
+  MCP_AUTH_TOKEN           Bearer token required by /mcp when set
   OPUTE_HOST_AGENT_BINARY  Use a local binary instead of downloading a release
   OPUTE_STANDALONE_ALLOW_MUTATIONS=true  Enable mutating tools
 
-MCP client config:
-  { "type": "http", "url": "http://127.0.0.1:3014/mcp" }
+MCP client config (include Authorization when MCP_AUTH_TOKEN is set):
+  {
+    "type": "http",
+    "url": "http://127.0.0.1:3014/mcp",
+    "headers": { "Authorization": "Bearer <MCP_AUTH_TOKEN>" }
+  }
 `)
 }
 

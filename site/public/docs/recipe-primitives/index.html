@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Recipe & plan primitives — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Recipe & plan primitives" />
+  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <nav>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/get-started/">Get started</a>
+  </nav>
+</header>
+<div class="doc-shell">
+
+<aside class="doc-nav" aria-label="Documentation">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/" aria-current="page">Recipe &amp; plan primitives</a></li>
+  </ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+  </ul>
+</aside>
+<main class="doc">
+
+<p class="badge">Reference</p>
+<h1>Recipe &amp; plan primitives</h1>
+<p class="meta">Dry field and status catalog for recipe envelopes and <code>host-plan.v1</code>. For <em>why</em> both exist, read <a href="/docs/recipes/">Recipes &amp; plans</a>.</p>
+
+<h2>Plan vs recipe</h2>
+<table>
+  <thead><tr><th></th><th>Recipe</th><th>Plan</th></tr></thead>
+  <tbody>
+    <tr><td>Contract</td><td><code>host-recipe.v1</code>, <code>runtime-recipe.v1</code>, or <code>tunnel-recipe.v1</code></td><td><code>host-plan.v1</code></td></tr>
+    <tr><td>Owns</td><td>Identity, inputs, compatibility, source pin, embedded plan</td><td>DAG of typed tool calls + readiness</td></tr>
+    <tr><td>Runs?</td><td>No — expands into a plan</td><td>Yes — only via <code>plan.Runner</code></td></tr>
+  </tbody>
+</table>
+<p>Nested <code>run_host_plan</code> / <code>run_*_recipe</code> inside a plan is forbidden. Providers may return recipe manifests; the Host Agent still validates and executes them.</p>
+
+<pre class="mermaid">
+flowchart LR
+  Env["Recipe envelope<br/>*.v1"] --> Val[validate_*]
+  Val --> Exp[Resolve inputs · hash · expand]
+  Exp --> Plan["host-plan.v1"]
+  Plan --> Run[plan.Runner]
+  Run --> Tools[Typed tool calls]
+  Tools --> State[Durable run state]
+  State --> Get[get_*_run]
+</pre>
+
+<h2>Families &amp; MCP tools</h2>
+<table>
+  <thead><tr><th>Family</th><th>contractVersion</th><th>Validate</th><th>Run</th><th>Inspect</th><th>Extra envelope</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Host-local</td>
+      <td><code>host-recipe.v1</code></td>
+      <td><code>validate_host_local_recipe</code></td>
+      <td><code>run_host_local_recipe</code></td>
+      <td><code>get_host_plan_run</code></td>
+      <td><code>execution.coordinator</code> + <code>execution.mode</code></td>
+    </tr>
+    <tr>
+      <td>Bare plan</td>
+      <td><code>host-plan.v1</code></td>
+      <td><code>validate_host_plan</code></td>
+      <td><code>run_host_plan</code></td>
+      <td><code>get_host_plan_run</code></td>
+      <td>No recipe envelope</td>
+    </tr>
+    <tr>
+      <td>Runtime</td>
+      <td><code>runtime-recipe.v1</code></td>
+      <td><code>validate_runtime_recipe</code></td>
+      <td><code>run_runtime_recipe</code></td>
+      <td><code>get_runtime_recipe_run</code></td>
+      <td><code>runtime</code>, optional <code>activation</code></td>
+    </tr>
+    <tr>
+      <td>Tunnel</td>
+      <td><code>tunnel-recipe.v1</code></td>
+      <td><code>validate_tunnel_recipe</code></td>
+      <td><code>run_tunnel_recipe</code></td>
+      <td><code>get_tunnel_run</code></td>
+      <td><code>provider</code>, <code>bindings[]</code>, optional <code>activation</code></td>
+    </tr>
+  </tbody>
+</table>
+<p>Host-local inspect shares <code>get_host_plan_run</code> because expansion yields an ordinary plan run. Mutating <code>run_host_local_recipe</code> requires a content <code>sha256</code> pin.</p>
+
+<h2>Shared recipe envelope</h2>
+<table>
+  <thead><tr><th>Field</th><th>Primitive</th></tr></thead>
+  <tbody>
+    <tr><td><code>contractVersion</code></td><td>Which family schema applies</td></tr>
+    <tr><td><code>recipeId</code> / <code>recipeVersion</code></td><td>Stable identity + version string</td></tr>
+    <tr><td><code>inputs</code></td><td>Map of <code>InputSpec</code>: <code>schema</code>, <code>default</code>, <code>required</code>, <code>secret</code>, <code>description</code></td></tr>
+    <tr><td><code>compatibility</code></td><td><code>minHostAgentVersion</code>, <code>requiredTools[]</code></td></tr>
+    <tr><td><code>plan</code></td><td>Embedded <code>host-plan.v1</code> (≥1 node)</td></tr>
+    <tr><td><code>outputMapping</code></td><td>Named paths into node outputs for callers</td></tr>
+  </tbody>
+</table>
+
+<h3>Source pin</h3>
+<ul>
+  <li>Kinds: local filesystem path (no symlink), <code>github:owner/repo/path@&lt;40-hex&gt;</code>, or raw GitHub URL at a commit.</li>
+  <li>Request fields: <code>source</code>, optional <code>revision</code>, <code>sha256</code>. Mutations require <code>sha256</code>.</li>
+  <li>Provenance records <code>kind</code>, <code>rawSha256</code>, <code>recipeHash</code>. Cap: 512&nbsp;KiB raw recipe.</li>
+</ul>
+
+<h2>Host-local vs Platform-distributed</h2>
+<table>
+  <thead><tr><th>execution</th><th>Who runs</th><th>Rules</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>coordinator: host-agent</code>, <code>mode: local</code></td>
+      <td>Host Agent MCP tools</td>
+      <td>No <code>wait</code> nodes; no raw <code>emits</code>; ≤1 distinct <code>target.hostRef</code>; targets optional (default this host) or exact <code>${vars.inputs.*}</code></td>
+    </tr>
+    <tr>
+      <td><code>coordinator: platform</code>, <code>mode: distributed</code></td>
+      <td>Opute Platform</td>
+      <td>Every action needs <code>target.hostRef</code> = <code>${vars.inputs.*}</code>; HA <strong>refuses</strong> and redirects to Platform</td>
+    </tr>
+  </tbody>
+</table>
+<div class="note">Platform-distributed nodes are not evaluated by HA’s plan <code>validate</code> assertions the same way (ADR-0014). Do not rely on validate-only refusal for Platform-coordinated safety.</div>
+
+<h2>Runtime &amp; tunnel extras</h2>
+<h3>Runtime recipe</h3>
+<ul>
+  <li><code>runtime.id</code>, <code>runtime.servingContract</code>, optional <code>runtime.capabilities</code></li>
+  <li>Serving contracts: <code>openai-chat.v1</code>, <code>http-exposure.v1</code>, <code>kubernetes.v1</code>, <code>mesh-runtime.v1</code>, <code>mesh-membership.v1</code>, <code>private-mesh.v1</code>, <code>public-ingress.v1</code> (plus deprecated <code>network-overlay.v1</code> alias)</li>
+  <li>Optional <code>activation</code>: <code>capability</code>, <code>servingContract</code> (must match runtime), <code>inputBindings</code></li>
+  <li><code>activate=true</code> on run only if activation is declared; success then commits an active runtime record</li>
+</ul>
+<h3>Tunnel recipe</h3>
+<ul>
+  <li><code>provider.id</code>, optional <code>provider.capabilities</code></li>
+  <li><code>bindings[]</code>: <code>id</code>, <code>hostname</code>, <code>localTarget</code>, optional <code>path</code> (must fully resolve from inputs)</li>
+  <li>Same optional <code>activation</code> pattern (typically <code>http-exposure.v1</code>)</li>
+</ul>
+
+<h2>Plan document header</h2>
+<table>
+  <thead><tr><th>Field</th><th>Primitive</th></tr></thead>
+  <tbody>
+    <tr><td><code>contractVersion</code></td><td>Must be <code>host-plan.v1</code></td></tr>
+    <tr><td><code>planId</code></td><td>Stable plan identity</td></tr>
+    <tr><td><code>generation</code></td><td>≥1; pairs with idempotency key for durable runs</td></tr>
+    <tr><td><code>idempotencyKey</code></td><td>Required; recipes often interpolate <code>${vars.inputs.*}</code></td></tr>
+    <tr><td><code>catalogRevision</code></td><td>Optional pin against the live catalog</td></tr>
+    <tr><td><code>variables</code></td><td>Declared vars; recipes inject inputs + reserved <code>tenantId</code></td></tr>
+    <tr><td><code>defaults</code></td><td><code>timeoutMs</code>, <code>retry</code>, <code>maxPasses</code></td></tr>
+    <tr><td><code>converge</code></td><td><code>maxPasses</code>, <code>abortOnExhaustion</code>, <code>maxConcurrency</code></td></tr>
+    <tr><td><code>nodes[]</code></td><td>DAG; 1–256 nodes; document ≤512&nbsp;KiB</td></tr>
+  </tbody>
+</table>
+<p>Idempotency identity is <code>(planId, generation, idempotencyKey)</code> plus document hash. In-flight/waiting reuses the existing run; terminal completed/failed starts a new run rather than replaying stale success.</p>
+
+<pre class="mermaid">
+flowchart TB
+  H[planId · generation · idempotencyKey] --> Doc[host-plan.v1 document]
+  Doc --> Levels[Topo levels]
+  Levels --> Pass[Converge pass]
+  Pass --> Level[Level fan-out ≤ maxConcurrency]
+  Level --> Node[Node lifecycle]
+  Node --> Sweep[Readiness sweep]
+  Sweep -->|unstable| Pass
+  Sweep -->|stable / exhaust| Terminal[completed · failed · waiting]
+</pre>
+
+<h2>Node primitives</h2>
+<table>
+  <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>id</code></td><td>Unique node id</td></tr>
+    <tr><td><code>dependsOn</code></td><td>DAG edges; cycles rejected</td></tr>
+    <tr><td><code>when[]</code></td><td>Guard assertions; fail → <code>skipped</code></td></tr>
+    <tr><td><code>target.hostRef</code> / <code>resourceRef</code></td><td>Execution binding (not a network address); checked against <code>HostAgentID</code></td></tr>
+    <tr><td><code>action.tool</code> / <code>args</code></td><td>Tool call</td></tr>
+    <tr><td><code>validate</code></td><td>Readiness: read-only tool + <code>assert[]</code> + optional <code>pollIntervalMs</code> / <code>timeoutMs</code>. <strong>Required on mutating actions</strong></td></tr>
+    <tr><td><code>recover</code></td><td>Forward-fix then revalidate (<code>maxAttempts</code>)</td></tr>
+    <tr><td><code>compensate</code></td><td>Reverse action on abort (reverse topo); statuses <code>compensated</code> / <code>compensation_failed</code></td></tr>
+    <tr><td><code>retry</code></td><td><code>maxAttempts</code>, <code>backoffMs</code>, <code>backoffFactor</code>; non-idempotent mutations cannot auto-retry</td></tr>
+    <tr><td><code>timeoutMs</code></td><td>Per-node wall clock</td></tr>
+    <tr><td><code>continueOnFailure</code></td><td>Level continues after failure</td></tr>
+    <tr><td><code>forEach</code></td><td>Fan-out: <code>source</code>, optional <code>path</code>, <code>as</code>, <code>filter[]</code>; needs <code>action</code>; ≤64 items</td></tr>
+    <tr><td><code>wait</code></td><td>Durable barrier (XOR with action/validate/recover/compensate/forEach). <strong>Forbidden in host-local</strong></td></tr>
+  </tbody>
+</table>
+
+<pre class="mermaid">
+flowchart TB
+  N{Node shape}
+  N -->|action + validate| Mut[Mutating apply]
+  N -->|validate only| Read[Readiness / observe]
+  N -->|forEach + action| Fan[Fan-out ≤64]
+  N -->|wait| Barrier[Durable wait — Platform]
+  Mut --> Pre[when / preflight]
+  Pre -->|already good| Sat[satisfied]
+  Pre -->|needs work| Act[action → validate poll]
+  Act -->|fail| Rec[recover?]
+  Rec -->|abort| Comp[compensate reverse topo]
+</pre>
+
+<h3>Wait (Platform)</h3>
+<p><code>trigger.kind</code> ∈ <code>operator</code> | <code>event-or-operator</code>, plus <code>trigger.type</code>, <code>correlation</code>, bounded <code>inputSchema</code> (<code>additionalProperties: false</code>), <code>schemaRevision</code>, expiry via <code>expiresAt</code> XOR <code>expiresInMs</code>, and <code>contextDelta[]</code> (<code>name</code>, <code>${input.*}</code> value, <code>schema</code>, <code>provenance</code>, <code>secret</code>). Resume fences on <code>waitRevision</code> / <code>schemaRevision</code> via MCP task input (<code>source</code> ∈ <code>operator</code> | <code>authenticated-event</code>).</p>
+
+<h2>Interpolation roots</h2>
+<table>
+  <thead><tr><th>Root</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td><code>${vars.*}</code></td><td>Plan variables + recipe inputs (+ reserved <code>tenantId</code>)</td></tr>
+    <tr><td><code>${nodes.&lt;id&gt;.output…}</code></td><td>Prior node outputs</td></tr>
+    <tr><td><code>${item.*}</code></td><td>Inside <code>forEach</code> only</td></tr>
+    <tr><td><code>${input.*}</code></td><td>Wait resume payload</td></tr>
+    <tr><td><code>${context.*}</code></td><td>Wait-produced context</td></tr>
+  </tbody>
+</table>
+
+<h2>Assertions</h2>
+<p>Used by <code>validate.assert</code>, <code>when</code>, and <code>forEach.filter</code>. <code>path</code> is an RFC&nbsp;6901 JSON Pointer.</p>
+<p>Ops: <code>exists</code>, <code>notExists</code>, <code>empty</code>, <code>notEmpty</code>, <code>eq</code>, <code>ne</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>, <code>contains</code>, <code>matches</code>, <code>all</code>, <code>any</code>.</p>
+
+<h2>Effects &amp; catalog coupling</h2>
+<ul>
+  <li>Catalog capabilities expose <code>Effect</code> (<code>read</code> vs mutation) and <code>Idempotent</code>.</li>
+  <li>Validate tools must be read-only; mutating actions without <code>validate</code> are rejected.</li>
+  <li>Retries require a read effect or an idempotent mutation.</li>
+  <li>Optional <code>catalogRevision</code> pins the plan against the revision used at validate time.</li>
+</ul>
+
+<h2>Run &amp; node status</h2>
+<table>
+  <thead><tr><th>Scope</th><th>Values</th></tr></thead>
+  <tbody>
+    <tr><td>Run</td><td><code>working</code>/<code>running</code>, <code>waiting</code>, <code>expired</code>, <code>completed</code>, <code>failed</code>, <code>unknown</code> (cancel/timeout)</td></tr>
+    <tr><td>Node</td><td><code>pending</code>, <code>skipped</code>, <code>satisfied</code>, <code>applied</code>, <code>failed</code>, <code>unknown</code>, <code>compensated</code>, <code>compensation_failed</code>, <code>waiting</code>, <code>expired</code></td></tr>
+  </tbody>
+</table>
+<p><code>satisfied</code> means readiness already held (action skipped). <code>applied</code> means the action ran and validate passed. Per-node observations carry <code>attempts</code>, <code>output</code>, <code>observed</code>, <code>expected</code>, <code>error</code>, timestamps.</p>
+
+<h2>Caps</h2>
+<p>Document ≤512&nbsp;KiB · nodes ≤256 · forEach fan-out ≤64 · total attempts ≤256 · converge passes ≤32.</p>
+
+<h2>Activation &amp; redaction</h2>
+<p>Runtime/tunnel <code>activate=true</code> after success runs neutral serving validation, then records active runtime (<code>capability</code>, <code>servingContract</code>, recipe id/version/hash, bindings, observation). Networking seams used by recipes are documented under <a href="/docs/networking/">Networking</a>.</p>
+<p>Write-only fields (for example Cloudflare connector run tokens) appear as <code>[redacted]</code> in MCP results. Resume cannot paste redacted secrets back — mint or hold them in-process (dogfood: <code>manageHostConnector: true</code>). See <a href="/docs/resources/">Resources &amp; safety</a>.</p>
+
+<h2>Provider manifests</h2>
+<p>Install manifests may list <code>Recipes[]</code> (<code>id</code>, <code>source.uri/revision/sha256</code>, optional <code>mode</code>/<code>inputs</code>). Teardown may return a <code>host-plan.v1</code> executed through the ordinary plan boundary — still no side-channel install path.</p>
+
+<h2>Examples in-repo</h2>
+<ul>
+  <li>Host-local dogfood: <code>site/recipes/www-opute-io.yaml</code> — <a href="/docs/dogfood/">Publish this site</a></li>
+  <li>Runtime: <code>plugins/llm/ollama/recipes/ollama.yaml</code></li>
+  <li>Tunnel: <code>plugins/tunneling/cloudflare/recipes/</code></li>
+  <li>Install host-recipe: <code>plugins/tunneling/tailscale/recipes/install.yaml</code></li>
+</ul>
+
+<div class="callout">
+  Normative: Cordis C-03 (one executor), ADR-0002 (recipe ownership, immutable inputs, no recursion),
+  ADR-0014 (Platform vs HA validate), ADR-0016 (networking seams as recipe composition).
+</div>
+
+</main>
+</div>
+<footer>
+  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <a href="/docs/architecture/">Architecture</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "dark",
+    securityLevel: "strict",
+    themeVariables: {
+      primaryColor: "#1a2e26",
+      primaryTextColor: "#e8f0ea",
+      primaryBorderColor: "#3d9b6e",
+      lineColor: "#9bb0a3",
+      secondaryColor: "#14201c",
+      tertiaryColor: "#0c1210",
+      background: "#0c1210",
+      mainBkg: "#1a2e26",
+      nodeBorder: "#3d9b6e",
+      clusterBkg: "#14201c",
+      titleColor: "#e8f0ea",
+      edgeLabelBackground: "#0c1210"
+    }
+  });
+</script>
+</body>
+</html>

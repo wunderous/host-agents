@@ -135,9 +135,14 @@ func cloudflareCreds() (accountID, zoneID, apiToken string, err error) {
 }
 
 func ensureDedicatedTunnel(ctx context.Context, args map[string]any) (*dedicatedTunnelResult, error) {
-	hostname := strings.ToLower(strings.TrimSpace(stringInput(args, "hostname", "")))
-	if err := refusePlatformHostname(hostname); err != nil {
-		return nil, err
+	hostnames := dedicatedHostnames(args)
+	if len(hostnames) == 0 {
+		return nil, fmt.Errorf("hostname is required")
+	}
+	for _, hostname := range hostnames {
+		if err := refusePlatformHostname(hostname); err != nil {
+			return nil, err
+		}
 	}
 	tunnelName := dedicatedTunnelName(args)
 	if err := refusePlatformTunnelName(tunnelName); err != nil {
@@ -164,15 +169,23 @@ func ensureDedicatedTunnel(ctx context.Context, args map[string]any) (*dedicated
 	}
 	// Dedicated hostnames own the whole connector. Merging into the in-cluster
 	// platform/mcp ingress would share one tunnel UUID and make unroll unsafe.
-	if err := putCloudflareTunnelIngress(ctx, apiToken, accountID, tunnel.ID, []cloudflareIngressRule{
-		{Hostname: hostname, Service: localTarget},
-		{Service: "http_status:404"},
-	}); err != nil {
+	ingress := make([]cloudflareIngressRule, 0, len(hostnames)+1)
+	for _, hostname := range hostnames {
+		ingress = append(ingress, cloudflareIngressRule{Hostname: hostname, Service: localTarget})
+	}
+	ingress = append(ingress, cloudflareIngressRule{Service: "http_status:404"})
+	if err := putCloudflareTunnelIngress(ctx, apiToken, accountID, tunnel.ID, ingress); err != nil {
 		return nil, err
 	}
-	record, err := upsertDedicatedCNAME(ctx, apiToken, accountID, zoneID, hostname, tunnel.ID)
-	if err != nil {
-		return nil, err
+	var primaryRecord *cloudflareDNSRecord
+	for _, hostname := range hostnames {
+		record, upsertErr := upsertDedicatedCNAME(ctx, apiToken, accountID, zoneID, hostname, tunnel.ID)
+		if upsertErr != nil {
+			return nil, upsertErr
+		}
+		if primaryRecord == nil {
+			primaryRecord = record
+		}
 	}
 	token, err := cloudflareTunnelToken(ctx, apiToken, accountID, tunnel.ID)
 	if err != nil {
@@ -180,17 +193,43 @@ func ensureDedicatedTunnel(ctx context.Context, args map[string]any) (*dedicated
 	}
 	return &dedicatedTunnelResult{
 		TunnelID:    tunnel.ID,
-		DNSRecordID: record.ID,
+		DNSRecordID: primaryRecord.ID,
 		RunToken:    token,
-		Hostname:    hostname,
+		Hostname:    hostnames[0],
 		TunnelName:  tunnelName,
 	}, nil
 }
 
+// dedicatedHostnames returns the lowercased unique public hostnames this
+// dedicated tunnel should own. hostname is required unless hostnames is set;
+// both may be supplied (e.g. www + apex).
+func dedicatedHostnames(args map[string]any) []string {
+	raw := hostnamesFromArgs(args)
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(raw))
+	for _, value := range raw {
+		hostname := strings.ToLower(strings.TrimSpace(value))
+		if hostname == "" {
+			continue
+		}
+		if _, ok := seen[hostname]; ok {
+			continue
+		}
+		seen[hostname] = struct{}{}
+		out = append(out, hostname)
+	}
+	return out
+}
+
 func unpublishDedicatedTunnel(ctx context.Context, args map[string]any) error {
-	hostname := strings.ToLower(strings.TrimSpace(stringInput(args, "hostname", "")))
-	if err := refusePlatformHostname(hostname); err != nil {
-		return err
+	hostnames := dedicatedHostnames(args)
+	if len(hostnames) == 0 {
+		return fmt.Errorf("hostname is required")
+	}
+	for _, hostname := range hostnames {
+		if err := refusePlatformHostname(hostname); err != nil {
+			return err
+		}
 	}
 	tunnelName := dedicatedTunnelName(args)
 	if err := refusePlatformTunnelName(tunnelName); err != nil {
@@ -213,11 +252,14 @@ func unpublishDedicatedTunnel(ctx context.Context, args map[string]any) error {
 			return err
 		}
 	}
-	record, err := findHostnameCNAME(ctx, apiToken, zoneID, hostname)
-	if err != nil {
-		return err
-	}
-	if record != nil {
+	for _, hostname := range hostnames {
+		record, findErr := findHostnameCNAME(ctx, apiToken, zoneID, hostname)
+		if findErr != nil {
+			return findErr
+		}
+		if record == nil {
+			continue
+		}
 		targetID := parseTunnelIDFromCNAME(record.Content)
 		if targetID != "" {
 			target, lookupErr := getCloudflareTunnel(ctx, apiToken, accountID, targetID)
@@ -390,13 +432,12 @@ func cloudflareTunnelToken(ctx context.Context, apiToken, accountID, tunnelID st
 }
 
 func findHostnameCNAME(ctx context.Context, apiToken, zoneID, hostname string) (*cloudflareDNSRecord, error) {
-	endpoint := fmt.Sprintf("%s/zones/%s/dns_records?type=CNAME&name=%s", cloudflareAPIBase(), zoneID, url.QueryEscape(hostname))
-	var records []cloudflareDNSRecord
-	if err := cloudflareJSON(ctx, apiToken, http.MethodGet, endpoint, nil, &records); err != nil {
-		return nil, fmt.Errorf("list Cloudflare DNS records: %w", err)
+	records, err := listHostnameDNSRecords(ctx, apiToken, zoneID, hostname)
+	if err != nil {
+		return nil, err
 	}
 	for _, record := range records {
-		if strings.EqualFold(record.Name, hostname) && strings.EqualFold(record.Type, "CNAME") {
+		if strings.EqualFold(record.Type, "CNAME") {
 			found := record
 			return &found, nil
 		}
@@ -404,43 +445,61 @@ func findHostnameCNAME(ctx context.Context, apiToken, zoneID, hostname string) (
 	return nil, nil
 }
 
+// listHostnameDNSRecords returns every zone record for hostname. Cloudflare
+// rejects a new CNAME when an A/AAAA (or other) record already owns the name
+// (error 81053). Dedicated ensure must see those conflicts, not only CNAMEs.
+func listHostnameDNSRecords(ctx context.Context, apiToken, zoneID, hostname string) ([]cloudflareDNSRecord, error) {
+	endpoint := fmt.Sprintf("%s/zones/%s/dns_records?name=%s", cloudflareAPIBase(), zoneID, url.QueryEscape(hostname))
+	var records []cloudflareDNSRecord
+	if err := cloudflareJSON(ctx, apiToken, http.MethodGet, endpoint, nil, &records); err != nil {
+		return nil, fmt.Errorf("list Cloudflare DNS records: %w", err)
+	}
+	matched := make([]cloudflareDNSRecord, 0, len(records))
+	for _, record := range records {
+		if strings.EqualFold(record.Name, hostname) {
+			matched = append(matched, record)
+		}
+	}
+	return matched, nil
+}
+
 func upsertDedicatedCNAME(ctx context.Context, apiToken, accountID, zoneID, hostname, tunnelID string) (*cloudflareDNSRecord, error) {
 	desired := cnameTarget(tunnelID)
-	existing, err := findHostnameCNAME(ctx, apiToken, zoneID, hostname)
+	existing, err := listHostnameDNSRecords(ctx, apiToken, zoneID, hostname)
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil {
-		targetID := parseTunnelIDFromCNAME(existing.Content)
-		if targetID != "" && !strings.EqualFold(targetID, tunnelID) {
-			target, lookupErr := getCloudflareTunnel(ctx, apiToken, accountID, targetID)
-			if lookupErr != nil {
-				return nil, lookupErr
-			}
-			if target != nil {
-				if err := refusePlatformTunnelName(target.Name); err != nil {
-					return nil, err
+	var matching *cloudflareDNSRecord
+	for i := range existing {
+		record := existing[i]
+		if strings.EqualFold(record.Type, "CNAME") {
+			targetID := parseTunnelIDFromCNAME(record.Content)
+			if targetID != "" && !strings.EqualFold(targetID, tunnelID) {
+				target, lookupErr := getCloudflareTunnel(ctx, apiToken, accountID, targetID)
+				if lookupErr != nil {
+					return nil, lookupErr
+				}
+				if target != nil {
+					if err := refusePlatformTunnelName(target.Name); err != nil {
+						return nil, err
+					}
 				}
 			}
+			if strings.EqualFold(strings.TrimSuffix(record.Content, "."), desired) {
+				found := record
+				matching = &found
+				continue
+			}
 		}
-		if strings.EqualFold(strings.TrimSuffix(existing.Content, "."), desired) {
-			return existing, nil
+		// Replace conflicting A/AAAA/CNAME (or other) records with the
+		// dedicated tunnel CNAME. Cloudflare rejects type changes via PUT and
+		// returns 81053 when a same-name A/AAAA already exists.
+		if err := cloudflareDelete(ctx, apiToken, fmt.Sprintf("%s/zones/%s/dns_records/%s", cloudflareAPIBase(), zoneID, record.ID)); err != nil {
+			return nil, fmt.Errorf("delete conflicting DNS %s %s: %w", record.Type, record.Name, err)
 		}
-		body, err := json.Marshal(map[string]any{
-			"type":    "CNAME",
-			"name":    hostname,
-			"content": desired,
-			"proxied": true,
-			"ttl":     1,
-		})
-		if err != nil {
-			return nil, err
-		}
-		var updated cloudflareDNSRecord
-		if err := cloudflareJSON(ctx, apiToken, http.MethodPut, fmt.Sprintf("%s/zones/%s/dns_records/%s", cloudflareAPIBase(), zoneID, existing.ID), body, &updated); err != nil {
-			return nil, fmt.Errorf("update dedicated CNAME: %w", err)
-		}
-		return &updated, nil
+	}
+	if matching != nil {
+		return matching, nil
 	}
 	body, err := json.Marshal(map[string]any{
 		"type":    "CNAME",
