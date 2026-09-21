@@ -9,8 +9,8 @@ import { join } from "path"
 
 const root = "/home/houman/github/wunderous/opute-host-agent/site/public"
 
-const CSS = "/styles.css?v=20260921k"
-const ASSET_V = "20260921k"
+const CSS = "/styles.css?v=20260921m"
+const ASSET_V = "20260921m"
 
 const MERMAID = `
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
@@ -132,9 +132,9 @@ const pages: Record<string, { title: string; current: string; body: string; merm
     body: `
 <p class="badge">Diátaxis</p>
 <h1>Documentation</h1>
-<p class="meta"><strong>Opute Host Agent</strong> is a Streamable HTTP MCP server that executes typed infrastructure assignments on a Linux host — guests, Kubernetes, registries, tunnels — with fail-closed identity and redacted observations.</p>
-<p class="meta">It meets the need to drive real hosts from an IDE or Platform without shell folklore. Useful if you run Incus guests, K3s, or public exposure and want a revisioned tool catalog instead of ad-hoc scripts.</p>
-<p class="meta">Organized by what you need to do, following <a href="https://diataxis.fr/">Diátaxis</a>. Public origins <code>opute.io</code> / <code>www.opute.io</code> are Host Agent dogfood — not Platform (<code>platform.opute.io</code> / <code>mcp.opute.io</code>).</p>
+<p class="meta"><strong>Opute Host Agent</strong> puts a typed control plane on a Linux host so AI clients and platforms can run real infrastructure work — guests, Kubernetes, registries, tunnels — without inventing shell scripts.</p>
+<p class="meta"><strong>Who it is for.</strong> Operators and agent authors who already run Incus or K3s and need a revisioned MCP tool catalog with fail-closed identity. <strong>Who it is not for.</strong> People looking for a chat UI or for Platform admin at <code>platform.opute.io</code> — that is a different product surface.</p>
+<p class="meta">Organized by job, following <a href="https://diataxis.fr/">Diátaxis</a>. This site at <code>opute.io</code> / <code>www.opute.io</code> is Host Agent dogfood — hosted by the agent it documents.</p>
 
 <div class="doc-index-sections">
   <section>
@@ -187,22 +187,43 @@ const pages: Record<string, { title: string; current: string; body: string; merm
     body: `
 <p class="badge">Tutorial</p>
 <h1>Get started</h1>
-<p class="meta">A learning path: by the end you will have a running standalone Host Agent and a successful authenticated catalog listing. Prefer following steps in order; do not skip ahead to mutations.</p>
+<p class="meta"><strong>Outcome.</strong> In about ten minutes you will have a Host Agent listening on your machine and an authenticated <code>tools/list</code> from Cursor, Claude Desktop, or another MCP client. No mutations yet — discovery only.</p>
 
 <h2>What you will need</h2>
 <ul>
-  <li>Linux or WSL2 (Incus host execution is Linux-only)</li>
-  <li>Go toolchain for a from-source build, <em>or</em> network access for <code>npx @opute/host-agent</code></li>
-  <li>About ten minutes</li>
+  <li>Linux or WSL2 (host execution is Linux-only)</li>
+  <li>Network access for <code>npx @opute/host-agent</code> <em>or</em> a Go toolchain to build from source</li>
+  <li>An MCP client that speaks Streamable HTTP</li>
 </ul>
 
+<h2>Fastest path (npm launcher)</h2>
 <ol class="steps">
   <li>
-    <strong>Build or obtain the binary</strong>
+    <strong>Start the agent</strong>
+    <pre><code>export MCP_AUTH_TOKEN=dev-token
+npx -y @opute/host-agent start --background
+npx -y @opute/host-agent url
+# → http://127.0.0.1:3014/mcp</code></pre>
+    <p>The launcher defaults <code>OPUTE_REMOTE_AGENT_ID</code> to <code>local-host-agent</code>. Confirm health:</p>
+    <pre><code>curl -sS http://127.0.0.1:3014/health</code></pre>
+  </li>
+  <li>
+    <strong>Connect your MCP client</strong>
+    <p>Paste the JSON from <a href="/docs/mcp-clients/">Connect an MCP client</a>. The Bearer token must match <code>MCP_AUTH_TOKEN</code>.</p>
+  </li>
+  <li>
+    <strong>List tools, then read the host</strong>
+    <p>Run <code>tools/list</code> (or your client’s catalog view). Then call <code>get_host_info</code>. You should get structured JSON — not a shell transcript.</p>
+  </li>
+</ol>
+
+<h2>From-source path</h2>
+<ol class="steps">
+  <li>
+    <strong>Build</strong>
     <pre><code>git clone https://github.com/wunderous/host-agents.git
 cd host-agents
 make build   # → dist/opute-host-agent</code></pre>
-    <p>Alternatively skip the clone and use the npm launcher in the next step with a downloaded release binary.</p>
   </li>
   <li>
     <strong>Set identity and auth</strong>
@@ -210,23 +231,13 @@ make build   # → dist/opute-host-agent</code></pre>
 export OPUTE_INFRA_PROVIDER_ID=incus
 export OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone"
 export MCP_AUTH_TOKEN=dev-token</code></pre>
-    <p><code>OPUTE_REMOTE_AGENT_ID</code> is required by configuration validation. <code>MCP_AUTH_TOKEN</code> is the Bearer bootstrap secret your client will send to <code>/mcp</code>.</p>
   </li>
   <li>
-    <strong>Check configuration, then serve</strong>
+    <strong>Check, then serve</strong>
     <pre><code>./dist/opute-host-agent --check
 ./dist/opute-host-agent
-# listens on http://127.0.0.1:3014/mcp by default</code></pre>
-    <p>Leave this process running. In another terminal, confirm health:</p>
-    <pre><code>curl -sS http://127.0.0.1:3014/health</code></pre>
-  </li>
-  <li>
-    <strong>Point an MCP client at the agent</strong>
-    <p>Use the JSON in <a href="/docs/mcp-clients/">Connect an MCP client</a>. Include the Bearer header matching <code>MCP_AUTH_TOKEN</code>.</p>
-  </li>
-  <li>
-    <strong>List tools</strong>
-    <p>From the client, run <code>tools/list</code> (or your client’s equivalent). You should see a revisioned catalog of typed tools. Then try a read-only call such as <code>get_host_info</code>.</p>
+# http://127.0.0.1:3014/mcp</code></pre>
+    <p>Then connect a client and list tools as in the fastest path above.</p>
   </li>
 </ol>
 
@@ -237,15 +248,15 @@ export MCP_AUTH_TOKEN=dev-token</code></pre>
 
 <h2>You succeeded when</h2>
 <ul>
-  <li><code>GET /health</code> returns JSON for your agent id</li>
-  <li>The client completes <code>tools/list</code> (or <code>get_capability_catalog</code>) without 401</li>
-  <li>A read-only call such as <code>get_host_info</code> returns structured host facts</li>
+  <li><code>GET /health</code> returns JSON including your agent id</li>
+  <li><code>tools/list</code> (or <code>get_capability_catalog</code>) completes without 401</li>
+  <li><code>get_host_info</code> returns structured host facts</li>
 </ul>
 
 <div class="callout">
   <strong>Trust boundary.</strong> Bearer auth gates <code>/mcp</code>. Write-only fields come back as
-  <code>[redacted]</code>. This process is not Platform — do not point it at
-  <code>platform.opute.io</code> credentials by accident.
+  <code>[redacted]</code>. This process is not Platform — do not reuse
+  <code>platform.opute.io</code> credentials here.
 </div>
 
 <p>Next: <a href="/docs/mcp-clients/">Connect a client</a> · <a href="/docs/install/">Install options</a> · <a href="/docs/troubleshooting/">Troubleshooting</a> · <a href="/docs/concepts/">Concepts</a></p>
@@ -845,7 +856,8 @@ opute-host-agent help</code></pre>
     body: `
 <p class="badge">Explanation</p>
 <h1>Concepts</h1>
-<p class="meta">Product boundaries and safety model — not a procedure. For diagrams and package layout see <a href="/docs/architecture/">Architecture</a>.</p>
+<p class="meta"><strong>Why this exists.</strong> AI clients are good at proposing work and bad at owning a host. Host Agent is the thin, typed execution plane that turns named MCP tools into real guests, clusters, and tunnels — with identity and redaction that fail closed. Not a chat product; not Platform.</p>
+<p class="meta">Mental model only — not a procedure. For diagrams and package layout see <a href="/docs/architecture/">Architecture</a>.</p>
 
 <h2>Host Agent vs Platform</h2>
 <p>The Host Agent is an execution plane on a single Linux host (or enrolled remote). It speaks Streamable HTTP MCP, admits canonical resource URIs, and runs typed tools. Opute Platform is a separate control plane: it decides <em>what</em> should happen, holds durable orchestration, and issues enrollment credentials.</p>
@@ -1434,7 +1446,7 @@ writeFileSync(
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Opute Host Agent</title>
-  <meta name="description" content="Typed MCP host agent for guests, Kubernetes, and public exposure — dogfood-hosted on opute.io." />
+  <meta name="description" content="Give AI agents typed control of your Linux hosts — guests, Kubernetes, tunnels — via MCP. Not shell folklore." />
   <link rel="alternate" hreflang="en" href="https://www.opute.io/" />
   <link rel="alternate" hreflang="es" href="https://www.opute.io/?lang=es" />
   <link rel="stylesheet" href="${CSS}" />
@@ -1445,30 +1457,38 @@ writeFileSync(
 <body>
   ${nav("home")}
   <main class="hero">
-    <p class="eyebrow">Host Agent</p>
-    <h1>Run infrastructure through typed MCP — not shell folklore.</h1>
+    <h1>Give AI agents typed control of your hosts.</h1>
     <p class="lede">
-      Opute Host Agent is a Streamable HTTP MCP server that executes explicit
-      assignments: guests, Kubernetes, registries, and public exposure — with
-      fail-closed identity and redacted observations.
+      One MCP server on a Linux box. Guests, Kubernetes, and public exposure as named tools — with fail-closed identity, not pasted shell.
     </p>
     <div class="cta">
       <a class="btn primary" href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
-      <a class="btn" href="/docs/">Docs</a>
-      <a class="btn" href="/openapi.json">OpenAPI</a>
+      <a class="btn ghost" href="/docs/">Docs</a>
     </div>
     <div class="visual" aria-hidden="true">
-      <pre class="terminal">$ export OPUTE_REMOTE_AGENT_ID=local-host-agent
-$ export MCP_AUTH_TOKEN=dev-token
+      <pre class="terminal">$ export MCP_AUTH_TOKEN=dev-token
 $ npx -y @opute/host-agent start --background
 $ npx -y @opute/host-agent url
 http://127.0.0.1:3014/mcp</pre>
     </div>
   </main>
 
+  <section class="pitch" aria-label="How it works">
+    <h2>How it works</h2>
+    <ol class="pitch-steps">
+      <li><strong>Run the agent</strong> on the host that owns Incus / K3s.</li>
+      <li><strong>Connect an IDE or Platform</strong> over Streamable HTTP MCP with a Bearer token.</li>
+      <li><strong>Call named tools</strong> from a revisioned catalog — or pin work in recipes and plans.</li>
+    </ol>
+    <p class="pitch-for">
+      Built for operators and agent authors who already run real infrastructure.
+      Not a chat UI. Not <code>platform.opute.io</code>.
+    </p>
+  </section>
+
   <footer>
-    <span>Dogfood on <code>opute.io</code> / <code>www.opute.io</code></span>
-    <span><a href="/docs/dogfood/">How this site is hosted</a> · <a href="/llms.txt">llms.txt</a></span>
+    <span>This site is dogfood — hosted by Host Agent on <code>opute.io</code></span>
+    <span><a href="/docs/dogfood/">How it is hosted</a> · <a href="/llms.txt">llms.txt</a> · <a href="/openapi.json">OpenAPI</a></span>
   </footer>
   ${SITE_SCRIPTS}
 </body>

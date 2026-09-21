@@ -7,7 +7,7 @@
   <meta name="description" content="Opute Host Agent documentation: Concepts" />
   <link rel="alternate" hreflang="en" href="https://www.opute.io/docs/" />
   <link rel="alternate" hreflang="es" href="https://www.opute.io/docs/?lang=es" />
-  <link rel="stylesheet" href="/styles.css?v=20260921k" />
+  <link rel="stylesheet" href="/styles.css?v=20260921m" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
@@ -66,7 +66,8 @@
 
 <p class="badge">Explanation</p>
 <h1>Concepts</h1>
-<p class="meta">Product boundaries and safety model — not a procedure. For diagrams and package layout see <a href="/docs/architecture/">Architecture</a>.</p>
+<p class="meta"><strong>Why this exists.</strong> AI clients are good at proposing work and bad at owning a host. Host Agent is the thin, typed execution plane that turns named MCP tools into real guests, clusters, and tunnels — with identity and redaction that fail closed. Not a chat product; not Platform.</p>
+<p class="meta">Mental model only — not a procedure. For diagrams and package layout see <a href="/docs/architecture/">Architecture</a>.</p>
 
 <h2>Host Agent vs Platform</h2>
 <p>The Host Agent is an execution plane on a single Linux host (or enrolled remote). It speaks Streamable HTTP MCP, admits canonical resource URIs, and runs typed tools. Opute Platform is a separate control plane: it decides <em>what</em> should happen, holds durable orchestration, and issues enrollment credentials.</p>
@@ -132,7 +133,7 @@ flowchart LR
   });
 </script>
 
-<script src="/search.js?v=20260921k" defer></script>
-<script src="/i18n.js?v=20260921k" defer></script>
+<script src="/search.js?v=20260921m" defer></script>
+<script src="/i18n.js?v=20260921m" defer></script>
 </body>
 </html>

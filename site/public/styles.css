@@ -481,3 +481,63 @@ footer code { color: var(--ink); }
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+.btn.ghost {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+}
+.btn.ghost:hover { color: var(--ink); border-color: var(--accent); }
+
+.pitch {
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: 0 clamp(1.25rem, 4vw, 2.5rem) 3.5rem;
+}
+.pitch h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(1.6rem, 3vw, 2.1rem);
+  margin: 0 0 1rem;
+}
+.pitch-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.85rem;
+  counter-reset: pitch;
+}
+.pitch-steps li {
+  counter-increment: pitch;
+  padding: 0.85rem 0 0.85rem 2.6rem;
+  position: relative;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+.pitch-steps li:last-child { border-bottom: 1px solid var(--line); }
+.pitch-steps li::before {
+  content: counter(pitch);
+  position: absolute;
+  left: 0;
+  top: 0.85rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.pitch-steps strong { color: var(--ink); font-weight: 600; }
+.pitch-for {
+  margin: 1.25rem 0 0;
+  color: var(--muted);
+  max-width: 40rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pitch { animation: rise 700ms ease-out 200ms both; }
+  .terminal { animation: rise 800ms ease-out 160ms both; }
+}
