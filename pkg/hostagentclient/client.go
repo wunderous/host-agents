@@ -14,6 +14,7 @@ import (
 
 type CapabilityDescriptor struct {
 	OperationID       string         `json:"operationId"`
+	CapabilityID      string         `json:"capabilityId,omitempty"`
 	Name              string         `json:"name"`
 	Description       string         `json:"description,omitempty"`
 	InputSchema       map[string]any `json:"inputSchema"`

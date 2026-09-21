@@ -33,13 +33,15 @@ func TestTailscaleManifestValidatesAndUsesNeutralOperationIDs(t *testing.T) {
 		}
 	}
 	for _, id := range []string{
-		capabilitycontract.NetworkOverlayEnrollOperation,
-		capabilitycontract.NetworkOverlayEnsurePrivateMeshOperation,
-		capabilitycontract.NetworkOverlayEnsurePrivateServiceOperation,
-		capabilitycontract.NetworkOverlayEnsurePublicIngressOperation,
-		capabilitycontract.NetworkOverlayPromotePublicIngressOperation,
-		capabilitycontract.NetworkOverlayProbeOperation,
-		capabilitycontract.NetworkOverlayReportTwoNodeReadinessOperation,
+		capabilitycontract.MeshMembershipEnrollOperation,
+		capabilitycontract.MeshMembershipStatusOperation,
+		capabilitycontract.MeshMembershipLeaveOperation,
+		capabilitycontract.PrivateMeshEnsureOperation,
+		capabilitycontract.PrivateMeshEnsureServiceOperation,
+		capabilitycontract.PrivateMeshProbeOperation,
+		capabilitycontract.PublicIngressEnsureOperation,
+		capabilitycontract.PublicIngressPromoteOperation,
+		capabilitycontract.PublicIngressProbeOperation,
 	} {
 		if !seen[id] {
 			t.Fatalf("manifest missing operation %q", id)

@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-20
+goal: Split HA networking into three exclusive Service Definitions with
+  vendor-bundle recipes and a fail-closed *.opute.io e2e validation guard.

@@ -437,6 +437,21 @@ func (s *Server) restoreProviderGenerations() error {
 			s.logProviderRestoreSkip(record, "manifest_hash", err)
 			continue
 		}
+		families := make([]string, 0, len(manifest.Services))
+		seenFamily := map[string]bool{}
+		for _, service := range manifest.Services {
+			family := strings.TrimSpace(service.CapabilityID)
+			if family == "" || seenFamily[family] {
+				continue
+			}
+			seenFamily[family] = true
+			families = append(families, family)
+		}
+		if err := s.displaceCordisCapabilityFamilies(manifest.Provider.ID, families); err != nil {
+			_ = adapter.Close()
+			_ = s.unmountProviderGeneration(record.ProviderID, record.GenerationID)
+			continue
+		}
 		if err := s.mountProviderGeneration(manifest, record.GenerationID, adapter); err != nil {
 			_ = adapter.Close()
 			s.logProviderRestoreSkip(record, "provider_mount", err)

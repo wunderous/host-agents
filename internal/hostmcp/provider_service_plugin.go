@@ -114,6 +114,42 @@ func resolveProviderServiceDependencies(
 	return keys, nil
 }
 
+// displaceCordisCapabilityFamilies disposes Cordis mounts owned by other
+// providers for the given capability families. Catalog displace alone is not
+// enough: inject resolution still sees the old mounts (ADR-0016).
+func (s *Server) displaceCordisCapabilityFamilies(ownerProviderID string, capabilityIDs []string) error {
+	wanted := make(map[string]bool, len(capabilityIDs))
+	for _, id := range capabilityIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			wanted[id] = true
+		}
+	}
+	ownerProviderID = strings.TrimSpace(ownerProviderID)
+	if s == nil || s.providerContext == nil || ownerProviderID == "" || len(wanted) == 0 {
+		return nil
+	}
+	ids := make([]string, 0)
+	for _, id := range s.providerContext.PluginIDs() {
+		service, ok := s.providerContext.Resolve(cordis.ServiceKey(id))
+		if !ok {
+			continue
+		}
+		value, ok := service.(*providerServiceValue)
+		if !ok {
+			continue
+		}
+		if !wanted[strings.TrimSpace(value.capabilityID)] {
+			continue
+		}
+		if strings.TrimSpace(value.providerID) == ownerProviderID {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return s.unmountProviderPlugins(ids)
+}
+
 // mountProviderGeneration mounts every service a provider generation declares
 // as its own Cordis plugin. Mounting is all-or-nothing: a failure disposes the
 // fibers already applied, so a partially mounted generation can never become

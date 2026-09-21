@@ -311,7 +311,10 @@ func validateEnvelope(doc Document) error {
 		"openai-chat.v1":     {},
 		"http-exposure.v1":   {},
 		"kubernetes.v1":      {},
-		"network-overlay.v1": {},
+		"network-overlay.v1": {}, // deprecated fan-out alias (ADR-0016)
+		"mesh-membership.v1": {},
+		"private-mesh.v1":    {},
+		"public-ingress.v1":  {},
 	}
 	if _, ok := supportedServingContracts[doc.Runtime.ServingContract]; !ok {
 		return fmt.Errorf("unsupported runtime serving contract %q", doc.Runtime.ServingContract)

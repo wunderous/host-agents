@@ -431,6 +431,20 @@ func (s *Server) registerProviderServicesForGeneration(manifest providercontract
 	}
 	previousCatalog := s.registry.Snapshot()
 	providerCapabilities, providerDescriptors := s.providerCapabilitiesForGeneration(manifest, generationID, false)
+	// Per-seam exclusivity (ADR-0016): activating this provider for a capability
+	// family displaces every other provider's ops for that family before we
+	// publish. Same-provider replacement remains ReplaceGeneration's job.
+	families := make([]string, 0)
+	seenFamily := map[string]bool{}
+	for _, service := range manifest.Services {
+		family := strings.TrimSpace(service.CapabilityID)
+		if family == "" || seenFamily[family] {
+			continue
+		}
+		seenFamily[family] = true
+		families = append(families, family)
+	}
+	displaced := s.registry.DisplaceCapabilityFamilies(manifest.Provider.ID, families)
 	if generationID != "" {
 		if err := s.registry.ReplaceGeneration(generationID, providerCapabilities); err != nil {
 			return err
@@ -442,6 +456,9 @@ func (s *Server) registerProviderServicesForGeneration(manifest providercontract
 	}
 	currentCatalog := s.registry.Snapshot()
 	s.catalogMu.Lock()
+	for _, operationID := range displaced {
+		delete(s.capabilities, operationID)
+	}
 	for _, descriptor := range previousCatalog.Tools {
 		if descriptor.Provider == manifest.Provider.ID {
 			delete(s.capabilities, descriptor.OperationID)

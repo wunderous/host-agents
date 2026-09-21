@@ -88,40 +88,40 @@ func TestPublicHostRecipeDeclaresProviderOwnedPublicMCPFlow(t *testing.T) {
 	}
 }
 
-func TestCloudflareManifestDeclaresNetworkOverlayService(t *testing.T) {
+func TestCloudflareManifestDeclaresThreeSeamNetworkingHonesty(t *testing.T) {
 	manifest := cloudflareManifest()
-	var overlay *providercontract.ServiceDefinition
-	for index := range manifest.Services {
-		if manifest.Services[index].CapabilityID == "opute.capability.network-overlay.v1" {
-			overlay = &manifest.Services[index]
-			break
-		}
+	byCap := map[string]providercontract.ServiceDefinition{}
+	for _, service := range manifest.Services {
+		byCap[service.CapabilityID] = service
 	}
-	if overlay == nil {
-		t.Fatal("manifest missing network-overlay service")
+	if _, ok := byCap["opute.capability.private-mesh.v1"]; ok {
+		t.Fatal("cloudflare must not claim private-mesh.v1 without an honest implementation")
+	}
+	membership, ok := byCap["opute.capability.mesh-membership.v1"]
+	if !ok {
+		t.Fatal("manifest missing mesh-membership service")
+	}
+	ingress, ok := byCap["opute.capability.public-ingress.v1"]
+	if !ok {
+		t.Fatal("manifest missing public-ingress service")
 	}
 	seen := map[string]bool{}
-	for _, operation := range overlay.Operations {
+	for _, operation := range append(membership.Operations, ingress.Operations...) {
 		seen[operation.ID] = true
-		if operation.ID == "opute.capability.network-overlay.remove-ha-endpoint" {
-			if len(operation.Requires) != 0 {
-				t.Fatalf("opaque endpoint removal must not require targetUri: %#v", operation.Requires)
-			}
-			continue
-		}
 		if len(operation.Requires) != 2 || operation.Requires[0].Argument != "targetUri" || operation.Requires[0].ResourceType != "vm" || !operation.Requires[0].Required || operation.Requires[1].Argument != "targetUri" || operation.Requires[1].ResourceType != "container" || !operation.Requires[1].Required {
-			t.Fatalf("overlay operation %q is missing typed target binding: %#v", operation.ID, operation.Requires)
+			t.Fatalf("seam operation %q is missing typed target binding: %#v", operation.ID, operation.Requires)
 		}
 	}
 	for _, operation := range []string{
-		"opute.capability.network-overlay.validate",
-		"opute.capability.network-overlay.prepare-membership",
-		"opute.capability.network-overlay.attach-target",
-		"opute.capability.network-overlay.probe-reachability",
-		"opute.capability.network-overlay.remove-membership",
+		"opute.capability.mesh-membership.enroll",
+		"opute.capability.mesh-membership.status",
+		"opute.capability.mesh-membership.leave",
+		"opute.capability.public-ingress.ensure",
+		"opute.capability.public-ingress.promote",
+		"opute.capability.public-ingress.probe",
 	} {
 		if !seen[operation] {
-			t.Fatalf("manifest missing network-overlay operation %q", operation)
+			t.Fatalf("manifest missing seam operation %q", operation)
 		}
 	}
 }

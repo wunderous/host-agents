@@ -44,18 +44,25 @@ func main() {
 func cloudflareManifest() providercontract.InstallManifest {
 	return providercontract.InstallManifest{
 		Schema: providercontract.InstallManifestVersion, Provider: providercontract.ProviderRef{ID: "com.opute.cloudflare", Version: "1.0.0"},
-		Provides: []providercontract.CapabilityRef{{ID: tunnelingCapability, Version: 1}, {ID: capabilitycontract.NetworkOverlay, Version: 1}},
+		Provides: []providercontract.CapabilityRef{
+			{ID: tunnelingCapability, Version: 1},
+			{ID: capabilitycontract.MeshMembership, Version: 1},
+			{ID: capabilitycontract.PublicIngress, Version: 1},
+			// private-mesh.v1 omitted on purpose (ADR-0016 honesty).
+		},
 		Recipes: []providercontract.RecipeRef{
+			{ID: "com.opute.cloudflare.activate", Source: providercontract.RecipeSource{URI: "recipes/activate.yaml", Revision: "working-tree", SHA256: "sha256:6fac9b61945ff4c236512a39438a8262aec616e7116e5b231cb2482a11a3e50a"}, Mode: "activate"},
 			{ID: "com.opute.cloudflare.tunneling", Source: providercontract.RecipeSource{URI: "recipes/tunneling.yaml", Revision: "working-tree", SHA256: "sha256:2f404972cbe5c463b8fe501973894c241341b2621e5941fad06af1434a958bc7"}, Mode: "tunnel"},
 			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:de45303f69256b664ec2e137f14e98ae3113ceb935c1fb6da34f85b54758fcae"}, Mode: "managed"},
 			{ID: "com.opute.cloudflare.tunneling.public-host", Source: providercontract.RecipeSource{URI: "recipes/tunneling-public-host.yaml", Revision: "working-tree", SHA256: "sha256:db9d4e1a82d376daeaa1ed2d4448f80e5ad2e6063886395c4de60864a70b840a"}, Mode: "public-host"},
 		},
 		Services: []providercontract.ServiceDefinition{
 			{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: cloudflareOperations()},
-			{ID: "opute.capability.network-overlay", CapabilityID: capabilitycontract.NetworkOverlay, Version: 1, Operations: networkOverlayOperations()},
+			{ID: "opute.capability.mesh-membership", CapabilityID: capabilitycontract.MeshMembership, Version: 1, Operations: meshMembershipOperations()},
+			{ID: "opute.capability.public-ingress", CapabilityID: capabilitycontract.PublicIngress, Version: 1, Operations: publicIngressOperations()},
 		},
 		Teardown:   &providercontract.Operation{ID: "opute.provider.teardown", Version: 1, InputSchema: teardownSchema(), OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "plan"}}, Effect: "destructive", ResourceKinds: []string{"service", "tunnel"}, Idempotent: true, SupportsReadiness: true, TaskSupport: "sync_only", ResourceCost: &providercontract.ResourceCost{Class: "control"}},
-		Validation: providercontract.ValidationRef{Capability: tunnelingCapability, Operation: "opute.capability.tunneling.validate"},
+		Validation: providercontract.ValidationRef{Capability: capabilitycontract.PublicIngress, Operation: capabilitycontract.PublicIngressProbeOperation},
 	}
 }
 
@@ -195,7 +202,7 @@ func addManifestTool(server *mcp.Server, manifest providercontract.InstallManife
 }
 
 func addCloudflareOperations(server *mcp.Server) {
-	operations := append(cloudflareOperations(), networkOverlayOperations()...)
+	operations := append(cloudflareOperations(), append(meshMembershipOperations(), publicIngressOperations()...)...)
 	for _, schema := range operations {
 		operation := schema
 		server.AddTool(&mcp.Tool{Name: operation.ID, Description: "Cloudflare tunneling provider operation", InputSchema: operation.InputSchema, OutputSchema: operation.OutputSchema}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -210,7 +217,13 @@ func addCloudflareOperations(server *mcp.Server) {
 
 func dispatchCloudflareOperation(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
 	switch operation {
-	case capabilitycontract.NetworkOverlayValidateOperation,
+	case capabilitycontract.MeshMembershipEnrollOperation,
+		capabilitycontract.MeshMembershipStatusOperation,
+		capabilitycontract.MeshMembershipLeaveOperation,
+		capabilitycontract.PublicIngressEnsureOperation,
+		capabilitycontract.PublicIngressPromoteOperation,
+		capabilitycontract.PublicIngressProbeOperation,
+		capabilitycontract.NetworkOverlayValidateOperation,
 		capabilitycontract.NetworkOverlayPrepareMembershipOperation,
 		capabilitycontract.NetworkOverlayAttachTargetOperation,
 		capabilitycontract.NetworkOverlayProbeReachabilityOperation,
@@ -321,6 +334,13 @@ func ensureTunnel(ctx context.Context, args map[string]any) (*mcp.CallToolResult
 	case "container":
 		err = reconcileContainerTunnel(ctx, client, args)
 	case "kubernetes":
+		// ensureDedicatedTunnel mints runToken; the kubernetes connector
+		// install path reads token. Map before apply so manageHostConnector
+		// can install without a second MCP round-trip (runToken is writeOnly
+		// and arrives as "[redacted]" to external clients).
+		if stringInput(args, "token", "") == "" {
+			args["token"] = stringInput(args, "runToken", "")
+		}
 		err = installKubernetesConnector(ctx, client, args)
 	}
 	if err != nil {
@@ -481,7 +501,8 @@ func installKubernetesConnector(ctx context.Context, client *hostagentclient.Cli
 		return err
 	}
 	forwarderImage := firstNonEmpty(stringInput(args, "forwarderImage", ""), defaultForwarderImage)
-	_, err = callHost(ctx, client, "apply_manifest", map[string]any{"uri": target.String(), "manifest": cloudflaredManifest(namespace, name, image, intInput(args, "replicas", 1), stringInput(args, "token", ""), localTargets, forwarderImage)})
+	token := firstNonEmpty(stringInput(args, "token", ""), stringInput(args, "runToken", ""))
+	_, err = callHost(ctx, client, "apply_manifest", map[string]any{"uri": target.String(), "manifest": cloudflaredManifest(namespace, name, image, intInput(args, "replicas", 1), token, localTargets, forwarderImage)})
 	return err
 }
 

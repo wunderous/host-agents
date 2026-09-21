@@ -75,7 +75,7 @@ var cloudflaredArtifactCache struct {
 	encoded string
 }
 
-func networkOverlayOperations() []providercontract.Operation {
+func meshMembershipOperations() []providercontract.Operation {
 	read := func(id string, input map[string]any) providercontract.Operation {
 		return providerOperation(id, "read", input, map[string]any{"type": "object"}, []string{"host", "network"}, meshTargetBinding())
 	}
@@ -86,20 +86,21 @@ func networkOverlayOperations() []providercontract.Operation {
 		return providerOperation(id, "destructive", input, map[string]any{"type": "object"}, []string{"host", "network"}, meshTargetBinding())
 	}
 	return []providercontract.Operation{
-		read(capabilitycontract.NetworkOverlayValidateOperation, map[string]any{
+		mutation(capabilitycontract.MeshMembershipEnrollOperation, map[string]any{
+			"type":     "object",
+			"required": []string{"targetUri", "name"},
+			"properties": map[string]any{
+				"targetUri":     targetURISchema(),
+				"name":          map[string]any{"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$"},
+				"membershipRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+			},
+		}),
+		read(capabilitycontract.MeshMembershipStatusOperation, map[string]any{
 			"type":       "object",
 			"required":   []string{"targetUri"},
 			"properties": map[string]any{"targetUri": targetURISchema()},
 		}),
-		mutation(capabilitycontract.NetworkOverlayPrepareMembershipOperation, map[string]any{
-			"type":     "object",
-			"required": []string{"targetUri", "name"},
-			"properties": map[string]any{
-				"targetUri": targetURISchema(),
-				"name":      map[string]any{"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$"},
-			},
-		}),
-		mutation(capabilitycontract.NetworkOverlayAttachTargetOperation, map[string]any{
+		destructive(capabilitycontract.MeshMembershipLeaveOperation, map[string]any{
 			"type":     "object",
 			"required": []string{"membershipRef", "targetUri"},
 			"properties": map[string]any{
@@ -107,37 +108,47 @@ func networkOverlayOperations() []providercontract.Operation {
 				"targetUri":     targetURISchema(),
 			},
 		}),
-		read(capabilitycontract.NetworkOverlayProbeReachabilityOperation, map[string]any{
+	}
+}
+
+func publicIngressOperations() []providercontract.Operation {
+	read := func(id string, input map[string]any) providercontract.Operation {
+		return providerOperation(id, "read", input, map[string]any{"type": "object"}, []string{"host", "network"}, meshTargetBinding())
+	}
+	mutation := func(id string, input map[string]any) providercontract.Operation {
+		return providerOperation(id, "mutation", input, map[string]any{"type": "object"}, []string{"host", "network"}, meshTargetBinding())
+	}
+	return []providercontract.Operation{
+		mutation(capabilitycontract.PublicIngressEnsureOperation, map[string]any{
 			"type":     "object",
-			"required": []string{"targetUri", "peerMeshIp"},
+			"required": []string{"targetUri", "membershipRef"},
+			"properties": map[string]any{
+				"targetUri":        targetURISchema(),
+				"membershipRef":    map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+				"localTarget":      map[string]any{"type": "string", "format": "uri"},
+				"hostname":         map[string]any{"type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,252}$"},
+				"endpoint":         map[string]any{"type": "string"},
+				"tunnelName":       map[string]any{"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$"},
+				"peerTargetUris":   map[string]any{"type": "array", "items": targetURISchema()},
+				"operatorMode":     map[string]any{"type": "boolean"},
+				"ingressClassName": map[string]any{"type": "string"},
+				"operatorEvidence": map[string]any{"type": "string"},
+			},
+		}),
+		mutation(capabilitycontract.PublicIngressPromoteOperation, map[string]any{
+			"type":     "object",
+			"required": []string{"targetUri", "membershipRef"},
+			"properties": map[string]any{
+				"targetUri":     targetURISchema(),
+				"membershipRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
+			},
+		}),
+		read(capabilitycontract.PublicIngressProbeOperation, map[string]any{
+			"type":     "object",
+			"required": []string{"targetUri"},
 			"properties": map[string]any{
 				"targetUri":  targetURISchema(),
 				"peerMeshIp": map[string]any{"type": "string", "format": "ipv4"},
-			},
-		}),
-		mutation(capabilitycontract.NetworkOverlayEnsureHAEndpointOperation, map[string]any{
-			"type":     "object",
-			"required": []string{"targetUri", "peerTargetUris", "hostname", "tunnelName"},
-			"properties": map[string]any{
-				"targetUri":      targetURISchema(),
-				"peerTargetUris": map[string]any{"type": "array", "minItems": 1, "items": targetURISchema()},
-				"hostname":       map[string]any{"type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,252}$"},
-				"tunnelName":     map[string]any{"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$"},
-			},
-		}),
-		providerOperation(capabilitycontract.NetworkOverlayRemoveHAEndpointOperation, "destructive", map[string]any{
-			"type":     "object",
-			"required": []string{"endpointRef"},
-			"properties": map[string]any{
-				"endpointRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
-			},
-		}, map[string]any{"type": "object"}, []string{"host", "network"}, nil),
-		destructive(capabilitycontract.NetworkOverlayRemoveMembershipOperation, map[string]any{
-			"type":     "object",
-			"required": []string{"membershipRef", "targetUri"},
-			"properties": map[string]any{
-				"membershipRef": map[string]any{"type": "string", "minLength": 1, "writeOnly": true},
-				"targetUri":     targetURISchema(),
 			},
 		}),
 	}
@@ -159,22 +170,27 @@ func targetURISchema() map[string]any {
 
 func dispatchNetworkOverlayOperation(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
 	switch operation {
-	case capabilitycontract.NetworkOverlayValidateOperation:
+	case capabilitycontract.MeshMembershipEnrollOperation:
+		return prepareNetworkOverlay(ctx, args)
+	case capabilitycontract.MeshMembershipStatusOperation, capabilitycontract.NetworkOverlayValidateOperation:
 		return validateNetworkOverlay(args)
+	case capabilitycontract.MeshMembershipLeaveOperation, capabilitycontract.NetworkOverlayRemoveMembershipOperation:
+		return removeNetworkOverlay(ctx, args)
+	case capabilitycontract.PublicIngressEnsureOperation, capabilitycontract.NetworkOverlayEnsureHAEndpointOperation:
+		return ensureNetworkOverlayHAEndpoint(ctx, args)
+	case capabilitycontract.PublicIngressPromoteOperation:
+		// Cloudflare HA endpoints are already the stable public form.
+		return ensureNetworkOverlayHAEndpoint(ctx, args)
+	case capabilitycontract.PublicIngressProbeOperation, capabilitycontract.NetworkOverlayProbeReachabilityOperation:
+		return probeNetworkOverlay(ctx, args)
 	case capabilitycontract.NetworkOverlayPrepareMembershipOperation:
 		return prepareNetworkOverlay(ctx, args)
 	case capabilitycontract.NetworkOverlayAttachTargetOperation:
 		return attachNetworkOverlay(ctx, args)
-	case capabilitycontract.NetworkOverlayProbeReachabilityOperation:
-		return probeNetworkOverlay(ctx, args)
-	case capabilitycontract.NetworkOverlayEnsureHAEndpointOperation:
-		return ensureNetworkOverlayHAEndpoint(ctx, args)
 	case capabilitycontract.NetworkOverlayRemoveHAEndpointOperation:
 		return removeNetworkOverlayHAEndpoint(ctx, args)
-	case capabilitycontract.NetworkOverlayRemoveMembershipOperation:
-		return removeNetworkOverlay(ctx, args)
 	default:
-		return nil, fmt.Errorf("unknown Cloudflare network overlay operation %q", operation)
+		return nil, fmt.Errorf("unknown Cloudflare networking operation %q", operation)
 	}
 }
 

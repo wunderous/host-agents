@@ -1,0 +1,30 @@
+contractVersion: runtime-recipe.v1
+recipeId: com.opute.cloudflare.activate
+recipeVersion: 1.0.0
+runtime:
+  id: provider-ha-networking-cf
+  servingContract: public-ingress.v1
+  capabilities: [mesh-membership, public-ingress]
+activation:
+  capability: public-ingress
+  servingContract: public-ingress.v1
+  inputBindings:
+    providerId: providerId
+compatibility:
+  requiredTools: [get_host_info]
+inputs:
+  providerId:
+    default: com.opute.cloudflare
+    schema: {type: string, const: com.opute.cloudflare}
+  activationNonce:
+    default: default
+    schema: {type: string, minLength: 1, maxLength: 128}
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.cloudflare.activate
+  generation: 1
+  idempotencyKey: com.opute.cloudflare-${vars.inputs.providerId}-${vars.inputs.activationNonce}
+  nodes:
+    - id: host
+      action:
+        tool: get_host_info

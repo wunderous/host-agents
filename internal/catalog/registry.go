@@ -140,6 +140,39 @@ func (r *Registry) RegisterCapability(capabilityValue capability.Capability, pro
 	return r.RegisterRegistration(registration)
 }
 
+// DisplaceCapabilityFamilies removes overlay registrations owned by other
+// providers for the given capability families. The activating provider keeps
+// its own overlays. Used for per-seam exclusive activation (ADR-0016).
+func (r *Registry) DisplaceCapabilityFamilies(ownerProviderID string, capabilityIDs []string) []string {
+	ownerProviderID = normalizeRegistrationProvider(ownerProviderID)
+	wanted := make(map[string]bool, len(capabilityIDs))
+	for _, id := range capabilityIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			wanted[id] = true
+		}
+	}
+	if ownerProviderID == "" || len(wanted) == 0 {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	removed := make([]string, 0)
+	for operationID, registration := range r.overlays {
+		family := strings.TrimSpace(registration.Descriptor.CapabilityID)
+		if !wanted[family] {
+			continue
+		}
+		if normalizeRegistrationProvider(registration.ProviderID) == ownerProviderID {
+			continue
+		}
+		delete(r.overlays, operationID)
+		removed = append(removed, operationID)
+	}
+	sort.Strings(removed)
+	return removed
+}
+
 // ReplaceGeneration atomically replaces the executable overlay for one
 // provider generation. A failed replacement leaves the prior overlay intact.
 func (r *Registry) ReplaceGeneration(generationID string, values []capability.Capability) error {

@@ -6,7 +6,12 @@ const (
 	LLMServing     = "opute.capability.llm-serving.v1"
 	Tunneling      = "opute.capability.tunneling.v1"
 	Kubernetes     = "opute.capability.kubernetes.v1"
-	NetworkOverlay = "opute.capability.network-overlay.v1"
+	NetworkOverlay = "opute.capability.network-overlay.v1" // deprecated: fan-out alias / migration only
+
+	// Three exclusive HA networking seams (ADR-0016).
+	MeshMembership = "opute.capability.mesh-membership.v1"
+	PrivateMesh    = "opute.capability.private-mesh.v1"
+	PublicIngress  = "opute.capability.public-ingress.v1"
 
 	KubernetesValidateOperation               = "opute.capability.kubernetes.validate"
 	KubernetesProvisionOperation              = "opute.capability.kubernetes.provision"
@@ -37,15 +42,15 @@ const (
 	KubernetesRemoveNodeOperation             = "opute.capability.kubernetes.remove-node"
 	KubernetesRecoverQuorumOperation          = "opute.capability.kubernetes.recover-quorum"
 
-	NetworkOverlayValidateOperation          = "opute.capability.network-overlay.validate"
-	NetworkOverlayPrepareMembershipOperation = "opute.capability.network-overlay.prepare-membership"
-	NetworkOverlayJoinMembershipOperation    = "opute.capability.network-overlay.join-membership"
-	NetworkOverlayAttachTargetOperation      = "opute.capability.network-overlay.attach-target"
-	NetworkOverlayProbeReachabilityOperation = "opute.capability.network-overlay.probe-reachability"
-	NetworkOverlayEnsureHAEndpointOperation  = "opute.capability.network-overlay.ensure-ha-endpoint"
-	NetworkOverlayRemoveHAEndpointOperation  = "opute.capability.network-overlay.remove-ha-endpoint"
-	NetworkOverlayRemoveMembershipOperation  = "opute.capability.network-overlay.remove-membership"
-
+	// Deprecated network-overlay.* ops (migration aliases). Prefer the three-seam IDs below.
+	NetworkOverlayValidateOperation               = "opute.capability.network-overlay.validate"
+	NetworkOverlayPrepareMembershipOperation      = "opute.capability.network-overlay.prepare-membership"
+	NetworkOverlayJoinMembershipOperation         = "opute.capability.network-overlay.join-membership"
+	NetworkOverlayAttachTargetOperation           = "opute.capability.network-overlay.attach-target"
+	NetworkOverlayProbeReachabilityOperation      = "opute.capability.network-overlay.probe-reachability"
+	NetworkOverlayEnsureHAEndpointOperation       = "opute.capability.network-overlay.ensure-ha-endpoint"
+	NetworkOverlayRemoveHAEndpointOperation       = "opute.capability.network-overlay.remove-ha-endpoint"
+	NetworkOverlayRemoveMembershipOperation       = "opute.capability.network-overlay.remove-membership"
 	NetworkOverlayEnrollOperation                 = "opute.capability.network-overlay.enroll"
 	NetworkOverlayEnsurePrivateMeshOperation      = "opute.capability.network-overlay.ensure-private-mesh"
 	NetworkOverlayEnsurePrivateServiceOperation   = "opute.capability.network-overlay.ensure-private-service"
@@ -53,6 +58,21 @@ const (
 	NetworkOverlayPromotePublicIngressOperation   = "opute.capability.network-overlay.promote-public-ingress"
 	NetworkOverlayProbeOperation                  = "opute.capability.network-overlay.probe"
 	NetworkOverlayReportTwoNodeReadinessOperation = "opute.capability.network-overlay.report-two-node-readiness"
+
+	// mesh-membership.v1
+	MeshMembershipEnrollOperation = "opute.capability.mesh-membership.enroll"
+	MeshMembershipStatusOperation = "opute.capability.mesh-membership.status"
+	MeshMembershipLeaveOperation  = "opute.capability.mesh-membership.leave"
+
+	// private-mesh.v1
+	PrivateMeshEnsureOperation        = "opute.capability.private-mesh.ensure"
+	PrivateMeshEnsureServiceOperation = "opute.capability.private-mesh.ensure-service"
+	PrivateMeshProbeOperation         = "opute.capability.private-mesh.probe"
+
+	// public-ingress.v1
+	PublicIngressEnsureOperation  = "opute.capability.public-ingress.ensure"
+	PublicIngressPromoteOperation = "opute.capability.public-ingress.promote"
+	PublicIngressProbeOperation   = "opute.capability.public-ingress.probe"
 )
 
 type Validation struct {

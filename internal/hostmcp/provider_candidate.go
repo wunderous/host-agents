@@ -32,6 +32,7 @@ func providerOperationDescriptor(
 	}
 	descriptor := tools.CapabilityDescriptor{
 		OperationID:       operation.ID,
+		CapabilityID:      strings.TrimSpace(service.CapabilityID),
 		Version:           version,
 		Name:              operation.ID,
 		Description:       description,

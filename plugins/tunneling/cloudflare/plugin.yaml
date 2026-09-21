@@ -4,8 +4,11 @@ version: 1.0.0
 capabilities:
   - id: opute.capability.tunneling.v1
     version: 1
-  - id: opute.capability.network-overlay.v1
+  - id: opute.capability.mesh-membership.v1
     version: 1
+  - id: opute.capability.public-ingress.v1
+    version: 1
+  # private-mesh.v1 intentionally omitted — Cloudflare does not honestly implement it (ADR-0016).
 server:
   transport: streamable_http
   endpoint: http://127.0.0.1:4319/mcp

@@ -186,7 +186,47 @@ func useFakeBackend() bool {
 	return strings.EqualFold(backend, "fake")
 }
 
+func normalizeSeamOperation(operation string) string {
+	switch operation {
+	case capabilitycontract.MeshMembershipEnrollOperation:
+		return capabilitycontract.NetworkOverlayEnrollOperation
+	case capabilitycontract.MeshMembershipStatusOperation:
+		return capabilitycontract.NetworkOverlayProbeOperation
+	case capabilitycontract.MeshMembershipLeaveOperation:
+		return capabilitycontract.NetworkOverlayRemoveMembershipOperation
+	case capabilitycontract.PrivateMeshEnsureOperation:
+		return capabilitycontract.NetworkOverlayEnsurePrivateMeshOperation
+	case capabilitycontract.PrivateMeshEnsureServiceOperation:
+		return capabilitycontract.NetworkOverlayEnsurePrivateServiceOperation
+	case capabilitycontract.PrivateMeshProbeOperation:
+		return capabilitycontract.NetworkOverlayProbeOperation
+	case capabilitycontract.PublicIngressEnsureOperation:
+		return capabilitycontract.NetworkOverlayEnsurePublicIngressOperation
+	case capabilitycontract.PublicIngressPromoteOperation:
+		return capabilitycontract.NetworkOverlayPromotePublicIngressOperation
+	case capabilitycontract.PublicIngressProbeOperation:
+		return capabilitycontract.NetworkOverlayProbeOperation
+	default:
+		return operation
+	}
+}
+
 func dispatchOverlayOperation(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
+	original := operation
+	operation = normalizeSeamOperation(operation)
+	if args == nil {
+		args = map[string]any{}
+	}
+	switch original {
+	case capabilitycontract.MeshMembershipStatusOperation:
+		if _, ok := args["pathClass"]; !ok {
+			args["pathClass"] = "private-mesh"
+		}
+	case capabilitycontract.PrivateMeshProbeOperation:
+		args["pathClass"] = "private-mesh"
+	case capabilitycontract.PublicIngressProbeOperation:
+		args["pathClass"] = "public-ingress"
+	}
 	if useFakeBackend() {
 		return dispatchFakeOverlayOperation(ctx, operation, args)
 	}

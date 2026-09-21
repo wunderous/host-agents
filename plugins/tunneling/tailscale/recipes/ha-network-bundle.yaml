@@ -1,6 +1,6 @@
 contractVersion: host-recipe.v1
-recipeId: com.opute.tailscale.public-ingress
-recipeVersion: 1.1.0
+recipeId: com.opute.tailscale.ha-network-bundle
+recipeVersion: 1.0.0
 execution:
   coordinator: host-agent
   mode: local
@@ -8,13 +8,20 @@ compatibility:
   requiredTools:
     - get_host_info
     - opute.capability.mesh-membership.enroll
-    - opute.capability.mesh-membership.status
+    - opute.capability.private-mesh.ensure
     - opute.capability.public-ingress.ensure
+    - opute.capability.private-mesh.probe
     - opute.capability.public-ingress.probe
 inputs:
   targetUri:
     required: true
     schema: {type: string, minLength: 1}
+  peerTargetUri:
+    required: true
+    schema: {type: string, minLength: 1}
+  peerMeshIp:
+    required: true
+    schema: {type: string, format: ipv4}
   name:
     required: true
     schema: {type: string, minLength: 1}
@@ -22,10 +29,10 @@ inputs:
     required: true
     schema: {type: string, format: uri}
   operatorMode:
-    default: false
+    default: true
     schema: {type: boolean}
   ingressClassName:
-    default: ""
+    default: tailscale
     schema: {type: string}
   operatorEvidence:
     default: ""
@@ -36,11 +43,16 @@ inputs:
   endpoint:
     default: ""
     schema: {type: string}
+  publicHosts:
+    default: ["www.opute.io", "opute.io"]
+    schema:
+      type: array
+      items: {type: string}
 plan:
   contractVersion: host-plan.v1
-  planId: com.opute.tailscale.public-ingress
+  planId: com.opute.tailscale.ha-network-bundle
   generation: 1
-  idempotencyKey: com.opute.tailscale.public-ingress-${vars.inputs.targetUri}-${vars.inputs.endpoint}-v6
+  idempotencyKey: com.opute.tailscale.ha-network-bundle-${vars.inputs.targetUri}-v1
   nodes:
     - id: agent
       action:
@@ -63,8 +75,29 @@ plan:
           - {path: /ready, op: eq, value: true}
         pollIntervalMs: 2000
         timeoutMs: 180000
-    - id: ingress
+    - id: mesh
       dependsOn: [enroll]
+      action:
+        tool: opute.capability.private-mesh.ensure
+        args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
+          targetUri: ${vars.inputs.targetUri}
+          membershipRef: ${nodes.enroll.output.membershipRef}
+          peerTargetUri: ${vars.inputs.peerTargetUri}
+          peerMeshIp: ${vars.inputs.peerMeshIp}
+          credentialKind: auth-key
+      validate:
+        tool: opute.capability.private-mesh.probe
+        args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
+          targetUri: ${vars.inputs.targetUri}
+          peerMeshIp: ${vars.inputs.peerMeshIp}
+        assert:
+          - {path: /ready, op: eq, value: true}
+        pollIntervalMs: 2000
+        timeoutMs: 180000
+    - id: ingress
+      dependsOn: [mesh]
       action:
         tool: opute.capability.public-ingress.ensure
         args:

@@ -28,6 +28,15 @@ func TestNetworkOverlayOperationIDsAreProviderNeutral(t *testing.T) {
 		capabilitycontract.NetworkOverlayEnsurePublicIngressOperation,
 		capabilitycontract.NetworkOverlayPromotePublicIngressOperation,
 		capabilitycontract.NetworkOverlayProbeOperation,
+		capabilitycontract.MeshMembershipEnrollOperation,
+		capabilitycontract.MeshMembershipStatusOperation,
+		capabilitycontract.MeshMembershipLeaveOperation,
+		capabilitycontract.PrivateMeshEnsureOperation,
+		capabilitycontract.PrivateMeshEnsureServiceOperation,
+		capabilitycontract.PrivateMeshProbeOperation,
+		capabilitycontract.PublicIngressEnsureOperation,
+		capabilitycontract.PublicIngressPromoteOperation,
+		capabilitycontract.PublicIngressProbeOperation,
 	}
 	forbidden := []string{"tailscale", "cloudflare", "cloudflared", "k3s", "kubectl", "funnel", "warp"}
 	for _, id := range ids {
@@ -37,7 +46,11 @@ func TestNetworkOverlayOperationIDsAreProviderNeutral(t *testing.T) {
 				t.Fatalf("capability operation ID %q contains lifecycle vocabulary %q", id, token)
 			}
 		}
-		if !strings.HasPrefix(id, "opute.capability.network-overlay.") {
+		okPrefix := strings.HasPrefix(id, "opute.capability.network-overlay.") ||
+			strings.HasPrefix(id, "opute.capability.mesh-membership.") ||
+			strings.HasPrefix(id, "opute.capability.private-mesh.") ||
+			strings.HasPrefix(id, "opute.capability.public-ingress.")
+		if !okPrefix {
 			t.Fatalf("unexpected overlay operation ID namespace: %q", id)
 		}
 	}
@@ -60,7 +73,7 @@ func TestNetworkOverlayOperationIDsAreProviderNeutral(t *testing.T) {
 				continue
 			}
 			for i, name := range valueSpec.Names {
-				if !strings.HasPrefix(name.Name, "NetworkOverlay") || !strings.HasSuffix(name.Name, "Operation") {
+				if !(strings.HasPrefix(name.Name, "NetworkOverlay") || strings.HasPrefix(name.Name, "MeshMembership") || strings.HasPrefix(name.Name, "PrivateMesh") || strings.HasPrefix(name.Name, "PublicIngress")) || !strings.HasSuffix(name.Name, "Operation") {
 					continue
 				}
 				if i >= len(valueSpec.Values) {

@@ -17,6 +17,7 @@ import (
 // presentation text as executable input.
 type CapabilityDescriptor struct {
 	OperationID         string                          `json:"operationId"`
+	CapabilityID        string                          `json:"capabilityId,omitempty"`
 	Version             int                             `json:"version,omitempty"`
 	Name                string                          `json:"name"`
 	Title               string                          `json:"title,omitempty"`

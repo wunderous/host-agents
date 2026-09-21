@@ -304,6 +304,19 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 	adapter := s.providerCandidates[generationID]
 	s.providerMu.Unlock()
 	if adapter != nil {
+		families := make([]string, 0, len(manifest.Services))
+		seen := map[string]bool{}
+		for _, service := range manifest.Services {
+			family := strings.TrimSpace(service.CapabilityID)
+			if family == "" || seen[family] {
+				continue
+			}
+			seen[family] = true
+			families = append(families, family)
+		}
+		if err := s.displaceCordisCapabilityFamilies(manifest.Provider.ID, families); err != nil {
+			return s.rollbackProviderActivation(manifest, manifestOK, previousManifest, previousManifestOK, activated, previous, fmt.Errorf("displace capability mounts: %w", err))
+		}
 		if err := s.mountProviderGeneration(manifest, generationID, adapter); err != nil {
 			return s.rollbackProviderActivation(manifest, manifestOK, previousManifest, previousManifestOK, activated, previous, fmt.Errorf("mount provider generation: %w", err))
 		}
@@ -497,45 +510,16 @@ func (s *Server) activationValidationFlows() map[string]func(context.Context, ma
 			return map[string]any{"servingContract": "http-exposure.v1", "ready": true, "checks": checks}, nil
 		},
 		"network-overlay.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
-			providerID := recipeStringField(bindings, "providerId")
-			if providerID == "" {
-				return nil, fmt.Errorf("network-overlay.v1 activation requires input binding providerId")
-			}
-			var session *cordis.GenerationSession
-			var err error
-			if generationID != "" {
-				session, err = s.providerLifecycle.OpenSessionForGeneration(providerID, generationID)
-			} else {
-				session, err = s.providerLifecycle.OpenSession(providerID)
-			}
-			if err != nil {
-				return nil, err
-			}
-			defer session.Close()
-			s.providerMu.RLock()
-			adapter := s.providerGenerationAdapter(providerID, session.GenerationID())
-			if adapter == nil {
-				adapter = s.providerCandidates[session.GenerationID()]
-			}
-			s.providerMu.RUnlock()
-			if adapter == nil {
-				return nil, fmt.Errorf("network-overlay provider %q is not connected", providerID)
-			}
-			// Prove the module is serving its install manifest before publishing
-			// network-overlay ops into the host catalog.
-			result, err := adapter.CallSynchronousOnly(ctx, "opute.provider.get_install_manifest", map[string]any{})
-			if err != nil {
-				return nil, err
-			}
-			if result == nil || result.IsError {
-				return nil, fmt.Errorf("network-overlay provider %q install-manifest probe failed", providerID)
-			}
-			return map[string]any{
-				"servingContract": "network-overlay.v1",
-				"ready":           true,
-				"providerId":      providerID,
-				"generationId":    session.GenerationID(),
-			}, nil
+			return s.activateNetworkingProvider(ctx, "network-overlay.v1", bindings, generationID)
+		},
+		"mesh-membership.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
+			return s.activateNetworkingProvider(ctx, "mesh-membership.v1", bindings, generationID)
+		},
+		"private-mesh.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
+			return s.activateNetworkingProvider(ctx, "private-mesh.v1", bindings, generationID)
+		},
+		"public-ingress.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
+			return s.activateNetworkingProvider(ctx, "public-ingress.v1", bindings, generationID)
 		},
 		"mcp-exposure.v1": func(ctx context.Context, bindings map[string]any, _ string) (map[string]any, error) {
 			endpoint := recipeStringField(bindings, "endpoint")
@@ -545,6 +529,46 @@ func (s *Server) activationValidationFlows() map[string]func(context.Context, ma
 			return probeAuthenticatedMCPEndpoint(ctx, endpoint, recipeStringField(bindings, "bearerToken"))
 		},
 	}
+}
+
+func (s *Server) activateNetworkingProvider(ctx context.Context, servingContract string, bindings map[string]any, generationID string) (map[string]any, error) {
+	providerID := recipeStringField(bindings, "providerId")
+	if providerID == "" {
+		return nil, fmt.Errorf("%s activation requires input binding providerId", servingContract)
+	}
+	var session *cordis.GenerationSession
+	var err error
+	if generationID != "" {
+		session, err = s.providerLifecycle.OpenSessionForGeneration(providerID, generationID)
+	} else {
+		session, err = s.providerLifecycle.OpenSession(providerID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+	s.providerMu.RLock()
+	adapter := s.providerGenerationAdapter(providerID, session.GenerationID())
+	if adapter == nil {
+		adapter = s.providerCandidates[session.GenerationID()]
+	}
+	s.providerMu.RUnlock()
+	if adapter == nil {
+		return nil, fmt.Errorf("%s provider %q is not connected", servingContract, providerID)
+	}
+	result, err := adapter.CallSynchronousOnly(ctx, "opute.provider.get_install_manifest", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.IsError {
+		return nil, fmt.Errorf("%s provider %q install-manifest probe failed", servingContract, providerID)
+	}
+	return map[string]any{
+		"servingContract": servingContract,
+		"ready":           true,
+		"providerId":      providerID,
+		"generationId":    session.GenerationID(),
+	}, nil
 }
 
 func firstNonEmpty(values ...string) string {
