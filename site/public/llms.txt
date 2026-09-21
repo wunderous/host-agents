@@ -1,0 +1,31 @@
+# Opute Host Agent
+
+> Streamable HTTP MCP server for typed host infrastructure assignments (guests, Kubernetes, registries, tunnels).
+
+Docs follow Diátaxis. Prefer live tools/list over memorized tool names.
+Public site: https://www.opute.io and https://opute.io (Host Agent dogfood).
+Not Platform: https://platform.opute.io / https://mcp.opute.io
+
+## Tutorial
+- [Get started](https://www.opute.io/docs/get-started/): first authenticated tools/list
+
+## How-to
+- [Install & run](https://www.opute.io/docs/install/)
+- [Connect an MCP client](https://www.opute.io/docs/mcp-clients/)
+- [Publish this site](https://www.opute.io/docs/dogfood/)
+- [Troubleshooting](https://www.opute.io/docs/troubleshooting/)
+
+## Reference
+- [Capabilities](https://www.opute.io/docs/capabilities/)
+- [Configuration](https://www.opute.io/docs/configuration/)
+- [Recipe & plan primitives](https://www.opute.io/docs/recipe-primitives/)
+
+## Explanation
+- [Concepts](https://www.opute.io/docs/concepts/)
+- [Architecture](https://www.opute.io/docs/architecture/)
+- [Recipes & plans](https://www.opute.io/docs/recipes/)
+- [Networking](https://www.opute.io/docs/networking/)
+- [Resources & safety](https://www.opute.io/docs/resources/)
+
+## Research notes
+- Peer synthesis: site/context/RESEARCH.md

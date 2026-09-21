@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Concepts — Opute Host Agent</title>
   <meta name="description" content="Opute Host Agent documentation: Concepts" />
-  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="alternate" hreflang="en" href="https://www.opute.io/docs/" />
+  <link rel="alternate" hreflang="es" href="https://www.opute.io/docs/?lang=es" />
+  <link rel="stylesheet" href="/styles.css?v=20260921k" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
@@ -14,11 +16,22 @@
 
 <header class="top">
   <a class="brand" href="/">Opute Host Agent</a>
-  <nav>
-    <a href="/docs/">Docs</a>
-    <a href="/docs/get-started/">Get started</a>
-  </nav>
+  <div class="top-tools">
+    <div class="search">
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results hidden></div>
+    </div>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang-option="es" aria-pressed="false">ES</button>
+    </div>
+    <nav>
+      <a href="/docs/" data-i18n="nav.docs">Docs</a>
+      <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+    </nav>
+  </div>
 </header>
+<p class="i18n-banner" data-i18n-banner hidden></p>
 <div class="doc-shell">
 
 <aside class="doc-nav" aria-label="Documentation">
@@ -31,12 +44,14 @@
     <li><a href="/docs/install/">Install &amp; run</a></li>
     <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
     <li><a href="/docs/dogfood/">Publish this site</a></li>
+    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+    <li><a href="/docs/openapi/">OpenAPI</a></li>
   </ul>
   <h2>Explanation</h2>
   <ul>
@@ -75,6 +90,9 @@ flowchart LR
 <h2>Fail-closed identity</h2>
 <p>Every process must carry a canonical <code>OPUTE_REMOTE_AGENT_ID</code>. Standalone mutations stay off until explicitly enabled. Observations that could contain secrets are redacted in MCP results (write-only schema fields become <code>[redacted]</code>).</p>
 
+<h2>Security boundary</h2>
+<p>Treat the Host Agent like an API gateway on the host: authenticate at Streamable HTTP <code>/mcp</code> (Bearer bootstrap and/or OAuth), keep <code>/health</code> unauthenticated for liveness only, and never embed secrets in tool schemas. Prefer live catalog discovery over memorized names. Public dogfood hostnames must not expose Host Agent MCP administration.</p>
+
 <h2>Providers as plugins</h2>
 <p>Kubernetes, Cloudflare, Tailscale, Ollama, and Host OS surfaces arrive as provider plugins under <code>plugins/</code>, not as hard-wired product branches inside the MCP server. Shared host seams live in <code>internal/hostruntime</code>; there is no separate <code>internal/provider</code> package.</p>
 
@@ -87,8 +105,8 @@ flowchart LR
 </main>
 </div>
 <footer>
-  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <a href="/docs/architecture/">Architecture</a>
+  <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
@@ -113,5 +131,8 @@ flowchart LR
     }
   });
 </script>
+
+<script src="/search.js?v=20260921k" defer></script>
+<script src="/i18n.js?v=20260921k" defer></script>
 </body>
 </html>

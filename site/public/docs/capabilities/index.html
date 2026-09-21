@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Capabilities — Opute Host Agent</title>
   <meta name="description" content="Opute Host Agent documentation: Capabilities" />
-  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="alternate" hreflang="en" href="https://www.opute.io/docs/" />
+  <link rel="alternate" hreflang="es" href="https://www.opute.io/docs/?lang=es" />
+  <link rel="stylesheet" href="/styles.css?v=20260921k" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
@@ -14,11 +16,22 @@
 
 <header class="top">
   <a class="brand" href="/">Opute Host Agent</a>
-  <nav>
-    <a href="/docs/">Docs</a>
-    <a href="/docs/get-started/">Get started</a>
-  </nav>
+  <div class="top-tools">
+    <div class="search">
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results hidden></div>
+    </div>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang-option="es" aria-pressed="false">ES</button>
+    </div>
+    <nav>
+      <a href="/docs/" data-i18n="nav.docs">Docs</a>
+      <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+    </nav>
+  </div>
 </header>
+<p class="i18n-banner" data-i18n-banner hidden></p>
 <div class="doc-shell">
 
 <aside class="doc-nav" aria-label="Documentation">
@@ -31,12 +44,14 @@
     <li><a href="/docs/install/">Install &amp; run</a></li>
     <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
     <li><a href="/docs/dogfood/">Publish this site</a></li>
+    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
   <ul>
     <li><a href="/docs/capabilities/" aria-current="page">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+    <li><a href="/docs/openapi/">OpenAPI</a></li>
   </ul>
   <h2>Explanation</h2>
   <ul>
@@ -51,7 +66,7 @@
 
 <p class="badge">Reference</p>
 <h1>Capabilities</h1>
-<p class="meta">Facts about the typed tool surface from a redacted live capture (178 tools, 2026-09-20). Always prefer a live <code>tools/list</code> / <code>get_capability_catalog</code> — catalogs are revisioned. Grouping here is navigational, not a hard API boundary.</p>
+<p class="meta">Facts about the typed tool surface from a redacted live capture (187 tools, host-zephyrus-ef47fbbf:3004). Always prefer a live <code>tools/list</code> / <code>get_capability_catalog</code> — catalogs are revisioned. Grouping here is navigational, not a hard API boundary.</p>
 
 <h2>Contract split</h2>
 <ul>
@@ -60,50 +75,64 @@
 </ul>
 
 <h2>Catalog &amp; session</h2>
+<p>Discover the revisioned tool catalog and open assistant sessions.</p>
 <div class="tool-list"><code>get_capability_catalog</code><code>open_assistant_session</code><code>list_agents</code><code>configure_agent_connection</code></div>
 
 <h2>Host &amp; inventory</h2>
+<p>Read and mutate host files, services, capacity, and WSL lifecycle.</p>
 <div class="tool-list"><code>get_host_info</code><code>get_host_capacity</code><code>detect_host_platform</code><code>list_host_services</code><code>inspect_host_file</code><code>ensure_host_file</code><code>remove_host_file</code><code>ensure_host_tool</code><code>ensure_host_artifact</code><code>run_host_command</code><code>probe_http_endpoint</code><code>restart_host_service</code><code>set_host_service_state</code><code>compact_wsl_disk</code><code>terminate_wsl_distribution</code><code>shutdown_wsl</code></div>
 
 <h2>Guests (Incus)</h2>
+<p>Install the Incus stack and manage VM/container guest lifecycle.</p>
 <p>Default infra provider today: <code>OPUTE_INFRA_PROVIDER_ID=incus</code>. Guest URIs carry a runtime kind (<code>vm:</code> vs <code>container:</code>).</p>
 <div class="tool-list"><code>install_incus_stack</code><code>uninstall_incus_stack</code><code>reset_incus_stack</code><code>list_vms</code><code>create_vm</code><code>provision_vm</code><code>provision_container</code><code>start_vm</code><code>stop_vm</code><code>restart_vm</code><code>delete_vm</code><code>get_vm_info</code><code>update_vm_resources</code><code>run_instance_command</code><code>stream_vm_console</code><code>send_console_input</code><code>probe_incus_gpu</code><code>inspect_guest_storage</code><code>trim_guest_storage</code></div>
 
 <h2>Kubernetes workloads</h2>
+<p>Apply and inspect workloads on admitted cluster URIs.</p>
 <p>Neutral cluster ops appear both as underscore aliases and as dotted <code>opute.capability.kubernetes.*</code> provider ops. Prefer the live catalog name your client discovered.</p>
 <div class="tool-list"><code>apply_manifest</code><code>list_pods</code><code>list_namespaces</code><code>list_deployments</code><code>list_services</code><code>get_k8s_resource</code><code>get_k8s_resource_status</code><code>delete_k8s_resource</code><code>put_k8s_secret</code><code>exec_kubernetes_command</code><code>install_helm_chart</code><code>render_helm_template</code><code>list_k8s_events</code><code>list_storage_classes</code><code>list_ingress_classes</code><code>register_kubernetes_cluster</code><code>list_kubernetes_clusters</code><code>opute.capability.kubernetes.apply-manifest</code><code>opute.capability.kubernetes.get-resource</code><code>opute.capability.kubernetes.exec-command</code></div>
 
 <h2>K3s provision &amp; membership</h2>
+<p>Provision clusters and manage HA join / quorum membership.</p>
 <div class="tool-list"><code>opute.capability.kubernetes.provision</code><code>opute.capability.kubernetes.validate</code><code>opute.capability.kubernetes.status</code><code>opute.capability.kubernetes.prepare-ha</code><code>opute.capability.kubernetes.prepare-join</code><code>opute.capability.kubernetes.redeem-join</code><code>opute.capability.kubernetes.join-node</code><code>opute.capability.kubernetes.remove-node</code><code>opute.capability.kubernetes.inspect-membership</code><code>opute.capability.kubernetes.recover-quorum</code><code>opute.capability.kubernetes.ensure-ha-endpoint</code><code>opute.capability.kubernetes.get-cluster-info</code></div>
 
 <h2>Cluster storage &amp; registry reclaim</h2>
+<p>Inspect guest disk and reclaim unused images / registry blobs.</p>
 <div class="tool-list"><code>inspect_guest_storage</code><code>prune_unused_cluster_images</code><code>garbage_collect_cluster_registry</code><code>trim_guest_storage</code><code>opute.capability.kubernetes.configure-registry</code><code>opute.capability.kubernetes.garbage-collect-registry</code><code>opute.capability.kubernetes.prune-unused-images</code><code>opute.capability.kubernetes.trim-guest-storage</code></div>
 
 <h2>OCI / containers</h2>
+<p>Stage build contexts, build/push images, and manage host registries.</p>
 <div class="tool-list"><code>stage_build_context</code><code>ensure_oci_builder</code><code>ensure_docker</code><code>build_and_push_oci_image</code><code>configure_oci_storage</code><code>install_oci_registry</code><code>get_oci_registry_status</code><code>delete_oci_registry</code><code>inspect_container_storage</code><code>cleanup_container_storage</code><code>probe_gpu_container</code></div>
 
 <h2>Recipes &amp; plans</h2>
+<p>Validate and run declarative recipes / plans on this host.</p>
 <p>Why: <a href="/docs/recipes/">Recipes &amp; plans</a>. Fields: <a href="/docs/recipe-primitives/">primitives</a>.</p>
 <div class="tool-list"><code>validate_host_local_recipe</code><code>run_host_local_recipe</code><code>validate_host_plan</code><code>run_host_plan</code><code>get_host_plan_run</code><code>validate_runtime_recipe</code><code>run_runtime_recipe</code><code>get_runtime_recipe_run</code><code>validate_tunnel_recipe</code><code>run_tunnel_recipe</code><code>get_tunnel_run</code></div>
 
 <h2>Tunneling &amp; public exposure</h2>
+<p>Ensure, probe, and remove host tunnels and public MCP helpers.</p>
 <div class="tool-list"><code>opute.capability.tunneling.validate</code><code>opute.capability.tunneling.ensure-host-tunnel</code><code>opute.capability.tunneling.probe-host-tunnel</code><code>opute.capability.tunneling.remove-host-tunnel</code><code>opute.capability.tunneling.install-kubernetes-connector</code><code>opute.capability.tunneling.delete-kubernetes-connector</code><code>ensure_public_mcp_tunnel</code><code>ensure_public_mcp_quick_tunnel</code><code>remove_public_mcp_quick_tunnel</code><code>probe_host_exposure</code><code>remove_host_exposure</code><code>ensure_cloudflared_tunnel</code><code>get_cloudflare_tunnel_status</code></div>
 
 <h2>HA networking seams</h2>
-<p>Canonical contracts are <code>mesh-membership.v1</code>, <code>private-mesh.v1</code>, and <code>public-ingress.v1</code> (ADR-0016). Live catalogs may still expose deprecated <code>network-overlay.*</code> migration aliases — prefer the three seams for new work. Details: <a href="/docs/networking/">Networking</a>.</p>
-<div class="tool-list"><code>opute.capability.network-overlay.validate</code><code>opute.capability.network-overlay.prepare-membership</code><code>opute.capability.network-overlay.attach-target</code><code>opute.capability.network-overlay.probe-reachability</code><code>opute.capability.network-overlay.ensure-ha-endpoint</code><code>opute.capability.network-overlay.remove-ha-endpoint</code><code>opute.capability.network-overlay.remove-membership</code></div>
+<p>Primary networking tools from the live catalog (ADR-0016). Install/configure via <code>mesh-runtime.v1</code>, then membership / private mesh / public ingress.</p>
+<p>Canonical contracts: <code>mesh-runtime.v1</code>, <code>mesh-membership.v1</code>, <code>private-mesh.v1</code>, <code>public-ingress.v1</code>. Deprecated <code>network-overlay.*</code> aliases are not present on the current live capture (<code>network-overlay=0</code>). Details: <a href="/docs/networking/">Networking</a>.</p>
+<div class="tool-list"><code>opute.capability.mesh-runtime.validate</code><code>opute.capability.mesh-runtime.ensure-agent</code><code>opute.capability.mesh-runtime.ensure-control-plane</code><code>opute.capability.mesh-runtime.status</code><code>opute.capability.mesh-membership.enroll</code><code>opute.capability.mesh-membership.status</code><code>opute.capability.mesh-membership.leave</code><code>opute.capability.private-mesh.ensure</code><code>opute.capability.private-mesh.ensure-service</code><code>opute.capability.private-mesh.probe</code><code>opute.capability.public-ingress.ensure</code><code>opute.capability.public-ingress.promote</code><code>opute.capability.public-ingress.probe</code></div>
 
 <h2>Providers</h2>
+<p>Install, validate, reload, and tear down provider MCP plugins.</p>
 <div class="tool-list"><code>opute.provider.install</code><code>opute.provider.validate</code><code>opute.provider.status</code><code>opute.provider.reload</code><code>opute.provider.teardown</code><code>install_provider_tools</code><code>uninstall_provider_tools</code></div>
 
 <h2>LLM serving <span class="muted-tag">(optional)</span></h2>
+<p>Optional local LLM runtime, models, and relays.</p>
 <p>Core Host Agent works without an LLM provider. Ollama is an activated optional layer (<code>plugins/llm/ollama</code>).</p>
 <div class="tool-list"><code>probe_local_llm</code><code>check_local_llm_prerequisites</code><code>configure_local_llm_runtime</code><code>start_local_llm_runtime</code><code>stop_local_llm_runtime</code><code>list_local_llm_models</code><code>install_local_llm_model</code><code>configure_local_llm_model</code><code>remove_local_llm_model</code><code>ensure_local_llm_relay</code><code>ensure_local_llm_k3s_proxy</code><code>probe_openai_compatible_server</code></div>
 
 <h2>Postgres &amp; SQLite</h2>
+<p>Reconcile managed Postgres services and local SQLite databases.</p>
 <div class="tool-list"><code>reconcile_postgresql_service</code><code>get_postgresql_service_status</code><code>remove_postgresql_service</code><code>release_postgresql_service_relay</code><code>ensure_sqlite_database</code><code>get_sqlite_database_status</code><code>remove_sqlite_database</code></div>
 
 <h2>Serving &amp; cluster agent</h2>
+<p>Reconcile serving assignments, discover ingress, install cluster agents.</p>
 <div class="tool-list"><code>reconcile_serving_assignment</code><code>discover_service_ingress</code><code>list_ingress_classes</code><code>list_certificate_issuers</code><code>install_cluster_agent</code><code>inspect_workload</code></div>
 
 <div class="callout">
@@ -114,9 +143,12 @@
 </main>
 </div>
 <footer>
-  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <a href="/docs/architecture/">Architecture</a>
+  <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
 </footer>
 
+
+<script src="/search.js?v=20260921k" defer></script>
+<script src="/i18n.js?v=20260921k" defer></script>
 </body>
 </html>

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Connect an MCP client — Opute Host Agent</title>
-  <meta name="description" content="Opute Host Agent documentation: Connect an MCP client" />
+  <title>Troubleshooting — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: Troubleshooting" />
   <link rel="alternate" hreflang="en" href="https://www.opute.io/docs/" />
   <link rel="alternate" hreflang="es" href="https://www.opute.io/docs/?lang=es" />
   <link rel="stylesheet" href="/styles.css?v=20260921k" />
@@ -42,9 +42,9 @@
   <h2>How-to</h2>
   <ul>
     <li><a href="/docs/install/">Install &amp; run</a></li>
-    <li><a href="/docs/mcp-clients/" aria-current="page">Connect an MCP client</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
     <li><a href="/docs/dogfood/">Publish this site</a></li>
-    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
+    <li><a href="/docs/troubleshooting/" aria-current="page">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
   <ul>
@@ -65,64 +65,49 @@
 <main class="doc">
 
 <p class="badge">How-to</p>
-<h1>Connect an MCP client</h1>
-<p class="meta">Wire Cursor, Claude Desktop, or VS Code to a running Host Agent over Streamable HTTP.</p>
+<h1>Troubleshooting</h1>
+<p class="meta">Fix common Host Agent connection and recipe failures. Each section is a goal: symptom → checks → fix.</p>
 
-<h2>Prerequisites</h2>
+<h2>HTTP 401 on /mcp</h2>
+<ol>
+  <li>Confirm the agent was started with <code>MCP_AUTH_TOKEN</code> set.</li>
+  <li>Confirm the client sends <code>Authorization: Bearer &lt;same token&gt;</code>.</li>
+  <li><code>GET /health</code> should still succeed without a Bearer — if health fails, the process is down or on another port.</li>
+</ol>
+
+<h2>Wrong port or nothing listening</h2>
 <ul>
-  <li>Host Agent listening (see <a href="/docs/install/">Install</a>)</li>
-  <li>Matching <code>MCP_AUTH_TOKEN</code> on the agent process</li>
+  <li>Standalone default: <code>http://127.0.0.1:3014/mcp</code></li>
+  <li>Platform mode default: <code>0.0.0.0:3004</code> — do not paste a platform snippet into a laptop client unless you mean it.</li>
+  <li>Overrides: <code>HOST_MCP_BIND_HOST</code>, <code>HOST_MCP_PORT</code>.</li>
 </ul>
 
-<h2>Cursor / Claude Desktop</h2>
-<pre><code>{
-  "mcpServers": {
-    "opute-local": {
-      "type": "http",
-      "url": "http://127.0.0.1:3014/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-token"
-      }
-    }
-  }
-}</code></pre>
+<h2>Mutations denied</h2>
+<p>Standalone mutating tools fail closed until <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Platform mode uses enrollment policy instead of that flag.</p>
 
-<h2>VS Code-style</h2>
-<pre><code>{
-  "servers": {
-    "opute-local": {
-      "type": "http",
-      "url": "http://127.0.0.1:3014/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-token"
-      }
-    }
-  }
-}</code></pre>
+<h2>Missing OPUTE_REMOTE_AGENT_ID</h2>
+<p><code>--check</code> / startup validation requires a canonical agent id. The npm launcher defaults to <code>local-host-agent</code> when unset; from-source runs must export it.</p>
 
-<div class="callout warn">
-  <strong>Auth is not optional when a bootstrap token is configured.</strong>
-  A config with only <code>url</code> against a token-gated agent returns HTTP 401.
-  Omit headers only when the agent has no bootstrap token and the client completes OAuth for this resource.
-</div>
+<h2>Client connects but tools look empty or collide</h2>
+<ul>
+  <li>Always refresh with live <code>tools/list</code> — catalogs are revisioned.</li>
+  <li>Multiple agents in one IDE: set <code>OPUTE_MCP_PREFIX_TOOL_NAMES=true</code> (not on Platform-enrolled agents).</li>
+</ul>
 
-<h2>What the client should do</h2>
-<ol>
-  <li>Connect over Streamable HTTP (stdio is not supported).</li>
-  <li>Discover the revisioned capability catalog.</li>
-  <li>Validate tool arguments against catalog schemas.</li>
-  <li>Call tools by catalog name — the Host Agent does not interpret prose.</li>
-</ol>
+<h2>Recipe resume / [redacted] secrets</h2>
+<p>Write-only fields (tunnel run tokens) cannot be pasted back from MCP results. Resume in-process (for example <code>manageHostConnector: true</code>) or re-mint. See <a href="/docs/resources/">Resources &amp; safety</a>.</p>
 
-<h2>Verify the connection</h2>
-<ol>
-  <li>Client shows the server connected (no 401).</li>
-  <li><code>tools/list</code> returns a non-empty revisioned catalog.</li>
-  <li>A read-only call such as <code>get_host_info</code> succeeds.</li>
-</ol>
+<h2>run_host_local_recipe refuses the recipe</h2>
+<ul>
+  <li>Platform-distributed recipes (<code>coordinator: platform</code>) must go to Platform — HA will refuse.</li>
+  <li>Host-local recipes cannot include <code>wait</code> nodes or multi-host targets.</li>
+  <li>Mutating runs require a content <code>sha256</code> pin.</li>
+</ul>
 
-<h2>Multiple agents in one workspace</h2>
-<p>Set <code>OPUTE_MCP_PREFIX_TOOL_NAMES=true</code> on each agent so tool names do not collide. <code>GET /health</code> exposes <code>mcpToolNamePrefix</code>. Wire names become <code>{prefix}_{catalogName}</code>. Do <strong>not</strong> enable this on Platform-enrolled instances — the control plane calls unprefixed catalog names.</p>
+<h2>stdio clients</h2>
+<p>The public Host Agent surface is Streamable HTTP only. Configure an HTTP MCP client URL, not a stdio command.</p>
+
+<p>Related: <a href="/docs/install/">Install</a> · <a href="/docs/mcp-clients/">MCP clients</a> · <a href="/docs/configuration/">Configuration</a> · <a href="/docs/recipes/">Recipes</a></p>
 
 </main>
 </div>

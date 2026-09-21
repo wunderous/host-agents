@@ -52,7 +52,8 @@ func cloudflareManifest() providercontract.InstallManifest {
 			// private-mesh.v1 omitted on purpose (ADR-0016 honesty).
 		},
 		Recipes: []providercontract.RecipeRef{
-			{ID: "com.opute.cloudflare.activate", Source: providercontract.RecipeSource{URI: "recipes/activate.yaml", Revision: "working-tree", SHA256: "sha256:6fac9b61945ff4c236512a39438a8262aec616e7116e5b231cb2482a11a3e50a"}, Mode: "activate"},
+			{ID: "com.opute.cloudflare.activate-tunneling", Source: providercontract.RecipeSource{URI: "recipes/activate-tunneling.yaml", Revision: "working-tree", SHA256: "sha256:6fec9957909058f39bc48bd35becae2e46be55a06b9b2ff4a9928a608772f460"}, Mode: "activate"},
+			{ID: "com.opute.cloudflare.activate", Source: providercontract.RecipeSource{URI: "recipes/activate.yaml", Revision: "working-tree", SHA256: "sha256:2c9d9ad41f1cc0c836196e6c0e56014c6eab4fde0f1eed2e746eaeb946cad0c4"}, Mode: "activate"},
 			{ID: "com.opute.cloudflare.tunneling", Source: providercontract.RecipeSource{URI: "recipes/tunneling.yaml", Revision: "working-tree", SHA256: "sha256:2f404972cbe5c463b8fe501973894c241341b2621e5941fad06af1434a958bc7"}, Mode: "tunnel"},
 			{ID: "com.opute.cloudflare.tunneling.managed", Source: providercontract.RecipeSource{URI: "recipes/tunneling-managed.yaml", Revision: "working-tree", SHA256: "sha256:de45303f69256b664ec2e137f14e98ae3113ceb935c1fb6da34f85b54758fcae"}, Mode: "managed"},
 			{ID: "com.opute.cloudflare.tunneling.public-host", Source: providercontract.RecipeSource{URI: "recipes/tunneling-public-host.yaml", Revision: "working-tree", SHA256: "sha256:db9d4e1a82d376daeaa1ed2d4448f80e5ad2e6063886395c4de60864a70b840a"}, Mode: "public-host"},

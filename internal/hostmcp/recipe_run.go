@@ -247,6 +247,107 @@ func (s *Server) validateRecipeActivation(ctx context.Context, runID string, met
 	return active, observation, nil
 }
 
+
+// activationPublishManifest returns the InstallManifest whose Services are the
+// subset declared by the activating recipe's runtime.capabilities. Empty or
+// absent capabilities preserve the full provider surface (legacy activates).
+// Short names like "mesh-runtime" expand to opute.capability.mesh-runtime.v1.
+func activationPublishManifest(manifest providercontract.InstallManifest, metadata map[string]any) providercontract.InstallManifest {
+	allow := recipeCapabilityFamilyAllowlist(metadata)
+	if len(allow) == 0 {
+		return manifest
+	}
+	filtered := manifest
+	filtered.Services = nil
+	for _, service := range manifest.Services {
+		family := strings.TrimSpace(service.CapabilityID)
+		if allow[family] {
+			filtered.Services = append(filtered.Services, service)
+		}
+	}
+	return filtered
+}
+
+func requireActivationPublishServices(manifest providercontract.InstallManifest, metadata map[string]any) (providercontract.InstallManifest, error) {
+	publish := activationPublishManifest(manifest, metadata)
+	if allow := recipeCapabilityFamilyAllowlist(metadata); len(allow) > 0 && len(publish.Services) == 0 {
+		return providercontract.InstallManifest{}, fmt.Errorf("recipe runtime.capabilities matched no provider Services; refusing empty MCP publish surface")
+	}
+	return publish, nil
+}
+
+func recipeCapabilityFamilyAllowlist(metadata map[string]any) map[string]bool {
+	if metadata == nil {
+		return nil
+	}
+	rawCaps := recipeCapabilityNames(metadata)
+	if len(rawCaps) == 0 {
+		return nil
+	}
+	allow := make(map[string]bool, len(rawCaps))
+	for _, name := range rawCaps {
+		family := normalizeCapabilityFamilyID(name)
+		if family != "" {
+			allow[family] = true
+		}
+	}
+	if len(allow) == 0 {
+		return nil
+	}
+	return allow
+}
+
+func recipeCapabilityNames(metadata map[string]any) []string {
+	// runtime may be map (JSON round-trip) or recipe.RuntimeSpec.
+	if runtime, ok := metadata["runtime"].(map[string]any); ok {
+		return stringSliceField(runtime["capabilities"])
+	}
+	if doc, ok := metadata["recipeDocument"].(map[string]any); ok {
+		if runtime, ok := doc["runtime"].(map[string]any); ok {
+			return stringSliceField(runtime["capabilities"])
+		}
+	}
+	// Typed recipe.RuntimeSpec after in-process construction.
+	if runtime, ok := metadata["runtime"].(recipe.RuntimeSpec); ok {
+		return append([]string{}, runtime.Capabilities...)
+	}
+	return nil
+}
+
+func stringSliceField(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return append([]string{}, typed...)
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if s, ok := item.(string); ok {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func normalizeCapabilityFamilyID(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if strings.HasPrefix(name, "opute.capability.") {
+		if strings.HasSuffix(name, ".v1") || strings.Contains(name, ".v") {
+			return name
+		}
+		return name + ".v1"
+	}
+	return "opute.capability." + name + ".v1"
+}
+
 func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 	if !recipeBoolField(metadata, "activate") {
 		return nil
@@ -269,19 +370,23 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 			adapter := s.providerCandidates[generationID]
 			s.providerMu.RUnlock()
 			if manifestOK {
-				if err := s.registerProviderServicesForGeneration(manifest, generationID); err != nil {
+				publish, pubErr := requireActivationPublishServices(manifest, metadata)
+				if pubErr != nil {
+					return pubErr
+				}
+				if err := s.registerProviderServicesForGeneration(publish, generationID); err != nil {
 					return fmt.Errorf("reaffirm provider services for active generation: %w", err)
 				}
 				s.providerMu.Lock()
 				s.providerValidation[existing.Provider.ID] = manifest.Validation.Operation
 				s.providerManifests[existing.Provider.ID] = manifest
 				s.providerMu.Unlock()
-			}
-			if manifestOK && adapter != nil {
-				if err := s.mountProviderGeneration(manifest, generationID, adapter); err != nil {
-					return fmt.Errorf("reaffirm provider mount for active generation: %w", err)
+				if adapter != nil {
+					if err := s.mountProviderGeneration(publish, generationID, adapter); err != nil {
+						return fmt.Errorf("reaffirm provider mount for active generation: %w", err)
+					}
+					s.completeProviderCandidate(generationID)
 				}
-				s.completeProviderCandidate(generationID)
 			}
 			return nil
 		}
@@ -311,8 +416,14 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 	// Publish and validate the candidate's neutral capability surface before
 	// moving the lifecycle manager to active. Dispatch remains fail-closed until
 	// activation because the candidate is not in the active adapter map.
+	var publish providercontract.InstallManifest
 	if manifestOK {
-		if err := s.registerProviderServicesForGeneration(manifest, generationID); err != nil {
+		var pubErr error
+		publish, pubErr = requireActivationPublishServices(manifest, metadata)
+		if pubErr != nil {
+			return pubErr
+		}
+		if err := s.registerProviderServicesForGeneration(publish, generationID); err != nil {
 			_ = s.providerLifecycle.Fail(generationID, err.Error())
 			_ = s.restoreProviderManifest(manifest.Provider.ID, previousManifest, previousManifestOK)
 			return fmt.Errorf("register provider services: %w", err)
@@ -337,9 +448,9 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 	adapter := s.providerCandidates[generationID]
 	s.providerMu.Unlock()
 	if adapter != nil {
-		families := make([]string, 0, len(manifest.Services))
+		families := make([]string, 0, len(publish.Services))
 		seen := map[string]bool{}
-		for _, service := range manifest.Services {
+		for _, service := range publish.Services {
 			family := strings.TrimSpace(service.CapabilityID)
 			if family == "" || seen[family] {
 				continue
@@ -350,13 +461,15 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 		if err := s.displaceCordisCapabilityFamilies(manifest.Provider.ID, families); err != nil {
 			return s.rollbackProviderActivation(manifest, manifestOK, previousManifest, previousManifestOK, activated, previous, fmt.Errorf("displace capability mounts: %w", err))
 		}
-		if err := s.mountProviderGeneration(manifest, generationID, adapter); err != nil {
+		if err := s.mountProviderGeneration(publish, generationID, adapter); err != nil {
 			return s.rollbackProviderActivation(manifest, manifestOK, previousManifest, previousManifestOK, activated, previous, fmt.Errorf("mount provider generation: %w", err))
 		}
 	}
 	s.providerMu.Lock()
 	if manifestOK {
 		s.providerValidation[activated.Provider.ID] = manifest.Validation.Operation
+		// Keep the full provider declaration for Provides/reload; catalog/MCP
+		// already published the recipe-filtered surface via `publish`.
 		s.providerManifests[activated.Provider.ID] = manifest
 	}
 	s.providerMu.Unlock()
@@ -556,6 +669,12 @@ func (s *Server) activationValidationFlows() map[string]func(context.Context, ma
 		},
 		"public-ingress.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
 			return s.activateNetworkingProvider(ctx, "public-ingress.v1", bindings, generationID)
+		},
+		"tunneling.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
+			return s.activateNetworkingProvider(ctx, "tunneling.v1", bindings, generationID)
+		},
+		"llm-serving.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
+			return s.activateNetworkingProvider(ctx, "llm-serving.v1", bindings, generationID)
 		},
 		"mcp-exposure.v1": func(ctx context.Context, bindings map[string]any, _ string) (map[string]any, error) {
 			endpoint := recipeStringField(bindings, "endpoint")

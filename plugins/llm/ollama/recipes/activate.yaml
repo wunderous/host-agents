@@ -1,0 +1,30 @@
+contractVersion: runtime-recipe.v1
+recipeId: com.opute.ollama.activate
+recipeVersion: 1.0.2
+runtime:
+  id: provider-llm-serving
+  servingContract: llm-serving.v1
+  capabilities: [llm-serving]
+activation:
+  capability: llm-serving
+  servingContract: llm-serving.v1
+  inputBindings:
+    providerId: providerId
+compatibility:
+  requiredTools: [get_host_info]
+inputs:
+  providerId:
+    default: com.opute.ollama
+    schema: {type: string, const: com.opute.ollama}
+  activationNonce:
+    default: default
+    schema: {type: string, minLength: 1, maxLength: 128}
+plan:
+  contractVersion: host-plan.v1
+  planId: com.opute.ollama.activate
+  generation: 1
+  idempotencyKey: com.opute.ollama.activate-${vars.inputs.providerId}-${vars.inputs.activationNonce}
+  nodes:
+    - id: host
+      action:
+        tool: get_host_info

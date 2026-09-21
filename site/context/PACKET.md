@@ -25,6 +25,7 @@ Explanation opens with *about* / *why*; reference opens with facts.
 | Install & run | `/docs/install/` | How-to |
 | Connect MCP client | `/docs/mcp-clients/` | How-to |
 | Publish this site | `/docs/dogfood/` | How-to |
+| Troubleshooting | `/docs/troubleshooting/` | How-to |
 | Capability facts | `/docs/capabilities/` | Reference |
 | Config facts | `/docs/configuration/` | Reference |
 | Recipe & plan fields | `/docs/recipe-primitives/` | Reference |
@@ -40,8 +41,8 @@ Explanation opens with *about* / *why*; reference opens with facts.
 - `OPUTE_REMOTE_AGENT_ID` required; npm defaults to `local-host-agent`
 - `/mcp` needs Bearer `MCP_AUTH_TOKEN` (or OAuth); `/health` is open
 - Mutations denied until `OPUTE_STANDALONE_ALLOW_MUTATIONS=true`
-- Live catalog capture: 178 tools in `tools-list.redacted.json`
-- HA networking: three seams (ADR-0016); `network-overlay.*` deprecated alias
+- Live catalog capture: 187 tools in `tools-list.redacted.json` (seams live; network-overlay=0)
+- HA networking: mesh-runtime + three seams (ADR-0016); `network-overlay.*` deprecated alias
 - Dogfood: dedicated tunnel `opute-www-opute-io`; hostnames `opute.io` + `www.opute.io`
 
 ## Boundaries
@@ -49,3 +50,7 @@ Explanation opens with *about* / *why*; reference opens with facts.
 - Host Agent ≠ Platform (`platform.opute.io` / `mcp.opute.io`)
 - Public site MUST NOT expose Host Agent MCP admin
 - Deploy path = Host Agent recipe only
+
+## Research
+
+Peer synthesis and optimality checklist: `site/context/RESEARCH.md`

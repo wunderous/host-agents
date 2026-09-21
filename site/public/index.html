@@ -5,20 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Opute Host Agent</title>
   <meta name="description" content="Typed MCP host agent for guests, Kubernetes, and public exposure — dogfood-hosted on opute.io." />
-  <link rel="stylesheet" href="/styles.css?v=20260921h" />
+  <link rel="alternate" hreflang="en" href="https://www.opute.io/" />
+  <link rel="alternate" hreflang="es" href="https://www.opute.io/?lang=es" />
+  <link rel="stylesheet" href="/styles.css?v=20260921k" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
 </head>
 <body>
-  <header class="top">
-    <a class="brand" href="/">Opute Host Agent</a>
+  
+<header class="top">
+  <a class="brand" href="/">Opute Host Agent</a>
+  <div class="top-tools">
+    <div class="search">
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results hidden></div>
+    </div>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang-option="es" aria-pressed="false">ES</button>
+    </div>
     <nav>
-      <a href="/docs/">Docs</a>
-      <a href="/docs/get-started/">Get started</a>
+      <a href="/docs/" data-i18n="nav.docs">Docs</a>
+      <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
     </nav>
-  </header>
-
+  </div>
+</header>
+<p class="i18n-banner" data-i18n-banner hidden></p>
   <main class="hero">
     <p class="eyebrow">Host Agent</p>
     <h1>Run infrastructure through typed MCP — not shell folklore.</h1>
@@ -28,8 +41,9 @@
       fail-closed identity and redacted observations.
     </p>
     <div class="cta">
-      <a class="btn primary" href="/docs/get-started/">Get started</a>
-      <a class="btn" href="/docs/architecture/">Architecture</a>
+      <a class="btn primary" href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a class="btn" href="/docs/">Docs</a>
+      <a class="btn" href="/openapi.json">OpenAPI</a>
     </div>
     <div class="visual" aria-hidden="true">
       <pre class="terminal">$ export OPUTE_REMOTE_AGENT_ID=local-host-agent
@@ -42,7 +56,10 @@ http://127.0.0.1:3014/mcp</pre>
 
   <footer>
     <span>Dogfood on <code>opute.io</code> / <code>www.opute.io</code></span>
-    <a href="/docs/dogfood/">How this site is hosted</a>
+    <span><a href="/docs/dogfood/">How this site is hosted</a> · <a href="/llms.txt">llms.txt</a></span>
   </footer>
+  
+<script src="/search.js?v=20260921k" defer></script>
+<script src="/i18n.js?v=20260921k" defer></script>
 </body>
 </html>

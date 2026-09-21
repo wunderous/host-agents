@@ -1,0 +1,34 @@
+openapi: "3.1.0"
+info:
+  title: "Opute Host Agent HTTP edge"
+  version: "1.0.0"
+  description: "Streamable HTTP MCP transport for Opute Host Agent. Tool schemas are revisioned via tools/list — not frozen in this document. See https://www.opute.io/docs/openapi/"
+servers:
+  - url: http://127.0.0.1:3014
+    description: Standalone default
+  - url: http://127.0.0.1:3004
+    description: Platform mode default (local)
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness and agent identity probe
+      responses:
+        "200":
+          description: Agent is listening
+  /mcp:
+    post:
+      operationId: mcpStreamableHttp
+      summary: Streamable HTTP MCP endpoint
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: JSON or SSE MCP response stream
+        "401":
+          description: Missing or invalid Authorization
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

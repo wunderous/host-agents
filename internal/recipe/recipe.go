@@ -316,6 +316,8 @@ func validateEnvelope(doc Document) error {
 		"mesh-membership.v1": {},
 		"private-mesh.v1":    {},
 		"public-ingress.v1":  {},
+		"tunneling.v1":       {},
+		"llm-serving.v1":     {},
 	}
 	if _, ok := supportedServingContracts[doc.Runtime.ServingContract]; !ok {
 		return fmt.Errorf("unsupported runtime serving contract %q", doc.Runtime.ServingContract)

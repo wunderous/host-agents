@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-09-20T22:54:27.707Z",
+  "capturedAt": "2026-09-21T04:39:21.648Z",
   "agentId": "host-zephyrus-ef47fbbf",
-  "toolCount": 178,
+  "toolCount": 187,
   "toolNames": [
     "apply_manifest",
     "build_and_push_oci_image",
@@ -107,13 +107,22 @@
     "opute.capability.kubernetes.status",
     "opute.capability.kubernetes.trim-guest-storage",
     "opute.capability.kubernetes.validate",
-    "opute.capability.network-overlay.attach-target",
-    "opute.capability.network-overlay.ensure-ha-endpoint",
-    "opute.capability.network-overlay.prepare-membership",
-    "opute.capability.network-overlay.probe-reachability",
-    "opute.capability.network-overlay.remove-ha-endpoint",
-    "opute.capability.network-overlay.remove-membership",
-    "opute.capability.network-overlay.validate",
+    "opute.capability.llm-serving.get-context-size",
+    "opute.capability.llm-serving.set-context-size",
+    "opute.capability.llm-serving.validate",
+    "opute.capability.mesh-membership.enroll",
+    "opute.capability.mesh-membership.leave",
+    "opute.capability.mesh-membership.status",
+    "opute.capability.mesh-runtime.ensure-agent",
+    "opute.capability.mesh-runtime.ensure-control-plane",
+    "opute.capability.mesh-runtime.status",
+    "opute.capability.mesh-runtime.validate",
+    "opute.capability.private-mesh.ensure",
+    "opute.capability.private-mesh.ensure-service",
+    "opute.capability.private-mesh.probe",
+    "opute.capability.public-ingress.ensure",
+    "opute.capability.public-ingress.probe",
+    "opute.capability.public-ingress.promote",
     "opute.capability.tunneling.delete-kubernetes-connector",
     "opute.capability.tunneling.ensure-host-tunnel",
     "opute.capability.tunneling.install-kubernetes-connector",
@@ -181,5 +190,17 @@
     "validate_host_plan",
     "validate_runtime_recipe",
     "validate_tunnel_recipe"
-  ]
+  ],
+  "families": {
+    "mesh-runtime": 4,
+    "mesh-membership": 3,
+    "private-mesh": 3,
+    "public-ingress": 3,
+    "tunneling": 6,
+    "network-overlay": 0,
+    "kubernetes": 28,
+    "llm-serving": 3
+  },
+  "verdict": "a-stale-capture",
+  "verdictNote": "Authenticated tools/list on host-zephyrus-ef47fbbf:3004 (2026-09-21) exposes mesh-runtime/mesh-membership/private-mesh/public-ingress/tunneling; network-overlay=0. Prior tools-list.redacted.json was stale (still listed network-overlay.*)."
 }

@@ -4,7 +4,7 @@ recipeVersion: 1.2.5
 runtime:
   id: provider-llm
   servingContract: openai-chat.v1
-  capabilities: [chat, streaming, model-discovery]
+  capabilities: [llm-serving, chat, streaming, model-discovery]
 activation:
   capability: llm-serving
   servingContract: openai-chat.v1

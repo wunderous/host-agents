@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Connect an MCP client — Opute Host Agent</title>
-  <meta name="description" content="Opute Host Agent documentation: Connect an MCP client" />
+  <title>OpenAPI — Opute Host Agent</title>
+  <meta name="description" content="Opute Host Agent documentation: OpenAPI" />
   <link rel="alternate" hreflang="en" href="https://www.opute.io/docs/" />
   <link rel="alternate" hreflang="es" href="https://www.opute.io/docs/?lang=es" />
   <link rel="stylesheet" href="/styles.css?v=20260921k" />
@@ -42,7 +42,7 @@
   <h2>How-to</h2>
   <ul>
     <li><a href="/docs/install/">Install &amp; run</a></li>
-    <li><a href="/docs/mcp-clients/" aria-current="page">Connect an MCP client</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
     <li><a href="/docs/dogfood/">Publish this site</a></li>
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
@@ -51,7 +51,7 @@
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
-    <li><a href="/docs/openapi/">OpenAPI</a></li>
+    <li><a href="/docs/openapi/" aria-current="page">OpenAPI</a></li>
   </ul>
   <h2>Explanation</h2>
   <ul>
@@ -64,65 +64,34 @@
 </aside>
 <main class="doc">
 
-<p class="badge">How-to</p>
-<h1>Connect an MCP client</h1>
-<p class="meta">Wire Cursor, Claude Desktop, or VS Code to a running Host Agent over Streamable HTTP.</p>
+<p class="badge">Reference</p>
+<h1>OpenAPI</h1>
+<p class="meta">Machine-readable description of the Host Agent HTTP edge. MCP tool schemas remain in the live <code>tools/list</code> catalog — this document covers transport endpoints only.</p>
 
-<h2>Prerequisites</h2>
+<h2>Download</h2>
 <ul>
-  <li>Host Agent listening (see <a href="/docs/install/">Install</a>)</li>
-  <li>Matching <code>MCP_AUTH_TOKEN</code> on the agent process</li>
+  <li><a href="/openapi.json"><code>openapi.json</code></a> (OpenAPI 3.1)</li>
+  <li><a href="/openapi.yaml"><code>openapi.yaml</code></a></li>
 </ul>
 
-<h2>Cursor / Claude Desktop</h2>
-<pre><code>{
-  "mcpServers": {
-    "opute-local": {
-      "type": "http",
-      "url": "http://127.0.0.1:3014/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-token"
-      }
-    }
-  }
-}</code></pre>
+<h2>Endpoints</h2>
+<table>
+  <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>GET</td><td><code>/health</code></td><td>None</td><td>Liveness / identity probe</td></tr>
+    <tr><td>POST</td><td><code>/mcp</code></td><td>Bearer <code>MCP_AUTH_TOKEN</code> and/or OAuth</td><td>Streamable HTTP MCP (protocol <code>2026-07-28</code>)</td></tr>
+  </tbody>
+</table>
 
-<h2>VS Code-style</h2>
-<pre><code>{
-  "servers": {
-    "opute-local": {
-      "type": "http",
-      "url": "http://127.0.0.1:3014/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-token"
-      }
-    }
-  }
-}</code></pre>
+<h2>Defaults</h2>
+<ul>
+  <li>Standalone: <code>http://127.0.0.1:3014</code></li>
+  <li>Platform mode: <code>http://0.0.0.0:3004</code></li>
+</ul>
 
-<div class="callout warn">
-  <strong>Auth is not optional when a bootstrap token is configured.</strong>
-  A config with only <code>url</code> against a token-gated agent returns HTTP 401.
-  Omit headers only when the agent has no bootstrap token and the client completes OAuth for this resource.
-</div>
+<div class="note">Tool names and JSON Schemas are revisioned in-process. Prefer <code>tools/list</code> / <code>get_capability_catalog</code> over baking tool lists into OpenAPI.</div>
 
-<h2>What the client should do</h2>
-<ol>
-  <li>Connect over Streamable HTTP (stdio is not supported).</li>
-  <li>Discover the revisioned capability catalog.</li>
-  <li>Validate tool arguments against catalog schemas.</li>
-  <li>Call tools by catalog name — the Host Agent does not interpret prose.</li>
-</ol>
-
-<h2>Verify the connection</h2>
-<ol>
-  <li>Client shows the server connected (no 401).</li>
-  <li><code>tools/list</code> returns a non-empty revisioned catalog.</li>
-  <li>A read-only call such as <code>get_host_info</code> succeeds.</li>
-</ol>
-
-<h2>Multiple agents in one workspace</h2>
-<p>Set <code>OPUTE_MCP_PREFIX_TOOL_NAMES=true</code> on each agent so tool names do not collide. <code>GET /health</code> exposes <code>mcpToolNamePrefix</code>. Wire names become <code>{prefix}_{catalogName}</code>. Do <strong>not</strong> enable this on Platform-enrolled instances — the control plane calls unprefixed catalog names.</p>
+<p>Related: <a href="/docs/configuration/">Configuration</a> · <a href="/docs/mcp-clients/">MCP clients</a> · <a href="/docs/capabilities/">Capabilities</a> · <a href="/llms.txt">llms.txt</a></p>
 
 </main>
 </div>

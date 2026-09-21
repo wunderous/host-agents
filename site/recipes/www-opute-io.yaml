@@ -102,11 +102,15 @@ plan:
           builder: auto
       timeoutMs: 1200000
       validate:
-        tool: get_host_info
+        tool: probe_http_endpoint
+        args:
+          endpoint: ${vars.inputs.registryProbe}
         assert:
-          - path: /providerId
+          - path: /ready
             op: eq
-            value: incus
+            value: true
+        pollIntervalMs: 5000
+        timeoutMs: 1200000
     - id: apply
       dependsOn: [build]
       target:

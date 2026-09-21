@@ -208,3 +208,9 @@ Evidence:
 - Vendor-bundle com.opute.tailscale.ha-network-bundle orders runtime-agent → runtime-control-plane → enroll.
 - Cloudflare declares mesh-runtime (agent/control-plane bookkeeping) honestly alongside membership + public-ingress.
 - Unit: go test ./plugins/tunneling/tailscale/cmd/opute-provider-tailscale/ and cloudflare provider tests pass.
+
+
+## 12. MCP capability exposure
+
+See `EVIDENCE-mcp-exposure.md` — all active provider capability families
+published on Host Agent MCP tools/list (mesh-runtime, tunneling, llm-serving included).

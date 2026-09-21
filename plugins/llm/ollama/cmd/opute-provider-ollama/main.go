@@ -22,12 +22,16 @@ func main() {
 		Provider: providercontract.ProviderRef{ID: "com.opute.ollama", Version: "1.0.0"},
 		Provides: []providercontract.CapabilityRef{{ID: "opute.capability.llm-serving.v1", Version: 1}},
 		Recipes: []providercontract.RecipeRef{{
+			ID:     "com.opute.ollama.activate",
+			Source: providercontract.RecipeSource{URI: "recipes/activate.yaml", Revision: "working-tree", SHA256: "sha256:10391f1717b9087f8ef3008df5570ed2fc0d8834be9bc14d11a1ed5f8850d0a8"},
+			Mode:   "activate",
+		}, {
 			ID:     "com.opute.ollama.managed-linux",
-			Source: providercontract.RecipeSource{URI: "recipes/ollama.yaml", Revision: "working-tree", SHA256: "sha256:5ab8852a0ea89cf00b8592f557d8e9aa80cdc0a6a28cd929b41b8b863d86166c"},
+			Source: providercontract.RecipeSource{URI: "recipes/ollama.yaml", Revision: "working-tree", SHA256: "sha256:a83a7976007f1833bf6e9bf171d93ed4026ef13c79155cee3bb6f623cc18ceed"},
 			Mode:   "managed",
 		}, {
 			ID:     "com.opute.ollama.external",
-			Source: providercontract.RecipeSource{URI: "recipes/ollama-external.yaml", Revision: "working-tree", SHA256: "sha256:54104fcd78f20500f2b12907c123c419673e24c5b78ca6a709601aa5b41bc255"},
+			Source: providercontract.RecipeSource{URI: "recipes/ollama-external.yaml", Revision: "working-tree", SHA256: "sha256:a1812c48cb5fef954311f65915e7144c68448916c3fed5a4a60450735fd4d4de"},
 			Mode:   "external",
 		}},
 		Services: []providercontract.ServiceDefinition{{
@@ -36,6 +40,7 @@ func main() {
 			Version:      1,
 			Operations: []providercontract.Operation{{
 				ID:                "opute.capability.llm-serving.validate",
+				Version:           1,
 				InputSchema:       map[string]any{"type": "object", "required": []string{"endpoint"}, "properties": map[string]any{"endpoint": map[string]any{"type": "string"}, "model": map[string]any{"type": "string"}}},
 				OutputSchema:      map[string]any{"type": "object"},
 				Effect:            "read",
@@ -44,6 +49,7 @@ func main() {
 				TaskSupport:       "sync_only",
 			}, {
 				ID:           "opute.capability.llm-serving.get-context-size",
+				Version:      1,
 				InputSchema:  map[string]any{"type": "object", "properties": map[string]any{}},
 				OutputSchema: map[string]any{"type": "object", "required": []string{"contractVersion", "capability", "setting", "contextSize", "persisted"}},
 				Effect:       "read",
@@ -51,6 +57,7 @@ func main() {
 				TaskSupport:  "sync_only",
 			}, {
 				ID:                "opute.capability.llm-serving.set-context-size",
+				Version:           1,
 				InputSchema:       map[string]any{"type": "object", "required": []string{"contextSize"}, "properties": map[string]any{"contextSize": map[string]any{"type": "integer", "minimum": ollamaContextMinimum, "maximum": ollamaContextMaximum}}},
 				OutputSchema:      map[string]any{"type": "object", "required": []string{"contractVersion", "capability", "setting", "contextSize", "persisted", "applied"}},
 				Effect:            "mutation",
@@ -61,6 +68,7 @@ func main() {
 		}},
 		Teardown: &providercontract.Operation{
 			ID:                "opute.provider.teardown",
+			Version:           1,
 			InputSchema:       map[string]any{"type": "object", "required": []string{"inputs"}, "properties": map[string]any{"inputs": map[string]any{"type": "object"}}},
 			OutputSchema:      map[string]any{"type": "object", "required": []string{"contractVersion", "plan"}},
 			Effect:            "destructive",

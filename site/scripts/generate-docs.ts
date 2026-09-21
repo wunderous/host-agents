@@ -1,15 +1,16 @@
 #!/usr/bin/env bun
 /**
  * Emits static Diátaxis docs under site/public/docs from audited operator truth.
- * Capability groups track site/context/tools-list.redacted.json (178 tools).
+ * Capability groups track site/context/tools-list.redacted.json (live capture).
  * Architecture facts track README.md + docs/adr/* (verify before changing).
  */
-import { mkdirSync, writeFileSync } from "fs"
+import { mkdirSync, writeFileSync, readFileSync } from "fs"
 import { join } from "path"
 
 const root = "/home/houman/github/wunderous/opute-host-agent/site/public"
 
-const CSS = "/styles.css?v=20260921h"
+const CSS = "/styles.css?v=20260921k"
+const ASSET_V = "20260921k"
 
 const MERMAID = `
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
@@ -35,14 +36,29 @@ const MERMAID = `
   });
 </script>`
 
+const SITE_SCRIPTS = `
+<script src="/search.js?v=${ASSET_V}" defer></script>
+<script src="/i18n.js?v=${ASSET_V}" defer></script>`
+
 const nav = (current: string) => `
 <header class="top">
   <a class="brand" href="/">Opute Host Agent</a>
-  <nav>
-    <a href="/docs/"${current === "docs" ? ' aria-current="page"' : ""}>Docs</a>
-    <a href="/docs/get-started/">Get started</a>
-  </nav>
-</header>`
+  <div class="top-tools">
+    <div class="search">
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results hidden></div>
+    </div>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang-option="es" aria-pressed="false">ES</button>
+    </div>
+    <nav>
+      <a href="/docs/" data-i18n="nav.docs"${current === "docs" ? ' aria-current="page"' : ""}>Docs</a>
+      <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+    </nav>
+  </div>
+</header>
+<p class="i18n-banner" data-i18n-banner hidden></p>`
 
 const side = (current: string) => `
 <aside class="doc-nav" aria-label="Documentation">
@@ -55,12 +71,14 @@ const side = (current: string) => `
     <li><a href="/docs/install/"${current === "install" ? ' aria-current="page"' : ""}>Install &amp; run</a></li>
     <li><a href="/docs/mcp-clients/"${current === "mcp-clients" ? ' aria-current="page"' : ""}>Connect an MCP client</a></li>
     <li><a href="/docs/dogfood/"${current === "dogfood" ? ' aria-current="page"' : ""}>Publish this site</a></li>
+    <li><a href="/docs/troubleshooting/"${current === "troubleshooting" ? ' aria-current="page"' : ""}>Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
   <ul>
     <li><a href="/docs/capabilities/"${current === "capabilities" ? ' aria-current="page"' : ""}>Capabilities</a></li>
     <li><a href="/docs/configuration/"${current === "configuration" ? ' aria-current="page"' : ""}>Configuration</a></li>
     <li><a href="/docs/recipe-primitives/"${current === "recipe-primitives" ? ' aria-current="page"' : ""}>Recipe &amp; plan primitives</a></li>
+    <li><a href="/docs/openapi/"${current === "openapi" ? ' aria-current="page"' : ""}>OpenAPI</a></li>
   </ul>
   <h2>Explanation</h2>
   <ul>
@@ -79,6 +97,8 @@ const page = (opts: { title: string; current: string; body: string; mermaid?: bo
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${opts.title} — Opute Host Agent</title>
   <meta name="description" content="Opute Host Agent documentation: ${opts.title}" />
+  <link rel="alternate" hreflang="en" href="https://www.opute.io/docs/" />
+  <link rel="alternate" hreflang="es" href="https://www.opute.io/docs/?lang=es" />
   <link rel="stylesheet" href="${CSS}" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -93,10 +113,11 @@ ${opts.body}
 </main>
 </div>
 <footer>
-  <span>Facts track the repository <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <a href="/docs/architecture/">Architecture</a>
+  <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
 </footer>
 ${opts.mermaid ? MERMAID : ""}
+${SITE_SCRIPTS}
 </body>
 </html>
 `
@@ -111,7 +132,9 @@ const pages: Record<string, { title: string; current: string; body: string; merm
     body: `
 <p class="badge">Diátaxis</p>
 <h1>Documentation</h1>
-<p class="meta">Organized by what you need to do — not by the shape of our repo. Structure follows <a href="https://diataxis.fr/">Diátaxis</a>: tutorials teach, how-tos solve goals, reference states facts, explanation builds understanding.</p>
+<p class="meta"><strong>Opute Host Agent</strong> is a Streamable HTTP MCP server that executes typed infrastructure assignments on a Linux host — guests, Kubernetes, registries, tunnels — with fail-closed identity and redacted observations.</p>
+<p class="meta">It meets the need to drive real hosts from an IDE or Platform without shell folklore. Useful if you run Incus guests, K3s, or public exposure and want a revisioned tool catalog instead of ad-hoc scripts.</p>
+<p class="meta">Organized by what you need to do, following <a href="https://diataxis.fr/">Diátaxis</a>. Public origins <code>opute.io</code> / <code>www.opute.io</code> are Host Agent dogfood — not Platform (<code>platform.opute.io</code> / <code>mcp.opute.io</code>).</p>
 
 <div class="doc-index-sections">
   <section>
@@ -126,14 +149,16 @@ const pages: Record<string, { title: string; current: string; body: string; merm
       <li><a href="/docs/install/"><strong>Install &amp; run</strong><span>From-source, npm launcher, serve modes, mutations, WSL.</span></a></li>
       <li><a href="/docs/mcp-clients/"><strong>Connect an MCP client</strong><span>Cursor, Claude Desktop, VS Code — with Bearer auth.</span></a></li>
       <li><a href="/docs/dogfood/"><strong>Publish this site</strong><span>Recipe-hosted opute.io / www.opute.io without touching Platform.</span></a></li>
+      <li><a href="/docs/troubleshooting/"><strong>Troubleshooting</strong><span>401s, mutations denied, wrong port, redacted resume, distributed refused.</span></a></li>
     </ul>
   </section>
   <section>
     <h2>Reference</h2>
     <ul>
-      <li><a href="/docs/capabilities/"><strong>Capabilities</strong><span>All major tool groups from a live 178-tool catalog capture.</span></a></li>
+      <li><a href="/docs/capabilities/"><strong>Capabilities</strong><span>All major tool groups from a live 187-tool catalog capture.</span></a></li>
       <li><a href="/docs/configuration/"><strong>Configuration</strong><span>Ports, bind hosts, required identity, auth, Cloudflare env.</span></a></li>
       <li><a href="/docs/recipe-primitives/"><strong>Recipe &amp; plan primitives</strong><span>Fields, statuses, assertion ops, caps — dry facts.</span></a></li>
+      <li><a href="/docs/openapi/"><strong>OpenAPI</strong><span>HTTP surface for <code>/health</code> and Streamable HTTP <code>/mcp</code>.</span></a></li>
     </ul>
   </section>
   <section>
@@ -210,7 +235,20 @@ export MCP_AUTH_TOKEN=dev-token</code></pre>
   <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Finish discovery first.
 </div>
 
-<p>Next: <a href="/docs/install/">Install options</a> · <a href="/docs/architecture/">Architecture</a> · <a href="/docs/capabilities/">Capabilities</a></p>
+<h2>You succeeded when</h2>
+<ul>
+  <li><code>GET /health</code> returns JSON for your agent id</li>
+  <li>The client completes <code>tools/list</code> (or <code>get_capability_catalog</code>) without 401</li>
+  <li>A read-only call such as <code>get_host_info</code> returns structured host facts</li>
+</ul>
+
+<div class="callout">
+  <strong>Trust boundary.</strong> Bearer auth gates <code>/mcp</code>. Write-only fields come back as
+  <code>[redacted]</code>. This process is not Platform — do not point it at
+  <code>platform.opute.io</code> credentials by accident.
+</div>
+
+<p>Next: <a href="/docs/mcp-clients/">Connect a client</a> · <a href="/docs/install/">Install options</a> · <a href="/docs/troubleshooting/">Troubleshooting</a> · <a href="/docs/concepts/">Concepts</a></p>
 `,
   },
 
@@ -262,6 +300,8 @@ npx -y @opute/host-agent stop</code></pre>
 
 <h2>Production hosts</h2>
 <p>Remote production installs come from the Opute platform UI (<strong>Connect Remote Host</strong>). The generated script writes <code>host-agent.env</code> with canonical <code>OPUTE_REMOTE_AGENT_ID</code> and <code>MCP_AUTH_TOKEN</code>, then starts the systemd unit. GitHub Releases are for CI and manual smoke — not the primary production credential path.</p>
+
+<p>Related: <a href="/docs/get-started/">Get started</a> · <a href="/docs/mcp-clients/">MCP clients</a> · <a href="/docs/troubleshooting/">Troubleshooting</a> · <a href="/docs/configuration/">Configuration</a></p>
 
 <div class="note">Release artifacts from <code>make artifacts</code> include <code>host-agent-linux-*.gz</code>, Windows gzip, k3s/cloudflare/tailscale provider binaries, and <code>SHA256SUMS</code>. The day-to-day build product remains <code>dist/opute-host-agent</code>.</div>
 `,
@@ -319,6 +359,13 @@ npx -y @opute/host-agent stop</code></pre>
   <li>Discover the revisioned capability catalog.</li>
   <li>Validate tool arguments against catalog schemas.</li>
   <li>Call tools by catalog name — the Host Agent does not interpret prose.</li>
+</ol>
+
+<h2>Verify the connection</h2>
+<ol>
+  <li>Client shows the server connected (no 401).</li>
+  <li><code>tools/list</code> returns a non-empty revisioned catalog.</li>
+  <li>A read-only call such as <code>get_host_info</code> succeeds.</li>
 </ol>
 
 <h2>Multiple agents in one workspace</h2>
@@ -382,13 +429,64 @@ flowchart TB
     mermaid: true,
   },
 
+  "docs/troubleshooting/index.html": {
+    title: "Troubleshooting",
+    current: "troubleshooting",
+    body: `
+<p class="badge">How-to</p>
+<h1>Troubleshooting</h1>
+<p class="meta">Fix common Host Agent connection and recipe failures. Each section is a goal: symptom → checks → fix.</p>
+
+<h2>HTTP 401 on /mcp</h2>
+<ol>
+  <li>Confirm the agent was started with <code>MCP_AUTH_TOKEN</code> set.</li>
+  <li>Confirm the client sends <code>Authorization: Bearer &lt;same token&gt;</code>.</li>
+  <li><code>GET /health</code> should still succeed without a Bearer — if health fails, the process is down or on another port.</li>
+</ol>
+
+<h2>Wrong port or nothing listening</h2>
+<ul>
+  <li>Standalone default: <code>http://127.0.0.1:3014/mcp</code></li>
+  <li>Platform mode default: <code>0.0.0.0:3004</code> — do not paste a platform snippet into a laptop client unless you mean it.</li>
+  <li>Overrides: <code>HOST_MCP_BIND_HOST</code>, <code>HOST_MCP_PORT</code>.</li>
+</ul>
+
+<h2>Mutations denied</h2>
+<p>Standalone mutating tools fail closed until <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Platform mode uses enrollment policy instead of that flag.</p>
+
+<h2>Missing OPUTE_REMOTE_AGENT_ID</h2>
+<p><code>--check</code> / startup validation requires a canonical agent id. The npm launcher defaults to <code>local-host-agent</code> when unset; from-source runs must export it.</p>
+
+<h2>Client connects but tools look empty or collide</h2>
+<ul>
+  <li>Always refresh with live <code>tools/list</code> — catalogs are revisioned.</li>
+  <li>Multiple agents in one IDE: set <code>OPUTE_MCP_PREFIX_TOOL_NAMES=true</code> (not on Platform-enrolled agents).</li>
+</ul>
+
+<h2>Recipe resume / [redacted] secrets</h2>
+<p>Write-only fields (tunnel run tokens) cannot be pasted back from MCP results. Resume in-process (for example <code>manageHostConnector: true</code>) or re-mint. See <a href="/docs/resources/">Resources &amp; safety</a>.</p>
+
+<h2>run_host_local_recipe refuses the recipe</h2>
+<ul>
+  <li>Platform-distributed recipes (<code>coordinator: platform</code>) must go to Platform — HA will refuse.</li>
+  <li>Host-local recipes cannot include <code>wait</code> nodes or multi-host targets.</li>
+  <li>Mutating runs require a content <code>sha256</code> pin.</li>
+</ul>
+
+<h2>stdio clients</h2>
+<p>The public Host Agent surface is Streamable HTTP only. Configure an HTTP MCP client URL, not a stdio command.</p>
+
+<p>Related: <a href="/docs/install/">Install</a> · <a href="/docs/mcp-clients/">MCP clients</a> · <a href="/docs/configuration/">Configuration</a> · <a href="/docs/recipes/">Recipes</a></p>
+`,
+  },
+
   "docs/capabilities/index.html": {
     title: "Capabilities",
     current: "capabilities",
     body: `
 <p class="badge">Reference</p>
 <h1>Capabilities</h1>
-<p class="meta">Facts about the typed tool surface from a redacted live capture (178 tools, 2026-09-20). Always prefer a live <code>tools/list</code> / <code>get_capability_catalog</code> — catalogs are revisioned. Grouping here is navigational, not a hard API boundary.</p>
+<p class="meta">Facts about the typed tool surface from a redacted live capture (187 tools, host-zephyrus-ef47fbbf:3004). Always prefer a live <code>tools/list</code> / <code>get_capability_catalog</code> — catalogs are revisioned. Grouping here is navigational, not a hard API boundary.</p>
 
 <h2>Contract split</h2>
 <ul>
@@ -397,6 +495,7 @@ flowchart TB
 </ul>
 
 <h2>Catalog &amp; session</h2>
+<p>Discover the revisioned tool catalog and open assistant sessions.</p>
 ${tools(
   "get_capability_catalog",
   "open_assistant_session",
@@ -405,6 +504,7 @@ ${tools(
 )}
 
 <h2>Host &amp; inventory</h2>
+<p>Read and mutate host files, services, capacity, and WSL lifecycle.</p>
 ${tools(
   "get_host_info",
   "get_host_capacity",
@@ -425,6 +525,7 @@ ${tools(
 )}
 
 <h2>Guests (Incus)</h2>
+<p>Install the Incus stack and manage VM/container guest lifecycle.</p>
 <p>Default infra provider today: <code>OPUTE_INFRA_PROVIDER_ID=incus</code>. Guest URIs carry a runtime kind (<code>vm:</code> vs <code>container:</code>).</p>
 ${tools(
   "install_incus_stack",
@@ -449,6 +550,7 @@ ${tools(
 )}
 
 <h2>Kubernetes workloads</h2>
+<p>Apply and inspect workloads on admitted cluster URIs.</p>
 <p>Neutral cluster ops appear both as underscore aliases and as dotted <code>opute.capability.kubernetes.*</code> provider ops. Prefer the live catalog name your client discovered.</p>
 ${tools(
   "apply_manifest",
@@ -474,6 +576,7 @@ ${tools(
 )}
 
 <h2>K3s provision &amp; membership</h2>
+<p>Provision clusters and manage HA join / quorum membership.</p>
 ${tools(
   "opute.capability.kubernetes.provision",
   "opute.capability.kubernetes.validate",
@@ -490,6 +593,7 @@ ${tools(
 )}
 
 <h2>Cluster storage &amp; registry reclaim</h2>
+<p>Inspect guest disk and reclaim unused images / registry blobs.</p>
 ${tools(
   "inspect_guest_storage",
   "prune_unused_cluster_images",
@@ -502,6 +606,7 @@ ${tools(
 )}
 
 <h2>OCI / containers</h2>
+<p>Stage build contexts, build/push images, and manage host registries.</p>
 ${tools(
   "stage_build_context",
   "ensure_oci_builder",
@@ -517,6 +622,7 @@ ${tools(
 )}
 
 <h2>Recipes &amp; plans</h2>
+<p>Validate and run declarative recipes / plans on this host.</p>
 <p>Why: <a href="/docs/recipes/">Recipes &amp; plans</a>. Fields: <a href="/docs/recipe-primitives/">primitives</a>.</p>
 ${tools(
   "validate_host_local_recipe",
@@ -533,6 +639,7 @@ ${tools(
 )}
 
 <h2>Tunneling &amp; public exposure</h2>
+<p>Ensure, probe, and remove host tunnels and public MCP helpers.</p>
 ${tools(
   "opute.capability.tunneling.validate",
   "opute.capability.tunneling.ensure-host-tunnel",
@@ -550,18 +657,26 @@ ${tools(
 )}
 
 <h2>HA networking seams</h2>
-<p>Canonical contracts are <code>mesh-membership.v1</code>, <code>private-mesh.v1</code>, and <code>public-ingress.v1</code> (ADR-0016). Live catalogs may still expose deprecated <code>network-overlay.*</code> migration aliases — prefer the three seams for new work. Details: <a href="/docs/networking/">Networking</a>.</p>
+<p>Primary networking tools from the live catalog (ADR-0016). Install/configure via <code>mesh-runtime.v1</code>, then membership / private mesh / public ingress.</p>
+<p>Canonical contracts: <code>mesh-runtime.v1</code>, <code>mesh-membership.v1</code>, <code>private-mesh.v1</code>, <code>public-ingress.v1</code>. Deprecated <code>network-overlay.*</code> aliases are not present on the current live capture (<code>network-overlay=0</code>). Details: <a href="/docs/networking/">Networking</a>.</p>
 ${tools(
-  "opute.capability.network-overlay.validate",
-  "opute.capability.network-overlay.prepare-membership",
-  "opute.capability.network-overlay.attach-target",
-  "opute.capability.network-overlay.probe-reachability",
-  "opute.capability.network-overlay.ensure-ha-endpoint",
-  "opute.capability.network-overlay.remove-ha-endpoint",
-  "opute.capability.network-overlay.remove-membership",
+  "opute.capability.mesh-runtime.validate",
+  "opute.capability.mesh-runtime.ensure-agent",
+  "opute.capability.mesh-runtime.ensure-control-plane",
+  "opute.capability.mesh-runtime.status",
+  "opute.capability.mesh-membership.enroll",
+  "opute.capability.mesh-membership.status",
+  "opute.capability.mesh-membership.leave",
+  "opute.capability.private-mesh.ensure",
+  "opute.capability.private-mesh.ensure-service",
+  "opute.capability.private-mesh.probe",
+  "opute.capability.public-ingress.ensure",
+  "opute.capability.public-ingress.promote",
+  "opute.capability.public-ingress.probe",
 )}
 
 <h2>Providers</h2>
+<p>Install, validate, reload, and tear down provider MCP plugins.</p>
 ${tools(
   "opute.provider.install",
   "opute.provider.validate",
@@ -573,6 +688,7 @@ ${tools(
 )}
 
 <h2>LLM serving <span class="muted-tag">(optional)</span></h2>
+<p>Optional local LLM runtime, models, and relays.</p>
 <p>Core Host Agent works without an LLM provider. Ollama is an activated optional layer (<code>plugins/llm/ollama</code>).</p>
 ${tools(
   "probe_local_llm",
@@ -590,6 +706,7 @@ ${tools(
 )}
 
 <h2>Postgres &amp; SQLite</h2>
+<p>Reconcile managed Postgres services and local SQLite databases.</p>
 ${tools(
   "reconcile_postgresql_service",
   "get_postgresql_service_status",
@@ -601,6 +718,7 @@ ${tools(
 )}
 
 <h2>Serving &amp; cluster agent</h2>
+<p>Reconcile serving assignments, discover ingress, install cluster agents.</p>
 ${tools(
   "reconcile_serving_assignment",
   "discover_service_ingress",
@@ -686,6 +804,41 @@ opute-host-agent help</code></pre>
 `,
   },
 
+  "docs/openapi/index.html": {
+    title: "OpenAPI",
+    current: "openapi",
+    body: `
+<p class="badge">Reference</p>
+<h1>OpenAPI</h1>
+<p class="meta">Machine-readable description of the Host Agent HTTP edge. MCP tool schemas remain in the live <code>tools/list</code> catalog — this document covers transport endpoints only.</p>
+
+<h2>Download</h2>
+<ul>
+  <li><a href="/openapi.json"><code>openapi.json</code></a> (OpenAPI 3.1)</li>
+  <li><a href="/openapi.yaml"><code>openapi.yaml</code></a></li>
+</ul>
+
+<h2>Endpoints</h2>
+<table>
+  <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>GET</td><td><code>/health</code></td><td>None</td><td>Liveness / identity probe</td></tr>
+    <tr><td>POST</td><td><code>/mcp</code></td><td>Bearer <code>MCP_AUTH_TOKEN</code> and/or OAuth</td><td>Streamable HTTP MCP (protocol <code>2026-07-28</code>)</td></tr>
+  </tbody>
+</table>
+
+<h2>Defaults</h2>
+<ul>
+  <li>Standalone: <code>http://127.0.0.1:3014</code></li>
+  <li>Platform mode: <code>http://0.0.0.0:3004</code></li>
+</ul>
+
+<div class="note">Tool names and JSON Schemas are revisioned in-process. Prefer <code>tools/list</code> / <code>get_capability_catalog</code> over baking tool lists into OpenAPI.</div>
+
+<p>Related: <a href="/docs/configuration/">Configuration</a> · <a href="/docs/mcp-clients/">MCP clients</a> · <a href="/docs/capabilities/">Capabilities</a> · <a href="/llms.txt">llms.txt</a></p>
+`,
+  },
+
   "docs/concepts/index.html": {
     title: "Concepts",
     current: "concepts",
@@ -715,6 +868,9 @@ flowchart LR
 
 <h2>Fail-closed identity</h2>
 <p>Every process must carry a canonical <code>OPUTE_REMOTE_AGENT_ID</code>. Standalone mutations stay off until explicitly enabled. Observations that could contain secrets are redacted in MCP results (write-only schema fields become <code>[redacted]</code>).</p>
+
+<h2>Security boundary</h2>
+<p>Treat the Host Agent like an API gateway on the host: authenticate at Streamable HTTP <code>/mcp</code> (Bearer bootstrap and/or OAuth), keep <code>/health</code> unauthenticated for liveness only, and never embed secrets in tool schemas. Prefer live catalog discovery over memorized names. Public dogfood hostnames must not expose Host Agent MCP administration.</p>
 
 <h2>Providers as plugins</h2>
 <p>Kubernetes, Cloudflare, Tailscale, Ollama, and Host OS surfaces arrive as provider plugins under <code>plugins/</code>, not as hard-wired product branches inside the MCP server. Shared host seams live in <code>internal/hostruntime</code>; there is no separate <code>internal/provider</code> package.</p>
@@ -1162,7 +1318,7 @@ flowchart TB
     <tr><td><code>public-ingress.v1</code></td><td>North-south stable HTTPS</td><td>ensure, promote, probe</td></tr>
   </tbody>
 </table>
-<p><code>network-overlay.*</code> tools in older catalogs are a <strong>deprecated migration alias</strong>. New consumers bind to the three definitions.</p>
+<p><code>network-overlay.*</code> tools in older catalogs are a <strong>deprecated migration alias</strong>. The current live capture reports <code>network-overlay=0</code>; new consumers bind to the four definitions above.</p>
 
 <pre class="mermaid">
 flowchart TB
@@ -1206,6 +1362,8 @@ flowchart LR
 </ul>
 
 <div class="note">Reachability of a marketing hostname is not two-node etcd-quorum HA. Keep those claims separate.</div>
+
+<p>Related: <a href="/docs/architecture/">Architecture</a> · <a href="/docs/recipes/">Recipes</a> · <a href="/docs/dogfood/">Publish this site</a> · <a href="/docs/resources/">Resources</a></p>
 `,
     mermaid: true,
   },
@@ -1277,20 +1435,15 @@ writeFileSync(
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Opute Host Agent</title>
   <meta name="description" content="Typed MCP host agent for guests, Kubernetes, and public exposure — dogfood-hosted on opute.io." />
+  <link rel="alternate" hreflang="en" href="https://www.opute.io/" />
+  <link rel="alternate" hreflang="es" href="https://www.opute.io/?lang=es" />
   <link rel="stylesheet" href="${CSS}" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
 </head>
 <body>
-  <header class="top">
-    <a class="brand" href="/">Opute Host Agent</a>
-    <nav>
-      <a href="/docs/">Docs</a>
-      <a href="/docs/get-started/">Get started</a>
-    </nav>
-  </header>
-
+  ${nav("home")}
   <main class="hero">
     <p class="eyebrow">Host Agent</p>
     <h1>Run infrastructure through typed MCP — not shell folklore.</h1>
@@ -1300,8 +1453,9 @@ writeFileSync(
       fail-closed identity and redacted observations.
     </p>
     <div class="cta">
-      <a class="btn primary" href="/docs/get-started/">Get started</a>
-      <a class="btn" href="/docs/architecture/">Architecture</a>
+      <a class="btn primary" href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a class="btn" href="/docs/">Docs</a>
+      <a class="btn" href="/openapi.json">OpenAPI</a>
     </div>
     <div class="visual" aria-hidden="true">
       <pre class="terminal">$ export OPUTE_REMOTE_AGENT_ID=local-host-agent
@@ -1314,13 +1468,236 @@ http://127.0.0.1:3014/mcp</pre>
 
   <footer>
     <span>Dogfood on <code>opute.io</code> / <code>www.opute.io</code></span>
-    <a href="/docs/dogfood/">How this site is hosted</a>
+    <span><a href="/docs/dogfood/">How this site is hosted</a> · <a href="/llms.txt">llms.txt</a></span>
   </footer>
+  ${SITE_SCRIPTS}
 </body>
 </html>
 `,
 )
 console.log("wrote index.html")
+
+// Search index from generated page bodies
+{
+  const strip = (html: string) =>
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  const searchPages = Object.entries(pages).map(([rel, spec]) => {
+    const url = "/" + rel.replace(/index\.html$/, "").replace(/\.html$/, "")
+    return {
+      url: url.endsWith("/") || url === "/docs" ? (url.endsWith("/") ? url : url + "/") : url + "/",
+      title: spec.title,
+      description: `Opute Host Agent documentation: ${spec.title}`,
+      body: strip(spec.body).slice(0, 12000),
+    }
+  })
+  writeFileSync(join(root, "search-index.json"), JSON.stringify({ generatedAt: new Date().toISOString(), pages: searchPages }, null, 2))
+  console.log("wrote search-index.json", searchPages.length)
+}
+
+// OpenAPI 3.1 for HTTP edge
+{
+  const toolsCapture = (() => {
+    try {
+      const j = JSON.parse(
+        require("fs").readFileSync(
+          "/home/houman/github/wunderous/opute-host-agent/site/context/tools-list.redacted.json",
+          "utf8",
+        ),
+      )
+      return { toolCount: j.toolCount, toolNames: j.toolNames }
+    } catch {
+      return { toolCount: 0, toolNames: [] as string[] }
+    }
+  })()
+
+  const openapi = {
+    openapi: "3.1.0",
+    info: {
+      title: "Opute Host Agent HTTP edge",
+      version: "1.0.0",
+      description:
+        "Streamable HTTP MCP transport for Opute Host Agent. Tool schemas are revisioned via tools/list — not frozen in this document. See https://www.opute.io/docs/openapi/",
+      contact: { url: "https://www.opute.io/docs/" },
+    },
+    servers: [
+      { url: "http://127.0.0.1:3014", description: "Standalone default" },
+      { url: "http://127.0.0.1:3004", description: "Platform mode default (local)" },
+    ],
+    paths: {
+      "/health": {
+        get: {
+          operationId: "getHealth",
+          summary: "Liveness and agent identity probe",
+          security: [],
+          responses: {
+            "200": {
+              description: "Agent is listening",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      agentId: { type: "string" },
+                      mcpToolNamePrefix: { type: "string" },
+                    },
+                    additionalProperties: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/mcp": {
+        post: {
+          operationId: "mcpStreamableHttp",
+          summary: "Streamable HTTP MCP endpoint",
+          description:
+            "JSON-RPC MCP over Streamable HTTP (protocol 2026-07-28). Clients must send Accept: application/json, text/event-stream. Prefer live tools/list for tool schemas.",
+          security: [{ bearerAuth: [] }, { oauth2: ["mcp"] }],
+          parameters: [
+            {
+              name: "MCP-Protocol-Version",
+              in: "header",
+              schema: { type: "string", example: "2026-07-28" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["jsonrpc", "method"],
+                  properties: {
+                    jsonrpc: { type: "string", const: "2.0" },
+                    id: {},
+                    method: { type: "string" },
+                    params: { type: "object", additionalProperties: true },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "JSON or SSE MCP response stream" },
+            "401": { description: "Missing or invalid Authorization" },
+          },
+        },
+      },
+    },
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          description: "Bootstrap MCP_AUTH_TOKEN",
+        },
+        oauth2: {
+          type: "oauth2",
+          flows: {
+            authorizationCode: {
+              authorizationUrl: "https://example.invalid/oauth/authorize",
+              tokenUrl: "https://example.invalid/oauth/token",
+              scopes: { mcp: "Call Host Agent MCP tools" },
+            },
+          },
+          description: "Optional OAuth when no bootstrap token is configured",
+        },
+      },
+    },
+    "x-opute-mcp": {
+      protocolVersion: "2026-07-28",
+      transport: "streamable-http",
+      catalogAuthority: "tools/list",
+      capturedToolCount: toolsCapture.toolCount,
+      capturedToolNames: toolsCapture.toolNames,
+    },
+  }
+
+  writeFileSync(join(root, "openapi.json"), JSON.stringify(openapi, null, 2))
+  // Minimal YAML without adding a dependency
+  const yamlEscape = (v: string) => JSON.stringify(v)
+  const yaml = `openapi: "3.1.0"
+info:
+  title: ${yamlEscape(openapi.info.title)}
+  version: ${yamlEscape(openapi.info.version)}
+  description: ${yamlEscape(openapi.info.description)}
+servers:
+  - url: http://127.0.0.1:3014
+    description: Standalone default
+  - url: http://127.0.0.1:3004
+    description: Platform mode default (local)
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness and agent identity probe
+      responses:
+        "200":
+          description: Agent is listening
+  /mcp:
+    post:
+      operationId: mcpStreamableHttp
+      summary: Streamable HTTP MCP endpoint
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: JSON or SSE MCP response stream
+        "401":
+          description: Missing or invalid Authorization
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+`
+  writeFileSync(join(root, "openapi.yaml"), yaml)
+  console.log("wrote openapi.json + openapi.yaml")
+}
+
+writeFileSync(
+  join(root, "llms.txt"),
+  `# Opute Host Agent
+
+> Streamable HTTP MCP server for typed host infrastructure assignments (guests, Kubernetes, registries, tunnels).
+
+Docs follow Diátaxis. Prefer live tools/list over memorized tool names.
+Public site: https://www.opute.io and https://opute.io (Host Agent dogfood).
+Not Platform: https://platform.opute.io / https://mcp.opute.io
+
+## Tutorial
+- [Get started](https://www.opute.io/docs/get-started/): first authenticated tools/list
+
+## How-to
+- [Install & run](https://www.opute.io/docs/install/)
+- [Connect an MCP client](https://www.opute.io/docs/mcp-clients/)
+- [Publish this site](https://www.opute.io/docs/dogfood/)
+- [Troubleshooting](https://www.opute.io/docs/troubleshooting/)
+
+## Reference
+- [Capabilities](https://www.opute.io/docs/capabilities/)
+- [Configuration](https://www.opute.io/docs/configuration/)
+- [Recipe & plan primitives](https://www.opute.io/docs/recipe-primitives/)
+
+## Explanation
+- [Concepts](https://www.opute.io/docs/concepts/)
+- [Architecture](https://www.opute.io/docs/architecture/)
+- [Recipes & plans](https://www.opute.io/docs/recipes/)
+- [Networking](https://www.opute.io/docs/networking/)
+- [Resources & safety](https://www.opute.io/docs/resources/)
+
+## Research notes
+- Peer synthesis: site/context/RESEARCH.md
+`,
+)
+console.log("wrote llms.txt")
 
 writeFileSync(
   join("/home/houman/github/wunderous/opute-host-agent/site/context", "PACKET.md"),
@@ -1351,6 +1728,7 @@ Explanation opens with *about* / *why*; reference opens with facts.
 | Install & run | \`/docs/install/\` | How-to |
 | Connect MCP client | \`/docs/mcp-clients/\` | How-to |
 | Publish this site | \`/docs/dogfood/\` | How-to |
+| Troubleshooting | \`/docs/troubleshooting/\` | How-to |
 | Capability facts | \`/docs/capabilities/\` | Reference |
 | Config facts | \`/docs/configuration/\` | Reference |
 | Recipe & plan fields | \`/docs/recipe-primitives/\` | Reference |
@@ -1366,8 +1744,8 @@ Explanation opens with *about* / *why*; reference opens with facts.
 - \`OPUTE_REMOTE_AGENT_ID\` required; npm defaults to \`local-host-agent\`
 - \`/mcp\` needs Bearer \`MCP_AUTH_TOKEN\` (or OAuth); \`/health\` is open
 - Mutations denied until \`OPUTE_STANDALONE_ALLOW_MUTATIONS=true\`
-- Live catalog capture: 178 tools in \`tools-list.redacted.json\`
-- HA networking: three seams (ADR-0016); \`network-overlay.*\` deprecated alias
+- Live catalog capture: 187 tools in \`tools-list.redacted.json\` (seams live; network-overlay=0)
+- HA networking: mesh-runtime + three seams (ADR-0016); \`network-overlay.*\` deprecated alias
 - Dogfood: dedicated tunnel \`opute-www-opute-io\`; hostnames \`opute.io\` + \`www.opute.io\`
 
 ## Boundaries
@@ -1375,6 +1753,10 @@ Explanation opens with *about* / *why*; reference opens with facts.
 - Host Agent ≠ Platform (\`platform.opute.io\` / \`mcp.opute.io\`)
 - Public site MUST NOT expose Host Agent MCP admin
 - Deploy path = Host Agent recipe only
+
+## Research
+
+Peer synthesis and optimality checklist: \`site/context/RESEARCH.md\`
 `,
 )
 console.log("wrote context/PACKET.md")

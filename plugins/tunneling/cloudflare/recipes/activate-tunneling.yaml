@@ -1,13 +1,13 @@
 contractVersion: runtime-recipe.v1
-recipeId: com.opute.cloudflare.activate
-recipeVersion: 1.1.0
+recipeId: com.opute.cloudflare.activate-tunneling
+recipeVersion: 1.0.0
 runtime:
-  id: provider-ha-networking-cf
-  servingContract: public-ingress.v1
-  capabilities: [mesh-runtime, mesh-membership, public-ingress]
+  id: provider-tunneling
+  servingContract: tunneling.v1
+  capabilities: [tunneling]
 activation:
-  capability: public-ingress
-  servingContract: public-ingress.v1
+  capability: tunneling
+  servingContract: tunneling.v1
   inputBindings:
     providerId: providerId
 compatibility:
@@ -21,9 +21,9 @@ inputs:
     schema: {type: string, minLength: 1, maxLength: 128}
 plan:
   contractVersion: host-plan.v1
-  planId: com.opute.cloudflare.activate
+  planId: com.opute.cloudflare.activate-tunneling
   generation: 1
-  idempotencyKey: com.opute.cloudflare-${vars.inputs.providerId}-${vars.inputs.activationNonce}
+  idempotencyKey: com.opute.cloudflare.tunneling-${vars.inputs.providerId}-${vars.inputs.activationNonce}
   nodes:
     - id: host
       action:
