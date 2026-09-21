@@ -8,7 +8,8 @@ const (
 	Kubernetes     = "opute.capability.kubernetes.v1"
 	NetworkOverlay = "opute.capability.network-overlay.v1" // deprecated: fan-out alias / migration only
 
-	// Three exclusive HA networking seams (ADR-0016).
+	// Exclusive HA networking seams (ADR-0016 + mesh-runtime prerequisites).
+	MeshRuntime    = "opute.capability.mesh-runtime.v1"
 	MeshMembership = "opute.capability.mesh-membership.v1"
 	PrivateMesh    = "opute.capability.private-mesh.v1"
 	PublicIngress  = "opute.capability.public-ingress.v1"
@@ -58,6 +59,12 @@ const (
 	NetworkOverlayPromotePublicIngressOperation   = "opute.capability.network-overlay.promote-public-ingress"
 	NetworkOverlayProbeOperation                  = "opute.capability.network-overlay.probe"
 	NetworkOverlayReportTwoNodeReadinessOperation = "opute.capability.network-overlay.report-two-node-readiness"
+
+	// mesh-runtime.v1 — install/configure mesh agent + control-plane prerequisites
+	MeshRuntimeValidateOperation           = "opute.capability.mesh-runtime.validate"
+	MeshRuntimeEnsureAgentOperation        = "opute.capability.mesh-runtime.ensure-agent"
+	MeshRuntimeEnsureControlPlaneOperation = "opute.capability.mesh-runtime.ensure-control-plane"
+	MeshRuntimeStatusOperation             = "opute.capability.mesh-runtime.status"
 
 	// mesh-membership.v1
 	MeshMembershipEnrollOperation = "opute.capability.mesh-membership.enroll"

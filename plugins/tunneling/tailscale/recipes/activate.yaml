@@ -1,10 +1,10 @@
 contractVersion: runtime-recipe.v1
 recipeId: com.opute.tailscale.activate
-recipeVersion: 1.1.0
+recipeVersion: 1.2.0
 runtime:
   id: provider-ha-networking
   servingContract: network-overlay.v1
-  capabilities: [mesh-membership, private-mesh, public-ingress]
+  capabilities: [mesh-runtime, mesh-membership, private-mesh, public-ingress]
 activation:
   capability: network-overlay
   servingContract: network-overlay.v1

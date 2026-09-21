@@ -136,10 +136,18 @@ func TestLiveGuestOpsSkippedUnlessEnabled(t *testing.T) {
 		"credentialKind": "auth-key", "authKey": "tskey-auth-test",
 	})
 	if err == nil {
-		t.Fatal("expected enroll to fail without host agent endpoint in unit tests")
+		t.Fatal("expected enroll to fail closed without mesh-runtime.ensure-agent")
 	}
-	if !strings.Contains(err.Error(), "OPUTE_HOST_AGENT_ENDPOINT") && !strings.Contains(err.Error(), "host") {
+	if !strings.Contains(err.Error(), "mesh-runtime.ensure-agent") && !strings.Contains(err.Error(), "mesh agent not ready") {
 		t.Fatalf("unexpected enroll error: %v", err)
+	}
+	// Even after ensure-agent is recorded, live backend still needs host agent endpoint.
+	if _, err := dispatchOverlayOperation(t.Context(), capabilitycontract.MeshRuntimeEnsureAgentOperation, map[string]any{
+		"hostAgentId": "host-a", "targetUri": "container:local:opute-ha-a",
+	}); err == nil {
+		t.Fatal("expected live ensure-agent to fail without host agent endpoint in unit tests")
+	} else if !strings.Contains(err.Error(), "OPUTE_HOST_AGENT_ENDPOINT") && !strings.Contains(err.Error(), "host") {
+		t.Fatalf("unexpected ensure-agent error: %v", err)
 	}
 }
 

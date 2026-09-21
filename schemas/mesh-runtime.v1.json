@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opute.capability.mesh-runtime.v1",
+  "type": "object",
+  "required": [
+    "contractVersion",
+    "ready",
+    "provider",
+    "targetUri"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "opute.capability.mesh-runtime.v1"
+    },
+    "ready": {
+      "type": "boolean"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "targetUri": {
+      "type": "string",
+      "pattern": "^(vm|container|cluster):[a-z][a-z0-9-]{0,31}:.+$"
+    },
+    "agentReady": {
+      "type": "boolean"
+    },
+    "controlPlaneReady": {
+      "type": "boolean"
+    },
+    "agentVersion": {
+      "type": "string"
+    },
+    "controlPlaneRef": {
+      "type": "string"
+    },
+    "ingressClassName": {
+      "type": "string"
+    },
+    "probe": {
+      "type": "object"
+    },
+    "error": {
+      "type": "string"
+    },
+    "generation": {
+      "type": "string"
+    }
+  }
+}

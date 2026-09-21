@@ -173,12 +173,38 @@ Sequence on host-zephyrus-ef47fbbf:
 
 ## 10. Remaining live lifecycle
 
-Catalog exclusivity for the three seams under Tailscale is observed after activate/displace.
-`opute.provider.status` for Tailscale intermittently reports `active=false` after reload
-when the activate recipe resumes an old idempotency key (`…-default`), leaving probe
-dispatch with `provider generation is no longer active`. Follow-up: pass a unique
-`activationNonce` through recipe inputs on every reload, and ensure Cordis displace +
-catalog displace stay aligned when Cloudflare tunneling remains installed.
-
-Unit/contract coverage for displace + three-seam providers is green.
+Catalog exclusivity for the HA seams under Tailscale is observed after activate/displace.
+Unit/contract coverage for displace + seam providers is green.
 `*.opute.io` e2e guard passed including during ha-a k3s stop.
+
+
+## 11. Tailscale active generation after seam activate (2026-09-20)
+
+Root cause: reload/activate with a stable `activationNonce` (`…-default`) finds the
+completed activate plan, runs `activateCompletedProviderCandidate`, then re-runs the
+plan to completion which calls `activateProviderGeneration` again. The second
+`MarkReady` failed (`expected candidate`, generation already `active`), and plan
+cleanup `Fail`'d the live generation → `opute.provider.status` `active=false` and
+probe `provider generation is no longer active`.
+
+Fix: `activateProviderGeneration` is idempotent when the generation is already the
+provider's active generation (reaffirm catalog/mount if a candidate adapter is still
+present; otherwise no-op). Ready-state retries skip a second `MarkReady`.
+
+Evidence:
+- `go test ./internal/hostmcp/ -run 'ActivateProvider|ActivateCompleted' -count=1` PASS
+- Live (host-zephyrus-ef47fbbf @ :3004), rebuilt host-agent with fix:
+  - `opute.provider.reload` activate twice with the same `activationNonce`
+    (`stabilize-1789956844`) completed both times.
+  - `opute.provider.status` remained `active=true` / `connected=true` after both
+    reloads (generations `com.opute.tailscale-227` then `-228`).
+  - Full hostmcp suite: `go test ./internal/hostmcp/ -count=1` PASS.
+
+
+## mesh-runtime.v1 seam (2026-09-20)
+
+- Published opute.capability.mesh-runtime.v1 with validate / ensure-agent / ensure-control-plane / status.
+- Tailscale: install+tailscaled moved out of enroll into ensure-agent; enroll fails closed without it.
+- Vendor-bundle com.opute.tailscale.ha-network-bundle orders runtime-agent → runtime-control-plane → enroll.
+- Cloudflare declares mesh-runtime (agent/control-plane bookkeeping) honestly alongside membership + public-ingress.
+- Unit: go test ./plugins/tunneling/tailscale/cmd/opute-provider-tailscale/ and cloudflare provider tests pass.

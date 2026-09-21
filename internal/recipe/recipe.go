@@ -312,6 +312,7 @@ func validateEnvelope(doc Document) error {
 		"http-exposure.v1":   {},
 		"kubernetes.v1":      {},
 		"network-overlay.v1": {}, // deprecated fan-out alias (ADR-0016)
+		"mesh-runtime.v1":    {},
 		"mesh-membership.v1": {},
 		"private-mesh.v1":    {},
 		"public-ingress.v1":  {},

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Fallback operator helper: enroll opute-ha-a / opute-ha-b into Tailscale and print IPv4s.
+# Prefer recipe com.opute.tailscale.ha-network-bundle (mesh-runtime.ensure-agent before enroll).
+# This script still installs the agent for emergency use; product path uses mesh-runtime.v1.
 # Prefer driving enrollment through the provider MCP live backend when available.
 set -euo pipefail
 

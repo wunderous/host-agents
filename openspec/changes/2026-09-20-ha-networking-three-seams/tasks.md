@@ -11,3 +11,9 @@
 - [x] Live Tailscale seam ownership + ha-a continuity (Funnel + *.opute.io)
 - [x] E2E guard during ha-a loss
 - [x] EVIDENCE.md updated; commit/push next
+
+- [x] Publish `mesh-runtime.v1` as separate install/configure seam
+- [x] Wire Tailscale ensure-agent/ensure-control-plane; enroll fail-closed without agent
+- [x] Vendor-bundle calls mesh-runtime before enroll
+
+- [x] Stabilize Tailscale active generation after seam activate (idempotent activateProviderGeneration)

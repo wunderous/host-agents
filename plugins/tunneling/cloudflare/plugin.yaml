@@ -4,6 +4,8 @@ version: 1.0.0
 capabilities:
   - id: opute.capability.tunneling.v1
     version: 1
+  - id: opute.capability.mesh-runtime.v1
+    version: 1
   - id: opute.capability.mesh-membership.v1
     version: 1
   - id: opute.capability.public-ingress.v1

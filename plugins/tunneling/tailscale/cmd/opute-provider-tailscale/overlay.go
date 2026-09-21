@@ -64,6 +64,16 @@ type publicIngressRecord struct {
 	Hostname    string
 }
 
+type meshRuntimeRecord struct {
+	TargetURI         string
+	AgentReady        bool
+	ControlPlaneReady bool
+	AgentVersion      string
+	ControlPlaneRef   string
+	IngressClassName  string
+	Generation        string
+}
+
 var ownershipStore = struct {
 	sync.Mutex
 	memberships map[string]membershipRecord
@@ -71,12 +81,14 @@ var ownershipStore = struct {
 	meshEdges   map[string]meshEdge
 	services    map[string]privateServiceRecord
 	ingresses   map[string]publicIngressRecord
+	runtimes    map[string]meshRuntimeRecord
 }{
 	memberships: make(map[string]membershipRecord),
 	byTarget:    make(map[string]string),
 	meshEdges:   make(map[string]meshEdge),
 	services:    make(map[string]privateServiceRecord),
 	ingresses:   make(map[string]publicIngressRecord),
+	runtimes:    make(map[string]meshRuntimeRecord),
 }
 
 func reportTwoNodeReadiness(args map[string]any) (*mcp.CallToolResult, error) {
@@ -165,6 +177,7 @@ func resetOwnershipStoreForTest() {
 	ownershipStore.meshEdges = make(map[string]meshEdge)
 	ownershipStore.services = make(map[string]privateServiceRecord)
 	ownershipStore.ingresses = make(map[string]publicIngressRecord)
+	ownershipStore.runtimes = make(map[string]meshRuntimeRecord)
 }
 
 func requireHostAgentID(args map[string]any) (string, error) {
@@ -213,10 +226,20 @@ func normalizeSeamOperation(operation string) string {
 
 func dispatchOverlayOperation(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
 	original := operation
-	operation = normalizeSeamOperation(operation)
 	if args == nil {
 		args = map[string]any{}
 	}
+	switch original {
+	case capabilitycontract.MeshRuntimeValidateOperation,
+		capabilitycontract.MeshRuntimeEnsureAgentOperation,
+		capabilitycontract.MeshRuntimeEnsureControlPlaneOperation,
+		capabilitycontract.MeshRuntimeStatusOperation:
+		if useFakeBackend() {
+			return dispatchFakeMeshRuntime(ctx, original, args)
+		}
+		return dispatchLiveMeshRuntime(ctx, original, args)
+	}
+	operation = normalizeSeamOperation(operation)
 	switch original {
 	case capabilitycontract.MeshMembershipStatusOperation:
 		if _, ok := args["pathClass"]; !ok {
@@ -379,6 +402,9 @@ func enrollOverlay(args map[string]any) (*mcp.CallToolResult, error) {
 		return nil, err
 	}
 	if err := assertCredentialPresence(args, credKindAuthKey); err != nil {
+		return nil, err
+	}
+	if err := requireMeshAgentReady(instanceURI.String()); err != nil {
 		return nil, err
 	}
 	name := strings.TrimSpace(stringInput(args, "name", ""))
@@ -1032,4 +1058,123 @@ func seedForeignMembershipForTest(targetURI, ref string) {
 		NodeName: "foreign", MeshIP: "100.64.9.9", MeshInterface: "tailscale0", Generation: "foreign@0.0.0", Attached: true,
 	}
 	ownershipStore.byTarget[targetURI] = ref
+}
+
+
+func dispatchFakeMeshRuntime(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
+	_ = ctx
+	switch operation {
+	case capabilitycontract.MeshRuntimeValidateOperation, capabilitycontract.MeshRuntimeStatusOperation:
+		return fakeMeshRuntimeStatus(args)
+	case capabilitycontract.MeshRuntimeEnsureAgentOperation:
+		return fakeEnsureMeshAgent(args)
+	case capabilitycontract.MeshRuntimeEnsureControlPlaneOperation:
+		return fakeEnsureMeshControlPlane(args)
+	default:
+		return nil, fmt.Errorf("unknown mesh-runtime operation %q", operation)
+	}
+}
+
+func fakeMeshRuntimeStatus(args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	ownershipStore.Lock()
+	defer ownershipStore.Unlock()
+	rec := ownershipStore.runtimes[instanceURI.String()]
+	ready := rec.AgentReady && (rec.ControlPlaneReady || !boolInput(args, "requireControlPlane", false))
+	if !boolInput(args, "requireControlPlane", false) {
+		ready = rec.AgentReady
+	}
+	return structured(meshRuntimeBase(instanceURI.String(), rec, map[string]any{
+		"ready": ready,
+	}))
+}
+
+func fakeEnsureMeshAgent(args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	ownershipStore.Lock()
+	defer ownershipStore.Unlock()
+	rec := ownershipStore.runtimes[instanceURI.String()]
+	rec.TargetURI = instanceURI.String()
+	rec.AgentReady = true
+	rec.AgentVersion = "fake-tailscale"
+	rec.Generation = providerGeneration
+	ownershipStore.runtimes[instanceURI.String()] = rec
+	return structured(meshRuntimeBase(instanceURI.String(), rec, map[string]any{
+		"ready": true,
+	}))
+}
+
+func fakeEnsureMeshControlPlane(args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	ingressClass := firstNonEmpty(stringInput(args, "ingressClassName", ""), "tailscale")
+	evidence := strings.TrimSpace(stringInput(args, "operatorEvidence", ""))
+	operatorMode := boolInput(args, "operatorMode", true)
+	ownershipStore.Lock()
+	defer ownershipStore.Unlock()
+	rec := ownershipStore.runtimes[instanceURI.String()]
+	if !rec.AgentReady {
+		return nil, fmt.Errorf("mesh-runtime.ensure-control-plane requires mesh-runtime.ensure-agent first")
+	}
+	if operatorMode && evidence == "" && ingressClass != "tailscale" {
+		return nil, fmt.Errorf("operatorMode requires operatorEvidence or ingressClassName=tailscale")
+	}
+	rec.TargetURI = instanceURI.String()
+	rec.ControlPlaneReady = true
+	rec.IngressClassName = ingressClass
+	rec.ControlPlaneRef = firstNonEmpty(stringInput(args, "controlPlaneRef", ""), "fake-tailscale-operator")
+	rec.Generation = providerGeneration
+	ownershipStore.runtimes[instanceURI.String()] = rec
+	return structured(meshRuntimeBase(instanceURI.String(), rec, map[string]any{
+		"ready": true,
+	}))
+}
+
+func meshRuntimeBase(targetURI string, rec meshRuntimeRecord, extra map[string]any) map[string]any {
+	out := map[string]any{
+		"contractVersion":   capabilitycontract.MeshRuntime,
+		"provider":          providerPluginID,
+		"targetUri":         targetURI,
+		"agentReady":        rec.AgentReady,
+		"controlPlaneReady": rec.ControlPlaneReady,
+		"agentVersion":      rec.AgentVersion,
+		"controlPlaneRef":   rec.ControlPlaneRef,
+		"ingressClassName":  rec.IngressClassName,
+		"generation":        firstNonEmpty(rec.Generation, providerGeneration),
+		"probe": map[string]any{
+			"agentReady":        rec.AgentReady,
+			"controlPlaneReady": rec.ControlPlaneReady,
+		},
+	}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out
+}
+
+func requireMeshAgentReady(targetURI string) error {
+	ownershipStore.Lock()
+	defer ownershipStore.Unlock()
+	rec, ok := ownershipStore.runtimes[targetURI]
+	if !ok || !rec.AgentReady {
+		return fmt.Errorf("mesh agent not ready on %s; call opute.capability.mesh-runtime.ensure-agent first", targetURI)
+	}
+	return nil
 }

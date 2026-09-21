@@ -7,6 +7,9 @@ execution:
 compatibility:
   requiredTools:
     - get_host_info
+    - opute.capability.mesh-runtime.ensure-agent
+    - opute.capability.mesh-runtime.ensure-control-plane
+    - opute.capability.mesh-runtime.status
     - opute.capability.mesh-membership.enroll
     - opute.capability.private-mesh.ensure
     - opute.capability.public-ingress.ensure
@@ -57,8 +60,43 @@ plan:
     - id: agent
       action:
         tool: get_host_info
-    - id: enroll
+    - id: runtime-agent
       dependsOn: [agent]
+      action:
+        tool: opute.capability.mesh-runtime.ensure-agent
+        args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
+          targetUri: ${vars.inputs.targetUri}
+      validate:
+        tool: opute.capability.mesh-runtime.status
+        args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
+          targetUri: ${vars.inputs.targetUri}
+        assert:
+          - {path: /agentReady, op: eq, value: true}
+        pollIntervalMs: 2000
+        timeoutMs: 300000
+    - id: runtime-control-plane
+      dependsOn: [runtime-agent]
+      action:
+        tool: opute.capability.mesh-runtime.ensure-control-plane
+        args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
+          targetUri: ${vars.inputs.targetUri}
+          operatorMode: ${vars.inputs.operatorMode}
+          ingressClassName: ${vars.inputs.ingressClassName}
+          operatorEvidence: ${vars.inputs.operatorEvidence}
+      validate:
+        tool: opute.capability.mesh-runtime.status
+        args:
+          hostAgentId: ${nodes.agent.output.agent.agentId}
+          targetUri: ${vars.inputs.targetUri}
+        assert:
+          - {path: /controlPlaneReady, op: eq, value: true}
+        pollIntervalMs: 2000
+        timeoutMs: 180000
+    - id: enroll
+      dependsOn: [runtime-control-plane]
       action:
         tool: opute.capability.mesh-membership.enroll
         args:

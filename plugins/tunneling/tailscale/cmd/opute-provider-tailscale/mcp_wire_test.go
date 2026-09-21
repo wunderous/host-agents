@@ -37,6 +37,9 @@ func TestTailscaleMCPWireEnroll(t *testing.T) {
 		t.Fatal(err)
 	}
 	encodedTools := mustJSON(t, tools)
+	if !strings.Contains(encodedTools, capabilitycontract.MeshRuntimeEnsureAgentOperation) {
+		t.Fatalf("tools/list missing ensure-agent: %s", encodedTools)
+	}
 	if !strings.Contains(encodedTools, capabilitycontract.MeshMembershipEnrollOperation) {
 		t.Fatalf("tools/list missing enroll: %s", encodedTools)
 	}
@@ -44,6 +47,12 @@ func TestTailscaleMCPWireEnroll(t *testing.T) {
 		t.Fatalf("tools/list missing ensure-public-ingress: %s", encodedTools)
 	}
 
+	if _, err := raw.CallTool(ctx, capabilitycontract.MeshRuntimeEnsureAgentOperation, map[string]any{
+		"hostAgentId": "wire-host",
+		"targetUri":   "vm:local:wire-a",
+	}); err != nil {
+		t.Fatalf("ensure-agent wire call failed: %v", err)
+	}
 	enrollResult, err := raw.CallTool(ctx, capabilitycontract.MeshMembershipEnrollOperation, map[string]any{
 		"hostAgentId": "host-a", "targetUri": "vm:local:wire-a", "name": "wire-a",
 		"credentialKind": "auth-key", "authKey": "tskey-auth-wire",

@@ -110,6 +110,164 @@ func dispatchLiveOverlayOperation(ctx context.Context, operation string, args ma
 	}
 }
 
+
+func dispatchLiveMeshRuntime(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
+	ensureTailscaleEnvLoaded()
+	switch operation {
+	case capabilitycontract.MeshRuntimeValidateOperation, capabilitycontract.MeshRuntimeStatusOperation:
+		return liveMeshRuntimeStatus(ctx, args)
+	case capabilitycontract.MeshRuntimeEnsureAgentOperation:
+		return liveEnsureMeshAgent(ctx, args)
+	case capabilitycontract.MeshRuntimeEnsureControlPlaneOperation:
+		return liveEnsureMeshControlPlane(ctx, args)
+	default:
+		return nil, fmt.Errorf("unknown mesh-runtime operation %q", operation)
+	}
+}
+
+func liveEnsureMeshAgent(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	client, err := connectHostAgent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	if err := waitForGuestExec(ctx, client, instanceURI); err != nil {
+		return nil, err
+	}
+	result, err := callHost(ctx, client, "run_instance_command", map[string]any{
+		"uri":       instanceURI.String(),
+		"command":   "bash",
+		"args":      []string{"-lc", tailscaleEnsureAgentScript()},
+		"timeoutMs": 10 * 60 * 1000,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resultContent, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("mesh-runtime.ensure-agent returned no structured command result")
+	}
+	output := stringInput(resultContent, "stdout", "")
+	stderr := stringInput(resultContent, "stderr", "")
+	if exitCode, present := numericInput(resultContent, "exitCode"); present && exitCode != 0 {
+		return nil, fmt.Errorf("mesh-runtime.ensure-agent failed with exit code %d: %s", exitCode, output+"\n"+stderr)
+	}
+	agentVersion := "unknown"
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "agent_version=") {
+			agentVersion = strings.TrimPrefix(line, "agent_version=")
+		}
+	}
+	ownershipStore.Lock()
+	rec := ownershipStore.runtimes[instanceURI.String()]
+	rec.TargetURI = instanceURI.String()
+	rec.AgentReady = true
+	rec.AgentVersion = agentVersion
+	rec.Generation = providerGeneration
+	ownershipStore.runtimes[instanceURI.String()] = rec
+	ownershipStore.Unlock()
+	return structured(meshRuntimeBase(instanceURI.String(), rec, map[string]any{"ready": true}))
+}
+
+func liveMeshRuntimeStatus(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	client, err := connectHostAgent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	if err := waitForGuestExec(ctx, client, instanceURI); err != nil {
+		return nil, err
+	}
+	result, err := callHost(ctx, client, "run_instance_command", map[string]any{
+		"uri":       instanceURI.String(),
+		"command":   "bash",
+		"args":      []string{"-lc", tailscaleAgentStatusScript()},
+		"timeoutMs": 60 * 1000,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resultContent, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("mesh-runtime.status returned no structured command result")
+	}
+	output := stringInput(resultContent, "stdout", "")
+	agentReady := strings.Contains(output, "agent_ready=true")
+	agentVersion := ""
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "agent_version=") {
+			agentVersion = strings.TrimPrefix(line, "agent_version=")
+		}
+	}
+	ownershipStore.Lock()
+	rec := ownershipStore.runtimes[instanceURI.String()]
+	rec.TargetURI = instanceURI.String()
+	rec.AgentReady = agentReady
+	if agentVersion != "" {
+		rec.AgentVersion = agentVersion
+	}
+	ownershipStore.runtimes[instanceURI.String()] = rec
+	ownershipStore.Unlock()
+	return structured(meshRuntimeBase(instanceURI.String(), rec, map[string]any{
+		"ready": agentReady,
+	}))
+}
+
+func liveEnsureMeshControlPlane(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	_ = ctx
+	if _, err := requireHostAgentID(args); err != nil {
+		return nil, err
+	}
+	instanceURI, err := parseTargetURI(args)
+	if err != nil {
+		return nil, err
+	}
+	ownershipStore.Lock()
+	rec := ownershipStore.runtimes[instanceURI.String()]
+	ownershipStore.Unlock()
+	if !rec.AgentReady {
+		// Best-effort: status may not have been called; still require ensure-agent.
+		return nil, fmt.Errorf("mesh-runtime.ensure-control-plane requires mesh-runtime.ensure-agent first")
+	}
+	ingressClass := firstNonEmpty(stringInput(args, "ingressClassName", ""), "tailscale")
+	evidence := strings.TrimSpace(stringInput(args, "operatorEvidence", ""))
+	operatorMode := true
+	if raw, ok := args["operatorMode"]; ok && raw != nil {
+		if b, ok := raw.(bool); ok {
+			operatorMode = b
+		}
+	}
+	if operatorMode && evidence == "" && ingressClass != "tailscale" {
+		return nil, fmt.Errorf("mesh-runtime.ensure-control-plane operatorMode requires operatorEvidence or ingressClassName=tailscale")
+	}
+	ownershipStore.Lock()
+	rec = ownershipStore.runtimes[instanceURI.String()]
+	rec.TargetURI = instanceURI.String()
+	rec.ControlPlaneReady = true
+	rec.IngressClassName = ingressClass
+	rec.ControlPlaneRef = firstNonEmpty(stringInput(args, "controlPlaneRef", ""), "tailscale-operator")
+	rec.Generation = providerGeneration
+	ownershipStore.runtimes[instanceURI.String()] = rec
+	ownershipStore.Unlock()
+	return structured(meshRuntimeBase(instanceURI.String(), rec, map[string]any{"ready": true}))
+}
+
 func liveAPIClient() (*tailscaleAPIClient, error) {
 	ensureTailscaleEnvLoaded()
 	apiKey := strings.TrimSpace(os.Getenv("TAILSCALE_API_KEY"))
@@ -323,6 +481,9 @@ func liveEnrollGuest(ctx context.Context, args map[string]any, instanceURI resou
 	if hostname == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	if err := requireMeshAgentReady(instanceURI.String()); err != nil {
+		return nil, err
+	}
 	client, err := connectHostAgent(ctx)
 	if err != nil {
 		return nil, err
@@ -422,6 +583,57 @@ func liveEnrollGuest(ctx context.Context, args map[string]any, instanceURI resou
 	}))
 }
 
+func tailscaleEnsureAgentScript() string {
+	return `set -euo pipefail
+if command -v tailscale >/dev/null 2>&1 && command -v tailscaled >/dev/null 2>&1; then
+  if command -v systemctl >/dev/null 2>&1; then
+    timeout 30s systemctl enable --now tailscaled >/dev/null 2>&1 || true
+  fi
+  if ! pgrep -x tailscaled >/dev/null 2>&1; then
+    nohup tailscaled >/var/log/tailscaled.log 2>&1 &
+    sleep 2
+  fi
+  ver="$(tailscale version 2>/dev/null | head -n1 | tr -d '\r' || true)"
+  printf 'agent_ready=true\nagent_version=%s\n' "${ver:-unknown}"
+  exit 0
+fi
+export DEBIAN_FRONTEND=noninteractive
+if command -v apt-get >/dev/null 2>&1; then
+  timeout 180s apt-get update -qq || true
+  timeout 180s apt-get install -y -qq curl ca-certificates gnupg || true
+fi
+timeout 180s curl -fsSL https://tailscale.com/install.sh | sh
+if command -v systemctl >/dev/null 2>&1; then
+  timeout 30s systemctl enable --now tailscaled >/dev/null 2>&1 || true
+fi
+if ! pgrep -x tailscaled >/dev/null 2>&1; then
+  nohup tailscaled >/var/log/tailscaled.log 2>&1 &
+  sleep 2
+fi
+if ! command -v tailscale >/dev/null 2>&1 || ! command -v tailscaled >/dev/null 2>&1; then
+  echo 'mesh-runtime.ensure-agent failed: tailscale/tailscaled not installed' >&2
+  exit 1
+fi
+ver="$(tailscale version 2>/dev/null | head -n1 | tr -d '\r' || true)"
+printf 'agent_ready=true\nagent_version=%s\n' "${ver:-unknown}"
+`
+}
+
+func tailscaleAgentStatusScript() string {
+	return `set -euo pipefail
+if ! command -v tailscale >/dev/null 2>&1 || ! command -v tailscaled >/dev/null 2>&1; then
+  printf 'agent_ready=false\n'
+  exit 0
+fi
+running=false
+if pgrep -x tailscaled >/dev/null 2>&1; then
+  running=true
+fi
+ver="$(tailscale version 2>/dev/null | head -n1 | tr -d '\r' || true)"
+printf 'agent_ready=%s\nagent_version=%s\n' "$running" "${ver:-unknown}"
+`
+}
+
 func tailscaleEnrollScript(hostname string) string {
 	quotedHost := shellQuote(hostname)
 	return `set -euo pipefail
@@ -431,21 +643,12 @@ if [ -z "$auth_key" ]; then
   exit 1
 fi
 if ! command -v tailscale >/dev/null 2>&1 || ! command -v tailscaled >/dev/null 2>&1; then
-  export DEBIAN_FRONTEND=noninteractive
-  if command -v apt-get >/dev/null 2>&1; then
-    timeout 180s apt-get update -qq || true
-    timeout 180s apt-get install -y -qq curl ca-certificates gnupg || true
-  fi
-  if ! command -v tailscale >/dev/null 2>&1; then
-    timeout 180s curl -fsSL https://tailscale.com/install.sh | sh
-  fi
-fi
-if command -v systemctl >/dev/null 2>&1; then
-  timeout 30s systemctl enable --now tailscaled >/dev/null 2>&1 || true
+  echo 'mesh agent not installed; call opute.capability.mesh-runtime.ensure-agent first' >&2
+  exit 1
 fi
 if ! pgrep -x tailscaled >/dev/null 2>&1; then
-  nohup tailscaled >/var/log/tailscaled.log 2>&1 &
-  sleep 2
+  echo 'tailscaled is not running; call opute.capability.mesh-runtime.ensure-agent first' >&2
+  exit 1
 fi
 timeout 120s tailscale up --authkey="$auth_key" --hostname=` + quotedHost + ` --accept-routes=false --reset
 mesh_ip=""

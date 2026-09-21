@@ -46,6 +46,7 @@ func cloudflareManifest() providercontract.InstallManifest {
 		Schema: providercontract.InstallManifestVersion, Provider: providercontract.ProviderRef{ID: "com.opute.cloudflare", Version: "1.0.0"},
 		Provides: []providercontract.CapabilityRef{
 			{ID: tunnelingCapability, Version: 1},
+			{ID: capabilitycontract.MeshRuntime, Version: 1},
 			{ID: capabilitycontract.MeshMembership, Version: 1},
 			{ID: capabilitycontract.PublicIngress, Version: 1},
 			// private-mesh.v1 omitted on purpose (ADR-0016 honesty).
@@ -58,6 +59,7 @@ func cloudflareManifest() providercontract.InstallManifest {
 		},
 		Services: []providercontract.ServiceDefinition{
 			{ID: "opute.capability.tunneling", CapabilityID: tunnelingCapability, Version: 1, Operations: cloudflareOperations()},
+			{ID: "opute.capability.mesh-runtime", CapabilityID: capabilitycontract.MeshRuntime, Version: 1, Operations: meshRuntimeOperations()},
 			{ID: "opute.capability.mesh-membership", CapabilityID: capabilitycontract.MeshMembership, Version: 1, Operations: meshMembershipOperations()},
 			{ID: "opute.capability.public-ingress", CapabilityID: capabilitycontract.PublicIngress, Version: 1, Operations: publicIngressOperations()},
 		},
@@ -202,7 +204,7 @@ func addManifestTool(server *mcp.Server, manifest providercontract.InstallManife
 }
 
 func addCloudflareOperations(server *mcp.Server) {
-	operations := append(cloudflareOperations(), append(meshMembershipOperations(), publicIngressOperations()...)...)
+	operations := append(cloudflareOperations(), append(append(meshRuntimeOperations(), meshMembershipOperations()...), publicIngressOperations()...)...)
 	for _, schema := range operations {
 		operation := schema
 		server.AddTool(&mcp.Tool{Name: operation.ID, Description: "Cloudflare tunneling provider operation", InputSchema: operation.InputSchema, OutputSchema: operation.OutputSchema}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -217,6 +219,11 @@ func addCloudflareOperations(server *mcp.Server) {
 
 func dispatchCloudflareOperation(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
 	switch operation {
+	case capabilitycontract.MeshRuntimeValidateOperation,
+		capabilitycontract.MeshRuntimeEnsureAgentOperation,
+		capabilitycontract.MeshRuntimeEnsureControlPlaneOperation,
+		capabilitycontract.MeshRuntimeStatusOperation:
+		return dispatchMeshRuntimeOperation(ctx, operation, args)
 	case capabilitycontract.MeshMembershipEnrollOperation,
 		capabilitycontract.MeshMembershipStatusOperation,
 		capabilitycontract.MeshMembershipLeaveOperation,

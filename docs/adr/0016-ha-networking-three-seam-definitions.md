@@ -1,4 +1,4 @@
-# ADR-0016: HA networking as three exclusive Service Definitions
+# ADR-0016: HA networking exclusive Service Definitions
 
 Status: accepted
 Date: 2026-09-20
@@ -6,18 +6,24 @@ Supersedes (in part): ADR-0015 single `network-overlay.v1` consumer contract
 
 ## Decision
 
-HA networking is published as **three** provider-neutral Service Definitions.
-Composition (membership -> private mesh -> public ingress) is a **recipe /
-vendor-bundle**, not a fourth mega-definition.
+HA networking is published as **four** provider-neutral Service Definitions.
+Composition (runtime prerequisites -> membership -> private mesh -> public
+ingress) is a **recipe / vendor-bundle**, not a mega-definition.
 
 | Service Definition | Job | Neutral ops |
 | --- | --- | --- |
+| `opute.capability.mesh-runtime.v1` | Install/configure mesh agent + control-plane prerequisites | validate, ensure-agent, ensure-control-plane, status |
 | `opute.capability.mesh-membership.v1` | Host joins a trust domain | enroll, status, leave |
 | `opute.capability.private-mesh.v1` | East-west reachability | ensure, ensure-service, probe |
 | `opute.capability.public-ingress.v1` | North-south stable HTTPS | ensure, promote, probe |
 
+`mesh-runtime.v1` owns software install and control-plane readiness (e.g. node
+agent package, Kubernetes Operator / ingress class). Membership and ingress
+MUST NOT silently install those prerequisites; consumers call mesh-runtime
+ops first (or via the vendor-bundle recipe).
+
 `opute.capability.network-overlay.v1` remains only as a **deprecated fan-out /
-migration alias**. New consumers MUST bind to the three definitions.
+migration alias**. New consumers MUST bind to the four definitions (including mesh-runtime).
 
 ## Roles (ADR-0015 / OpenSpec)
 
@@ -32,16 +38,7 @@ Activating a provider for a definition publishes that definition's full op set
 and **displaces** any other provider's catalog entries for the same
 `capabilityId`. Ambiguous dual ownership of a seam is fail-closed.
 
-v1 **vendor-bundle** policy: operators activate one recommended bundle
-(Tailscale for all three, or Cloudflare for membership + public-ingress where
-parity exists). Mix-and-match across seams is not a supported product path yet.
-
-## Provider honesty
-
-- Tailscale MUST implement all three for HA.
-- Cloudflare MUST implement at least membership + public-ingress; private-mesh
-  only when honest. Incomplete seams are omitted or fail-closed — never
-  split-catalog stubs sharing OperationIDs with another provider.
+v1 **vendor-bundle** policy: operators activate one provider per seam (runtime → membership → private-mesh → public-ingress) via recipes; XOR exclusivity remains per Service Definition.
 
 ## Public ingress / stable
 

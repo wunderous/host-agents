@@ -33,6 +33,10 @@ func TestTailscaleManifestValidatesAndUsesNeutralOperationIDs(t *testing.T) {
 		}
 	}
 	for _, id := range []string{
+		capabilitycontract.MeshRuntimeValidateOperation,
+		capabilitycontract.MeshRuntimeEnsureAgentOperation,
+		capabilitycontract.MeshRuntimeEnsureControlPlaneOperation,
+		capabilitycontract.MeshRuntimeStatusOperation,
 		capabilitycontract.MeshMembershipEnrollOperation,
 		capabilitycontract.MeshMembershipStatusOperation,
 		capabilitycontract.MeshMembershipLeaveOperation,

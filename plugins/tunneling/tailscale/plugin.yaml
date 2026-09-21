@@ -2,6 +2,8 @@ schema: opute-provider-plugin.v1
 pluginId: com.opute.tailscale
 version: 1.0.0
 capabilities:
+  - id: opute.capability.mesh-runtime.v1
+    version: 1
   - id: opute.capability.mesh-membership.v1
     version: 1
   - id: opute.capability.private-mesh.v1

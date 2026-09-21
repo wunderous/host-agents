@@ -255,11 +255,44 @@ func (s *Server) activateProviderGeneration(metadata map[string]any) error {
 	if generationID == "" {
 		return nil
 	}
+	// Idempotent for the already-active generation. Seam activate / provider
+	// reload with a stable activationNonce (e.g. "...-default") finds the
+	// completed activate plan, calls activateCompletedProviderCandidate, then
+	// re-runs the plan to completion which calls activateProviderGeneration
+	// again. MarkReady used to fail ("expected candidate") and cleanup Fail'd
+	// the live generation, leaving opute.provider.status active=false and
+	// probes reporting "generation is no longer active".
+	if existing, ok := s.providerLifecycle.Get(generationID); ok {
+		if active, activeOK := s.providerLifecycle.Active(existing.Provider.ID); activeOK && active.ID == generationID {
+			s.providerMu.RLock()
+			manifest, manifestOK := s.providerCandidateManifests[generationID]
+			adapter := s.providerCandidates[generationID]
+			s.providerMu.RUnlock()
+			if manifestOK {
+				if err := s.registerProviderServicesForGeneration(manifest, generationID); err != nil {
+					return fmt.Errorf("reaffirm provider services for active generation: %w", err)
+				}
+				s.providerMu.Lock()
+				s.providerValidation[existing.Provider.ID] = manifest.Validation.Operation
+				s.providerManifests[existing.Provider.ID] = manifest
+				s.providerMu.Unlock()
+			}
+			if manifestOK && adapter != nil {
+				if err := s.mountProviderGeneration(manifest, generationID, adapter); err != nil {
+					return fmt.Errorf("reaffirm provider mount for active generation: %w", err)
+				}
+				s.completeProviderCandidate(generationID)
+			}
+			return nil
+		}
+	}
 	s.providerMu.RLock()
 	manifest, manifestOK := s.providerCandidateManifests[generationID]
 	previousManifest, previousManifestOK := s.providerManifests[manifest.Provider.ID]
 	s.providerMu.RUnlock()
-	if err := s.providerLifecycle.MarkReady(generationID); err != nil {
+	if existing, ok := s.providerLifecycle.Get(generationID); ok && existing.State == cordis.GenerationReady {
+		// Retry after MarkReady succeeded but Activate did not — skip MarkReady.
+	} else if err := s.providerLifecycle.MarkReady(generationID); err != nil {
 		return fmt.Errorf("provider generation readiness: %w", err)
 	}
 	if ready, ok := s.providerLifecycle.Get(generationID); ok {
@@ -511,6 +544,9 @@ func (s *Server) activationValidationFlows() map[string]func(context.Context, ma
 		},
 		"network-overlay.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
 			return s.activateNetworkingProvider(ctx, "network-overlay.v1", bindings, generationID)
+		},
+		"mesh-runtime.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
+			return s.activateNetworkingProvider(ctx, "mesh-runtime.v1", bindings, generationID)
 		},
 		"mesh-membership.v1": func(ctx context.Context, bindings map[string]any, generationID string) (map[string]any, error) {
 			return s.activateNetworkingProvider(ctx, "mesh-membership.v1", bindings, generationID)

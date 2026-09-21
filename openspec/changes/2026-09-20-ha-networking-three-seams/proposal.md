@@ -18,3 +18,6 @@ consumer neutrality are enforceable per concern.
 
 - Mix-and-match vendors across seams as a supported product path
 - 3-node etcd / deleting Cloudflare / general Funnel TCP / Web Client UI
+
+
+Also publishes mesh-runtime.v1 as the install/configure prerequisites seam (agent + control-plane) ahead of membership.

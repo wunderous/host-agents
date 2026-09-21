@@ -11,6 +11,7 @@ import (
 func TestEnrollIsIdempotent(t *testing.T) {
 	t.Setenv("OPUTE_TAILSCALE_BACKEND", "fake")
 	resetOwnershipStoreForTest()
+	mustEnsureAgent(t, "vm:local:server-a")
 	args := map[string]any{
 		"hostAgentId": "host-a", "targetUri": "vm:local:server-a", "name": "server-a",
 		"credentialKind": "auth-key", "authKey": "tskey-auth-test",
@@ -60,6 +61,7 @@ func TestPrivateProbeRejectsPublicOnlyPath(t *testing.T) {
 func TestCredentialKindFailClosed(t *testing.T) {
 	t.Setenv("OPUTE_TAILSCALE_BACKEND", "fake")
 	resetOwnershipStoreForTest()
+	mustEnsureAgent(t, "vm:local:server-a")
 	_, err := dispatchOverlayOperation(t.Context(), capabilitycontract.NetworkOverlayEnrollOperation, map[string]any{
 		"hostAgentId": "host-a", "targetUri": "vm:local:server-a", "name": "server-a",
 		"credentialKind": "api-key", "apiKey": "tskey-api-test",
@@ -148,8 +150,19 @@ func TestPrivateMeshBothDirections(t *testing.T) {
 	_ = a
 }
 
+func mustEnsureAgent(t *testing.T, target string) {
+	t.Helper()
+	if _, err := dispatchOverlayOperation(t.Context(), capabilitycontract.MeshRuntimeEnsureAgentOperation, map[string]any{
+		"hostAgentId": "test-host",
+		"targetUri":   target,
+	}); err != nil {
+		t.Fatalf("ensure-agent: %v", err)
+	}
+}
+
 func mustEnroll(t *testing.T, target, name string) map[string]any {
 	t.Helper()
+	mustEnsureAgent(t, target)
 	result, err := dispatchOverlayOperation(t.Context(), capabilitycontract.NetworkOverlayEnrollOperation, map[string]any{
 		"hostAgentId": "host-a", "targetUri": target, "name": name, "credentialKind": "auth-key", "authKey": "tskey-auth-test",
 	})
@@ -180,6 +193,8 @@ func mustJSON(t *testing.T, value any) string {
 func TestReportTwoNodeReadinessAxes(t *testing.T) {
 	resetOwnershipStoreForTest()
 	t.Setenv("OPUTE_TAILSCALE_BACKEND", "fake")
+	mustEnsureAgent(t, "vm:local:a")
+	mustEnsureAgent(t, "vm:local:b")
 	if _, err := enrollOverlay(map[string]any{
 		"targetUri": "vm:local:a", "hostAgentId": "host-a", "name": "a",
 		"credentialKind": "auth-key", "authKey": "tskey-auth-test",

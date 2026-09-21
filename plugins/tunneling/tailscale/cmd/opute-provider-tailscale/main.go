@@ -47,18 +47,20 @@ func tailscaleManifest() providercontract.InstallManifest {
 		Schema:   providercontract.InstallManifestVersion,
 		Provider: providercontract.ProviderRef{ID: providerPluginID, Version: providerPluginVer},
 		Provides: []providercontract.CapabilityRef{
+			{ID: capabilitycontract.MeshRuntime, Version: 1},
 			{ID: capabilitycontract.MeshMembership, Version: 1},
 			{ID: capabilitycontract.PrivateMesh, Version: 1},
 			{ID: capabilitycontract.PublicIngress, Version: 1},
 		},
 		Recipes: []providercontract.RecipeRef{
-			{ID: "com.opute.tailscale.activate", Source: providercontract.RecipeSource{URI: "recipes/activate.yaml", Revision: "working-tree", SHA256: "sha256:cbf463bb0db79fec09ca4fff3e5ad99454deafe481ffd14ee2ee8f9ed192253b"}, Mode: "activate"},
+			{ID: "com.opute.tailscale.activate", Source: providercontract.RecipeSource{URI: "recipes/activate.yaml", Revision: "working-tree", SHA256: "sha256:f878248c0cd8c9035a2ab3d2e7f92ca80aeef33b82747d96b7f4053249722204"}, Mode: "activate"},
 			{ID: "com.opute.tailscale.overlay-mesh", Source: providercontract.RecipeSource{URI: "recipes/overlay-mesh.yaml", Revision: "working-tree", SHA256: "sha256:3c783ab82f5e1cafdc657e29ab569fef7c906d61a351554efbc814ebfbc2a27c"}, Mode: "private-mesh"},
 			{ID: "com.opute.tailscale.public-ingress", Source: providercontract.RecipeSource{URI: "recipes/public-ingress.yaml", Revision: "working-tree", SHA256: "sha256:97528bf47b0f350ca4f57cf5ed957e99ba2c5f3027d1573d1e38e0fd5d9b2da6"}, Mode: "public-ingress"},
-			{ID: "com.opute.tailscale.ha-network-bundle", Source: providercontract.RecipeSource{URI: "recipes/ha-network-bundle.yaml", Revision: "working-tree", SHA256: "sha256:3533215b4e2d28cddcb0421adbcc3dc0a6322a1dc5b9fa9061db819d286b9320"}, Mode: "vendor-bundle"},
-			{ID: "com.opute.tailscale.install", Source: providercontract.RecipeSource{URI: "recipes/install.yaml", Revision: "working-tree", SHA256: "sha256:89f403ed4788d7177119ef3186facb3d383208f0f130030820c829379a7387c0"}, Mode: "install"},
+			{ID: "com.opute.tailscale.ha-network-bundle", Source: providercontract.RecipeSource{URI: "recipes/ha-network-bundle.yaml", Revision: "working-tree", SHA256: "sha256:7ede770cca2ee6ed3fa350b768cc2a75a9f9a63b78f2a99f5a7939aba238d6cc"}, Mode: "vendor-bundle"},
+			{ID: "com.opute.tailscale.install", Source: providercontract.RecipeSource{URI: "recipes/install.yaml", Revision: "working-tree", SHA256: "sha256:b7c3560f037fe7f493f483c70944c6f97a52485b49d189b05134b115e3129dba"}, Mode: "install"},
 		},
 		Services: []providercontract.ServiceDefinition{
+			{ID: "opute.capability.mesh-runtime", CapabilityID: capabilitycontract.MeshRuntime, Version: 1, Operations: meshRuntimeOperations()},
 			{ID: "opute.capability.mesh-membership", CapabilityID: capabilitycontract.MeshMembership, Version: 1, Operations: meshMembershipOperations()},
 			{ID: "opute.capability.private-mesh", CapabilityID: capabilitycontract.PrivateMesh, Version: 1, Operations: privateMeshOperations()},
 			{ID: "opute.capability.public-ingress", CapabilityID: capabilitycontract.PublicIngress, Version: 1, Operations: publicIngressOperations()},
@@ -69,6 +71,64 @@ func tailscaleManifest() providercontract.InstallManifest {
 			ResourceCost: &providercontract.ResourceCost{Class: "control"},
 		},
 		Validation: providercontract.ValidationRef{Capability: capabilitycontract.PublicIngress, Operation: capabilitycontract.PublicIngressProbeOperation},
+	}
+}
+
+
+func meshRuntimeOperations() []providercontract.Operation {
+	mutation := func(id string, input map[string]any) providercontract.Operation {
+		return providerOperation(id, "mutation", input, meshRuntimeOutputSchema(), []string{"host", "network"}, overlayTargetBinding())
+	}
+	read := func(id string, input map[string]any) providercontract.Operation {
+		return providerOperation(id, "read", input, meshRuntimeOutputSchema(), []string{"host", "network"}, overlayTargetBinding())
+	}
+	credProps := overlayCredentialProps()
+	return []providercontract.Operation{
+		read(capabilitycontract.MeshRuntimeValidateOperation, map[string]any{
+			"type": "object", "required": []string{"targetUri"},
+			"properties": mergeProps(map[string]any{"targetUri": targetURISchema()}, credProps),
+		}),
+		mutation(capabilitycontract.MeshRuntimeEnsureAgentOperation, map[string]any{
+			"type": "object", "required": []string{"targetUri"},
+			"properties": mergeProps(map[string]any{
+				"targetUri": targetURISchema(),
+				"agentMode": map[string]any{"type": "string", "enum": []string{"node-agent", "host-agent"}},
+			}, credProps),
+		}),
+		mutation(capabilitycontract.MeshRuntimeEnsureControlPlaneOperation, map[string]any{
+			"type": "object", "required": []string{"targetUri"},
+			"properties": mergeProps(map[string]any{
+				"targetUri":        targetURISchema(),
+				"operatorMode":     map[string]any{"type": "boolean"},
+				"ingressClassName": map[string]any{"type": "string"},
+				"operatorEvidence": map[string]any{"type": "string"},
+				"controlPlaneRef":  map[string]any{"type": "string"},
+			}, credProps),
+		}),
+		read(capabilitycontract.MeshRuntimeStatusOperation, map[string]any{
+			"type": "object", "required": []string{"targetUri"},
+			"properties": mergeProps(map[string]any{"targetUri": targetURISchema()}, credProps),
+		}),
+	}
+}
+
+func meshRuntimeOutputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"contractVersion":   map[string]any{"type": "string"},
+			"ready":             map[string]any{"type": "boolean"},
+			"provider":          map[string]any{"type": "string"},
+			"targetUri":         map[string]any{"type": "string"},
+			"agentReady":        map[string]any{"type": "boolean"},
+			"controlPlaneReady": map[string]any{"type": "boolean"},
+			"agentVersion":      map[string]any{"type": "string"},
+			"controlPlaneRef":   map[string]any{"type": "string"},
+			"ingressClassName":  map[string]any{"type": "string"},
+			"probe":             map[string]any{"type": "object"},
+			"error":             map[string]any{"type": "string"},
+			"generation":        map[string]any{"type": "string"},
+		},
 	}
 }
 
@@ -272,7 +332,7 @@ func addManifestTool(server *mcp.Server, manifest providercontract.InstallManife
 }
 
 func addTailscaleOperations(server *mcp.Server) {
-	operations := append(append(meshMembershipOperations(), privateMeshOperations()...), publicIngressOperations()...)
+	operations := append(append(append(meshRuntimeOperations(), meshMembershipOperations()...), privateMeshOperations()...), publicIngressOperations()...)
 	for _, schema := range operations {
 		operation := schema
 		server.AddTool(&mcp.Tool{Name: operation.ID, Description: "Network overlay provider operation", InputSchema: operation.InputSchema, OutputSchema: operation.OutputSchema}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -299,7 +359,11 @@ func dispatchTailscaleOperation(ctx context.Context, operation string, args map[
 			return nil, fmt.Errorf("unsupported placement %q", placement)
 		}
 		return structured(map[string]any{"contractVersion": tunnelingCapability, "ready": true, "bindings": bindings, "placement": placement})
-	case capabilitycontract.MeshMembershipEnrollOperation,
+	case capabilitycontract.MeshRuntimeValidateOperation,
+		capabilitycontract.MeshRuntimeEnsureAgentOperation,
+		capabilitycontract.MeshRuntimeEnsureControlPlaneOperation,
+		capabilitycontract.MeshRuntimeStatusOperation,
+		capabilitycontract.MeshMembershipEnrollOperation,
 		capabilitycontract.MeshMembershipStatusOperation,
 		capabilitycontract.MeshMembershipLeaveOperation,
 		capabilitycontract.PrivateMeshEnsureOperation,
