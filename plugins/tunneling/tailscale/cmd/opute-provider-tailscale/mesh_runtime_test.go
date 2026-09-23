@@ -21,10 +21,10 @@ func TestMeshRuntimeEnsureAgentIsSeparateSeam(t *testing.T) {
 		t.Fatalf("expected agent not ready before ensure-agent: %#v", body)
 	}
 	if _, err := dispatchOverlayOperation(t.Context(), capabilitycontract.NetworkOverlayEnrollOperation, map[string]any{
-		"hostAgentId": "test-host",
-		"targetUri":   target,
-		"name":        "runtime-a",
-		"authKey":     "tskey-auth-test",
+		"hostAgentId":    "test-host",
+		"targetUri":      target,
+		"name":           "runtime-a",
+		"authKey":        "tskey-auth-test",
 		"credentialKind": "auth-key",
 	}); err == nil {
 		t.Fatal("enroll must fail closed when mesh-runtime.ensure-agent was not called")

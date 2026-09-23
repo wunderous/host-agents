@@ -74,7 +74,6 @@ func tailscaleManifest() providercontract.InstallManifest {
 	}
 }
 
-
 func meshRuntimeOperations() []providercontract.Operation {
 	mutation := func(id string, input map[string]any) providercontract.Operation {
 		return providerOperation(id, "mutation", input, meshRuntimeOutputSchema(), []string{"host", "network"}, overlayTargetBinding())

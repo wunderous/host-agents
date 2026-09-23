@@ -110,7 +110,6 @@ func dispatchLiveOverlayOperation(ctx context.Context, operation string, args ma
 	}
 }
 
-
 func dispatchLiveMeshRuntime(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
 	ensureTailscaleEnvLoaded()
 	switch operation {

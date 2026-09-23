@@ -247,7 +247,6 @@ func (s *Server) validateRecipeActivation(ctx context.Context, runID string, met
 	return active, observation, nil
 }
 
-
 // activationPublishManifest returns the InstallManifest whose Services are the
 // subset declared by the activating recipe's runtime.capabilities. Empty or
 // absent capabilities preserve the full provider surface (legacy activates).

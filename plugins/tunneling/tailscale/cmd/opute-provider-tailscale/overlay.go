@@ -1060,7 +1060,6 @@ func seedForeignMembershipForTest(targetURI, ref string) {
 	ownershipStore.byTarget[targetURI] = ref
 }
 
-
 func dispatchFakeMeshRuntime(ctx context.Context, operation string, args map[string]any) (*mcp.CallToolResult, error) {
 	_ = ctx
 	switch operation {
