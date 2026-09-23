@@ -64,15 +64,16 @@ protocol guide found four gaps that the structural checklist did not catch:
 - The tutorial offered both npm and from-source paths, and the generator used
   checkout-specific paths with a silent zero-tools fallback.
 
-The current working-tree changes cover each finding. The generator now validates
+The changes for this pass covered each finding. The generator now validates
 the catalog snapshot and requires the capabilities page to list every captured
 tool exactly once. It resolves source and output paths relative to itself.
 
-Validation to date: generation succeeded when invoked from `/tmp`; the rendered
-capabilities page matched all 187 captured names; all local links in 16 generated
-HTML pages resolved; and the homepage, tutorial, hub, architecture, capabilities,
-and networking pages were reviewed in a local browser preview. Production
-publishing remains pending.
+Validation at that stage: generation succeeded when invoked from a temporary
+directory; the rendered capabilities page matched all 187 captured names; all
+local links in 16 generated HTML pages resolved; and the homepage, tutorial,
+hub, architecture, capabilities, and networking pages were reviewed in a local
+browser preview. The corrections were later pushed and published; see Final
+verification below.
 
 ## Live-site and search metadata follow-up (2026-09-22)
 
@@ -102,8 +103,8 @@ HTML pages have unique descriptions and matching canonical / social URLs; all
 local links resolve; the sitemap contains exactly the 16 canonical pages; and
 the capabilities page contains no host identity. A focused `site:` web search
 did not surface an Opute result, but that is not proof of non-indexing; Search
-Console data was not available. Production deployment and live verification of
-these changes remain pending.
+Console data was not available. At the time of this audit, production deployment
+and live verification had not occurred; see Final verification below.
 
 ## Accessibility and live experience follow-up (2026-09-23)
 
@@ -116,8 +117,50 @@ numbering remains while assistive technology receives the list position once.
 
 The homepage's first viewport presents one primary “Get started” action, a
 secondary Docs link, and a terminal launch example. Its Spanish chrome includes
-a banner that explains the page prose remains English. Current live checks still
-show the site has not received the pushed accuracy/SEO changes: both apex and
-www `robots.txt` return 404, and the live architecture and networking pages
-still contain the old handshake and mismatched service-definition count.
-Source validation and production publish are pending.
+a banner that explains the page prose remains English. At this stage, live checks
+still showed the old content and robots.txt 404 responses. The corrected source
+and production publish were pending at that point; see Final verification below.
+
+## Final verification (2026-09-23)
+
+The site updates are live on main at commit
+680dcfe2d908db6d100740f5cabf38a2b7572d2d. CI passed in
+[run 35824629522](https://github.com/wunderous/host-agents/actions/runs/35824629522)
+and Publish passed in
+[run 35824629472](https://github.com/wunderous/host-agents/actions/runs/35824629472).
+
+The committed host-local recipe (site/recipes/www-opute-io.yaml, SHA-256
+6d5ff4815ecb2c18a75fc2b6c2f20ca2b6c74fa2423da1bf96d43a9c33376966) validated
+against the live 187-tool Host Agent catalog. Run
+89f0e1cf-f784-4866-aaeb-bdc3c94fc8c3 completed; build, apply, tunnel, www probe,
+and apex probe nodes were all satisfied. The Deployment is generation 15 with
+the expected docs-9cdbc40 image and one updated, ready, available replica. The
+site pod, dedicated tunnel connector, and registry pod were Running and Ready.
+
+The initial tunnel-route plan node exposed a mismatch in its readiness check:
+probe-host-tunnel calls a Host Agent HTTP probe against a Kubernetes-only
+service name and tries to mint an MCP token for a static docs site. Its direct
+read-only result reported routed: true, while those internal readiness probes
+were not applicable; inside the plan, the nested call also hit a declared host
+capacity rejection. The recipe now gates on the user-visible outcome instead:
+after tunnel setup, both public site roots must pass probe_http_endpoint. The
+run recorded HTTP 200 for https://www.opute.io/ and https://opute.io/.
+
+Final public checks found no failures:
+
+- The sitemap contains exactly 16 unique canonical routes. Every route returned
+  HTTP 200, has one H1, a unique title and description, and matching canonical
+  and Open Graph URLs.
+- robots.txt and sitemap.xml returned HTTP 200 on both apex and www; each robots
+  file names the www sitemap. llms.txt and openapi.json returned HTTP 200.
+- The live capabilities page contains every name from a fresh 187-tool catalog
+  comparison, with zero missing names. The architecture page documents
+  server/discover; networking describes three Service Definitions and marks
+  network-overlay.* as deprecated.
+- The accessibility tree exposes each tutorial step number once. The homepage
+  presents one primary Get started action, a secondary Docs link, and a terminal
+  launch example in its first viewport.
+
+Search Console and site analytics were not available. The earlier focused site:
+search is not proof of indexing, and these checks do not establish search
+ranking or conversion impact.
