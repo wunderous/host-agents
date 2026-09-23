@@ -116,10 +116,10 @@ lists and moves each decorative number into an `aria-hidden` span. Visual
 numbering remains while assistive technology receives the list position once.
 
 The homepage's first viewport presents one primary “Get started” action, a
-secondary Docs link, and a terminal launch example. Its Spanish chrome includes
-a banner that explains the page prose remains English. At this stage, live checks
-still showed the old content and robots.txt 404 responses. The corrected source
-and production publish were pending at that point; see Final verification below.
+secondary Docs link, and a terminal launch example. Its language banner explains
+that the page prose remains English. At this stage, live checks still showed the
+old content and robots.txt 404 responses. The corrected source and production
+publish were pending at that point; see Final verification below.
 
 ## Final verification (2026-09-23)
 
@@ -164,3 +164,29 @@ Final public checks found no failures:
 Search Console and site analytics were not available. The earlier focused site:
 search is not proof of indexing, and these checks do not establish search
 ranking or conversion impact.
+
+## French language follow-up (2026-09-23)
+
+The documentation site's language selector now offers English and French. The
+French locale translates the navigation, search placeholder, controls, footer,
+and status banner; documentation page prose remains English, as the banner
+states. A live browser check confirmed French was selected at `?lang=fr`, with
+French navigation and search text. Opening the legacy `?lang=es` URL normalized
+to `?lang=fr`; the live selector had no Spanish option.
+
+The French source change is commit `04b0e3bed7b63d828a030463ebff895d5d14f5e0`.
+It is live in image
+`10.0.100.66:30500/opute/host-agent-www:sha-1a90be26c5409393c8b9b836fa503ecad3e8b31a`.
+The `host-agent-www` Deployment is on generation 16 with one updated, ready,
+available replica, and the namespace returned one ready site pod. Typed public
+probes returned HTTP 200 for both `https://www.opute.io/` and `https://opute.io/`.
+CI passed in [run 35828895146](https://github.com/wunderous/host-agents/actions/runs/35828895146)
+and Publish passed in [run 35828895074](https://github.com/wunderous/host-agents/actions/runs/35828895074)
+for the pushed main state.
+
+The host-local site recipe's broad image-readiness checks had reported success
+without applying the French image. An attempted exact-image assertion could not
+work because recipe assertion values do not interpolate input variables; that
+unsupported edit was reverted. The verified French rollout used task-aware,
+typed Host Agent build and apply calls, followed by an exact Deployment image
+read-back and public endpoint probes.
