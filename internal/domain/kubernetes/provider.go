@@ -80,7 +80,7 @@ func (s *Service) KubernetesProviderExecutor() KubernetesProviderExecutor {
 func (s *Service) TargetURI(providerInstanceName string) (string, error) {
 	providerInstanceName = strings.TrimSpace(providerInstanceName)
 	if providerInstanceName == "" {
-		return "", fmt.Errorf("Kubernetes provider instance name is required")
+		return "", fmt.Errorf("kubernetes provider instance name is required")
 	}
 	uri, err := resourceid.ClusterURI(s.shared.EffectiveTenantID(), providerInstanceName)
 	if err != nil {

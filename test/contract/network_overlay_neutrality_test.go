@@ -73,7 +73,11 @@ func TestNetworkOverlayOperationIDsAreProviderNeutral(t *testing.T) {
 				continue
 			}
 			for i, name := range valueSpec.Names {
-				if !(strings.HasPrefix(name.Name, "NetworkOverlay") || strings.HasPrefix(name.Name, "MeshMembership") || strings.HasPrefix(name.Name, "PrivateMesh") || strings.HasPrefix(name.Name, "PublicIngress")) || !strings.HasSuffix(name.Name, "Operation") {
+				isNetworkingOperation := strings.HasPrefix(name.Name, "NetworkOverlay") ||
+					strings.HasPrefix(name.Name, "MeshMembership") ||
+					strings.HasPrefix(name.Name, "PrivateMesh") ||
+					strings.HasPrefix(name.Name, "PublicIngress")
+				if !isNetworkingOperation || !strings.HasSuffix(name.Name, "Operation") {
 					continue
 				}
 				if i >= len(valueSpec.Values) {
