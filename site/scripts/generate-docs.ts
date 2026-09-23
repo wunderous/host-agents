@@ -55,6 +55,7 @@ const networkOverlayCount = toolCatalogCapture.families["network-overlay"]
 
 const CSS = "/styles.css?v=20260922a"
 const ASSET_V = "20260922a"
+const SITE_ORIGIN = "https://www.opute.io"
 
 const MERMAID = `
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
@@ -83,6 +84,37 @@ const MERMAID = `
 const SITE_SCRIPTS = `
 <script src="/search.js?v=${ASSET_V}" defer></script>
 <script src="/i18n.js?v=${ASSET_V}" defer></script>`
+
+const escapeHTML = (value: string) =>
+  value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;"
+      case "<":
+        return "&lt;"
+      case ">":
+        return "&gt;"
+      case '"':
+        return "&quot;"
+      case "'":
+        return "&#39;"
+      default:
+        return character
+    }
+  })
+
+const seoMeta = (title: string, description: string, canonicalUrl: string) => `<title>${escapeHTML(title)}</title>
+  <meta name="description" content="${escapeHTML(description)}" />
+  <link rel="canonical" href="${escapeHTML(canonicalUrl)}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Opute Host Agent" />
+  <meta property="og:title" content="${escapeHTML(title)}" />
+  <meta property="og:description" content="${escapeHTML(description)}" />
+  <meta property="og:url" content="${escapeHTML(canonicalUrl)}" />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="${escapeHTML(title)}" />
+  <meta name="twitter:description" content="${escapeHTML(description)}" />`
 
 const nav = (current: string) => `
 <header class="top">
@@ -134,15 +166,15 @@ const side = (current: string) => `
   </ul>
 </aside>`
 
-const page = (opts: { title: string; current: string; body: string; mermaid?: boolean }) => `<!DOCTYPE html>
+const page = (
+  opts: { title: string; description: string; current: string; body: string; mermaid?: boolean },
+  canonicalPath: string,
+) => `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${opts.title} — Opute Host Agent</title>
-  <meta name="description" content="Opute Host Agent documentation: ${opts.title}" />
-  <link rel="alternate" hreflang="en" href="https://www.opute.io/docs/" />
-  <link rel="alternate" hreflang="es" href="https://www.opute.io/docs/?lang=es" />
+  ${seoMeta(`${opts.title} — Opute Host Agent`, opts.description, `${SITE_ORIGIN}${canonicalPath}`)}
   <link rel="stylesheet" href="${CSS}" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -172,9 +204,10 @@ const tools = (...names: string[]) => {
   return `<div class="tool-list">${names.map((n) => `<code>${n}</code>`).join("")}</div>`
 }
 
-const pages: Record<string, { title: string; current: string; body: string; mermaid?: boolean }> = {
+const pages: Record<string, { title: string; description: string; current: string; body: string; mermaid?: boolean }> = {
   "docs/index.html": {
     title: "Documentation",
+    description: "Opute Host Agent docs: install the Linux MCP server, connect a client, browse its tools, and understand how it runs.",
     current: "docs",
     body: `
 <p class="badge">Diátaxis</p>
@@ -230,6 +263,7 @@ const pages: Record<string, { title: string; current: string; body: string; merm
 
   "docs/get-started/index.html": {
     title: "Get started",
+    description: "Start Opute Host Agent on Linux and verify authenticated MCP tool discovery in about ten minutes.",
     current: "get-started",
     body: `
 <p class="badge">Tutorial</p>
@@ -290,6 +324,7 @@ npx -y @opute/host-agent url
 
   "docs/install/index.html": {
     title: "Install & run",
+    description: "Install Opute Host Agent from source or npm, choose a serve mode, and configure Linux, WSL2, or production hosts.",
     current: "install",
     body: `
 <p class="badge">How-to</p>
@@ -345,6 +380,7 @@ npx -y @opute/host-agent stop</code></pre>
 
   "docs/mcp-clients/index.html": {
     title: "Connect an MCP client",
+    description: "Connect Cursor, Claude Desktop, VS Code, or another MCP client to an authenticated Opute Host Agent.",
     current: "mcp-clients",
     body: `
 <p class="badge">How-to</p>
@@ -411,6 +447,7 @@ npx -y @opute/host-agent stop</code></pre>
 
   "docs/dogfood/index.html": {
     title: "Publish this site",
+    description: "Deploy the Opute Host Agent docs site on opute.io with its dedicated host-local recipe.",
     current: "dogfood",
     body: `
 <p class="badge">How-to</p>
@@ -467,6 +504,7 @@ flowchart TB
 
   "docs/troubleshooting/index.html": {
     title: "Troubleshooting",
+    description: "Fix Opute Host Agent authentication, mutation, port, catalog, and recipe-run issues.",
     current: "troubleshooting",
     body: `
 <p class="badge">How-to</p>
@@ -518,6 +556,7 @@ flowchart TB
 
   "docs/capabilities/index.html": {
     title: "Capabilities",
+    description: "Browse the captured Opute Host Agent tool catalog and learn how to discover the live, revisioned catalog.",
     current: "capabilities",
     body: `
 <p class="badge">Reference</p>
@@ -806,6 +845,7 @@ ${tools(
 
   "docs/configuration/index.html": {
     title: "Configuration",
+    description: "Configure Opute Host Agent identity, bind address, port, authentication, providers, and mutation controls.",
     current: "configuration",
     body: `
 <p class="badge">Reference</p>
@@ -875,6 +915,7 @@ opute-host-agent help</code></pre>
 
   "docs/openapi/index.html": {
     title: "OpenAPI",
+    description: "HTTP edge reference for Opute Host Agent health checks and the Streamable HTTP MCP endpoint.",
     current: "openapi",
     body: `
 <p class="badge">Reference</p>
@@ -910,6 +951,7 @@ opute-host-agent help</code></pre>
 
   "docs/concepts/index.html": {
     title: "Concepts",
+    description: "Understand what Opute Host Agent does, how it differs from Opute Platform, and how its typed tools work.",
     current: "concepts",
     body: `
 <p class="badge">Explanation</p>
@@ -956,6 +998,7 @@ flowchart LR
 
   "docs/architecture/index.html": {
     title: "Architecture",
+    description: "Learn how Host Agent's transport, catalog, providers, domains, and Cordis kernel fit together.",
     current: "architecture",
     body: `
 <p class="badge">Explanation</p>
@@ -1064,6 +1107,7 @@ flowchart LR
 
   "docs/recipes/index.html": {
     title: "Recipes & plans",
+    description: "Learn when to use Host Agent recipes or plans and how the runner validates and executes each step.",
     current: "recipes",
     body: `
 <p class="badge">Explanation</p>
@@ -1126,6 +1170,7 @@ flowchart TB
 
   "docs/recipe-primitives/index.html": {
     title: "Recipe & plan primitives",
+    description: "Reference Host Agent recipe and plan fields, statuses, assertions, and execution limits.",
     current: "recipe-primitives",
     body: `
 <p class="badge">Reference</p>
@@ -1375,6 +1420,7 @@ flowchart TB
 
   "docs/networking/index.html": {
     title: "Networking",
+    description: "Understand Host Agent's membership, private mesh, public ingress, and tunnel capabilities.",
     current: "networking",
     body: `
 <p class="badge">Explanation</p>
@@ -1442,6 +1488,7 @@ flowchart LR
 
   "docs/resources/index.html": {
     title: "Resources & safety",
+    description: "Learn how Host Agent admits resource identities, applies effect gates, enforces quotas, and redacts secrets.",
     current: "resources",
     body: `
 <p class="badge">Explanation</p>
@@ -1517,7 +1564,8 @@ if (missingToolNames.length || unexpectedToolNames.length || duplicateToolNames.
 for (const [rel, spec] of Object.entries(pages)) {
   const full = join(root, rel)
   mkdirSync(dirname(full), { recursive: true })
-  writeFileSync(full, page(spec))
+  const canonicalPath = `/${rel.replace(/index\.html$/, "")}`
+  writeFileSync(full, page(spec, canonicalPath))
   console.log("wrote", rel)
 }
 
@@ -1528,10 +1576,7 @@ writeFileSync(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Opute Host Agent</title>
-  <meta name="description" content="Run an authenticated MCP server beside Linux infrastructure. AI clients discover typed tools for Incus, Kubernetes, host services, and networking." />
-  <link rel="alternate" hreflang="en" href="https://www.opute.io/" />
-  <link rel="alternate" hreflang="es" href="https://www.opute.io/?lang=es" />
+  ${seoMeta("Opute Host Agent", "Run an authenticated MCP server beside Linux infrastructure. AI clients discover typed tools for Incus, Kubernetes, host services, and networking.", `${SITE_ORIGIN}/`)}
   <link rel="stylesheet" href="${CSS}" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -1581,6 +1626,21 @@ http://127.0.0.1:3014/mcp</pre>
 )
 console.log("wrote index.html")
 
+const generatedDateUTC = new Date().toISOString().slice(0, 10)
+const sitemapPaths = ["/", ...Object.keys(pages).map((rel) => `/${rel.replace(/index\.html$/, "")}`)]
+const sitemap = [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+  ...sitemapPaths.map(
+    (path) => `  <url>\n    <loc>${SITE_ORIGIN}${path}</loc>\n    <lastmod>${generatedDateUTC}</lastmod>\n  </url>`,
+  ),
+  "</urlset>",
+  "",
+].join("\n")
+writeFileSync(join(root, "robots.txt"), `User-agent: *\nAllow: /\nSitemap: ${SITE_ORIGIN}/sitemap.xml\n`)
+writeFileSync(join(root, "sitemap.xml"), sitemap)
+console.log("wrote robots.txt and sitemap.xml", sitemapPaths.length)
+
 // Search index from generated page bodies
 {
   const strip = (html: string) =>
@@ -1595,7 +1655,7 @@ console.log("wrote index.html")
     return {
       url: url.endsWith("/") || url === "/docs" ? (url.endsWith("/") ? url : url + "/") : url + "/",
       title: spec.title,
-      description: `Opute Host Agent documentation: ${spec.title}`,
+      description: spec.description,
       body: strip(spec.body).slice(0, 12000),
     }
   })

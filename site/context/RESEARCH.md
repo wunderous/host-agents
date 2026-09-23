@@ -73,3 +73,34 @@ capabilities page matched all 187 captured names; all local links in 16 generate
 HTML pages resolved; and the homepage, tutorial, hub, architecture, capabilities,
 and networking pages were reviewed in a local browser preview. Production
 publishing remains pending.
+
+## Live-site and search metadata follow-up (2026-09-22)
+
+A browser review of `https://www.opute.io` confirmed the deployed pages had not
+incorporated the pushed content fixes:
+
+- `/docs/capabilities/` still exposed a host identity and omitted the catalog
+  capture date.
+- `/docs/architecture/` still showed the retired `initialize / capabilities`
+  exchange instead of the current stateless MCP discovery flow.
+- `/docs/networking/` listed three Service Definitions but said “four
+  definitions above.”
+- `/docs/get-started/` still split the tutorial between npm and source-install
+  paths.
+- `robots.txt` returned nginx 404.
+
+The source audit found every docs page advertised `/docs/` as its English
+alternate, even for other routes, and advertised a Spanish alternate while only
+the navigation chrome is translated. Pages also lacked canonical, Open Graph,
+and Twitter metadata; descriptions were generic. The generator now emits a
+canonical URL and unique description for each page, shares descriptions with
+the search index, removes the inaccurate language alternates, and generates
+`robots.txt` plus a sitemap for all 16 canonical HTML routes.
+
+Validation: generation succeeded when invoked from `/tmp`; all 16 generated
+HTML pages have unique descriptions and matching canonical / social URLs; all
+local links resolve; the sitemap contains exactly the 16 canonical pages; and
+the capabilities page contains no host identity. A focused `site:` web search
+did not surface an Opute result, but that is not proof of non-indexing; Search
+Console data was not available. Production deployment and live verification of
+these changes remain pending.
