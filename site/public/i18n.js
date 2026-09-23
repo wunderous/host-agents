@@ -15,24 +15,36 @@
       "footer.openapi": "OpenAPI",
       "i18n.banner": "",
     },
-    es: {
-      "nav.docs": "Docs",
-      "nav.getStarted": "Empezar",
-      "nav.search": "Buscar docs",
-      "search.placeholder": "Buscar en la documentación…",
-      "search.empty": "Sin resultados.",
-      "lang.label": "Idioma",
-      "footer.facts": "Los hechos siguen el repositorio",
+    fr: {
+      "nav.docs": "Documentation",
+      "nav.getStarted": "Commencer",
+      "nav.search": "Rechercher dans la documentation",
+      "search.placeholder": "Rechercher dans la documentation…",
+      "search.empty": "Aucun résultat.",
+      "lang.label": "Langue",
+      "footer.facts": "Les informations reflètent le dépôt",
       "footer.openapi": "OpenAPI",
       "i18n.banner":
-        "La interfaz está en español; el contenido de las páginas permanece en inglés por ahora.",
+        "L’interface est en français. Le contenu des pages reste en anglais pour le moment.",
     },
   };
 
   const supported = Object.keys(STRINGS);
+  window.oputeDocsI18n = {
+    translate: (key) => {
+      const dict = STRINGS[document.documentElement.lang] || STRINGS.en;
+      return dict[key] ?? STRINGS.en[key] ?? "";
+    },
+  };
   const params = new URLSearchParams(location.search);
   const stored = localStorage.getItem("opute-docs-lang");
-  const initial = params.get("lang") || stored || document.documentElement.lang || "en";
+  const requested = params.get("lang") || stored || document.documentElement.lang || "en";
+  const initial = requested === "es" ? "fr" : requested;
+  if (params.get("lang") === "es") {
+    const url = new URL(location.href);
+    url.searchParams.set("lang", "fr");
+    history.replaceState({}, "", url.toString());
+  }
   const lang = supported.includes(initial) ? initial : "en";
 
   const apply = (next) => {

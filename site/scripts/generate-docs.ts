@@ -54,7 +54,7 @@ const captureDateUTC = `${new Date(toolCatalogCapture.capturedAt).toISOString().
 const networkOverlayCount = toolCatalogCapture.families["network-overlay"]
 
 const CSS = "/styles.css?v=20260922a"
-const ASSET_V = "20260922a"
+const ASSET_V = "20260923a"
 const SITE_ORIGIN = "https://www.opute.io"
 
 const MERMAID = `
@@ -124,9 +124,9 @@ const nav = (current: string) => `
       <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
       <div class="search-results" data-docs-search-results hidden></div>
     </div>
-    <div class="lang" role="group" aria-label="Language">
+    <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
-      <button type="button" data-lang-option="es" aria-pressed="false">ES</button>
+      <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
     <nav>
       <a href="/docs/" data-i18n="nav.docs"${current === "docs" ? ' aria-current="page"' : ""}>Docs</a>

@@ -42,7 +42,9 @@
   const render = (hits) => {
     if (!hits.length) {
       panel.hidden = false;
-      panel.innerHTML = `<p class="search-empty" data-i18n="search.empty">No matches.</p>`;
+      const translate = window.oputeDocsI18n?.translate;
+      const emptyText = translate ? translate("search.empty") : "No matches.";
+      panel.innerHTML = `<p class="search-empty" data-i18n="search.empty">${escapeHtml(emptyText)}</p>`;
       return;
     }
     panel.hidden = false;
