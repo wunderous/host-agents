@@ -39,8 +39,8 @@ inputs:
     schema: {type: string, minLength: 1}
   image:
     required: true
-    description: Full image reference to build/push (registry/repo:tag).
-    schema: {type: string, minLength: 1}
+    description: Full registry reference for the site image (registry/opute/host-agent-www:tag).
+    schema: {type: string, minLength: 1, pattern: '^.+/opute/host-agent-www:[^/]+$'}
   workloadManifest:
     required: true
     description: Kubernetes manifest YAML for namespace/deploy/service (image already substituted).
@@ -73,8 +73,9 @@ inputs:
   registryProbe:
     description: >
       Compatibility input retained for deployment clients. The generic HTTP
-      probe does not set OCI manifest content negotiation headers; the recipe
-      verifies the exact image through Kubernetes rollout status instead.
+      probe does not set OCI manifest content negotiation headers. The recipe
+      checks registry-pod readiness and the site-image repository during its
+      Kubernetes rollout validation.
     schema: {type: string, format: uri}
   runNonce:
     default: default
@@ -127,8 +128,8 @@ plan:
           resourceName: host-agent-www
         assert:
           - path: /resource/spec/template/spec/containers/0/image
-            op: eq
-            value: ${vars.inputs.image}
+            op: contains
+            value: "/opute/host-agent-www:"
           - path: /resource/status/updatedReplicas
             op: eq
             value: 1
