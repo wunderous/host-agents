@@ -87,6 +87,7 @@
 <h2>Start the local agent</h2>
 <ol class="steps">
   <li>
+    <span class="step-number" aria-hidden="true"></span>
     <strong>Start the agent</strong>
     <pre><code>export MCP_AUTH_TOKEN=dev-token
 npx -y @opute/host-agent start --background
@@ -97,10 +98,12 @@ npx -y @opute/host-agent url
     <p>Expect HTTP 200 and JSON containing <code>"agentId":"local-host-agent"</code>.</p>
   </li>
   <li>
+    <span class="step-number" aria-hidden="true"></span>
     <strong>Connect your MCP client</strong>
     <p>Use <code>http://127.0.0.1:3014/mcp</code> and follow the client-specific steps in <a href="/docs/mcp-clients/">Connect an MCP client</a>. The Bearer token must match <code>MCP_AUTH_TOKEN</code>.</p>
   </li>
   <li>
+    <span class="step-number" aria-hidden="true"></span>
     <strong>List tools, then read the host</strong>
     <p>Refresh the client’s tool list, then call <code>get_host_info</code>. The result should contain structured host facts.</p>
   </li>

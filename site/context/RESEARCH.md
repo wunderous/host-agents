@@ -104,3 +104,20 @@ the capabilities page contains no host identity. A focused `site:` web search
 did not surface an Opute result, but that is not proof of non-indexing; Search
 Console data was not available. Production deployment and live verification of
 these changes remain pending.
+
+## Accessibility and live experience follow-up (2026-09-23)
+
+A fresh browser accessibility-tree review of the live homepage and tutorial
+found each ordered step exposed two copies of its number (for example,
+`1 1 Run the agent`). The HTML kept native `<ol>` semantics while CSS inserted
+another visible number through `::before`. The source now keeps the ordered
+lists and moves each decorative number into an `aria-hidden` span. Visual
+numbering remains while assistive technology receives the list position once.
+
+The homepage's first viewport presents one primary “Get started” action, a
+secondary Docs link, and a terminal launch example. Its Spanish chrome includes
+a banner that explains the page prose remains English. Current live checks still
+show the site has not received the pushed accuracy/SEO changes: both apex and
+www `robots.txt` return 404, and the live architecture and networking pages
+still contain the old handshake and mismatched service-definition count.
+Source validation and production publish are pending.

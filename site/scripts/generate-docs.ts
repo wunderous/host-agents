@@ -281,6 +281,7 @@ const pages: Record<string, { title: string; description: string; current: strin
 <h2>Start the local agent</h2>
 <ol class="steps">
   <li>
+    <span class="step-number" aria-hidden="true"></span>
     <strong>Start the agent</strong>
     <pre><code>export MCP_AUTH_TOKEN=dev-token
 npx -y @opute/host-agent start --background
@@ -291,10 +292,12 @@ npx -y @opute/host-agent url
     <p>Expect HTTP 200 and JSON containing <code>"agentId":"local-host-agent"</code>.</p>
   </li>
   <li>
+    <span class="step-number" aria-hidden="true"></span>
     <strong>Connect your MCP client</strong>
     <p>Use <code>http://127.0.0.1:3014/mcp</code> and follow the client-specific steps in <a href="/docs/mcp-clients/">Connect an MCP client</a>. The Bearer token must match <code>MCP_AUTH_TOKEN</code>.</p>
   </li>
   <li>
+    <span class="step-number" aria-hidden="true"></span>
     <strong>List tools, then read the host</strong>
     <p>Refresh the client’s tool list, then call <code>get_host_info</code>. The result should contain structured host facts.</p>
   </li>
@@ -1605,9 +1608,9 @@ http://127.0.0.1:3014/mcp</pre>
   <section class="pitch" aria-label="How it works">
     <h2>How it works</h2>
     <ol class="pitch-steps">
-      <li><strong>Run the agent</strong> on the host that owns Incus / K3s.</li>
-      <li><strong>Connect an IDE or Platform</strong> over Streamable HTTP MCP with a Bearer token.</li>
-      <li><strong>Call named tools</strong> from a revisioned catalog — or pin work in recipes and plans.</li>
+      <li><span class="step-number" aria-hidden="true"></span><strong>Run the agent</strong> on the host that owns Incus / K3s.</li>
+      <li><span class="step-number" aria-hidden="true"></span><strong>Connect an IDE or Platform</strong> over Streamable HTTP MCP with a Bearer token.</li>
+      <li><span class="step-number" aria-hidden="true"></span><strong>Call named tools</strong> from a revisioned catalog — or pin work in recipes and plans.</li>
     </ol>
     <p class="pitch-for">
       Built for operators and agent authors who already run real infrastructure.
