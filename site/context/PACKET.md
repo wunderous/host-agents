@@ -35,14 +35,14 @@ Explanation opens with *about* / *why*; reference opens with facts.
 | Networking seams | `/docs/networking/` | Explanation |
 | URIs / admission / redaction | `/docs/resources/` | Explanation |
 
-## Audited truths (2026-09-20)
+## Audited truths (2026-09-21 UTC)
 
 - Standalone default: `127.0.0.1:3014`; platform default: `0.0.0.0:3004`
 - `OPUTE_REMOTE_AGENT_ID` required; npm defaults to `local-host-agent`
 - `/mcp` needs Bearer `MCP_AUTH_TOKEN` (or OAuth); `/health` is open
 - Mutations denied until `OPUTE_STANDALONE_ALLOW_MUTATIONS=true`
-- Live catalog capture: 187 tools in `tools-list.redacted.json` (seams live; network-overlay=0)
-- HA networking: mesh-runtime + three seams (ADR-0016); `network-overlay.*` deprecated alias
+- Catalog snapshot: 187 tools in `tools-list.redacted.json` (2026-09-21 UTC; network-overlay=0)
+- HA networking: `mesh-runtime.v1` plus three Service Definitions (ADR-0016); `network-overlay.*` is deprecated
 - Dogfood: dedicated tunnel `opute-www-opute-io`; hostnames `opute.io` + `www.opute.io`
 
 ## Boundaries

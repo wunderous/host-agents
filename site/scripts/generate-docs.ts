@@ -1,16 +1,60 @@
 #!/usr/bin/env bun
 /**
  * Emits static Diátaxis docs under site/public/docs from audited operator truth.
- * Capability groups track site/context/tools-list.redacted.json (live capture).
+ * Capability groups track site/context/tools-list.redacted.json (redacted catalog snapshot).
  * Architecture facts track README.md + docs/adr/* (verify before changing).
  */
 import { mkdirSync, writeFileSync, readFileSync } from "fs"
-import { join } from "path"
+import { dirname, join } from "path"
+import { fileURLToPath } from "url"
 
-const root = "/home/houman/github/wunderous/opute-host-agent/site/public"
+const scriptDir = dirname(fileURLToPath(import.meta.url))
+const siteDir = dirname(scriptDir)
+const root = join(siteDir, "public")
+const contextDir = join(siteDir, "context")
 
-const CSS = "/styles.css?v=20260921m"
-const ASSET_V = "20260921m"
+type ToolCatalogCapture = {
+  capturedAt: string
+  toolCount: number
+  toolNames: string[]
+  families: Record<string, number>
+}
+
+const toolCatalogCapture = JSON.parse(
+  readFileSync(join(contextDir, "tools-list.redacted.json"), "utf8"),
+) as ToolCatalogCapture
+
+if (!Number.isFinite(Date.parse(toolCatalogCapture.capturedAt))) {
+  throw new Error("tools-list.redacted.json has an invalid capturedAt timestamp")
+}
+if (!Number.isSafeInteger(toolCatalogCapture.toolCount) || toolCatalogCapture.toolCount < 0) {
+  throw new Error("tools-list.redacted.json has an invalid toolCount")
+}
+if (
+  !Array.isArray(toolCatalogCapture.toolNames) ||
+  !toolCatalogCapture.toolNames.every((name) => typeof name === "string" && name.length > 0)
+) {
+  throw new Error("tools-list.redacted.json has an invalid toolNames list")
+}
+if (new Set(toolCatalogCapture.toolNames).size !== toolCatalogCapture.toolNames.length) {
+  throw new Error("tools-list.redacted.json contains duplicate tool names")
+}
+if (toolCatalogCapture.toolNames.length !== toolCatalogCapture.toolCount) {
+  throw new Error("tools-list.redacted.json toolCount does not match toolNames")
+}
+if (
+  !toolCatalogCapture.families ||
+  !Number.isSafeInteger(toolCatalogCapture.families["network-overlay"]) ||
+  toolCatalogCapture.families["network-overlay"] < 0
+) {
+  throw new Error("tools-list.redacted.json has an invalid network-overlay family count")
+}
+
+const captureDateUTC = `${new Date(toolCatalogCapture.capturedAt).toISOString().slice(0, 10)} UTC`
+const networkOverlayCount = toolCatalogCapture.families["network-overlay"]
+
+const CSS = "/styles.css?v=20260922a"
+const ASSET_V = "20260922a"
 
 const MERMAID = `
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
@@ -122,8 +166,11 @@ ${SITE_SCRIPTS}
 </html>
 `
 
-const tools = (...names: string[]) =>
-  `<div class="tool-list">${names.map((n) => `<code>${n}</code>`).join("")}</div>`
+const listedToolNames: string[] = []
+const tools = (...names: string[]) => {
+  listedToolNames.push(...names)
+  return `<div class="tool-list">${names.map((n) => `<code>${n}</code>`).join("")}</div>`
+}
 
 const pages: Record<string, { title: string; current: string; body: string; mermaid?: boolean }> = {
   "docs/index.html": {
@@ -132,15 +179,15 @@ const pages: Record<string, { title: string; current: string; body: string; merm
     body: `
 <p class="badge">Diátaxis</p>
 <h1>Documentation</h1>
-<p class="meta"><strong>Opute Host Agent</strong> puts a typed control plane on a Linux host so AI clients and platforms can run real infrastructure work — guests, Kubernetes, registries, tunnels — without inventing shell scripts.</p>
-<p class="meta"><strong>Who it is for.</strong> Operators and agent authors who already run Incus or K3s and need a revisioned MCP tool catalog with fail-closed identity. <strong>Who it is not for.</strong> People looking for a chat UI or for Platform admin at <code>platform.opute.io</code> — that is a different product surface.</p>
+<p class="meta"><strong>Opute Host Agent</strong> is an authenticated MCP server for Linux hosts. AI clients discover a revisioned catalog of typed tools for host, guest, Kubernetes, registry, and tunnel operations.</p>
+<p class="meta"><strong>For.</strong> Infrastructure operators and agent authors running Linux hosts with Incus or K3s. Need Opute Platform? <a href="https://platform.opute.io/">Visit Platform</a>.</p>
 <p class="meta">Organized by job, following <a href="https://diataxis.fr/">Diátaxis</a>. This site at <code>opute.io</code> / <code>www.opute.io</code> is Host Agent dogfood — hosted by the agent it documents.</p>
 
 <div class="doc-index-sections">
   <section>
     <h2>Tutorial</h2>
     <ul>
-      <li><a href="/docs/get-started/"><strong>Get started</strong><span>Build, start, and complete a first authenticated tools/list.</span></a></li>
+      <li><a href="/docs/get-started/"><strong>Get started</strong><span>Start a local agent and complete first authenticated discovery.</span></a></li>
     </ul>
   </section>
   <section>
@@ -155,7 +202,7 @@ const pages: Record<string, { title: string; current: string; body: string; merm
   <section>
     <h2>Reference</h2>
     <ul>
-      <li><a href="/docs/capabilities/"><strong>Capabilities</strong><span>All major tool groups from a live 187-tool catalog capture.</span></a></li>
+      <li><a href="/docs/capabilities/"><strong>Capabilities</strong><span>Every tool in the ${toolCatalogCapture.toolCount}-tool catalog snapshot, grouped by job.</span></a></li>
       <li><a href="/docs/configuration/"><strong>Configuration</strong><span>Ports, bind hosts, required identity, auth, Cloudflare env.</span></a></li>
       <li><a href="/docs/recipe-primitives/"><strong>Recipe &amp; plan primitives</strong><span>Fields, statuses, assertion ops, caps — dry facts.</span></a></li>
       <li><a href="/docs/openapi/"><strong>OpenAPI</strong><span>HTTP surface for <code>/health</code> and Streamable HTTP <code>/mcp</code>.</span></a></li>
@@ -187,16 +234,17 @@ const pages: Record<string, { title: string; current: string; body: string; merm
     body: `
 <p class="badge">Tutorial</p>
 <h1>Get started</h1>
-<p class="meta"><strong>Outcome.</strong> In about ten minutes you will have a Host Agent listening on your machine and an authenticated <code>tools/list</code> from Cursor, Claude Desktop, or another MCP client. No mutations yet — discovery only.</p>
+<p class="meta"><strong>Outcome.</strong> In about ten minutes, you will start a local Host Agent, connect an MCP client, list its tools, and read host information. This tutorial stays with discovery; it does not enable mutations.</p>
 
 <h2>What you will need</h2>
 <ul>
-  <li>Linux or WSL2 (host execution is Linux-only)</li>
-  <li>Network access for <code>npx @opute/host-agent</code> <em>or</em> a Go toolchain to build from source</li>
-  <li>An MCP client that speaks Streamable HTTP</li>
+  <li>Linux or WSL2 with Node.js, npm, and <code>npx</code></li>
+  <li>Network access to download the Host Agent launcher</li>
+  <li><code>curl</code> for the health check</li>
+  <li>An MCP client that supports authenticated Streamable HTTP</li>
 </ul>
 
-<h2>Fastest path (npm launcher)</h2>
+<h2>Start the local agent</h2>
 <ol class="steps">
   <li>
     <strong>Start the agent</strong>
@@ -204,40 +252,17 @@ const pages: Record<string, { title: string; current: string; body: string; merm
 npx -y @opute/host-agent start --background
 npx -y @opute/host-agent url
 # → http://127.0.0.1:3014/mcp</code></pre>
-    <p>The launcher defaults <code>OPUTE_REMOTE_AGENT_ID</code> to <code>local-host-agent</code>. Confirm health:</p>
-    <pre><code>curl -sS http://127.0.0.1:3014/health</code></pre>
+    <p><code>dev-token</code> is a local demo value for this loopback-only example. Replace it with a long random secret before exposing the endpoint beyond your machine. The launcher defaults <code>OPUTE_REMOTE_AGENT_ID</code> to <code>local-host-agent</code>. Confirm health:</p>
+    <pre><code>curl -i -sS http://127.0.0.1:3014/health</code></pre>
+    <p>Expect HTTP 200 and JSON containing <code>"agentId":"local-host-agent"</code>.</p>
   </li>
   <li>
     <strong>Connect your MCP client</strong>
-    <p>Paste the JSON from <a href="/docs/mcp-clients/">Connect an MCP client</a>. The Bearer token must match <code>MCP_AUTH_TOKEN</code>.</p>
+    <p>Use <code>http://127.0.0.1:3014/mcp</code> and follow the client-specific steps in <a href="/docs/mcp-clients/">Connect an MCP client</a>. The Bearer token must match <code>MCP_AUTH_TOKEN</code>.</p>
   </li>
   <li>
     <strong>List tools, then read the host</strong>
-    <p>Run <code>tools/list</code> (or your client’s catalog view). Then call <code>get_host_info</code>. You should get structured JSON — not a shell transcript.</p>
-  </li>
-</ol>
-
-<h2>From-source path</h2>
-<ol class="steps">
-  <li>
-    <strong>Build</strong>
-    <pre><code>git clone https://github.com/wunderous/host-agents.git
-cd host-agents
-make build   # → dist/opute-host-agent</code></pre>
-  </li>
-  <li>
-    <strong>Set identity and auth</strong>
-    <pre><code>export OPUTE_REMOTE_AGENT_ID=local-host-agent
-export OPUTE_INFRA_PROVIDER_ID=incus
-export OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone"
-export MCP_AUTH_TOKEN=dev-token</code></pre>
-  </li>
-  <li>
-    <strong>Check, then serve</strong>
-    <pre><code>./dist/opute-host-agent --check
-./dist/opute-host-agent
-# http://127.0.0.1:3014/mcp</code></pre>
-    <p>Then connect a client and list tools as in the fastest path above.</p>
+    <p>Refresh the client’s tool list, then call <code>get_host_info</code>. The result should contain structured host facts.</p>
   </li>
 </ol>
 
@@ -248,8 +273,8 @@ export MCP_AUTH_TOKEN=dev-token</code></pre>
 
 <h2>You succeeded when</h2>
 <ul>
-  <li><code>GET /health</code> returns JSON including your agent id</li>
-  <li><code>tools/list</code> (or <code>get_capability_catalog</code>) completes without 401</li>
+  <li><code>GET /health</code> returns HTTP 200 with the local agent id</li>
+  <li>Your client connects to <code>/mcp</code> with the configured Bearer token and refreshes its tool list</li>
   <li><code>get_host_info</code> returns structured host facts</li>
 </ul>
 
@@ -497,7 +522,7 @@ flowchart TB
     body: `
 <p class="badge">Reference</p>
 <h1>Capabilities</h1>
-<p class="meta">Facts about the typed tool surface from a redacted live capture (187 tools, host-zephyrus-ef47fbbf:3004). Always prefer a live <code>tools/list</code> / <code>get_capability_catalog</code> — catalogs are revisioned. Grouping here is navigational, not a hard API boundary.</p>
+<p class="meta">Complete list from a redacted catalog snapshot captured ${captureDateUTC} (${toolCatalogCapture.toolCount} tools). Tool availability can change; use live <code>tools/list</code> or <code>get_capability_catalog</code> for the current revision. Groups are for browsing; the live catalog defines the API.</p>
 
 <h2>Contract split</h2>
 <ul>
@@ -515,24 +540,38 @@ ${tools(
 )}
 
 <h2>Host &amp; inventory</h2>
-<p>Read and mutate host files, services, capacity, and WSL lifecycle.</p>
+<p>Inspect and manage host files, services, artifacts, capacity, and WSL lifecycle.</p>
 ${tools(
   "get_host_info",
   "get_host_capacity",
   "detect_host_platform",
   "list_host_services",
+  "inspect_host_service",
+  "inspect_host_service_supervisor",
   "inspect_host_file",
   "ensure_host_file",
   "remove_host_file",
   "ensure_host_tool",
   "ensure_host_artifact",
+  "prepare_host_agent_artifacts",
+  "extract_host_archive",
   "run_host_command",
   "probe_http_endpoint",
   "restart_host_service",
   "set_host_service_state",
+  "ensure_host_service_supervisor",
+  "reconcile_host_resource_policy",
   "compact_wsl_disk",
   "terminate_wsl_distribution",
   "shutdown_wsl",
+)}
+
+<h2>Host networking</h2>
+<p>Configure host networking and diagnose or recover network bridges.</p>
+${tools(
+  "configure_network",
+  "diagnose_bridge",
+  "recover_bridge",
 )}
 
 <h2>Guests (Incus)</h2>
@@ -556,8 +595,8 @@ ${tools(
   "stream_vm_console",
   "send_console_input",
   "probe_incus_gpu",
-  "inspect_guest_storage",
-  "trim_guest_storage",
+  "remove_vm_network_device",
+  "resize_console",
 )}
 
 <h2>Kubernetes workloads</h2>
@@ -569,6 +608,8 @@ ${tools(
   "list_namespaces",
   "list_deployments",
   "list_services",
+  "list_configmap_keys",
+  "list_secret_keys",
   "get_k8s_resource",
   "get_k8s_resource_status",
   "delete_k8s_resource",
@@ -582,11 +623,16 @@ ${tools(
   "register_kubernetes_cluster",
   "list_kubernetes_clusters",
   "opute.capability.kubernetes.apply-manifest",
+  "opute.capability.kubernetes.delete-resource",
   "opute.capability.kubernetes.get-resource",
+  "opute.capability.kubernetes.get-resource-status",
   "opute.capability.kubernetes.exec-command",
+  "opute.capability.kubernetes.list-clusters",
+  "opute.capability.kubernetes.list-events",
+  "opute.capability.kubernetes.put-secret",
 )}
 
-<h2>K3s provision &amp; membership</h2>
+<h2>Kubernetes provision &amp; membership</h2>
 <p>Provision clusters and manage HA join / quorum membership.</p>
 ${tools(
   "opute.capability.kubernetes.provision",
@@ -597,10 +643,13 @@ ${tools(
   "opute.capability.kubernetes.redeem-join",
   "opute.capability.kubernetes.join-node",
   "opute.capability.kubernetes.remove-node",
+  "opute.capability.kubernetes.get-join-receiver-key",
   "opute.capability.kubernetes.inspect-membership",
   "opute.capability.kubernetes.recover-quorum",
   "opute.capability.kubernetes.ensure-ha-endpoint",
   "opute.capability.kubernetes.get-cluster-info",
+  "opute.capability.kubernetes.remove",
+  "opute.capability.kubernetes.restart",
 )}
 
 <h2>Cluster storage &amp; registry reclaim</h2>
@@ -610,6 +659,7 @@ ${tools(
   "prune_unused_cluster_images",
   "garbage_collect_cluster_registry",
   "trim_guest_storage",
+  "opute.capability.kubernetes.inspect-guest-storage",
   "opute.capability.kubernetes.configure-registry",
   "opute.capability.kubernetes.garbage-collect-registry",
   "opute.capability.kubernetes.prune-unused-images",
@@ -658,6 +708,8 @@ ${tools(
   "opute.capability.tunneling.remove-host-tunnel",
   "opute.capability.tunneling.install-kubernetes-connector",
   "opute.capability.tunneling.delete-kubernetes-connector",
+  "install_cloudflared_connector",
+  "delete_cloudflared_connector",
   "ensure_public_mcp_tunnel",
   "ensure_public_mcp_quick_tunnel",
   "remove_public_mcp_quick_tunnel",
@@ -668,8 +720,8 @@ ${tools(
 )}
 
 <h2>HA networking seams</h2>
-<p>Primary networking tools from the live catalog (ADR-0016). Install/configure via <code>mesh-runtime.v1</code>, then membership / private mesh / public ingress.</p>
-<p>Canonical contracts: <code>mesh-runtime.v1</code>, <code>mesh-membership.v1</code>, <code>private-mesh.v1</code>, <code>public-ingress.v1</code>. Deprecated <code>network-overlay.*</code> aliases are not present on the current live capture (<code>network-overlay=0</code>). Details: <a href="/docs/networking/">Networking</a>.</p>
+<p>Networking tools captured under ADR-0016. Install/configure via <code>mesh-runtime.v1</code>, then membership / private mesh / public ingress.</p>
+<p>Canonical contracts: <code>mesh-runtime.v1</code>, <code>mesh-membership.v1</code>, <code>private-mesh.v1</code>, and <code>public-ingress.v1</code>. The ${captureDateUTC} snapshot contains ${networkOverlayCount} deprecated <code>network-overlay.*</code> tools. Details: <a href="/docs/networking/">Networking</a>.</p>
 ${tools(
   "opute.capability.mesh-runtime.validate",
   "opute.capability.mesh-runtime.ensure-agent",
@@ -713,7 +765,14 @@ ${tools(
   "remove_local_llm_model",
   "ensure_local_llm_relay",
   "ensure_local_llm_k3s_proxy",
+  "ensure_local_llm_server_binary",
+  "remove_local_llm_relay",
+  "remove_local_llm_k3s_proxy",
+  "remove_local_llm_cloudflared_tunnel",
   "probe_openai_compatible_server",
+  "opute.capability.llm-serving.get-context-size",
+  "opute.capability.llm-serving.set-context-size",
+  "opute.capability.llm-serving.validate",
 )}
 
 <h2>Postgres &amp; SQLite</h2>
@@ -733,7 +792,6 @@ ${tools(
 ${tools(
   "reconcile_serving_assignment",
   "discover_service_ingress",
-  "list_ingress_classes",
   "list_certificate_issuers",
   "install_cluster_agent",
   "inspect_workload",
@@ -945,13 +1003,15 @@ flowchart TB
   <li><code>GET /health</code> — open; may expose <code>mcpToolNamePrefix</code> when name prefixing is enabled.</li>
   <li>stdio transport is not supported for the public Host Agent surface.</li>
 </ul>
+<p>Host Agent uses MCP 2026-07-28 discovery: the client calls <code>server/discover</code>, then lists and calls tools. See the <a href="/docs/openapi/">HTTP reference</a> and <a href="/docs/mcp-clients/">client setup</a> for transport details.</p>
 
 <pre class="mermaid">
 sequenceDiagram
   participant C as MCP client
   participant HA as Host Agent
   C->>HA: POST /mcp Authorization Bearer
-  HA-->>C: initialize / capabilities
+  C->>HA: server/discover (2026-07-28)
+  HA-->>C: server capabilities
   C->>HA: tools/list
   HA-->>C: revisioned CatalogSnapshot
   C->>HA: tools/call name + args
@@ -1319,7 +1379,7 @@ flowchart TB
     body: `
 <p class="badge">Explanation</p>
 <h1>Networking</h1>
-<p class="meta">HA networking is three exclusive Service Definitions — not one mega “overlay” product. Tunneling and public MCP helpers sit beside those seams.</p>
+<p class="meta">HA networking uses three exclusive Service Definitions. <code>mesh-runtime.v1</code> installs and checks the selected network runtime; the definitions below describe membership, private traffic, and public ingress.</p>
 
 <h2>Three seams (ADR-0016)</h2>
 <table>
@@ -1330,7 +1390,7 @@ flowchart TB
     <tr><td><code>public-ingress.v1</code></td><td>North-south stable HTTPS</td><td>ensure, promote, probe</td></tr>
   </tbody>
 </table>
-<p><code>network-overlay.*</code> tools in older catalogs are a <strong>deprecated migration alias</strong>. The current live capture reports <code>network-overlay=0</code>; new consumers bind to the four definitions above.</p>
+<p><code>network-overlay.*</code> is a <strong>deprecated migration alias</strong>. The ${captureDateUTC} catalog snapshot contains ${networkOverlayCount} tools from that family. Use <code>mesh-runtime.v1</code> for runtime setup and the three definitions in this table for networking operations. Tunneling and public MCP helpers are separate capabilities.</p>
 
 <pre class="mermaid">
 flowchart TB
@@ -1431,9 +1491,32 @@ flowchart LR
   },
 }
 
+const expectedToolNames = new Set(toolCatalogCapture.toolNames)
+const actualToolCounts = new Map<string, number>()
+for (const name of listedToolNames) {
+  actualToolCounts.set(name, (actualToolCounts.get(name) ?? 0) + 1)
+}
+const missingToolNames = [...expectedToolNames].filter((name) => !actualToolCounts.has(name))
+const unexpectedToolNames = [...actualToolCounts.keys()].filter((name) => !expectedToolNames.has(name))
+const duplicateToolNames = [...actualToolCounts.entries()]
+  .filter(([, count]) => count > 1)
+  .map(([name]) => name)
+if (missingToolNames.length || unexpectedToolNames.length || duplicateToolNames.length) {
+  throw new Error(
+    [
+      "Capabilities page does not match the catalog snapshot.",
+      missingToolNames.length ? `Missing: ${missingToolNames.join(", ")}` : "",
+      unexpectedToolNames.length ? `Unexpected: ${unexpectedToolNames.join(", ")}` : "",
+      duplicateToolNames.length ? `Duplicated: ${duplicateToolNames.join(", ")}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  )
+}
+
 for (const [rel, spec] of Object.entries(pages)) {
   const full = join(root, rel)
-  mkdirSync(join(full, ".."), { recursive: true })
+  mkdirSync(dirname(full), { recursive: true })
   writeFileSync(full, page(spec))
   console.log("wrote", rel)
 }
@@ -1446,7 +1529,7 @@ writeFileSync(
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Opute Host Agent</title>
-  <meta name="description" content="Give AI agents typed control of your Linux hosts — guests, Kubernetes, tunnels — via MCP. Not shell folklore." />
+  <meta name="description" content="Run an authenticated MCP server beside Linux infrastructure. AI clients discover typed tools for Incus, Kubernetes, host services, and networking." />
   <link rel="alternate" hreflang="en" href="https://www.opute.io/" />
   <link rel="alternate" hreflang="es" href="https://www.opute.io/?lang=es" />
   <link rel="stylesheet" href="${CSS}" />
@@ -1457,16 +1540,17 @@ writeFileSync(
 <body>
   ${nav("home")}
   <main class="hero">
+    <p class="eyebrow">For infrastructure operators and agent authors</p>
     <h1>Give AI agents typed control of your hosts.</h1>
     <p class="lede">
-      One MCP server on a Linux box. Guests, Kubernetes, and public exposure as named tools — with fail-closed identity, not pasted shell.
+      Run one authenticated MCP server on Linux. AI clients discover tools for host services, Incus guests, Kubernetes, and networking from a revisioned catalog, with identity and mutation policy checked at the boundary.
     </p>
     <div class="cta">
       <a class="btn primary" href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
       <a class="btn ghost" href="/docs/">Docs</a>
     </div>
     <div class="visual" aria-hidden="true">
-      <pre class="terminal">$ export MCP_AUTH_TOKEN=dev-token
+      <pre class="terminal">$ export MCP_AUTH_TOKEN=dev-token # local demo only
 $ npx -y @opute/host-agent start --background
 $ npx -y @opute/host-agent url
 http://127.0.0.1:3014/mcp</pre>
@@ -1482,7 +1566,7 @@ http://127.0.0.1:3014/mcp</pre>
     </ol>
     <p class="pitch-for">
       Built for operators and agent authors who already run real infrastructure.
-      Not a chat UI. Not <code>platform.opute.io</code>.
+      For Opute Platform, visit <a href="https://platform.opute.io/">platform.opute.io</a>.
     </p>
   </section>
 
@@ -1521,20 +1605,6 @@ console.log("wrote index.html")
 
 // OpenAPI 3.1 for HTTP edge
 {
-  const toolsCapture = (() => {
-    try {
-      const j = JSON.parse(
-        require("fs").readFileSync(
-          "/home/houman/github/wunderous/opute-host-agent/site/context/tools-list.redacted.json",
-          "utf8",
-        ),
-      )
-      return { toolCount: j.toolCount, toolNames: j.toolNames }
-    } catch {
-      return { toolCount: 0, toolNames: [] as string[] }
-    }
-  })()
-
   const openapi = {
     openapi: "3.1.0",
     info: {
@@ -1635,8 +1705,8 @@ console.log("wrote index.html")
       protocolVersion: "2026-07-28",
       transport: "streamable-http",
       catalogAuthority: "tools/list",
-      capturedToolCount: toolsCapture.toolCount,
-      capturedToolNames: toolsCapture.toolNames,
+      capturedToolCount: toolCatalogCapture.toolCount,
+      capturedToolNames: toolCatalogCapture.toolNames,
     },
   }
 
@@ -1690,7 +1760,7 @@ writeFileSync(
 
 Docs follow Diátaxis. Prefer live tools/list over memorized tool names.
 Public site: https://www.opute.io and https://opute.io (Host Agent dogfood).
-Not Platform: https://platform.opute.io / https://mcp.opute.io
+Host Agent documentation covers the execution server. Opute Platform: https://platform.opute.io / https://mcp.opute.io
 
 ## Tutorial
 - [Get started](https://www.opute.io/docs/get-started/): first authenticated tools/list
@@ -1720,7 +1790,7 @@ Not Platform: https://platform.opute.io / https://mcp.opute.io
 console.log("wrote llms.txt")
 
 writeFileSync(
-  join("/home/houman/github/wunderous/opute-host-agent/site/context", "PACKET.md"),
+  join(contextDir, "PACKET.md"),
   `# Context packet — Host Agent docs / marketing site
 
 ## Documentation standard
@@ -1758,14 +1828,14 @@ Explanation opens with *about* / *why*; reference opens with facts.
 | Networking seams | \`/docs/networking/\` | Explanation |
 | URIs / admission / redaction | \`/docs/resources/\` | Explanation |
 
-## Audited truths (2026-09-20)
+## Audited truths (${captureDateUTC})
 
 - Standalone default: \`127.0.0.1:3014\`; platform default: \`0.0.0.0:3004\`
 - \`OPUTE_REMOTE_AGENT_ID\` required; npm defaults to \`local-host-agent\`
 - \`/mcp\` needs Bearer \`MCP_AUTH_TOKEN\` (or OAuth); \`/health\` is open
 - Mutations denied until \`OPUTE_STANDALONE_ALLOW_MUTATIONS=true\`
-- Live catalog capture: 187 tools in \`tools-list.redacted.json\` (seams live; network-overlay=0)
-- HA networking: mesh-runtime + three seams (ADR-0016); \`network-overlay.*\` deprecated alias
+- Catalog snapshot: ${toolCatalogCapture.toolCount} tools in \`tools-list.redacted.json\` (${captureDateUTC}; network-overlay=${networkOverlayCount})
+- HA networking: \`mesh-runtime.v1\` plus three Service Definitions (ADR-0016); \`network-overlay.*\` is deprecated
 - Dogfood: dedicated tunnel \`opute-www-opute-io\`; hostnames \`opute.io\` + \`www.opute.io\`
 
 ## Boundaries

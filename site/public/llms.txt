@@ -4,7 +4,7 @@
 
 Docs follow Diátaxis. Prefer live tools/list over memorized tool names.
 Public site: https://www.opute.io and https://opute.io (Host Agent dogfood).
-Not Platform: https://platform.opute.io / https://mcp.opute.io
+Host Agent documentation covers the execution server. Opute Platform: https://platform.opute.io / https://mcp.opute.io
 
 ## Tutorial
 - [Get started](https://www.opute.io/docs/get-started/): first authenticated tools/list

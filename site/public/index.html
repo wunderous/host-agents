@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Opute Host Agent</title>
-  <meta name="description" content="Give AI agents typed control of your Linux hosts — guests, Kubernetes, tunnels — via MCP. Not shell folklore." />
+  <meta name="description" content="Run an authenticated MCP server beside Linux infrastructure. AI clients discover typed tools for Incus, Kubernetes, host services, and networking." />
   <link rel="alternate" hreflang="en" href="https://www.opute.io/" />
   <link rel="alternate" hreflang="es" href="https://www.opute.io/?lang=es" />
-  <link rel="stylesheet" href="/styles.css?v=20260921m" />
+  <link rel="stylesheet" href="/styles.css?v=20260922a" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
@@ -33,16 +33,17 @@
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
   <main class="hero">
+    <p class="eyebrow">For infrastructure operators and agent authors</p>
     <h1>Give AI agents typed control of your hosts.</h1>
     <p class="lede">
-      One MCP server on a Linux box. Guests, Kubernetes, and public exposure as named tools — with fail-closed identity, not pasted shell.
+      Run one authenticated MCP server on Linux. AI clients discover tools for host services, Incus guests, Kubernetes, and networking from a revisioned catalog, with identity and mutation policy checked at the boundary.
     </p>
     <div class="cta">
       <a class="btn primary" href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
       <a class="btn ghost" href="/docs/">Docs</a>
     </div>
     <div class="visual" aria-hidden="true">
-      <pre class="terminal">$ export MCP_AUTH_TOKEN=dev-token
+      <pre class="terminal">$ export MCP_AUTH_TOKEN=dev-token # local demo only
 $ npx -y @opute/host-agent start --background
 $ npx -y @opute/host-agent url
 http://127.0.0.1:3014/mcp</pre>
@@ -58,7 +59,7 @@ http://127.0.0.1:3014/mcp</pre>
     </ol>
     <p class="pitch-for">
       Built for operators and agent authors who already run real infrastructure.
-      Not a chat UI. Not <code>platform.opute.io</code>.
+      For Opute Platform, visit <a href="https://platform.opute.io/">platform.opute.io</a>.
     </p>
   </section>
 
@@ -67,7 +68,7 @@ http://127.0.0.1:3014/mcp</pre>
     <span><a href="/docs/dogfood/">How it is hosted</a> · <a href="/llms.txt">llms.txt</a> · <a href="/openapi.json">OpenAPI</a></span>
   </footer>
   
-<script src="/search.js?v=20260921m" defer></script>
-<script src="/i18n.js?v=20260921m" defer></script>
+<script src="/search.js?v=20260922a" defer></script>
+<script src="/i18n.js?v=20260922a" defer></script>
 </body>
 </html>

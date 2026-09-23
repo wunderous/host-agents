@@ -7,7 +7,7 @@
   <meta name="description" content="Opute Host Agent documentation: Architecture" />
   <link rel="alternate" hreflang="en" href="https://www.opute.io/docs/" />
   <link rel="alternate" hreflang="es" href="https://www.opute.io/docs/?lang=es" />
-  <link rel="stylesheet" href="/styles.css?v=20260921m" />
+  <link rel="stylesheet" href="/styles.css?v=20260922a" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
@@ -109,13 +109,15 @@ flowchart TB
   <li><code>GET /health</code> — open; may expose <code>mcpToolNamePrefix</code> when name prefixing is enabled.</li>
   <li>stdio transport is not supported for the public Host Agent surface.</li>
 </ul>
+<p>Host Agent uses MCP 2026-07-28 discovery: the client calls <code>server/discover</code>, then lists and calls tools. See the <a href="/docs/openapi/">HTTP reference</a> and <a href="/docs/mcp-clients/">client setup</a> for transport details.</p>
 
 <pre class="mermaid">
 sequenceDiagram
   participant C as MCP client
   participant HA as Host Agent
   C->>HA: POST /mcp Authorization Bearer
-  HA-->>C: initialize / capabilities
+  C->>HA: server/discover (2026-07-28)
+  HA-->>C: server capabilities
   C->>HA: tools/list
   HA-->>C: revisioned CatalogSnapshot
   C->>HA: tools/call name + args
@@ -193,7 +195,7 @@ flowchart LR
   });
 </script>
 
-<script src="/search.js?v=20260921m" defer></script>
-<script src="/i18n.js?v=20260921m" defer></script>
+<script src="/search.js?v=20260922a" defer></script>
+<script src="/i18n.js?v=20260922a" defer></script>
 </body>
 </html>

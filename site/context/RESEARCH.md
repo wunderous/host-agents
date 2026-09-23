@@ -44,7 +44,32 @@ with a production host.
 
 ## Status (2026-09-21)
 
-Peer checklist: **17/17**. YC clarity rewrite applied to home, docs hub,
+Structural peer checklist: **17/17**. YC clarity rewrite applied to home, docs hub,
 get-started, and concepts. Confidence vs funding-grade bar: iterate until a
 cold reader can restate the product and complete get-started without jargon
 lookup.
+
+## Follow-up audit (2026-09-22)
+
+A content-accuracy pass against the current catalog snapshot and repository
+protocol guide found four gaps that the structural checklist did not catch:
+
+- The capabilities page had 159 entries but only 156 unique names; 31 of the
+  snapshot's 187 tools were missing.
+- The architecture diagram showed the legacy `initialize` handshake; the
+  current Host Agent protocol uses MCP 2026-07-28 `server/discover`.
+- Networking text referred to four definitions while its table listed three;
+  `mesh-runtime.v1` handles runtime setup and the table covers three service
+  definitions.
+- The tutorial offered both npm and from-source paths, and the generator used
+  checkout-specific paths with a silent zero-tools fallback.
+
+The current working-tree changes cover each finding. The generator now validates
+the catalog snapshot and requires the capabilities page to list every captured
+tool exactly once. It resolves source and output paths relative to itself.
+
+Validation to date: generation succeeded when invoked from `/tmp`; the rendered
+capabilities page matched all 187 captured names; all local links in 16 generated
+HTML pages resolved; and the homepage, tutorial, hub, architecture, capabilities,
+and networking pages were reviewed in a local browser preview. Production
+publishing remains pending.
