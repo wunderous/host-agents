@@ -72,10 +72,10 @@ inputs:
     schema: {type: string, format: uri}
   registryProbe:
     description: >
-      Compatibility input retained for deployment clients. The generic HTTP
-      probe does not set OCI manifest content negotiation headers. The recipe
-      checks registry-pod readiness and the site-image repository during its
-      Kubernetes rollout validation.
+      Compatibility input retained for deployment clients. The recipe runs the
+      image build and verifies the exact image through Deployment readiness;
+      the generic HTTP probe does not send OCI manifest content-negotiation
+      headers and cannot verify a specific registry tag.
     schema: {type: string, format: uri}
   runNonce:
     default: default
@@ -128,8 +128,8 @@ plan:
           resourceName: host-agent-www
         assert:
           - path: /resource/spec/template/spec/containers/0/image
-            op: contains
-            value: "/opute/host-agent-www:"
+            op: eq
+            value: ${vars.inputs.image}
           - path: /resource/status/updatedReplicas
             op: eq
             value: 1
