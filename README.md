@@ -238,9 +238,13 @@ Connector run tokens are minted by
 `opute.capability.tunneling.ensure-host-tunnel` (write-only in MCP results).
 Do **not** put long-lived secrets on CLI argv — process listings can expose them.
 
-This docs/marketing site is dogfooded on `opute.io` / `www.opute.io` via
-`site/recipes/www-opute-io.yaml` (dedicated tunnel `opute-www-opute-io`). That
-path must not mutate `platform.opute.io` / `mcp.opute.io`.
+The public source repository owns this static site and publishes its OCI image
+from GitHub-hosted CI. Private repository `wunderous/opute-site-deploy`
+owns the deployment workflow, Kubernetes manifest, and Host Agent recipe. The
+private runner calls the local Host Agent with the image pinned by digest; it
+does not store Host Agent credentials in GitHub. The dedicated tunnel is
+`opute-www-opute-io`. The recipe must not mutate
+`platform.opute.io` / `mcp.opute.io`.
 
 ## Architecture pointers
 
@@ -262,8 +266,11 @@ cd ../opute && bun scripts/export-host-agent-schemas.ts ../opute-host-agent/sche
 
 ## Documentation site
 
-Static docs for operators live under [`site/public/docs/`](./site/public/docs)
-and are published to `https://www.opute.io/` / `https://opute.io/` via the Host
-Agent recipe in `site/recipes/`. Content follows [Diátaxis](https://diataxis.fr/)
-(tutorials, how-to guides, reference, explanation) and must track this README —
-not the other way around.
+Static docs for operators live under [site/public/docs](./site/public/docs).
+The public repository builds and publishes the static-site image from
+GitHub-hosted CI. Private repository
+[wunderous/opute-site-deploy](https://github.com/wunderous/opute-site-deploy)
+owns deployment workflow, manifest, and Host Agent recipe. The private
+controller deploys an immutable image digest through the local Host Agent.
+Content follows [Diátaxis](https://diataxis.fr/) (tutorials, how-to guides,
+reference, explanation) and must track this README - not the other way around.

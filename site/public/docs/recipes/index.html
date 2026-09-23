@@ -99,7 +99,7 @@ flowchart LR
 <table>
   <thead><tr><th>You want…</th><th>Use</th><th>MCP entry</th></tr></thead>
   <tbody>
-    <tr><td>Work on this Host Agent only (dogfood site, local install)</td><td><code>host-recipe.v1</code> local</td><td><code>run_host_local_recipe</code></td></tr>
+    <tr><td>Execute a Host Agent-local task (site deployment is controlled by the private repository)</td><td><code>host-recipe.v1</code> local</td><td><code>run_host_local_recipe</code></td></tr>
     <tr><td>An already-expanded DAG</td><td>bare <code>host-plan.v1</code></td><td><code>run_host_plan</code></td></tr>
     <tr><td>Activate a serving runtime (LLM, mesh, HTTP exposure)</td><td><code>runtime-recipe.v1</code></td><td><code>run_runtime_recipe</code></td></tr>
     <tr><td>Public hostname → local target bindings</td><td><code>tunnel-recipe.v1</code></td><td><code>run_tunnel_recipe</code></td></tr>
