@@ -71,11 +71,10 @@ inputs:
     default: https://www.opute.io/
     schema: {type: string, format: uri}
   registryProbe:
-    required: true
     description: >
-      HTTP URL that becomes ready only after THIS image tag exists
-      (e.g. http://10.0.100.66:30500/v2/opute/host-agent-www/manifests/<tag>).
-      Do not use the registry root /v2/ — it is always ready and would skip a real push.
+      Compatibility input retained for deployment clients. The generic HTTP
+      probe does not set OCI manifest content negotiation headers; the recipe
+      verifies the exact image through Kubernetes rollout status instead.
     schema: {type: string, format: uri}
   runNonce:
     default: default
@@ -102,15 +101,14 @@ plan:
           builder: auto
       timeoutMs: 1200000
       validate:
-        tool: probe_http_endpoint
+        tool: list_pods
         args:
-          endpoint: ${vars.inputs.registryProbe}
+          uri: ${vars.inputs.clusterUri}
+          namespace: opute-registry
         assert:
-          - path: /ready
+          - path: /pods/0/ready
             op: eq
             value: true
-        pollIntervalMs: 5000
-        timeoutMs: 1200000
     - id: apply
       dependsOn: [build]
       target:
@@ -121,14 +119,27 @@ plan:
           uri: ${vars.inputs.clusterUri}
           manifest: ${vars.inputs.workloadManifest}
       validate:
-        tool: list_pods
+        tool: get_k8s_resource
         args:
           uri: ${vars.inputs.clusterUri}
+          kind: Deployment
           namespace: host-agent-site
+          resourceName: host-agent-www
         assert:
-          - path: /pods/0/ready
+          - path: /resource/spec/template/spec/containers/0/image
             op: eq
-            value: true
+            value: ${vars.inputs.image}
+          - path: /resource/status/updatedReplicas
+            op: eq
+            value: 1
+          - path: /resource/status/readyReplicas
+            op: eq
+            value: 1
+          - path: /resource/status/availableReplicas
+            op: eq
+            value: 1
+        pollIntervalMs: 5000
+        timeoutMs: 1200000
     - id: tunnel
       dependsOn: [apply]
       target:
