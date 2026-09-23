@@ -228,7 +228,7 @@ const pages: Record<string, { title: string; description: string; current: strin
     <ul>
       <li><a href="/docs/install/"><strong>Install &amp; run</strong><span>From-source, npm launcher, serve modes, mutations, WSL.</span></a></li>
       <li><a href="/docs/mcp-clients/"><strong>Connect an MCP client</strong><span>Cursor, Claude Desktop, VS Code — with Bearer auth.</span></a></li>
-      <li><a href="/docs/dogfood/"><strong>Publish this site</strong><span>Recipe-hosted opute.io / www.opute.io without touching Platform.</span></a></li>
+      <li><a href="/docs/dogfood/"><strong>Publish this site</strong><span>Public image build; private Host Agent deployment controller.</span></a></li>
       <li><a href="/docs/troubleshooting/"><strong>Troubleshooting</strong><span>401s, mutations denied, wrong port, redacted resume, distributed refused.</span></a></li>
     </ul>
   </section>
@@ -450,37 +450,42 @@ npx -y @opute/host-agent stop</code></pre>
 
   "docs/dogfood/index.html": {
     title: "Publish this site",
-    description: "Deploy the Opute Host Agent docs site on opute.io with its dedicated host-local recipe.",
+    description: "How the Opute site image is built in public CI and deployed by the private Host Agent controller.",
     current: "dogfood",
     body: `
 <p class="badge">How-to</p>
 <h1>Publish this site</h1>
-<p class="meta">How <code>opute.io</code> and <code>www.opute.io</code> are hosted as Host Agent dogfood — and how to tear them down without touching Platform.</p>
+<p class="meta">Public source builds the static-site image. A private deployment controller selects the successful image and submits the private Host Agent recipe on the serving machine.</p>
 
-<h2>Goal</h2>
-<p>Serve this static marketing/docs package from a K3s workload via a <strong>Host Agent recipe</strong>, exposed through a dedicated Cloudflare tunnel.</p>
+<h2>Ownership</h2>
+<ul>
+  <li>Public source: <a href="https://github.com/wunderous/host-agents">wunderous/host-agents</a> owns site content and publishes GHCR images from GitHub-hosted CI.</li>
+  <li>Private deployment: <a href="https://github.com/wunderous/opute-site-deploy">wunderous/opute-site-deploy</a> owns source-run selection, the Kubernetes manifest, the deployment workflow, and the Host Agent recipe. Repository access is required.</li>
+  <li>The private controller deploys the image by immutable sha256 digest. Its runner is registered only to the private repository and calls the local Host Agent.</li>
+</ul>
+<p>Public source CI has no Host Agent credentials and never runs on the deployment machine.</p>
 
+<h2>Flow</h2>
 <pre class="mermaid">
-flowchart TB
-  SRC[site/ source] --> BUILD[OCI image build]
-  R[www-opute-io recipe] --> BUILD
-  BUILD --> REG[(Cluster registry)]
-  R --> HA[Host Agent id]
+flowchart LR
+  SRC[Public site source] --> BUILD[GitHub-hosted image build]
+  BUILD -->|run tag and digest| REG[(Public GHCR image)]
+  POLL[Private controller] -->|verify successful main run| REG
+  POLL --> RECIPE[Private host-recipe.v1]
+  RECIPE -->|typed Host Agent tools| HA[Local Host Agent]
   HA --> K3S[Admitted K3s cluster]
-  REG --> APPLY[apply_manifest]
-  APPLY --> W[host-agent-www workload]
-  W --> TUN[Dedicated CF tunnel<br/>opute-www-opute-io]
+  K3S --> SITE[Site workload]
+  SITE --> TUN[Dedicated public tunnel]
   CLIENT[Public browser] --> TUN
-  TUN --> W
 </pre>
 
 <h2>Path of record</h2>
 <ul>
-  <li>Recipe: <code>site/recipes/www-opute-io.yaml</code></li>
-  <li>Teardown: <code>site/recipes/www-opute-io-teardown.yaml</code></li>
-  <li>Submit with <code>run_host_local_recipe</code> on the owning Host Agent</li>
+  <li>Source image workflow: <code>.github/workflows/publish-site-image.yml</code> in the public source repository</li>
+  <li>Deployment workflow, manifest, and recipe: private repository <code>wunderous/opute-site-deploy</code></li>
+  <li>The controller checks the source run, resolves its run-and-attempt tag to a digest, then calls <code>run_host_local_recipe</code></li>
 </ul>
-<p>Ad-hoc <code>kubectl</code> is not the deploy path of record.</p>
+<p>The recipe is the only cluster mutation path. Ad-hoc <code>kubectl</code> is not accepted as deployment evidence. Scheduled runs do not fall back to an older image; rollback requires an explicit successful main run.</p>
 
 <h2>Isolation invariants</h2>
 <table>
@@ -492,15 +497,16 @@ flowchart TB
   </tbody>
 </table>
 
-<h2>What “pass” means</h2>
+<h2>What pass means</h2>
 <ul>
-  <li>External HTTPS GET of <code>https://opute.io/</code> and <code>https://www.opute.io/</code> returns this site</li>
-  <li><code>platform.opute.io</code> remains healthy; <code>mcp.opute.io</code> retains its role</li>
+  <li>The Host Agent recipe reaches terminal success and the Deployment uses the selected digest with a Ready Pod.</li>
+  <li>External <code>/build.json</code> on both www and apex matches the selected source SHA, run ID, and attempt.</li>
+  <li><code>platform.opute.io</code> and <code>mcp.opute.io</code> remain separate and healthy.</li>
 </ul>
-<div class="note">Site reachability is not two-node write / etcd-quorum HA. Do not narrate dogfood pass as consensus HA.</div>
+<div class="note">Site reachability is not two-node write / etcd-quorum HA. Report application readiness separately from cluster consensus availability.</div>
 
-<h2>Cloudflare credentials</h2>
-<p>Tunnel/DNS mutation needs <code>CLOUDFLARE_API_TOKEN</code>, <code>CLOUDFLARE_ACCOUNT_ID</code>, and <code>CLOUDFLARE_ZONE_ID</code> on the Cloudflare provider. Connector run tokens are minted by <code>opute.capability.tunneling.ensure-host-tunnel</code> and are write-only in MCP results (external clients see <code>[redacted]</code>). The recipe therefore installs the Kubernetes connector in-process with <code>manageHostConnector: true</code>.</p>
+<h2>Credentials</h2>
+<p>Host Agent credentials remain in the local Host Agent process environment. They are not copied to GitHub secrets, the public repository, image layers, logs, or workflow artifacts. Tunnel provider credentials remain on the Host Agent/provider side; the public source workflow only publishes the static image.</p>
 `,
     mermaid: true,
   },
@@ -1140,7 +1146,7 @@ flowchart LR
 <table>
   <thead><tr><th>You want…</th><th>Use</th><th>MCP entry</th></tr></thead>
   <tbody>
-    <tr><td>Work on this Host Agent only (dogfood site, local install)</td><td><code>host-recipe.v1</code> local</td><td><code>run_host_local_recipe</code></td></tr>
+    <tr><td>Execute a Host Agent-local task (site deployment is controlled by the private repository)</td><td><code>host-recipe.v1</code> local</td><td><code>run_host_local_recipe</code></td></tr>
     <tr><td>An already-expanded DAG</td><td>bare <code>host-plan.v1</code></td><td><code>run_host_plan</code></td></tr>
     <tr><td>Activate a serving runtime (LLM, mesh, HTTP exposure)</td><td><code>runtime-recipe.v1</code></td><td><code>run_runtime_recipe</code></td></tr>
     <tr><td>Public hostname → local target bindings</td><td><code>tunnel-recipe.v1</code></td><td><code>run_tunnel_recipe</code></td></tr>
@@ -1407,7 +1413,7 @@ flowchart TB
 
 <h2>Examples in-repo</h2>
 <ul>
-  <li>Host-local dogfood: <code>site/recipes/www-opute-io.yaml</code> — <a href="/docs/dogfood/">Publish this site</a></li>
+  <li>Private site deployment: <a href="https://github.com/wunderous/opute-site-deploy">wunderous/opute-site-deploy</a> - <a href="/docs/dogfood/">Publish this site</a></li>
   <li>Runtime: <code>plugins/llm/ollama/recipes/ollama.yaml</code></li>
   <li>Tunnel: <code>plugins/tunneling/cloudflare/recipes/</code></li>
   <li>Install host-recipe: <code>plugins/tunneling/tailscale/recipes/install.yaml</code></li>

@@ -75,6 +75,8 @@ npx -y @opute/host-agent url   # http://127.0.0.1:3014/mcp
 - Do not confuse Host Agent MCP admin with public dogfood hostnames (`opute.io`).
 - Do not enable `OPUTE_MCP_PREFIX_TOOL_NAMES` on Platform-enrolled agents.
 
+The production docs-site recipe and manifest are owned by private repository wunderous/opute-site-deploy; the public source repository only builds and publishes the static image.
+
 ## Anti-patterns
 
 | Don't | Do |
