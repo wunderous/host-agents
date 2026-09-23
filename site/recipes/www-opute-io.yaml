@@ -170,34 +170,8 @@ plan:
           - path: /pods/0/ready
             op: eq
             value: true
-    - id: route
-      dependsOn: [tunnel]
-      target:
-        hostRef: ${vars.inputs.host}
-      action:
-        tool: opute.capability.tunneling.probe-host-tunnel
-        args:
-          bindingId: ${vars.inputs.bindingId}
-          hostname: ${vars.inputs.hostname}
-          hostnames: ${vars.inputs.hostnames}
-          localTarget: ${vars.inputs.localTarget}
-          placement: kubernetes
-          tunnelName: ${vars.inputs.tunnelName}
-      validate:
-        tool: opute.capability.tunneling.probe-host-tunnel
-        args:
-          bindingId: ${vars.inputs.bindingId}
-          hostname: ${vars.inputs.hostname}
-          hostnames: ${vars.inputs.hostnames}
-          localTarget: ${vars.inputs.localTarget}
-          placement: kubernetes
-          tunnelName: ${vars.inputs.tunnelName}
-        assert:
-          - path: /routed
-            op: eq
-            value: true
     - id: probe
-      dependsOn: [route]
+      dependsOn: [tunnel]
       target:
         hostRef: ${vars.inputs.host}
       action:
@@ -213,7 +187,7 @@ plan:
             op: eq
             value: true
     - id: probe-apex
-      dependsOn: [route]
+      dependsOn: [tunnel]
       target:
         hostRef: ${vars.inputs.host}
       action:
