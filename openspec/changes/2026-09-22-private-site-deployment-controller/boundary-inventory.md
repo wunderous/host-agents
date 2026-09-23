@@ -23,12 +23,15 @@ Host Agent credential references in workflows.
 
 The private `wunderous/opute-site-deploy` repository contains:
 
-- `deployment/recipes/www-opute-io.yaml`
+- `site/recipes/www-opute-io.yaml` (canonical Host Agent recipe path)
 - `deployment/recipes/www-opute-io-teardown.yaml`
 - `deployment/manifests/workload.yaml`
 - `.github/workflows/deploy-site.yml`
 - `.github/workflows/validate.yml` (hosted-only pull-request checks)
 - `scripts/deploy_site.py`
+- `scripts/with_production_rollout_lease.ts`
+- `.agents/decisions/site-deployment-boundary.json`
 
 The private runner is registered only to this repository. No source workflow or
-public pull request is sent to the serving host.
+public pull request is sent to the serving host. The public source repository
+has no registered self-hosted runners.

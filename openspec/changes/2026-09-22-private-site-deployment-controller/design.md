@@ -79,9 +79,10 @@ registered to the public source repository.
 
 The private controller verifies source metadata and prepares typed inputs. It
 calls fresh tools/list, confirms the exact Host Agent identity and canonical
-cluster URI, hashes and validates the checked-in host-local recipe, runs that
-recipe, and polls get_host_plan_run until terminal. The recipe consumes the
-image digest; it does not build or push an image.
+cluster URI, hashes and validates the checked-in host-local recipe at
+`site/recipes/www-opute-io.yaml`, runs that recipe, and polls
+get_host_plan_run until terminal. The recipe consumes the image digest; it does
+not build or push an image.
 
 The recipe applies the namespaced workload, checks Pod readiness, ensures the
 existing dedicated tunnel, probes www and apex, and leaves the Platform
@@ -89,15 +90,16 @@ namespace and tunnel outside its mutation scope. The controller performs
 read-only post-deploy checks against the exact Deployment image and external
 build marker.
 
-## Decision 5: Scheduled checks do not replay an already-ready digest
+## Decision 5: Every eligible deployment reconciles through the recipe
 
-After source provenance and recipe validation, the controller reads the current
-site Deployment. If its image is the selected digest and its desired, updated,
-ready, and available replica counts are all one, the controller skips recipe
-execution and still checks the Ready Pod, www/apex build markers, and Platform
-routes. A different image triggers the checked-in recipe. An unreadable or
-ambiguous Deployment fails closed. This keeps five-minute polling from
-reapplying the same workload and tunnel configuration.
+After source provenance and recipe validation, every eligible scheduled or
+manual controller run executes the checked-in Host Agent recipe, including
+when the selected digest is already deployed and Ready. Each controller run
+uses a unique deployment nonce in the recipe idempotency key. The recipe
+reapplies the desired workload, ensures the dedicated tunnel, and probes both
+public routes, so repeated polling also reconciles exposure and serving state.
+An unreadable or ambiguous Host Agent result fails closed. The controller then
+checks the Ready Pod, public build markers, and Platform route separation.
 
 ## Decision 6: Evidence and rollback
 

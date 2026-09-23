@@ -63,9 +63,10 @@ select an older successful main run.
 
 The controller MUST discover the current Host Agent tool catalog, verify the
 exact opaque Host Agent process identity and admitted canonical cluster URI,
-hash and validate the host-local recipe, run it, and poll durable plan state
-to terminal. The checked-in recipe MUST consume a GHCR image reference pinned
-to sha256 digest and MUST apply it with typed Host Agent capabilities.
+hash and validate the host-local recipe at `site/recipes/www-opute-io.yaml`, run
+it, and poll durable plan state to terminal. The checked-in recipe MUST consume
+a GHCR image reference pinned to sha256 digest and MUST apply it with typed
+Host Agent capabilities.
 
 #### Scenario: Successful recipe deploys the selected image
 
@@ -80,19 +81,22 @@ to sha256 digest and MUST apply it with typed Host Agent capabilities.
   validation cannot be proven
 - **THEN** the controller fails closed before workload mutation
 
-### Requirement: An already-ready digest is not redeployed
+### Requirement: Every eligible deployment reconciles through the Host Agent recipe
 
-After validating the selected image and recipe, the controller MUST inspect the
-current site Deployment. When its image equals the selected digest and its
-desired, updated, ready, and available replica counts are all one, the
-controller MUST skip recipe execution while continuing Pod and external-route
-checks. An unknown Deployment result MUST fail closed.
+After validating source provenance and the checked-in recipe, the controller
+MUST execute the recipe on every eligible scheduled or manual deployment run,
+even when the selected digest is already deployed and Ready. Each controller
+run MUST use a unique deployment nonce so a repeated source selection can
+reconcile workload and exposure state. The recipe MUST retain its readiness,
+tunnel, and public-route checks. A failed or ambiguous Host Agent result MUST
+fail closed.
 
-#### Scenario: Schedule sees the selected digest already ready
+#### Scenario: Schedule selects the digest already served
 
-- **WHEN** a scheduled poll selects the digest already served by a Ready site Deployment
-- **THEN** it does not start another Host Agent recipe run
-- **AND** it still validates public build markers and Platform route separation
+- **WHEN** a scheduled poll selects a digest already served by a Ready site Deployment
+- **THEN** it executes the checked-in Host Agent recipe with a new deployment nonce
+- **AND** the recipe reconciles the dedicated tunnel and checks www and apex routes
+- **AND** controller evidence still validates the public build markers and Platform route separation
 
 ### Requirement: Credentials remain local to the Host Agent machine
 
