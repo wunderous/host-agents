@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Emits static Diátaxis docs under site/public/docs from audited operator truth.
- * Capability groups track site/context/tools-list.redacted.json (redacted catalog snapshot).
+ * Capability reference data comes from an allowlisted standalone catalog export.
  * Architecture facts track README.md + docs/adr/* (verify before changing).
  */
 import { mkdirSync, writeFileSync, readFileSync } from "fs"
@@ -13,48 +13,129 @@ const siteDir = dirname(scriptDir)
 const root = join(siteDir, "public")
 const contextDir = join(siteDir, "context")
 
-type ToolCatalogCapture = {
-  capturedAt: string
+type PublicCatalogTool = {
+  name: string
+  title?: string
+  description: string
+  version?: number
+  capabilityId?: string
+  effect: string
+  idempotent: boolean
+  requiresApproval?: boolean
+  inputSchema: Record<string, unknown>
+  outputSchema?: Record<string, unknown>
+}
+
+type ReleaseCatalog = {
+  packageName: string
+  packageVersion: string
+  releaseChannel: "preview" | "stable"
+  catalogRevision: string
   toolCount: number
-  toolNames: string[]
-  families: Record<string, number>
+  tools: PublicCatalogTool[]
+  publishedCanary?: {
+    packageVersion: string
+    catalogRevision: string
+    sourceSha: string
+    runId: number
+    runAttempt: number
+    checks: Record<string, boolean>
+  }
 }
 
-const toolCatalogCapture = JSON.parse(
-  readFileSync(join(contextDir, "tools-list.redacted.json"), "utf8"),
-) as ToolCatalogCapture
+const releaseCatalog = JSON.parse(
+  readFileSync(join(contextDir, "release-catalog.json"), "utf8"),
+) as ReleaseCatalog
 
-if (!Number.isFinite(Date.parse(toolCatalogCapture.capturedAt))) {
-  throw new Error("tools-list.redacted.json has an invalid capturedAt timestamp")
+const allowedCatalogKeys = new Set([
+  "packageName", "packageVersion", "releaseChannel", "catalogRevision", "toolCount", "tools", "publishedCanary",
+])
+if (Object.keys(releaseCatalog).some((key) => !allowedCatalogKeys.has(key))) {
+  throw new Error("release-catalog.json contains fields outside the public catalog contract")
 }
-if (!Number.isSafeInteger(toolCatalogCapture.toolCount) || toolCatalogCapture.toolCount < 0) {
-  throw new Error("tools-list.redacted.json has an invalid toolCount")
+if (releaseCatalog.packageName !== "@opute/host-agent") {
+  throw new Error("release-catalog.json has an unexpected packageName")
 }
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(releaseCatalog.packageVersion)) {
+  throw new Error("release-catalog.json has an invalid packageVersion")
+}
+if (!new Set(["preview", "stable"]).has(releaseCatalog.releaseChannel)) {
+  throw new Error("release-catalog.json has an invalid releaseChannel")
+}
+if (!/^sha256:[0-9a-f]{64}$/.test(releaseCatalog.catalogRevision)) {
+  throw new Error("release-catalog.json has an invalid catalogRevision")
+}
+if (!Number.isSafeInteger(releaseCatalog.toolCount) || releaseCatalog.toolCount < 1 || !Array.isArray(releaseCatalog.tools)) {
+  throw new Error("release-catalog.json has an invalid toolCount or tools list")
+}
+if (releaseCatalog.tools.length !== releaseCatalog.toolCount) {
+  throw new Error("release-catalog.json toolCount does not match tools")
+}
+const allowedCanaryKeys = new Set([
+  "packageVersion", "catalogRevision", "sourceSha", "runId", "runAttempt", "checks",
+])
 if (
-  !Array.isArray(toolCatalogCapture.toolNames) ||
-  !toolCatalogCapture.toolNames.every((name) => typeof name === "string" && name.length > 0)
+  releaseCatalog.publishedCanary &&
+  Object.keys(releaseCatalog.publishedCanary).some((key) => !allowedCanaryKeys.has(key))
 ) {
-  throw new Error("tools-list.redacted.json has an invalid toolNames list")
+  throw new Error("release-catalog.json publishedCanary contains fields outside the evidence contract")
 }
-if (new Set(toolCatalogCapture.toolNames).size !== toolCatalogCapture.toolNames.length) {
-  throw new Error("tools-list.redacted.json contains duplicate tool names")
+const allowedToolKeys = new Set([
+  "name", "title", "description", "version", "capabilityId", "effect", "idempotent", "requiresApproval", "inputSchema", "outputSchema",
+])
+const catalogNames = new Set<string>()
+for (const tool of releaseCatalog.tools) {
+  if (Object.keys(tool).some((key) => !allowedToolKeys.has(key))) {
+    throw new Error(`release-catalog.json descriptor ${tool.name} contains non-public fields`)
+  }
+  if (!tool.name || catalogNames.has(tool.name)) {
+    throw new Error("release-catalog.json contains a missing or duplicate tool name")
+  }
+  catalogNames.add(tool.name)
+  if (!new Set(["read", "mutation", "destructive", "credential_bearing"]).has(tool.effect)) {
+    throw new Error(`release-catalog.json descriptor ${tool.name} has an unknown effect`)
+  }
+  if (tool.inputSchema?.type !== "object") {
+    throw new Error(`release-catalog.json descriptor ${tool.name} has no object input schema`)
+  }
+  if (
+    typeof tool.description !== "string" ||
+    typeof tool.idempotent !== "boolean" ||
+    (tool.version !== undefined && (!Number.isSafeInteger(tool.version) || tool.version < 1)) ||
+    (tool.requiresApproval !== undefined && typeof tool.requiresApproval !== "boolean")
+  ) {
+    throw new Error("release-catalog.json descriptor " + tool.name + " has invalid public metadata")
+  }
 }
-if (toolCatalogCapture.toolNames.length !== toolCatalogCapture.toolCount) {
-  throw new Error("tools-list.redacted.json toolCount does not match toolNames")
-}
-if (
-  !toolCatalogCapture.families ||
-  !Number.isSafeInteger(toolCatalogCapture.families["network-overlay"]) ||
-  toolCatalogCapture.families["network-overlay"] < 0
-) {
-  throw new Error("tools-list.redacted.json has an invalid network-overlay family count")
+if (releaseCatalog.releaseChannel === "stable") {
+  const evidence = releaseCatalog.publishedCanary
+  const requiredChecks = [
+    "explicitIdentity",
+    "openHealth",
+    "invalidTokenRejected",
+    "authenticatedDiscovery",
+    "authenticatedToolsList",
+    "structuredGetHostInfo",
+    "readOnly",
+  ]
+  if (
+    !evidence ||
+    evidence.packageVersion !== releaseCatalog.packageVersion ||
+    evidence.catalogRevision !== releaseCatalog.catalogRevision ||
+    !/^[0-9a-f]{40}$/.test(evidence.sourceSha) ||
+    !Number.isSafeInteger(evidence.runId) ||
+    Number(evidence.runId) < 1 ||
+    !Number.isSafeInteger(evidence.runAttempt) ||
+    Number(evidence.runAttempt) < 1 ||
+    requiredChecks.some((check) => evidence.checks?.[check] !== true) ||
+    Object.keys(evidence.checks ?? {}).some((check) => !requiredChecks.includes(check))
+  ) {
+    throw new Error("stable release catalog is missing matching published read-only canary evidence")
+  }
 }
 
-const captureDateUTC = `${new Date(toolCatalogCapture.capturedAt).toISOString().slice(0, 10)} UTC`
-const networkOverlayCount = toolCatalogCapture.families["network-overlay"]
-
-const CSS = "/styles.css?v=20260922a"
-const ASSET_V = "20260923a"
+const CSS = "/styles.css?v=20260924d"
+const ASSET_V = "20260924d"
 const SITE_ORIGIN = "https://www.opute.io"
 
 const MERMAID = `
@@ -83,7 +164,8 @@ const MERMAID = `
 
 const SITE_SCRIPTS = `
 <script src="/search.js?v=${ASSET_V}" defer></script>
-<script src="/i18n.js?v=${ASSET_V}" defer></script>`
+<script src="/i18n.js?v=${ASSET_V}" defer></script>
+<script src="/docs-nav.js?v=${ASSET_V}" defer></script>`
 
 const escapeHTML = (value: string) =>
   value.replace(/[&<>"']/g, (character) => {
@@ -112,32 +194,43 @@ const seoMeta = (title: string, description: string, canonicalUrl: string) => `<
   <meta property="og:description" content="${escapeHTML(description)}" />
   <meta property="og:url" content="${escapeHTML(canonicalUrl)}" />
   <meta property="og:locale" content="en_US" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
   <meta name="twitter:title" content="${escapeHTML(title)}" />
   <meta name="twitter:description" content="${escapeHTML(description)}" />`
 
 const nav = (current: string) => `
 <header class="top">
-  <a class="brand" href="/">Opute Host Agent</a>
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
     <div class="search">
-      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
-      <div class="search-results" data-docs-search-results hidden></div>
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
     </div>
     <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
       <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
-    <nav>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs"${current === "docs" ? ' aria-current="page"' : ""}>Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>`
 
 const side = (current: string) => `
-<aside class="doc-nav" aria-label="Documentation">
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
   <h2>Tutorial</h2>
   <ul>
     <li><a href="/docs/get-started/"${current === "get-started" ? ' aria-current="page"' : ""}>Get started</a></li>
@@ -150,12 +243,15 @@ const side = (current: string) => `
     <li><a href="/docs/troubleshooting/"${current === "troubleshooting" ? ' aria-current="page"' : ""}>Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
+  <p><a href="/docs/versions/v${releaseCatalog.packageVersion}/capabilities/">Versioned catalog</a></p>
   <ul>
     <li><a href="/docs/capabilities/"${current === "capabilities" ? ' aria-current="page"' : ""}>Capabilities</a></li>
     <li><a href="/docs/configuration/"${current === "configuration" ? ' aria-current="page"' : ""}>Configuration</a></li>
     <li><a href="/docs/recipe-primitives/"${current === "recipe-primitives" ? ' aria-current="page"' : ""}>Recipe &amp; plan primitives</a></li>
     <li><a href="/docs/openapi/"${current === "openapi" ? ' aria-current="page"' : ""}>OpenAPI</a></li>
   </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/"${current === "compatibility" ? ' aria-current="page"' : ""}>Compatibility and verification</a></li></ul>
   <h2>Explanation</h2>
   <ul>
     <li><a href="/docs/concepts/"${current === "concepts" ? ' aria-current="page"' : ""}>Concepts</a></li>
@@ -163,8 +259,10 @@ const side = (current: string) => `
     <li><a href="/docs/recipes/"${current === "recipes" ? ' aria-current="page"' : ""}>Recipes &amp; plans</a></li>
     <li><a href="/docs/networking/"${current === "networking" ? ' aria-current="page"' : ""}>Networking</a></li>
     <li><a href="/docs/resources/"${current === "resources" ? ' aria-current="page"' : ""}>Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
   </ul>
-</aside>`
+</aside>
+</details>`
 
 const page = (
   opts: { title: string; description: string; current: string; body: string; mermaid?: boolean },
@@ -180,17 +278,18 @@ const page = (
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
 ${nav(opts.current)}
 <div class="doc-shell">
 ${side(opts.current)}
-<main class="doc">
+<main class="doc" id="main-content" lang="en">
 ${opts.body}
 </main>
 </div>
 <footer>
   <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
 </footer>
 ${opts.mermaid ? MERMAID : ""}
 ${SITE_SCRIPTS}
@@ -198,13 +297,271 @@ ${SITE_SCRIPTS}
 </html>
 `
 
-const listedToolNames: string[] = []
-const tools = (...names: string[]) => {
-  listedToolNames.push(...names)
-  return `<div class="tool-list">${names.map((n) => `<code>${n}</code>`).join("")}</div>`
+const versionedCapabilityPath =
+  "docs/versions/v" + releaseCatalog.packageVersion + "/capabilities/index.html"
+const versionedCatalogDownload =
+  "/docs/versions/v" + releaseCatalog.packageVersion + "/capabilities/catalog.json"
+const tutorialStartCommand =
+  releaseCatalog.releaseChannel === "stable"
+    ? "npx -y @opute/host-agent@" + releaseCatalog.packageVersion + " start --background"
+    : "make build VERSION=" +
+      releaseCatalog.packageVersion +
+      "\n./dist/opute-host-agent serve --mode standalone --transport http"
+const tutorialStopText =
+  releaseCatalog.releaseChannel === "stable"
+    ? "Stop it with npx -y @opute/host-agent@" +
+      releaseCatalog.packageVersion +
+      " stop."
+    : "Stop the foreground process with Ctrl+C in its terminal."
+const tutorialReleaseNotice =
+  releaseCatalog.releaseChannel === "stable"
+    ? '<p class="meta"><strong>Verified release.</strong> This path pins the published package whose authenticated read-only canary passed for the catalog revision shown in the capability reference.</p>'
+    : '<div class="callout warn"><strong>Preview tutorial.</strong> The published-package canary has not passed for this candidate. Follow the local source-build path below; do not treat it as a verified published release.</div>'
+const tutorialPortHelp =
+  releaseCatalog.releaseChannel === "stable"
+    ? "Check the launcher with npx -y @opute/host-agent@" +
+      releaseCatalog.packageVersion +
+      " status, stop it if needed, then choose an unused HOST_MCP_PORT and use that same port in curl and VS Code."
+    : "The preview process runs in the foreground. Read its terminal output, then set an unused HOST_MCP_PORT and use that same port in curl and VS Code."
+const toolGroups = new Map<string, PublicCatalogTool[]>()
+for (const tool of releaseCatalog.tools) {
+  const group = tool.capabilityId || "Host operations"
+  const groupTools = toolGroups.get(group) ?? []
+  groupTools.push(tool)
+  toolGroups.set(group, groupTools)
 }
 
+const schemaDisclosure = (label: string, schema?: Record<string, unknown>) =>
+  schema
+    ? '<details class="schema-disclosure"><summary>' +
+      label +
+      "</summary><pre><code>" +
+      escapeHTML(JSON.stringify(schema, null, 2)) +
+      "</code></pre></details>"
+    : ""
+
+const capabilityCards = [...toolGroups.entries()]
+  .sort(([left], [right]) => left.localeCompare(right))
+  .map(([group, groupTools]) => {
+    const cards = groupTools
+      .map((tool) => {
+        const index = releaseCatalog.tools.indexOf(tool)
+        const version = tool.version
+          ? '<li>Capability version: <code>' + tool.version + "</code></li>"
+          : ""
+        const approval = tool.requiresApproval
+          ? "<li>Requires an approval gate: <strong>yes</strong></li>"
+          : ""
+        return (
+          '<details class="catalog-tool" id="catalog-tool-' +
+          index +
+          '"><summary><code>' +
+          escapeHTML(tool.name) +
+          '</code><span class="effect-tag">' +
+          escapeHTML(tool.effect) +
+          "</span></summary><p>" +
+          escapeHTML(tool.description || "No description is published for this capability.") +
+          '</p><ul class="catalog-facts">' +
+          version +
+          "<li>Idempotent: <strong>" +
+          (tool.idempotent ? "yes" : "no") +
+          "</strong></li>" +
+          approval +
+          "</ul>" +
+          schemaDisclosure("Input schema", tool.inputSchema) +
+          schemaDisclosure("Output schema", tool.outputSchema) +
+          "</details>"
+        )
+      })
+      .join("\n")
+    return (
+      '<section class="catalog-group"><h2>' +
+      escapeHTML(group) +
+      '</h2><div class="catalog-tools">' +
+      cards +
+      "</div></section>"
+    )
+  })
+  .join("\n")
+
+const catalogPreviewNotice =
+  releaseCatalog.releaseChannel === "stable"
+    ? '<p class="meta">Published reference for <code>' +
+      releaseCatalog.packageName +
+      "@" +
+      releaseCatalog.packageVersion +
+      "</code>. Its read-only package canary passed for catalog revision <code>" +
+      releaseCatalog.catalogRevision +
+      ".</code></p>"
+    : '<div class="callout warn"><strong>Preview catalog.</strong> This source candidate is <code>' +
+      releaseCatalog.packageName +
+      "@" +
+      releaseCatalog.packageVersion +
+      "</code> at revision <code>" +
+      releaseCatalog.catalogRevision +
+      "</code>. The published-package canary has not passed for this version, so this snapshot is not a verified release reference.</div>"
+
+const capabilityReferenceBody = (versioned = false) =>
+  [
+    '<p class="badge">' + (versioned ? "Versioned reference" : "Reference") + "</p>",
+    "<h1>" +
+      (versioned ? "Capabilities — v" + releaseCatalog.packageVersion : "Capabilities") +
+      "</h1>",
+    catalogPreviewNotice,
+    '<p class="meta">This standalone catalog contains ' +
+      releaseCatalog.toolCount +
+      " typed descriptors. Each entry shows its declared effect, idempotency, and available JSON schemas. A tool appearing here does not prove that its provider or required host service is ready.</p>",
+    "<p>Catalog revision: <code>" +
+      releaseCatalog.catalogRevision +
+      "</code>. Download the allowlisted descriptor snapshot as <a href=\"" +
+      versionedCatalogDownload +
+      '">JSON</a>. At runtime, <code>tools/list</code> and <code>get_capability_catalog</code> remain authoritative; refresh them when a client connects.</p>',
+    '<div class="callout"><strong>Ownership boundary.</strong> Host Agent executes explicit typed capabilities against one host. Opute Platform owns intent, authorization, and durable orchestration across hosts. See <a href="/docs/concepts/#host-agent-and-platform">how the products fit together</a>.</div>',
+    capabilityCards,
+  ].join("\n")
+
 const pages: Record<string, { title: string; description: string; current: string; body: string; mermaid?: boolean }> = {
+  "docs/install/index.html": {
+    title: "Install and run",
+    description: "Build or launch Opute Host Agent locally with explicit identity, authentication, and safe loopback defaults.",
+    current: "install",
+    body: `
+<p class="badge">How-to</p>
+<h1>Install &amp; run</h1>
+<p class="meta">Choose a local source build or the published npm launcher. For a tested end-to-end setup, begin with the <a href="/docs/get-started/">first-success tutorial</a>.</p>
+
+<h2>From source</h2>
+<p>From the Host Agent repository root, build and start the standalone HTTP server. Host inspection does not require Incus or Kubernetes.</p>
+<pre><code>make build VERSION=${releaseCatalog.packageVersion}
+export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
+./dist/opute-host-agent serve --mode standalone --transport http</code></pre>
+<p>Keep both values in your local shell. The agent ID is an explicit opaque identity; the launcher does not invent a default. The token authenticates MCP requests.</p>
+
+<h2>Published npm launcher</h2>
+${releaseCatalog.releaseChannel === "stable"
+  ? `<pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
+npx -y @opute/host-agent@${releaseCatalog.packageVersion} start --background
+npx -y @opute/host-agent@${releaseCatalog.packageVersion} url
+npx -y @opute/host-agent@${releaseCatalog.packageVersion} status
+npx -y @opute/host-agent@${releaseCatalog.packageVersion} stop</code></pre>
+<p>The launcher keeps the explicit identity and token in the child process. Stop the background process when you finish.</p>`
+  : `<p>The current package candidate is labelled Preview because its published-package canary has not passed. Use the source-build path above until a tested release is published. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>`}
+
+<h2>Local endpoint and modes</h2>
+<table>
+  <thead><tr><th>Mode</th><th>Default address</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>standalone</code></td><td><code>127.0.0.1:3014</code></td><td>Local editor or laptop</td></tr>
+    <tr><td><code>platform</code></td><td><code>0.0.0.0:3004</code></td><td>Platform-enrolled host</td></tr>
+  </tbody>
+</table>
+<p>Set <code>HOST_MCP_BIND_HOST</code> and <code>HOST_MCP_PORT</code> when needed. Keep a local tutorial on loopback and use the same port in the agent URL and client configuration.</p>
+
+<h2>Mutations</h2>
+<p>Standalone mutations are denied by default. This first-success path stays read-only. Only enable <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> after reviewing the capability effects, approval requirements, and host-local consequences.</p>
+
+<h2>WSL and production</h2>
+<p>For a first client connection, run the Linux agent and VS Code integration in the same WSL environment. Verify reachability before configuring a client across Windows and WSL.</p>
+<p>Production hosts are connected through Opute Platform's <strong>Connect Remote Host</strong> flow. Platform owns enrollment and authorization; use the generated host configuration for that host rather than copying local tutorial credentials.</p>
+
+<p>Related: <a href="/docs/get-started/">First success</a> · <a href="/docs/mcp-clients/">Client configuration</a> · <a href="/docs/troubleshooting/">Troubleshooting</a> · <a href="/docs/configuration/">Configuration</a></p>
+`,
+  },
+  "docs/troubleshooting/index.html": {
+    title: "Troubleshooting",
+    description: "Diagnose Host Agent authentication, reachability, identity, discovery, and optional-provider problems.",
+    current: "troubleshooting",
+    body: `
+<p class="badge">How-to</p>
+<h1>Troubleshooting</h1>
+<p class="meta">Use the symptom to identify whether the server is live, the client is authenticated, and the requested provider is available.</p>
+
+<h2>HTTP 401 from <code>/mcp</code></h2>
+<ol>
+  <li>Confirm <code>MCP_AUTH_TOKEN</code> is set in the Host Agent process environment.</li>
+  <li>Confirm the client sends <code>Authorization: Bearer</code> with that same token.</li>
+  <li>Use the local check in the <a href="/docs/get-started/">first-success tutorial</a> to verify that a wrong token returns 401 and the correct token can call <code>get_host_info</code>.</li>
+</ol>
+<p><code>GET /health</code> is intentionally open. A successful health response proves liveness, not that MCP authentication works.</p>
+
+<h2>Connection refused or the wrong port</h2>
+<ul>
+  <li>Standalone defaults to <code>http://127.0.0.1:3014/mcp</code>.</li>
+  <li>Use the same value for <code>HOST_MCP_PORT</code>, the health URL, and the client's MCP URL.</li>
+  <li>Keep <code>HOST_MCP_BIND_HOST=127.0.0.1</code> for a local client. Check that the port is free and the server is still running.</li>
+  <li>For Windows/WSL, first verify the client can reach an agent running in the same WSL distribution.</li>
+</ul>
+
+<h2>Missing <code>OPUTE_REMOTE_AGENT_ID</code></h2>
+<p>Set one explicit opaque ID before starting the process. The npm launcher fails before binary download or listener startup when it is absent; it does not default to a shared name. Do not use the local daemon ownership ID as the Host Agent identity.</p>
+
+<h2>The client connects but the tool list is empty or stale</h2>
+<ul>
+  <li>Refresh the client's MCP tools after connecting. The live <code>tools/list</code> response is authoritative.</li>
+  <li>Check that the client is connected to the same host and port where <code>/health</code> reports the expected <code>agentId</code>.</li>
+  <li>Review the current <a href="/docs/capabilities/">capability reference</a>; provider readiness varies by host.</li>
+</ul>
+
+<h2>An optional provider tool is unavailable</h2>
+<p>Host facts do not require Incus or Kubernetes. VM inventory requires an Incus provider; cluster discovery requires the relevant Kubernetes provider and host access. A listed tool does not prove the provider service is ready.</p>
+
+<h2>Mutation denied</h2>
+<p>Standalone mode denies mutating tools unless <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> is explicitly enabled. Keep it disabled during the first-success tutorial. Platform-enrolled hosts use Platform authorization policy.</p>
+
+<h2>Launcher status does not match the health response</h2>
+<p>The launcher uses <code>localInstanceId</code> to identify its managed local process. <code>agentId</code> is the canonical Host Agent identity and <code>instanceId</code> describes the execution mode; these fields have separate meanings.</p>
+
+<p>Related: <a href="/docs/install/">Install and run</a> · <a href="/docs/mcp-clients/">Client setup</a> · <a href="/docs/configuration/">Configuration</a> · <a href="/docs/resources/">Resources &amp; safety</a></p>
+`,
+  },
+  "docs/dogfood/index.html": {
+    title: "How this site is hosted",
+    description: "Understand the public image build and the private Host Agent deployment controller that serves Opute's website.",
+    current: "dogfood",
+    body: `
+<p class="badge">How-to</p>
+<h1>How this site is hosted</h1>
+<p class="meta">The public repository builds a static-site image. A private deployment controller selects that image and asks the local Host Agent to deploy it through typed capabilities.</p>
+
+<h2>Ownership boundary</h2>
+<ul>
+  <li><a href="https://github.com/wunderous/host-agents">Public Host Agent source</a> owns the website, docs generator, and GitHub-hosted image build. Its workflow publishes an immutable image digest without Host Agent deployment credentials.</li>
+  <li><a href="https://github.com/wunderous/opute-site-deploy">Private site deployment</a> owns source-run selection, the controller, deployment recipe, and private rollout evidence. This repository is required to operate or change production deployment.</li>
+  <li>Opute Platform and its MCP endpoint remain separate services with their own owners and route checks.</li>
+</ul>
+
+<h2>Delivery path</h2>
+<pre class="mermaid">
+flowchart LR
+  Source[Public website source] --> Build[Public image build]
+  Build -->|verified run and digest| Registry[Public image registry]
+  Controller[Private deployment controller] -->|select successful source run| Registry
+  Controller --> Recipe[Typed Host Agent recipe]
+  Recipe --> Agent[Local Host Agent]
+  Agent --> Workload[Website workload]
+  Workload --> Routes[www and apex routes]
+  Browser[Visitor] --> Routes
+</pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> Public CI builds and publishes the website image. A private controller verifies and selects that image, then uses a typed Host Agent recipe to update the website workload behind the two public website routes.</p>
+
+<h2>What deployment evidence means</h2>
+<ul>
+  <li>The private recipe finishes successfully and the serving workload uses the selected image digest with a Ready Pod.</li>
+  <li>Both <code>www.opute.io</code> and <code>opute.io</code> serve rendered pages and a <code>/build.json</code> marker matching the selected source SHA, run ID, and attempt.</li>
+  <li>Critical docs routes, static assets, and search load and return useful content; HTTP 200 by itself does not prove that the client onboarding path works.</li>
+  <li><code>platform.opute.io</code> and authenticated <code>mcp.opute.io</code> are checked separately and remain outside this site's deployment boundary.</li>
+</ul>
+<p>These checks establish evidence for a particular rollout. They do not create an uptime, high availability, or successful client-onboarding guarantee.</p>
+
+<h2>Rollback and credentials</h2>
+<p>Rollback uses the private controller's explicit selection of a previous successful public source run and repeats the deployment and route gates. Public site workflows do not contain deployment credentials; Host Agent and tunnel credentials remain in their owning runtime.</p>
+
+<p>See the private <a href="https://github.com/wunderous/opute-site-deploy">deployment repository</a> for current operating instructions. This public page describes ownership and evidence, not a direct infrastructure procedure.</p>
+`,
+    mermaid: true,
+  },
   "docs/index.html": {
     title: "Documentation",
     description: "Opute Host Agent docs: install the Linux MCP server, connect a client, browse its tools, and understand how it runs.",
@@ -212,9 +569,15 @@ const pages: Record<string, { title: string; description: string; current: strin
     body: `
 <p class="badge">Diátaxis</p>
 <h1>Documentation</h1>
-<p class="meta"><strong>Opute Host Agent</strong> is an authenticated MCP server for Linux hosts. AI clients discover a revisioned catalog of typed tools for host, guest, Kubernetes, registry, and tunnel operations.</p>
-<p class="meta"><strong>For.</strong> Infrastructure operators and agent authors running Linux hosts with Incus or K3s. Need Opute Platform? <a href="https://platform.opute.io/">Visit Platform</a>.</p>
-<p class="meta">Organized by job, following <a href="https://diataxis.fr/">Diátaxis</a>. This site at <code>opute.io</code> / <code>www.opute.io</code> is Host Agent dogfood — hosted by the agent it documents.</p>
+<p class="meta"><strong>Opute Host Agent</strong> gives an authenticated MCP client a read-only way to inspect Linux host facts and discover the capabilities available on that host. It executes explicit typed operations; Opute Platform owns intent, authorization, and durable orchestration across hosts.</p>
+<p class="meta"><strong>For.</strong> Infrastructure operators and agent authors connecting a client to Linux or WSL2. Incus and Kubernetes are optional for the first host-facts check. Need cross-host coordination? <a href="https://platform.opute.io/">Visit Opute Platform</a>.</p>
+<p class="meta">Choose a task below. These pages follow <a href="https://diataxis.fr/">Diátaxis</a>. This site is Host Agent dogfood; its current public availability is not an uptime claim.</p>
+
+<div class="doc-index-sections task-start">
+  <section><h2>Start</h2><ul><li><a href="/docs/get-started/"><strong>Complete a read-only first check</strong><span>Follow one VS Code path from launch through authenticated get_host_info.</span></a></li></ul></section>
+  <section><h2>Connect</h2><ul><li><a href="/docs/mcp-clients/"><strong>Configure an MCP client</strong><span>Use an HTTP endpoint and a password-prompted Bearer token.</span></a></li></ul></section>
+  <section><h2>Troubleshoot</h2><ul><li><a href="/docs/troubleshooting/"><strong>Find a symptom</strong><span>Check authentication, reachability, discovery, and provider availability.</span></a></li></ul></section>
+</div>
 
 <div class="doc-index-sections">
   <section>
@@ -227,7 +590,7 @@ const pages: Record<string, { title: string; description: string; current: strin
     <h2>How-to</h2>
     <ul>
       <li><a href="/docs/install/"><strong>Install &amp; run</strong><span>From-source, npm launcher, serve modes, mutations, WSL.</span></a></li>
-      <li><a href="/docs/mcp-clients/"><strong>Connect an MCP client</strong><span>Cursor, Claude Desktop, VS Code — with Bearer auth.</span></a></li>
+      <li><a href="/docs/mcp-clients/"><strong>Connect an MCP client</strong><span>VS Code HTTP setup, with other client paths labelled by verification status.</span></a></li>
       <li><a href="/docs/dogfood/"><strong>Publish this site</strong><span>Public image build; private Host Agent deployment controller.</span></a></li>
       <li><a href="/docs/troubleshooting/"><strong>Troubleshooting</strong><span>401s, mutations denied, wrong port, redacted resume, distributed refused.</span></a></li>
     </ul>
@@ -235,11 +598,19 @@ const pages: Record<string, { title: string; description: string; current: strin
   <section>
     <h2>Reference</h2>
     <ul>
-      <li><a href="/docs/capabilities/"><strong>Capabilities</strong><span>Every tool in the ${toolCatalogCapture.toolCount}-tool catalog snapshot, grouped by job.</span></a></li>
+      <li><a href="/docs/capabilities/"><strong>Capabilities</strong><span>${releaseCatalog.toolCount} allowlisted descriptors at ${releaseCatalog.catalogRevision}; provider readiness varies by host.</span></a></li>
       <li><a href="/docs/configuration/"><strong>Configuration</strong><span>Ports, bind hosts, required identity, auth, Cloudflare env.</span></a></li>
       <li><a href="/docs/recipe-primitives/"><strong>Recipe &amp; plan primitives</strong><span>Fields, statuses, assertion ops, caps — dry facts.</span></a></li>
       <li><a href="/docs/openapi/"><strong>OpenAPI</strong><span>HTTP surface for <code>/health</code> and Streamable HTTP <code>/mcp</code>.</span></a></li>
     </ul>
+  </section>
+  <section>
+    <h2>Compatibility</h2>
+    <ul><li><a href="/docs/compatibility/"><strong>Compatibility</strong><span>Separate documented configuration from combinations exercised end to end.</span></a></li></ul>
+  </section>
+  <section>
+    <h2>Use cases</h2>
+    <ul><li><a href="/use-cases/"><strong>Explore host inspection jobs</strong><span>See read-only workflows and the provider conditions they require.</span></a></li></ul>
   </section>
   <section>
     <h2>Explanation</h2>
@@ -263,596 +634,134 @@ const pages: Record<string, { title: string; description: string; current: strin
 
   "docs/get-started/index.html": {
     title: "Get started",
-    description: "Start Opute Host Agent on Linux and verify authenticated MCP tool discovery in about ten minutes.",
+    description: "Start Opute Host Agent on Linux and verify authenticated MCP tool discovery.",
     current: "get-started",
-    body: `
-<p class="badge">Tutorial</p>
+    body: `<p class="badge">Tutorial</p>
 <h1>Get started</h1>
-<p class="meta"><strong>Outcome.</strong> In about ten minutes, you will start a local Host Agent, connect an MCP client, list its tools, and read host information. This tutorial stays with discovery; it does not enable mutations.</p>
-
-<h2>What you will need</h2>
-<ul>
-  <li>Linux or WSL2 with Node.js, npm, and <code>npx</code></li>
-  <li>Network access to download the Host Agent launcher</li>
-  <li><code>curl</code> for the health check</li>
-  <li>An MCP client that supports authenticated Streamable HTTP</li>
-</ul>
-
+<p class="meta"><strong>Outcome.</strong> Start Host Agent locally, connect VS Code over authenticated HTTP, refresh the live tool list, and read host facts with <code>get_host_info {}</code>. This tutorial does not enable mutations.</p>
+${tutorialReleaseNotice}
+<h2>Prerequisites</h2>
+<ul><li>Linux or WSL2, Node.js 18 or newer, npm, and VS Code with HTTP MCP support.</li><li><code>curl</code> and <code>openssl</code>; loopback port <code>3014</code> must be free.</li><li>Network access for a stable package download. The current preview path also needs the Host Agent checkout and Go toolchain.</li></ul>
 <h2>Start the local agent</h2>
 <ol class="steps">
-  <li>
-    <span class="step-number" aria-hidden="true"></span>
-    <strong>Start the agent</strong>
-    <pre><code>export MCP_AUTH_TOKEN=dev-token
-npx -y @opute/host-agent start --background
-npx -y @opute/host-agent url
-# → http://127.0.0.1:3014/mcp</code></pre>
-    <p><code>dev-token</code> is a local demo value for this loopback-only example. Replace it with a long random secret before exposing the endpoint beyond your machine. The launcher defaults <code>OPUTE_REMOTE_AGENT_ID</code> to <code>local-host-agent</code>. Confirm health:</p>
-    <pre><code>curl -i -sS http://127.0.0.1:3014/health</code></pre>
-    <p>Expect HTTP 200 and JSON containing <code>"agentId":"local-host-agent"</code>.</p>
-  </li>
-  <li>
-    <span class="step-number" aria-hidden="true"></span>
-    <strong>Connect your MCP client</strong>
-    <p>Use <code>http://127.0.0.1:3014/mcp</code> and follow the client-specific steps in <a href="/docs/mcp-clients/">Connect an MCP client</a>. The Bearer token must match <code>MCP_AUTH_TOKEN</code>.</p>
-  </li>
-  <li>
-    <span class="step-number" aria-hidden="true"></span>
-    <strong>List tools, then read the host</strong>
-    <p>Refresh the client’s tool list, then call <code>get_host_info</code>. The result should contain structured host facts.</p>
-  </li>
+<li><strong>Set an explicit identity and random secret</strong><p>Keep the token in your shell and VS Code prompt. Do not commit it or put it in screenshots.</p><pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
+${tutorialStartCommand}</code></pre><p>Run preview commands from the Host Agent repository root. Stable instructions pin the published package shown on this page. ${tutorialStopText}</p><pre><code>curl -i -sS http://127.0.0.1:3014/health</code></pre><p>Expect HTTP 200 and the exact <code>agentId</code> you set. This open endpoint proves liveness only, not MCP authentication.</p></li>
+<li><strong>Connect VS Code</strong><p>Create <code>.vscode/mcp.json</code>. VS Code documents this HTTP server and password-prompt setup in its <a href="https://code.visualstudio.com/docs/agents/reference/mcp-configuration">MCP configuration reference</a>.</p><pre><code>{
+  "inputs": [{"type":"promptString","id":"opute-host-token","description":"Local Opute Host Agent token","password":true}],
+  "servers": {"opute-host-agent":{"type":"http","url":"http://127.0.0.1:3014/mcp","headers":{"Authorization":"Bearer \${input:opute-host-token}"}}}
+}</code></pre><p>Start the server and enter the same shell token. Avoid committing the config if the client might persist the entered value.</p></li>
+<li><strong>Refresh tools and read the host</strong><p>Confirm the server is connected, refresh its tools, and call <code>get_host_info</code> with <code>{}</code>. Its schema requires these host facts:</p><pre><code>{
+  "uri": "host:example:host-01",
+  "hostName": "…",
+  "providerId": "…",
+  "lxcBinaryPath": "…",
+  "systemctlPath": "…",
+  "supportedTools": ["…"]
+}</code></pre><p>Those six fields are required by the current schema. Optional fields such as <code>agent</code>, <code>capacity</code>, and <code>system</code> appear only when observable. Values are redacted; this is an example shape, not captured host output. A listed capability does not prove its provider is ready.</p></li>
 </ol>
-
-<div class="callout warn">
-  <strong>Do not enable mutations yet.</strong> Standalone mutating tools stay denied until
-  <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Finish discovery first.
-</div>
-
-<h2>You succeeded when</h2>
-<ul>
-  <li><code>GET /health</code> returns HTTP 200 with the local agent id</li>
-  <li>Your client connects to <code>/mcp</code> with the configured Bearer token and refreshes its tool list</li>
-  <li><code>get_host_info</code> returns structured host facts</li>
-</ul>
-
-<div class="callout">
-  <strong>Trust boundary.</strong> Bearer auth gates <code>/mcp</code>. Write-only fields come back as
-  <code>[redacted]</code>. This process is not Platform — do not reuse
-  <code>platform.opute.io</code> credentials here.
-</div>
-
-<p>Next: <a href="/docs/mcp-clients/">Connect a client</a> · <a href="/docs/install/">Install options</a> · <a href="/docs/troubleshooting/">Troubleshooting</a> · <a href="/docs/concepts/">Concepts</a></p>
-`,
-  },
-
-  "docs/install/index.html": {
-    title: "Install & run",
-    description: "Install Opute Host Agent from source or npm, choose a serve mode, and configure Linux, WSL2, or production hosts.",
-    current: "install",
-    body: `
-<p class="badge">How-to</p>
-<h1>Install &amp; run</h1>
-<p class="meta">Goal-oriented procedures for getting a Host Agent listening. Choose the path that matches your environment.</p>
-
-<h2>From source</h2>
-<pre><code>make build
-export OPUTE_REMOTE_AGENT_ID=local-host-agent
-export OPUTE_INFRA_PROVIDER_ID=incus
-export OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone"
-export MCP_AUTH_TOKEN=dev-token
-./dist/opute-host-agent --check
-./dist/opute-host-agent serve --mode standalone --transport http</code></pre>
-<p>Bare <code>./dist/opute-host-agent</code> is equivalent (defaults to standalone + http).</p>
-
-<h2>npm launcher</h2>
-<pre><code>export MCP_AUTH_TOKEN=dev-token
-npx -y @opute/host-agent start --background
-npx -y @opute/host-agent url      # http://127.0.0.1:3014/mcp
-npx -y @opute/host-agent status
-npx -y @opute/host-agent stop</code></pre>
-<p>The launcher defaults <code>OPUTE_REMOTE_AGENT_ID</code> to <code>local-host-agent</code> when unset. It strips most other <code>OPUTE_*</code> values so a Platform-enrolled shell cannot leak enrollment secrets into standalone.</p>
-<p>Development binary override:</p>
-<pre><code>OPUTE_HOST_AGENT_BINARY="$PWD/dist/opute-host-agent" \\
-  npx -y @opute/host-agent start --background</code></pre>
-
-<h2>Serve modes</h2>
-<table>
-  <thead><tr><th>Mode</th><th>Default bind</th><th>Default port</th><th>Use</th></tr></thead>
-  <tbody>
-    <tr><td><code>standalone</code></td><td><code>127.0.0.1</code></td><td><strong>3014</strong></td><td>Local IDE / laptop</td></tr>
-    <tr><td><code>platform</code></td><td><code>0.0.0.0</code></td><td><strong>3004</strong></td><td>Enrolled host beside Opute control plane</td></tr>
-  </tbody>
-</table>
-<p>Override with <code>HOST_MCP_BIND_HOST</code> and <code>HOST_MCP_PORT</code>. Do not copy a platform <code>:3004</code> snippet into a standalone laptop config unless you intend that collision.</p>
-
-<h2>Mutations</h2>
-<pre><code>export OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code></pre>
-<p>Without this, standalone mutation tools fail closed with an explicit error.</p>
-
-<h2>WSL</h2>
-<p>Run the <strong>Linux</strong> binary inside WSL. Point the Windows MCP client at <code>http://127.0.0.1:3014/mcp</code> (enable localhost forwarding / portproxy as needed). Native Windows is not an Incus host runtime.</p>
-
-<h2>Production hosts</h2>
-<p>Remote production installs come from the Opute platform UI (<strong>Connect Remote Host</strong>). The generated script writes <code>host-agent.env</code> with canonical <code>OPUTE_REMOTE_AGENT_ID</code> and <code>MCP_AUTH_TOKEN</code>, then starts the systemd unit. GitHub Releases are for CI and manual smoke — not the primary production credential path.</p>
-
-<p>Related: <a href="/docs/get-started/">Get started</a> · <a href="/docs/mcp-clients/">MCP clients</a> · <a href="/docs/troubleshooting/">Troubleshooting</a> · <a href="/docs/configuration/">Configuration</a></p>
-
-<div class="note">Release artifacts from <code>make artifacts</code> include <code>host-agent-linux-*.gz</code>, Windows gzip, k3s/cloudflare/tailscale provider binaries, and <code>SHA256SUMS</code>. The day-to-day build product remains <code>dist/opute-host-agent</code>.</div>
+<div class="callout warn"><strong>Keep this first check read-only.</strong> Do not set <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> or call a tool whose declared effect is not <code>read</code>.</div>
+<h2>Verify the authenticated path</h2>
+<p>Check that authentication rejects a deliberately wrong token before completing the valid call in VS Code:</p>
+<pre><code>curl -i -sS http://127.0.0.1:3014/mcp -H 'Accept: application/json, text/event-stream' -H 'Content-Type: application/json' -H 'Authorization: Bearer intentionally-wrong' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'</code></pre>
+<p>Expect HTTP 401. A request with no Authorization header also returns 401. Use the real token only in your local shell and VS Code password prompt.</p>
+<ul><li>No token or a wrong token gets HTTP 401.</li><li>The configured token connects VS Code; non-empty <code>tools/list</code> includes <code>get_host_info</code>.</li><li><code>get_host_info {}</code> returns structured facts and the selected identity.</li><li>No mutation flag was enabled and no mutating tool was called.</li></ul>
+<h2>Troubleshoot</h2>
+<ul><li><strong>Port in use:</strong> ${tutorialPortHelp}</li><li><strong>401:</strong> match the VS Code input to <code>MCP_AUTH_TOKEN</code>; restart after changing shell environment.</li><li><strong>Empty tools:</strong> refresh the server, verify the URL ends in <code>/mcp</code>, and check <code>tools/list</code>.</li><li><strong>WSL reachability:</strong> run VS Code and the agent in the same WSL context first.</li><li>For other symptoms, see <a href="/docs/troubleshooting/">troubleshooting</a>.</li></ul>
+<h2>Next</h2>
+<p>Inspect <code>list_vms</code> only if Incus is configured. Otherwise read the <a href="/docs/capabilities/">capability reference</a> and <a href="/docs/concepts/#host-agent-and-platform">product boundary</a>. Keep the mutation gate closed.</p>
 `,
   },
 
   "docs/mcp-clients/index.html": {
     title: "Connect an MCP client",
-    description: "Connect Cursor, Claude Desktop, VS Code, or another MCP client to an authenticated Opute Host Agent.",
+    description: "Configure VS Code to connect to a local Opute Host Agent over authenticated Streamable HTTP.",
     current: "mcp-clients",
     body: `
 <p class="badge">How-to</p>
 <h1>Connect an MCP client</h1>
-<p class="meta">Wire Cursor, Claude Desktop, or VS Code to a running Host Agent over Streamable HTTP.</p>
-
-<h2>Prerequisites</h2>
-<ul>
-  <li>Host Agent listening (see <a href="/docs/install/">Install</a>)</li>
-  <li>Matching <code>MCP_AUTH_TOKEN</code> on the agent process</li>
-</ul>
-
-<h2>Cursor / Claude Desktop</h2>
-<pre><code>{
-  "mcpServers": {
-    "opute-local": {
-      "type": "http",
-      "url": "http://127.0.0.1:3014/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-token"
-      }
-    }
-  }
-}</code></pre>
-
-<h2>VS Code-style</h2>
-<pre><code>{
-  "servers": {
-    "opute-local": {
-      "type": "http",
-      "url": "http://127.0.0.1:3014/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-token"
-      }
-    }
-  }
-}</code></pre>
-
-<div class="callout warn">
-  <strong>Auth is not optional when a bootstrap token is configured.</strong>
-  A config with only <code>url</code> against a token-gated agent returns HTTP 401.
-  Omit headers only when the agent has no bootstrap token and the client completes OAuth for this resource.
-</div>
-
-<h2>What the client should do</h2>
+<p class="meta">Connect VS Code to a Host Agent running in the same Linux or WSL context. The documented path uses Streamable HTTP and a password-prompted Bearer token.</p>
+<h2>VS Code</h2>
 <ol>
-  <li>Connect over Streamable HTTP (stdio is not supported).</li>
-  <li>Discover the revisioned capability catalog.</li>
-  <li>Validate tool arguments against catalog schemas.</li>
-  <li>Call tools by catalog name — the Host Agent does not interpret prose.</li>
+  <li>Start Host Agent on loopback and retain <code>MCP_AUTH_TOKEN</code> in the same shell.</li>
+  <li>Create a workspace <code>.vscode/mcp.json</code> with an HTTP MCP server and a password input:</li>
 </ol>
-
-<h2>Verify the connection</h2>
-<ol>
-  <li>Client shows the server connected (no 401).</li>
-  <li><code>tools/list</code> returns a non-empty revisioned catalog.</li>
-  <li>A read-only call such as <code>get_host_info</code> succeeds.</li>
+<pre><code>{
+  "inputs": [{"type":"promptString","id":"opute-host-token","description":"Local Opute Host Agent token","password":true}],
+  "servers": {"opute-host-agent":{"type":"http","url":"http://127.0.0.1:3014/mcp","headers":{"Authorization":"Bearer \${input:opute-host-token}"}}}
+}</code></pre>
+<ol start="3">
+  <li>Start the server from VS Code and enter the local token at its prompt.</li>
+  <li>Refresh tools and call <code>get_host_info {}</code> to confirm the authenticated path.</li>
 </ol>
-
-<h2>Multiple agents in one workspace</h2>
-<p>Set <code>OPUTE_MCP_PREFIX_TOOL_NAMES=true</code> on each agent so tool names do not collide. <code>GET /health</code> exposes <code>mcpToolNamePrefix</code>. Wire names become <code>{prefix}_{catalogName}</code>. Do <strong>not</strong> enable this on Platform-enrolled instances — the control plane calls unprefixed catalog names.</p>
+<p>See the official <a href="https://code.visualstudio.com/docs/agents/reference/mcp-configuration">VS Code MCP configuration reference</a>. This site has not yet recorded a human client run for a specific VS Code release; see <a href="/docs/compatibility/">compatibility evidence</a>.</p>
+<h2>WSL and local networking</h2>
+<p>Keep the editor MCP client and Host Agent in a networking context where <code>127.0.0.1:3014</code> reaches the agent. Start with both in the same WSL distribution. If VS Code runs on Windows while the agent runs in WSL, follow the editor's current WSL integration guidance and verify connectivity before configuring MCP.</p>
+<h2>Other clients</h2>
+<p>Other clients must support Streamable HTTP MCP and the required Bearer header for this setup. Client-specific recipes are not published as tested until a named version completes the read-only canary.</p>
+<p>Next: <a href="/docs/get-started/">complete the full first-success tutorial</a>.</p>
 `,
   },
 
-  "docs/dogfood/index.html": {
-    title: "Publish this site",
-    description: "How the Opute site image is built in public CI and deployed by the private Host Agent controller.",
-    current: "dogfood",
+  "docs/compatibility/index.html": {
+    title: "Compatibility",
+    description: "See Host Agent package targets and distinguish documented MCP client setup from tested client combinations.",
+    current: "compatibility",
     body: `
-<p class="badge">How-to</p>
-<h1>Publish this site</h1>
-<p class="meta">Public source builds the static-site image. A private deployment controller selects the successful image and submits the private Host Agent recipe on the serving machine.</p>
-
-<h2>Ownership</h2>
+<p class="badge">Reference</p>
+<h1>Compatibility and verification</h1>
+<p class="meta">This page records the evidence available for each compatibility claim. A configuration example documents a supported setup shape; it does not mean a named client/version has passed a live end-to-end test.</p>
+<h2>Host Agent package</h2>
 <ul>
-  <li>Public source: <a href="https://github.com/wunderous/host-agents">wunderous/host-agents</a> owns site content and publishes GHCR images from GitHub-hosted CI.</li>
-  <li>Private deployment: <a href="https://github.com/wunderous/opute-site-deploy">wunderous/opute-site-deploy</a> owns source-run selection, the Kubernetes manifest, the deployment workflow, and the Host Agent recipe. Repository access is required.</li>
-  <li>The private controller deploys the image by immutable sha256 digest. Its runner is registered only to the private repository and calls the local Host Agent.</li>
+  <li>Launcher runtime: Node.js 18 or newer.</li>
+  <li>Packaged Host Agent binaries: Linux x64 and Linux arm64.</li>
+  <li>On Windows, run the Linux binary in WSL and keep the editor and agent in a reachable networking context.</li>
+  <li>Transport: authenticated Streamable HTTP at <code>/mcp</code>; public Host Agent does not support stdio.</li>
 </ul>
-<p>Public source CI has no Host Agent credentials and never runs on the deployment machine.</p>
-
-<h2>Flow</h2>
-<pre class="mermaid">
-flowchart LR
-  SRC[Public site source] --> BUILD[GitHub-hosted image build]
-  BUILD -->|run tag and digest| REG[(Public GHCR image)]
-  POLL[Private controller] -->|verify successful main run| REG
-  POLL --> RECIPE[Private host-recipe.v1]
-  RECIPE -->|typed Host Agent tools| HA[Local Host Agent]
-  HA --> K3S[Admitted K3s cluster]
-  K3S --> SITE[Site workload]
-  SITE --> TUN[Dedicated public tunnel]
-  CLIENT[Public browser] --> TUN
-</pre>
-
-<h2>Path of record</h2>
-<ul>
-  <li>Source image workflow: <code>.github/workflows/publish-site-image.yml</code> in the public source repository</li>
-  <li>Deployment workflow, manifest, and recipe: private repository <code>wunderous/opute-site-deploy</code></li>
-  <li>The controller checks the source run, resolves its run-and-attempt tag to a digest, then calls <code>run_host_local_recipe</code></li>
-</ul>
-<p>The recipe is the only cluster mutation path. Ad-hoc <code>kubectl</code> is not accepted as deployment evidence. Scheduled runs do not fall back to an older image; rollback requires an explicit successful main run.</p>
-
-<h2>Isolation invariants</h2>
-<table>
-  <thead><tr><th>Own</th><th>Never touch</th></tr></thead>
-  <tbody>
-    <tr><td>Namespaces <code>host-agent-site</code>, <code>host-agent-www-tunnel</code></td><td>Namespace <code>opute-platform</code></td></tr>
-    <tr><td>Tunnel <code>opute-www-opute-io</code></td><td>Tunnel <code>opute-platform-opute-io</code></td></tr>
-    <tr><td>Hostnames <code>opute.io</code>, <code>www.opute.io</code></td><td><code>platform.opute.io</code>, <code>mcp.opute.io</code></td></tr>
-  </tbody>
-</table>
-
-<h2>What pass means</h2>
-<ul>
-  <li>The Host Agent recipe reaches terminal success and the Deployment uses the selected digest with a Ready Pod.</li>
-  <li>External <code>/build.json</code> on both www and apex matches the selected source SHA, run ID, and attempt.</li>
-  <li><code>platform.opute.io</code> and <code>mcp.opute.io</code> remain separate and healthy.</li>
-</ul>
-<div class="note">Site reachability is not two-node write / etcd-quorum HA. Report application readiness separately from cluster consensus availability.</div>
-
-<h2>Credentials</h2>
-<p>Host Agent credentials remain in the local Host Agent process environment. They are not copied to GitHub secrets, the public repository, image layers, logs, or workflow artifacts. Tunnel provider credentials remain on the Host Agent/provider side; the public source workflow only publishes the static image.</p>
+<h2>Client evidence</h2>
+<table><thead><tr><th>Client path</th><th>Evidence</th><th>State</th></tr></thead><tbody>
+<tr><td>VS Code MCP configuration</td><td>Official editor documentation describes HTTP servers and password-prompt inputs. This site provides the corresponding configuration.</td><td>Documented; local human end-to-end run still required before claiming tested.</td></tr>
+<tr><td>Other MCP clients</td><td>No client/version evidence is recorded here.</td><td>Unverified for this release. Follow that client vendor's HTTP, authentication, and local-network guidance.</td></tr>
+</tbody></table>
+<p>When a client combination is exercised, record client and version, OS/runtime, transport, auth method, package version, catalog revision, and the read-only result. Redact tokens, host identity, and private host facts.</p>
+<p>Related: <a href="/docs/get-started/">First success</a> · <a href="/docs/mcp-clients/">Client configuration</a> · <a href="/docs/troubleshooting/">Troubleshooting</a></p>
 `,
-    mermaid: true,
   },
 
-  "docs/troubleshooting/index.html": {
-    title: "Troubleshooting",
-    description: "Fix Opute Host Agent authentication, mutation, port, catalog, and recipe-run issues.",
-    current: "troubleshooting",
+  "use-cases/index.html": {
+    title: "Use cases",
+    description: "Read-only examples of host inspection and conditional inventory discovery with Opute Host Agent.",
+    current: "use-cases",
     body: `
-<p class="badge">How-to</p>
-<h1>Troubleshooting</h1>
-<p class="meta">Fix common Host Agent connection and recipe failures. Each section is a goal: symptom → checks → fix.</p>
-
-<h2>HTTP 401 on /mcp</h2>
-<ol>
-  <li>Confirm the agent was started with <code>MCP_AUTH_TOKEN</code> set.</li>
-  <li>Confirm the client sends <code>Authorization: Bearer &lt;same token&gt;</code>.</li>
-  <li><code>GET /health</code> should still succeed without a Bearer — if health fails, the process is down or on another port.</li>
-</ol>
-
-<h2>Wrong port or nothing listening</h2>
-<ul>
-  <li>Standalone default: <code>http://127.0.0.1:3014/mcp</code></li>
-  <li>Platform mode default: <code>0.0.0.0:3004</code> — do not paste a platform snippet into a laptop client unless you mean it.</li>
-  <li>Overrides: <code>HOST_MCP_BIND_HOST</code>, <code>HOST_MCP_PORT</code>.</li>
-</ul>
-
-<h2>Mutations denied</h2>
-<p>Standalone mutating tools fail closed until <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Platform mode uses enrollment policy instead of that flag.</p>
-
-<h2>Missing OPUTE_REMOTE_AGENT_ID</h2>
-<p><code>--check</code> / startup validation requires a canonical agent id. The npm launcher defaults to <code>local-host-agent</code> when unset; from-source runs must export it.</p>
-
-<h2>Client connects but tools look empty or collide</h2>
-<ul>
-  <li>Always refresh with live <code>tools/list</code> — catalogs are revisioned.</li>
-  <li>Multiple agents in one IDE: set <code>OPUTE_MCP_PREFIX_TOOL_NAMES=true</code> (not on Platform-enrolled agents).</li>
-</ul>
-
-<h2>Recipe resume / [redacted] secrets</h2>
-<p>Write-only fields (tunnel run tokens) cannot be pasted back from MCP results. Resume in-process (for example <code>manageHostConnector: true</code>) or re-mint. See <a href="/docs/resources/">Resources &amp; safety</a>.</p>
-
-<h2>run_host_local_recipe refuses the recipe</h2>
-<ul>
-  <li>Platform-distributed recipes (<code>coordinator: platform</code>) must go to Platform — HA will refuse.</li>
-  <li>Host-local recipes cannot include <code>wait</code> nodes or multi-host targets.</li>
-  <li>Mutating runs require a content <code>sha256</code> pin.</li>
-</ul>
-
-<h2>stdio clients</h2>
-<p>The public Host Agent surface is Streamable HTTP only. Configure an HTTP MCP client URL, not a stdio command.</p>
-
-<p>Related: <a href="/docs/install/">Install</a> · <a href="/docs/mcp-clients/">MCP clients</a> · <a href="/docs/configuration/">Configuration</a> · <a href="/docs/recipes/">Recipes</a></p>
+<p class="badge">Use cases</p>
+<h1>Inspect before you act</h1>
+<p class="meta">Host Agent exposes typed operations through authenticated MCP. Begin by reading the host and discovering its current catalog. The available catalog is a host capability description, not proof that an optional provider is configured.</p>
+<h2>Understand the connected host</h2>
+<p>Call <code>get_host_info {}</code> to read the host URI, hostname, provider identity, and supported tools. Use this result to confirm which Host Agent answered before asking for a resource inventory.</p>
+<h2>Discover operations available now</h2>
+<p>Call <code>get_capability_catalog {}</code> and inspect its revision and declared effect. Refresh <code>tools/list</code> after connecting; live discovery is authoritative for that process.</p>
+<h2>Inspect VM inventory when Incus is configured</h2>
+<p>Call <code>list_vms</code> only on a host with its Incus provider available. This is inventory discovery; creating, changing, or deleting a guest is a separate mutating operation and is outside the first-success tutorial.</p>
+<h2>Discover Kubernetes clusters when configured</h2>
+<p>Use <code>list_kubernetes_clusters</code> only when the host has an available Kubernetes provider and the intended source is known. An empty inventory and a failed inventory probe are different outcomes; read the structured response and error status.</p>
+<div class="callout"><strong>Product boundary.</strong> Host Agent executes explicit typed operations against one host. Platform owns intent, authorization, and durable orchestration across hosts. Read <a href="/docs/concepts/#host-agent-and-platform">how they fit together</a>.</div>
+<p>These examples describe verified tool names and their documented purposes. No customer outcome, performance result, or availability guarantee is implied.</p>
+<p>Next: <a href="/docs/get-started/">complete the authenticated read-only check</a> or browse the <a href="/docs/capabilities/">release catalog</a>.</p>
 `,
   },
 
   "docs/capabilities/index.html": {
     title: "Capabilities",
-    description: "Browse the captured Opute Host Agent tool catalog and learn how to discover the live, revisioned catalog.",
+    description: "Browse the versioned Opute Host Agent catalog, including declared effects and JSON schemas.",
     current: "capabilities",
-    body: `
-<p class="badge">Reference</p>
-<h1>Capabilities</h1>
-<p class="meta">Complete list from a redacted catalog snapshot captured ${captureDateUTC} (${toolCatalogCapture.toolCount} tools). Tool availability can change; use live <code>tools/list</code> or <code>get_capability_catalog</code> for the current revision. Groups are for browsing; the live catalog defines the API.</p>
-
-<h2>Contract split</h2>
-<ul>
-  <li><strong>Host Agent</strong> owns provider-neutral capability contracts, provider lifecycle, canonical resource admission, redacted observations, and MCP transport.</li>
-  <li><strong>Opute Platform</strong> owns intent, authorization, durable orchestration, and semantic outcomes.</li>
-</ul>
-
-<h2>Catalog &amp; session</h2>
-<p>Discover the revisioned tool catalog and open assistant sessions.</p>
-${tools(
-  "get_capability_catalog",
-  "open_assistant_session",
-  "list_agents",
-  "configure_agent_connection",
-)}
-
-<h2>Host &amp; inventory</h2>
-<p>Inspect and manage host files, services, artifacts, capacity, and WSL lifecycle.</p>
-${tools(
-  "get_host_info",
-  "get_host_capacity",
-  "detect_host_platform",
-  "list_host_services",
-  "inspect_host_service",
-  "inspect_host_service_supervisor",
-  "inspect_host_file",
-  "ensure_host_file",
-  "remove_host_file",
-  "ensure_host_tool",
-  "ensure_host_artifact",
-  "prepare_host_agent_artifacts",
-  "extract_host_archive",
-  "run_host_command",
-  "probe_http_endpoint",
-  "restart_host_service",
-  "set_host_service_state",
-  "ensure_host_service_supervisor",
-  "reconcile_host_resource_policy",
-  "compact_wsl_disk",
-  "terminate_wsl_distribution",
-  "shutdown_wsl",
-)}
-
-<h2>Host networking</h2>
-<p>Configure host networking and diagnose or recover network bridges.</p>
-${tools(
-  "configure_network",
-  "diagnose_bridge",
-  "recover_bridge",
-)}
-
-<h2>Guests (Incus)</h2>
-<p>Install the Incus stack and manage VM/container guest lifecycle.</p>
-<p>Default infra provider today: <code>OPUTE_INFRA_PROVIDER_ID=incus</code>. Guest URIs carry a runtime kind (<code>vm:</code> vs <code>container:</code>).</p>
-${tools(
-  "install_incus_stack",
-  "uninstall_incus_stack",
-  "reset_incus_stack",
-  "list_vms",
-  "create_vm",
-  "provision_vm",
-  "provision_container",
-  "start_vm",
-  "stop_vm",
-  "restart_vm",
-  "delete_vm",
-  "get_vm_info",
-  "update_vm_resources",
-  "run_instance_command",
-  "stream_vm_console",
-  "send_console_input",
-  "probe_incus_gpu",
-  "remove_vm_network_device",
-  "resize_console",
-)}
-
-<h2>Kubernetes workloads</h2>
-<p>Apply and inspect workloads on admitted cluster URIs.</p>
-<p>Neutral cluster ops appear both as underscore aliases and as dotted <code>opute.capability.kubernetes.*</code> provider ops. Prefer the live catalog name your client discovered.</p>
-${tools(
-  "apply_manifest",
-  "list_pods",
-  "list_namespaces",
-  "list_deployments",
-  "list_services",
-  "list_configmap_keys",
-  "list_secret_keys",
-  "get_k8s_resource",
-  "get_k8s_resource_status",
-  "delete_k8s_resource",
-  "put_k8s_secret",
-  "exec_kubernetes_command",
-  "install_helm_chart",
-  "render_helm_template",
-  "list_k8s_events",
-  "list_storage_classes",
-  "list_ingress_classes",
-  "register_kubernetes_cluster",
-  "list_kubernetes_clusters",
-  "opute.capability.kubernetes.apply-manifest",
-  "opute.capability.kubernetes.delete-resource",
-  "opute.capability.kubernetes.get-resource",
-  "opute.capability.kubernetes.get-resource-status",
-  "opute.capability.kubernetes.exec-command",
-  "opute.capability.kubernetes.list-clusters",
-  "opute.capability.kubernetes.list-events",
-  "opute.capability.kubernetes.put-secret",
-)}
-
-<h2>Kubernetes provision &amp; membership</h2>
-<p>Provision clusters and manage HA join / quorum membership.</p>
-${tools(
-  "opute.capability.kubernetes.provision",
-  "opute.capability.kubernetes.validate",
-  "opute.capability.kubernetes.status",
-  "opute.capability.kubernetes.prepare-ha",
-  "opute.capability.kubernetes.prepare-join",
-  "opute.capability.kubernetes.redeem-join",
-  "opute.capability.kubernetes.join-node",
-  "opute.capability.kubernetes.remove-node",
-  "opute.capability.kubernetes.get-join-receiver-key",
-  "opute.capability.kubernetes.inspect-membership",
-  "opute.capability.kubernetes.recover-quorum",
-  "opute.capability.kubernetes.ensure-ha-endpoint",
-  "opute.capability.kubernetes.get-cluster-info",
-  "opute.capability.kubernetes.remove",
-  "opute.capability.kubernetes.restart",
-)}
-
-<h2>Cluster storage &amp; registry reclaim</h2>
-<p>Inspect guest disk and reclaim unused images / registry blobs.</p>
-${tools(
-  "inspect_guest_storage",
-  "prune_unused_cluster_images",
-  "garbage_collect_cluster_registry",
-  "trim_guest_storage",
-  "opute.capability.kubernetes.inspect-guest-storage",
-  "opute.capability.kubernetes.configure-registry",
-  "opute.capability.kubernetes.garbage-collect-registry",
-  "opute.capability.kubernetes.prune-unused-images",
-  "opute.capability.kubernetes.trim-guest-storage",
-)}
-
-<h2>OCI / containers</h2>
-<p>Stage build contexts, build/push images, and manage host registries.</p>
-${tools(
-  "stage_build_context",
-  "ensure_oci_builder",
-  "ensure_docker",
-  "build_and_push_oci_image",
-  "configure_oci_storage",
-  "install_oci_registry",
-  "get_oci_registry_status",
-  "delete_oci_registry",
-  "inspect_container_storage",
-  "cleanup_container_storage",
-  "probe_gpu_container",
-)}
-
-<h2>Recipes &amp; plans</h2>
-<p>Validate and run declarative recipes / plans on this host.</p>
-<p>Why: <a href="/docs/recipes/">Recipes &amp; plans</a>. Fields: <a href="/docs/recipe-primitives/">primitives</a>.</p>
-${tools(
-  "validate_host_local_recipe",
-  "run_host_local_recipe",
-  "validate_host_plan",
-  "run_host_plan",
-  "get_host_plan_run",
-  "validate_runtime_recipe",
-  "run_runtime_recipe",
-  "get_runtime_recipe_run",
-  "validate_tunnel_recipe",
-  "run_tunnel_recipe",
-  "get_tunnel_run",
-)}
-
-<h2>Tunneling &amp; public exposure</h2>
-<p>Ensure, probe, and remove host tunnels and public MCP helpers.</p>
-${tools(
-  "opute.capability.tunneling.validate",
-  "opute.capability.tunneling.ensure-host-tunnel",
-  "opute.capability.tunneling.probe-host-tunnel",
-  "opute.capability.tunneling.remove-host-tunnel",
-  "opute.capability.tunneling.install-kubernetes-connector",
-  "opute.capability.tunneling.delete-kubernetes-connector",
-  "install_cloudflared_connector",
-  "delete_cloudflared_connector",
-  "ensure_public_mcp_tunnel",
-  "ensure_public_mcp_quick_tunnel",
-  "remove_public_mcp_quick_tunnel",
-  "probe_host_exposure",
-  "remove_host_exposure",
-  "ensure_cloudflared_tunnel",
-  "get_cloudflare_tunnel_status",
-)}
-
-<h2>HA networking seams</h2>
-<p>Networking tools captured under ADR-0016. Install/configure via <code>mesh-runtime.v1</code>, then membership / private mesh / public ingress.</p>
-<p>Canonical contracts: <code>mesh-runtime.v1</code>, <code>mesh-membership.v1</code>, <code>private-mesh.v1</code>, and <code>public-ingress.v1</code>. The ${captureDateUTC} snapshot contains ${networkOverlayCount} deprecated <code>network-overlay.*</code> tools. Details: <a href="/docs/networking/">Networking</a>.</p>
-${tools(
-  "opute.capability.mesh-runtime.validate",
-  "opute.capability.mesh-runtime.ensure-agent",
-  "opute.capability.mesh-runtime.ensure-control-plane",
-  "opute.capability.mesh-runtime.status",
-  "opute.capability.mesh-membership.enroll",
-  "opute.capability.mesh-membership.status",
-  "opute.capability.mesh-membership.leave",
-  "opute.capability.private-mesh.ensure",
-  "opute.capability.private-mesh.ensure-service",
-  "opute.capability.private-mesh.probe",
-  "opute.capability.public-ingress.ensure",
-  "opute.capability.public-ingress.promote",
-  "opute.capability.public-ingress.probe",
-)}
-
-<h2>Providers</h2>
-<p>Install, validate, reload, and tear down provider MCP plugins.</p>
-${tools(
-  "opute.provider.install",
-  "opute.provider.validate",
-  "opute.provider.status",
-  "opute.provider.reload",
-  "opute.provider.teardown",
-  "install_provider_tools",
-  "uninstall_provider_tools",
-)}
-
-<h2>LLM serving <span class="muted-tag">(optional)</span></h2>
-<p>Optional local LLM runtime, models, and relays.</p>
-<p>Core Host Agent works without an LLM provider. Ollama is an activated optional layer (<code>plugins/llm/ollama</code>).</p>
-${tools(
-  "probe_local_llm",
-  "check_local_llm_prerequisites",
-  "configure_local_llm_runtime",
-  "start_local_llm_runtime",
-  "stop_local_llm_runtime",
-  "list_local_llm_models",
-  "install_local_llm_model",
-  "configure_local_llm_model",
-  "remove_local_llm_model",
-  "ensure_local_llm_relay",
-  "ensure_local_llm_k3s_proxy",
-  "ensure_local_llm_server_binary",
-  "remove_local_llm_relay",
-  "remove_local_llm_k3s_proxy",
-  "remove_local_llm_cloudflared_tunnel",
-  "probe_openai_compatible_server",
-  "opute.capability.llm-serving.get-context-size",
-  "opute.capability.llm-serving.set-context-size",
-  "opute.capability.llm-serving.validate",
-)}
-
-<h2>Postgres &amp; SQLite</h2>
-<p>Reconcile managed Postgres services and local SQLite databases.</p>
-${tools(
-  "reconcile_postgresql_service",
-  "get_postgresql_service_status",
-  "remove_postgresql_service",
-  "release_postgresql_service_relay",
-  "ensure_sqlite_database",
-  "get_sqlite_database_status",
-  "remove_sqlite_database",
-)}
-
-<h2>Serving &amp; cluster agent</h2>
-<p>Reconcile serving assignments, discover ingress, install cluster agents.</p>
-${tools(
-  "reconcile_serving_assignment",
-  "discover_service_ingress",
-  "list_certificate_issuers",
-  "install_cluster_agent",
-  "inspect_workload",
-)}
-
-<div class="callout">
-  Mutating tools in standalone mode require <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>.
-  Platform mode follows Platform enrollment policy instead of that env flag.
-</div>
-`,
+    body: capabilityReferenceBody(),
   },
-
-  "docs/configuration/index.html": {
+  [versionedCapabilityPath]: {
+    title: "Capabilities — v" + releaseCatalog.packageVersion,
+    description: "Versioned Opute Host Agent capability descriptors and JSON schemas.",
+    current: "capabilities",
+    body: capabilityReferenceBody(true),
+  },  "docs/configuration/index.html": {
     title: "Configuration",
     description: "Configure Opute Host Agent identity, bind address, port, authentication, providers, and mutation controls.",
     current: "configuration",
@@ -865,7 +774,7 @@ ${tools(
 <table>
   <thead><tr><th>Variable</th><th>Notes</th></tr></thead>
   <tbody>
-    <tr><td><code>OPUTE_REMOTE_AGENT_ID</code></td><td>Canonical agent id. Required by <code>Validate()</code>. npm launcher defaults to <code>local-host-agent</code>.</td></tr>
+    <tr><td><code>OPUTE_REMOTE_AGENT_ID</code></td><td>Canonical opaque agent id. Set it explicitly; the npm launcher has no default.</td></tr>
   </tbody>
 </table>
 
@@ -942,7 +851,7 @@ opute-host-agent help</code></pre>
   <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Notes</th></tr></thead>
   <tbody>
     <tr><td>GET</td><td><code>/health</code></td><td>None</td><td>Liveness / identity probe</td></tr>
-    <tr><td>POST</td><td><code>/mcp</code></td><td>Bearer <code>MCP_AUTH_TOKEN</code> and/or OAuth</td><td>Streamable HTTP MCP (protocol <code>2026-07-28</code>)</td></tr>
+    <tr><td>POST</td><td><code>/mcp</code></td><td>Bearer <code>MCP_AUTH_TOKEN</code></td><td>Streamable HTTP MCP (protocol <code>2026-07-28</code>)</td></tr>
   </tbody>
 </table>
 
@@ -965,12 +874,12 @@ opute-host-agent help</code></pre>
     body: `
 <p class="badge">Explanation</p>
 <h1>Concepts</h1>
-<p class="meta"><strong>Why this exists.</strong> AI clients are good at proposing work and bad at owning a host. Host Agent is the thin, typed execution plane that turns named MCP tools into real guests, clusters, and tunnels — with identity and redaction that fail closed. Not a chat product; not Platform.</p>
-<p class="meta">Mental model only — not a procedure. For diagrams and package layout see <a href="/docs/architecture/">Architecture</a>.</p>
+<p class="meta"><strong>Opute Host Agent connects authenticated MCP clients to Linux host facts and explicit typed operations.</strong> It runs beside a host, applies identity and effect gates, and returns structured observations.</p>
+<p class="meta">Opute Platform coordinates authorized intent and durable work across hosts. For the execution flow and package layout, see <a href="/docs/architecture/">Architecture</a>.</p>
 
-<h2>Host Agent vs Platform</h2>
-<p>The Host Agent is an execution plane on a single Linux host (or enrolled remote). It speaks Streamable HTTP MCP, admits canonical resource URIs, and runs typed tools. Opute Platform is a separate control plane: it decides <em>what</em> should happen, holds durable orchestration, and issues enrollment credentials.</p>
-<p>Public marketing at <code>opute.io</code> / <code>www.opute.io</code> is Host Agent dogfood. <code>platform.opute.io</code> and <code>mcp.opute.io</code> are Platform surfaces. Collapsing those identities is how operators accidentally take down the control plane while “just fixing docs.”</p>
+<h2 id="host-agent-and-platform">Host Agent and Platform</h2>
+<p><strong>Host Agent owns execution on one host:</strong> it authenticates an MCP client, admits canonical resource URIs, checks typed capability effects, dispatches to the host or an available provider, and returns structured observations. <strong>Opute Platform owns intent, authorization, routing, and durable orchestration across hosts.</strong> Platform may assign work to a Host Agent; the Host Agent does not become the cross-host coordinator.</p>
+<p>This website explains and onboards Host Agent. The public Host Agent site uses <code>opute.io</code> and <code>www.opute.io</code>; Opute Platform has separate <code>platform.opute.io</code> and <code>mcp.opute.io</code> routes. A site deployment does not authorize or mutate those Platform resources.</p>
 
 <pre class="mermaid">
 flowchart LR
@@ -980,6 +889,7 @@ flowchart LR
   Platform[Opute Platform] -->|intent + enrollment| Client
   Platform -.->|does not own host exec| HA
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> A local MCP client or Platform sends typed requests to Host Agent. Host Agent executes against its Linux host or provider processes. Platform supplies intent and enrollment context while Host Agent retains host execution.</p>
 
 <h2>Typed catalog, not folklore</h2>
 <p>Clients do not send free-form shell. They discover a revisioned catalog, validate arguments against schemas, and invoke named tools. That is why memorized tool lists go stale and why <code>tools/list</code> is authoritative.</p>
@@ -1048,6 +958,7 @@ flowchart TB
   HA -->|lifecycle install/reload| plugins
   plugins -->|capability ops| Ext[External APIs / daemons]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> Platform and a local IDE client send typed MCP requests to Host Agent. Host Agent uses shared host seams, domain packages, and provider processes to perform their declared operations.</p>
 
 <h2>MCP edge</h2>
 <ul>
@@ -1070,6 +981,7 @@ sequenceDiagram
   Note over HA: admit URI · check effects · dispatch
   HA-->>C: typed result (redacted)
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> The client authenticates a POST to /mcp, discovers server capabilities, lists the current catalog, and calls a named tool. Host Agent admits the resource, checks its effect, and returns a typed result.</p>
 
 <h2>Catalog → admission → dispatch</h2>
 <p>The catalog is authoritative (ADR-0009). Tool dispatch validates against the revision the client saw, admits resource URIs, and applies effect gates before provider or domain code runs.</p>
@@ -1083,6 +995,7 @@ flowchart LR
   Eff --> Dom[Domain or provider op]
   Dom --> Out[Observation + redaction]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> A tool call is checked against the catalog revision, admitted for its resource URI, gated by its declared effect, dispatched to a domain or provider, and returned as a redacted observation.</p>
 
 <h2>Providers</h2>
 <p>Providers are separate Streamable HTTP MCP processes under <code>plugins/</code>. The Host Agent owns lifecycle (<code>opute.provider.*</code>), activation, and displace-on-activate exclusivity per Service Definition — not vendor CLI folklore.</p>
@@ -1133,6 +1046,7 @@ flowchart LR
   Plan --> Runner[plan.Runner]
   Runner --> Tools[Typed tools]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> A recipe pins inputs and expands into a host plan. The shared plan runner executes its typed tool steps.</p>
 
 <h2>Why not one thing?</h2>
 <p>Without recipes, every caller would hand-write expanded plans and lose version pins, input schemas, and family-specific activation. Without plans, each recipe family would invent its own executor — Cordis C-03 forbids that. So recipes <em>package</em> work; plans <em>execute</em> it.</p>
@@ -1165,6 +1079,7 @@ flowchart TB
   Val -->|fail| Rec[recover?]
   Rec -->|abort| Comp[compensate]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> A plan node that is already ready is marked satisfied. Otherwise its action runs, validation checks the result, recovery may retry, and compensation may run if the plan aborts.</p>
 
 <h2>Where to go next</h2>
 <ul>
@@ -1207,6 +1122,7 @@ flowchart LR
   Tools --> State[Durable run state]
   State --> Get[get_*_run]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> A validated recipe resolves inputs and a source pin, expands to a host plan, and the runner stores durable run state for later inspection.</p>
 
 <h2>Families &amp; MCP tools</h2>
 <table>
@@ -1329,6 +1245,7 @@ flowchart TB
   Sweep -->|unstable| Pass
   Sweep -->|stable / exhaust| Terminal[completed · failed · waiting]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> The runner walks topological levels, fans out bounded node work, repeats readiness sweeps while state is unstable, then reaches a terminal completed, failed, or waiting status.</p>
 
 <h2>Node primitives</h2>
 <table>
@@ -1363,6 +1280,7 @@ flowchart TB
   Act -->|fail| Rec[recover?]
   Rec -->|abort| Comp[compensate reverse topo]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> Nodes can apply a validated mutation, perform a read-only readiness check, fan out over items, or wait for Platform input. Failed actions may recover; abort compensation runs in reverse order.</p>
 
 <h3>Wait (Platform)</h3>
 <p><code>trigger.kind</code> ∈ <code>operator</code> \| <code>event-or-operator</code>, plus <code>trigger.type</code>, <code>correlation</code>, bounded <code>inputSchema</code> (<code>additionalProperties: false</code>), <code>schemaRevision</code>, expiry via <code>expiresAt</code> XOR <code>expiresInMs</code>, and <code>contextDelta[]</code> (<code>name</code>, <code>\${input.*}</code> value, <code>schema</code>, <code>provenance</code>, <code>secret</code>). Resume fences on <code>waitRevision</code> / <code>schemaRevision</code> via MCP task input (<code>source</code> ∈ <code>operator</code> \| <code>authenticated-event</code>).</p>
@@ -1445,7 +1363,7 @@ flowchart TB
     <tr><td><code>public-ingress.v1</code></td><td>North-south stable HTTPS</td><td>ensure, promote, probe</td></tr>
   </tbody>
 </table>
-<p><code>network-overlay.*</code> is a <strong>deprecated migration alias</strong>. The ${captureDateUTC} catalog snapshot contains ${networkOverlayCount} tools from that family. Use <code>mesh-runtime.v1</code> for runtime setup and the three definitions in this table for networking operations. Tunneling and public MCP helpers are separate capabilities.</p>
+<p>Legacy <code>network-overlay.*</code> names are deprecated migration aliases. Use <code>mesh-runtime.v1</code> for network runtime setup and the three Service Definitions in this table for membership, private-mesh, and public-ingress operations.</p>
 
 <pre class="mermaid">
 flowchart TB
@@ -1463,6 +1381,7 @@ flowchart TB
   CF --> Pu
   HA[Host Agent recipes / MCP] --> seams
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> Tailscale provides membership, private mesh, and public ingress. Cloudflare provides membership and public ingress in the described bundle. Host Agent recipes compose the neutral service definitions.</p>
 
 <h2>Exclusivity</h2>
 <p>Exclusivity is <strong>per Service Definition</strong>, not per vendor company. Activating a provider for a definition publishes that definition’s ops and displaces another provider’s catalog entries for the same <code>capabilityId</code>. Ambiguous dual ownership fails closed.</p>
@@ -1478,6 +1397,7 @@ flowchart LR
   Funnel --> Gw[Scoped gateway / Ingress]
   Gw --> W[Workload]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> Platform connects to Host Agents over typed MCP; Host Agents reach one another through the private mesh. Public clients reach workloads through public ingress and a scoped gateway.</p>
 <p>Funnel and Cloudflare public ingress are application north-south paths. They are not substitutes for the private mesh, the Kubernetes datastore, or authenticated Host Agent MCP administration.</p>
 
 <h2>Tunneling capability</h2>
@@ -1517,6 +1437,7 @@ flowchart LR
   Obs --> Red[Schema redaction]
   Red --> Client[MCP client]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> Discovery produces a canonical resource URI. Admission and capacity checks precede a typed operation; its observation is schema-redacted before it reaches the MCP client.</p>
 
 <h2>Effects</h2>
 <p>Catalog entries carry effect classifications such as <code>read</code>, <code>mutation</code>, <code>destructive</code>, and <code>credential_bearing</code>. Standalone mode denies mutations until <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Platform mode applies enrollment policy instead of that env flag.</p>
@@ -1539,35 +1460,13 @@ flowchart LR
   Tok --> InProc[In-process connector install]
   InProc --> K8s[Kubernetes connector Secret]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> A tunnel token is write-only and redacted in the MCP result. The Host Agent can retain it in-process while installing a Kubernetes connector secret.</p>
 
 <h2>Identity</h2>
 <p>Every Host Agent process carries <code>OPUTE_REMOTE_AGENT_ID</code>. Inventory tools omit caller-supplied host id overrides that would impersonate another agent (ADR-0006). Cross-host mutations target exact opaque agent identities — not Tailscale hostnames or display labels.</p>
 `,
     mermaid: true,
   },
-}
-
-const expectedToolNames = new Set(toolCatalogCapture.toolNames)
-const actualToolCounts = new Map<string, number>()
-for (const name of listedToolNames) {
-  actualToolCounts.set(name, (actualToolCounts.get(name) ?? 0) + 1)
-}
-const missingToolNames = [...expectedToolNames].filter((name) => !actualToolCounts.has(name))
-const unexpectedToolNames = [...actualToolCounts.keys()].filter((name) => !expectedToolNames.has(name))
-const duplicateToolNames = [...actualToolCounts.entries()]
-  .filter(([, count]) => count > 1)
-  .map(([name]) => name)
-if (missingToolNames.length || unexpectedToolNames.length || duplicateToolNames.length) {
-  throw new Error(
-    [
-      "Capabilities page does not match the catalog snapshot.",
-      missingToolNames.length ? `Missing: ${missingToolNames.join(", ")}` : "",
-      unexpectedToolNames.length ? `Unexpected: ${unexpectedToolNames.join(", ")}` : "",
-      duplicateToolNames.length ? `Duplicated: ${duplicateToolNames.join(", ")}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n"),
-  )
 }
 
 for (const [rel, spec] of Object.entries(pages)) {
@@ -1577,6 +1476,13 @@ for (const [rel, spec] of Object.entries(pages)) {
   writeFileSync(full, page(spec, canonicalPath))
   console.log("wrote", rel)
 }
+
+const versionedCatalogFile = join(root, versionedCapabilityPath)
+mkdirSync(dirname(versionedCatalogFile), { recursive: true })
+writeFileSync(
+  join(root, versionedCatalogDownload.replace(/^\//, "")),
+  JSON.stringify(releaseCatalog, null, 2) + "\n",
+)
 
 writeFileSync(
   join(root, "index.html"),
@@ -1591,37 +1497,54 @@ writeFileSync(
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+  <a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
   ${nav("home")}
-  <main class="hero">
+  <main class="hero" id="main-content" lang="en">
     <p class="eyebrow">For infrastructure operators and agent authors</p>
-    <h1>Give AI agents typed control of your hosts.</h1>
+    <h1>Inspect your Linux hosts through an authenticated AI client.</h1>
     <p class="lede">
-      Run one authenticated MCP server on Linux. AI clients discover tools for host services, Incus guests, Kubernetes, and networking from a revisioned catalog, with identity and mutation policy checked at the boundary.
+      Opute Host Agent gives operators and agent authors a typed MCP connection to host facts and the capabilities this host offers. Start with a read-only check. Opute Platform coordinates authorized work across hosts.
     </p>
     <div class="cta">
-      <a class="btn primary" href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
-      <a class="btn ghost" href="/docs/">Docs</a>
+      <a class="btn primary" href="/docs/get-started/">Run a read-only host check</a>
+      <a class="btn ghost" href="/docs/concepts/#host-agent-and-platform">How Host Agent and Platform fit</a>
     </div>
-    <div class="visual" aria-hidden="true">
-      <pre class="terminal">$ export MCP_AUTH_TOKEN=dev-token # local demo only
-$ npx -y @opute/host-agent start --background
-$ npx -y @opute/host-agent url
-http://127.0.0.1:3014/mcp</pre>
-    </div>
+    <figure class="visual">
+      <figcaption>Example excerpt only; values are redacted and this is not live host output.</figcaption>
+      <pre class="terminal"><code>get_host_info {}
+{
+  "uri": "host:example:host-01",
+  "hostName": "…",
+  "providerId": "…",
+  "lxcBinaryPath": "…",
+  "systemctlPath": "…",
+  "supportedTools": ["…"]
+}</code></pre>
+    </figure>
   </main>
 
   <section class="pitch" aria-label="How it works">
     <h2>How it works</h2>
     <ol class="pitch-steps">
-      <li><span class="step-number" aria-hidden="true"></span><strong>Run the agent</strong> on the host that owns Incus / K3s.</li>
-      <li><span class="step-number" aria-hidden="true"></span><strong>Connect an IDE or Platform</strong> over Streamable HTTP MCP with a Bearer token.</li>
-      <li><span class="step-number" aria-hidden="true"></span><strong>Call named tools</strong> from a revisioned catalog — or pin work in recipes and plans.</li>
+      <li><span class="step-number" aria-hidden="true"></span><strong>Run the agent</strong> beside the Linux host you want to inspect. Incus and Kubernetes are optional for host facts.</li>
+      <li><span class="step-number" aria-hidden="true"></span><strong>Connect an MCP client</strong> to its loopback HTTP endpoint with a Bearer token.</li>
+      <li><span class="step-number" aria-hidden="true"></span><strong>Read before acting</strong> with the live typed catalog and read-only host tools.</li>
     </ol>
     <p class="pitch-for">
       Built for operators and agent authors who already run real infrastructure.
       For Opute Platform, visit <a href="https://platform.opute.io/">platform.opute.io</a>.
     </p>
+  </section>
+
+  <section class="pitch" aria-labelledby="jobs-heading">
+    <h2 id="jobs-heading">What you can inspect</h2>
+    <div class="grid-cards">
+      <a href="/use-cases/"><strong>Host facts</strong><span>Read host identity and the tools supported by the connected agent.</span></a>
+      <a href="/use-cases/"><strong>VM inventory, when Incus is configured</strong><span>Discover existing guests before selecting any separate mutating action.</span></a>
+      <a href="/use-cases/"><strong>Kubernetes inventory, when configured</strong><span>Discover cluster state through the available Kubernetes provider.</span></a>
+    </div>
+    <div class="callout"><strong>Product boundary.</strong> Host Agent authenticates and executes typed operations against one host. Platform owns intent, authorization, and durable orchestration across hosts. <a href="/docs/concepts/#host-agent-and-platform">Read the explanation</a>.</div>
   </section>
 
   <footer>
@@ -1635,13 +1558,12 @@ http://127.0.0.1:3014/mcp</pre>
 )
 console.log("wrote index.html")
 
-const generatedDateUTC = new Date().toISOString().slice(0, 10)
 const sitemapPaths = ["/", ...Object.keys(pages).map((rel) => `/${rel.replace(/index\.html$/, "")}`)]
 const sitemap = [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
   ...sitemapPaths.map(
-    (path) => `  <url>\n    <loc>${SITE_ORIGIN}${path}</loc>\n    <lastmod>${generatedDateUTC}</lastmod>\n  </url>`,
+    (path) => `  <url>\n    <loc>${SITE_ORIGIN}${path}</loc>\n  </url>`,
   ),
   "</urlset>",
   "",
@@ -1665,10 +1587,13 @@ console.log("wrote robots.txt and sitemap.xml", sitemapPaths.length)
       url: url.endsWith("/") || url === "/docs" ? (url.endsWith("/") ? url : url + "/") : url + "/",
       title: spec.title,
       description: spec.description,
-      body: strip(spec.body).slice(0, 12000),
+    body: rel === "docs/capabilities/index.html"
+      ? releaseCatalog.tools.map((tool) => tool.name + " " + tool.description).join(" ") +
+        " " + strip(spec.body).slice(0, 12000)
+      : strip(spec.body).slice(0, 12000),
     }
   })
-  writeFileSync(join(root, "search-index.json"), JSON.stringify({ generatedAt: new Date().toISOString(), pages: searchPages }, null, 2))
+  writeFileSync(join(root, "search-index.json"), JSON.stringify({ pages: [{ url: "/", title: "Opute Host Agent", description: "Inspect Linux host facts through an authenticated MCP client.", body: "Host Agent Platform read-only host check get_host_info" }, ...searchPages] }, null, 2))
   console.log("wrote search-index.json", searchPages.length)
 }
 
@@ -1678,7 +1603,7 @@ console.log("wrote robots.txt and sitemap.xml", sitemapPaths.length)
     openapi: "3.1.0",
     info: {
       title: "Opute Host Agent HTTP edge",
-      version: "1.0.0",
+      version: releaseCatalog.packageVersion,
       description:
         "Streamable HTTP MCP transport for Opute Host Agent. Tool schemas are revisioned via tools/list — not frozen in this document. See https://www.opute.io/docs/openapi/",
       contact: { url: "https://www.opute.io/docs/" },
@@ -1698,10 +1623,18 @@ console.log("wrote robots.txt and sitemap.xml", sitemapPaths.length)
               description: "Agent is listening",
               content: {
                 "application/json": {
-                  schema: {
-                    type: "object",
-                    properties: {
-                      agentId: { type: "string" },
+                    schema: {
+                      type: "object",
+                      properties: {
+                        instanceId: {
+                          type: "string",
+                          description: "Host Agent execution instance configuration.",
+                        },
+                        localInstanceId: {
+                          type: "string",
+                          description: "Local launcher ownership identity; it is not canonical Host Agent identity.",
+                        },
+                        agentId: { type: "string" },
                       mcpToolNamePrefix: { type: "string" },
                     },
                     additionalProperties: true,
@@ -1718,7 +1651,7 @@ console.log("wrote robots.txt and sitemap.xml", sitemapPaths.length)
           summary: "Streamable HTTP MCP endpoint",
           description:
             "JSON-RPC MCP over Streamable HTTP (protocol 2026-07-28). Clients must send Accept: application/json, text/event-stream. Prefer live tools/list for tool schemas.",
-          security: [{ bearerAuth: [] }, { oauth2: ["mcp"] }],
+          security: [{ bearerAuth: [] }],
           parameters: [
             {
               name: "MCP-Protocol-Version",
@@ -1757,67 +1690,25 @@ console.log("wrote robots.txt and sitemap.xml", sitemapPaths.length)
           scheme: "bearer",
           description: "Bootstrap MCP_AUTH_TOKEN",
         },
-        oauth2: {
-          type: "oauth2",
-          flows: {
-            authorizationCode: {
-              authorizationUrl: "https://example.invalid/oauth/authorize",
-              tokenUrl: "https://example.invalid/oauth/token",
-              scopes: { mcp: "Call Host Agent MCP tools" },
-            },
-          },
-          description: "Optional OAuth when no bootstrap token is configured",
-        },
+
       },
     },
     "x-opute-mcp": {
       protocolVersion: "2026-07-28",
       transport: "streamable-http",
       catalogAuthority: "tools/list",
-      capturedToolCount: toolCatalogCapture.toolCount,
-      capturedToolNames: toolCatalogCapture.toolNames,
+      packageVersion: releaseCatalog.packageVersion,
+      releaseChannel: releaseCatalog.releaseChannel,
+      catalogRevision: releaseCatalog.catalogRevision,
+      toolCount: releaseCatalog.toolCount,
+      toolNames: releaseCatalog.tools.map((tool) => tool.name),
     },
   }
 
-  writeFileSync(join(root, "openapi.json"), JSON.stringify(openapi, null, 2))
-  // Minimal YAML without adding a dependency
-  const yamlEscape = (v: string) => JSON.stringify(v)
-  const yaml = `openapi: "3.1.0"
-info:
-  title: ${yamlEscape(openapi.info.title)}
-  version: ${yamlEscape(openapi.info.version)}
-  description: ${yamlEscape(openapi.info.description)}
-servers:
-  - url: http://127.0.0.1:3014
-    description: Standalone default
-  - url: http://127.0.0.1:3004
-    description: Platform mode default (local)
-paths:
-  /health:
-    get:
-      operationId: getHealth
-      summary: Liveness and agent identity probe
-      responses:
-        "200":
-          description: Agent is listening
-  /mcp:
-    post:
-      operationId: mcpStreamableHttp
-      summary: Streamable HTTP MCP endpoint
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: JSON or SSE MCP response stream
-        "401":
-          description: Missing or invalid Authorization
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-`
-  writeFileSync(join(root, "openapi.yaml"), yaml)
+  // JSON is a YAML 1.2 subset; serialize one object so both downloads stay identical.
+  const serializedOpenAPI = JSON.stringify(openapi, null, 2) + "\n"
+  writeFileSync(join(root, "openapi.json"), serializedOpenAPI)
+  writeFileSync(join(root, "openapi.yaml"), serializedOpenAPI)
   console.log("wrote openapi.json + openapi.yaml")
 }
 
@@ -1840,8 +1731,15 @@ Host Agent documentation covers the execution server. Opute Platform: https://pl
 - [Publish this site](https://www.opute.io/docs/dogfood/)
 - [Troubleshooting](https://www.opute.io/docs/troubleshooting/)
 
+## Compatibility
+- [Client and transport verification](https://www.opute.io/docs/compatibility/)
+
+## Use cases
+- [Host inspection and optional provider workflows](https://www.opute.io/use-cases/)
+
 ## Reference
 - [Capabilities](https://www.opute.io/docs/capabilities/)
+- [Versioned capability catalog](https://www.opute.io/docs/versions/v${releaseCatalog.packageVersion}/capabilities/)
 - [Configuration](https://www.opute.io/docs/configuration/)
 - [Recipe & plan primitives](https://www.opute.io/docs/recipe-primitives/)
 
@@ -1860,62 +1758,32 @@ console.log("wrote llms.txt")
 
 writeFileSync(
   join(contextDir, "PACKET.md"),
-  `# Context packet — Host Agent docs / marketing site
+  `# Context packet - Host Agent docs and marketing site
 
-## Documentation standard
+## Documentation source and invariant
 
-Site docs follow [Diátaxis](https://diataxis.fr/). Operator facts must match
-\`README.md\` and the live \`tools/list\` catalog after verifying against code.
+The Bun generator in site/scripts/generate-docs.ts owns rendered pages, search index, sitemap, OpenAPI downloads, llms.txt, and this packet. Do not hand-edit generated HTML.
 
-### Writing rules (keep modes pure)
-
-| Mode | Answers | Voice | Do not |
-|------|---------|-------|--------|
-| Tutorial | Can you teach me? | Guided steps only | Digress into architecture |
-| How-to | How do I …? | Goal → steps | Teach from zero or dump schemas |
-| Reference | What is …? | Dry, complete, neutral | Explain *why* or instruct |
-| Explanation | Why / about …? | Mental model, analogy, judgment | Absorb field catalogs |
-
-Progressive disclosure: one-sentence answer → diagram → choices → link to reference.
-Explanation opens with *about* / *why*; reference opens with facts.
+The active public-documentation-release-parity decision in .agents/decisions/public-documentation-release-parity.json is authoritative for release claims. The default tutorial and stable catalog require matching published-package read-only canary evidence. Unverified candidates are marked preview. The catalog snapshot is an allowlisted projection; live tools/list is authoritative at runtime.
 
 ## Audience jobs
 
-| Job | Route | Mode |
-|-----|-------|------|
-| First success | \`/docs/get-started/\` | Tutorial |
-| Install & run | \`/docs/install/\` | How-to |
-| Connect MCP client | \`/docs/mcp-clients/\` | How-to |
-| Publish this site | \`/docs/dogfood/\` | How-to |
-| Troubleshooting | \`/docs/troubleshooting/\` | How-to |
-| Capability facts | \`/docs/capabilities/\` | Reference |
-| Config facts | \`/docs/configuration/\` | Reference |
-| Recipe & plan fields | \`/docs/recipe-primitives/\` | Reference |
-| Mental model | \`/docs/concepts/\` | Explanation |
-| Architecture + diagrams | \`/docs/architecture/\` | Explanation |
-| Why recipes & plans | \`/docs/recipes/\` | Explanation |
-| Networking seams | \`/docs/networking/\` | Explanation |
-| URIs / admission / redaction | \`/docs/resources/\` | Explanation |
+- First success: /docs/get-started/
+- Client setup: /docs/mcp-clients/
+- Compatibility evidence: /docs/compatibility/
+- Troubleshooting: /docs/troubleshooting/
+- Capability reference: /docs/capabilities/
+- Use cases: /use-cases/
+- Product boundary: /docs/concepts/#host-agent-and-platform
+- Architecture and trust: /docs/architecture/ and /docs/resources/
 
-## Audited truths (${captureDateUTC})
+## Ownership boundary
 
-- Standalone default: \`127.0.0.1:3014\`; platform default: \`0.0.0.0:3004\`
-- \`OPUTE_REMOTE_AGENT_ID\` required; npm defaults to \`local-host-agent\`
-- \`/mcp\` needs Bearer \`MCP_AUTH_TOKEN\` (or OAuth); \`/health\` is open
-- Mutations denied until \`OPUTE_STANDALONE_ALLOW_MUTATIONS=true\`
-- Catalog snapshot: ${toolCatalogCapture.toolCount} tools in \`tools-list.redacted.json\` (${captureDateUTC}; network-overlay=${networkOverlayCount})
-- HA networking: \`mesh-runtime.v1\` plus three Service Definitions (ADR-0016); \`network-overlay.*\` is deprecated
-- Dogfood: dedicated tunnel \`opute-www-opute-io\`; hostnames \`opute.io\` + \`www.opute.io\`
+Host Agent executes explicit typed capabilities against one host. Opute Platform owns intent, authorization, routing, and durable orchestration across hosts. Public content and image builds live in this repository; private deployment credentials and production rollout live in the private opute-site-deploy repository. Public workflows must not gain private deployment access.
 
-## Boundaries
+## Release metadata
 
-- Host Agent ≠ Platform (\`platform.opute.io\` / \`mcp.opute.io\`)
-- Public site MUST NOT expose Host Agent MCP admin
-- Deploy path = Host Agent recipe only
-
-## Research
-
-Peer synthesis and optimality checklist: \`site/context/RESEARCH.md\`
+Generated reference metadata is read from site/context/release-catalog.json. Change its release channel to stable only with matching package version, source revision, catalog revision, and passing published read-only canary. Recompute decision anchors when an anchored authority file changes.
 `,
 )
 console.log("wrote context/PACKET.md")

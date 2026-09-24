@@ -24,8 +24,10 @@ Codex reads its server configuration from `~/.codex/config.toml` (WSL) or `%USER
 ```toml
 [mcp_servers.host-agent]
 url = "http://127.0.0.1:3004/mcp"
-http_headers = { "Authorization" = "Bearer oha_host-zephyrus-ef47fbbf" }
+http_headers = { "Authorization" = "Bearer YOUR_LOCAL_MCP_AUTH_TOKEN" }
 ```
+
+Replace the placeholder locally; never commit a real bearer token.
 
 ### Handshake & Protocol Requirements
 - The Host Agent must have `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE=true` enabled in its instance environment (`host-agent.env`) to support standard client initialization.

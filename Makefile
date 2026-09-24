@@ -1,9 +1,9 @@
-.PHONY: build build-agent test test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary npm-test artifacts build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-provider-tailscale-linux-x64 build-windows-x64 clean agent-work
+.PHONY: build build-agent test check-host-file-confinement test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary published-npm-readonly-canary npm-test local-npm-readonly-canary check-site artifacts build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-provider-tailscale-linux-x64 build-windows-x64 clean agent-work
 
 BINARY=opute-host-agent
 DIST=dist
 MODULE=github.com/wunderous/host-agents
-VERSION ?= 0.1.1
+VERSION ?= 0.2.0
 LDFLAGS=-s -w -X $(MODULE)/internal/version.Version=$(VERSION)
 
 build: build-agent
@@ -12,8 +12,11 @@ build-agent:
 	mkdir -p $(DIST)
 	go build -ldflags="$(LDFLAGS)" -o $(DIST)/$(BINARY) ./cmd/opute-host-agent
 
-test:
+test: check-host-file-confinement
 	go test ./...
+
+check-host-file-confinement:
+	python3 scripts/check_managed_host_file_confinement.py
 
 test-all-modules: test
 	cd plugins/kubernetes/k3s && go test ./...
@@ -44,6 +47,23 @@ standalone-lifecycle-gate: build-linux-x64
 
 published-npm-canary:
 	cd npm/local-host-agent && PUBLISHED_NPM_VERSION=$(VERSION) npm run test:published-canary
+
+published-npm-readonly-canary:
+	cd npm/local-host-agent && PUBLISHED_NPM_VERSION=$(VERSION) npm run test:published-readonly-canary
+
+local-npm-readonly-canary: build-agent
+	mkdir -p $(DIST)/npm-package
+	cd npm/local-host-agent && npm pack --pack-destination $(CURDIR)/$(DIST)/npm-package
+	cd npm/local-host-agent && PUBLISHED_NPM_PACKAGE=$(CURDIR)/$(DIST)/npm-package/opute-host-agent-$(VERSION).tgz OPUTE_HOST_AGENT_BINARY=$(CURDIR)/$(DIST)/$(BINARY) RUN_PUBLISHED_READONLY_NPM_CANARY=true node --test published-readonly-canary.test.js
+
+check-site: local-npm-readonly-canary
+	node site/scripts/capture-catalog.mjs
+	bun run site/scripts/generate-docs.ts
+	python3 scripts/check_site_release_boundary.py
+	python3 scripts/check_site_release_parity.py
+	python3 scripts/test_validate_generated_site.py
+	python3 scripts/validate-generated-site.py
+	python3 scripts/check_generated_site_clean.py
 
 artifacts: build-linux-x64 build-linux-arm64 build-windows-x64 build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-provider-tailscale-linux-x64 checksums
 

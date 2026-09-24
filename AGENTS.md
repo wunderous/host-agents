@@ -24,6 +24,14 @@ Always-on index for the Go Host Agent. Domain procedures live in
   integration, standalone, and mode tests. `npm/local-host-agent/` is the
   release launcher.
 
+## Public website and release parity
+
+The Bun generator at `site/scripts/generate-docs.ts` owns rendered site output.
+Consult `.agents/decisions/public-documentation-release-parity.json` before
+changing package, tutorial, or catalog claims, and run `make check-site`.
+Production site rollout remains owned by the private `opute-site-deploy`
+repository and its typed controller.
+
 ## Build, Test, and Development Commands
 
 ```bash

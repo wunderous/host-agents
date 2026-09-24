@@ -3,46 +3,58 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Publish this site — Opute Host Agent</title>
-  <meta name="description" content="How the Opute site image is built in public CI and deployed by the private Host Agent controller." />
+  <title>How this site is hosted — Opute Host Agent</title>
+  <meta name="description" content="Understand the public image build and the private Host Agent deployment controller that serves Opute&#39;s website." />
   <link rel="canonical" href="https://www.opute.io/docs/dogfood/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Opute Host Agent" />
-  <meta property="og:title" content="Publish this site — Opute Host Agent" />
-  <meta property="og:description" content="How the Opute site image is built in public CI and deployed by the private Host Agent controller." />
+  <meta property="og:title" content="How this site is hosted — Opute Host Agent" />
+  <meta property="og:description" content="Understand the public image build and the private Host Agent deployment controller that serves Opute&#39;s website." />
   <meta property="og:url" content="https://www.opute.io/docs/dogfood/" />
   <meta property="og:locale" content="en_US" />
-  <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="Publish this site — Opute Host Agent" />
-  <meta name="twitter:description" content="How the Opute site image is built in public CI and deployed by the private Host Agent controller." />
-  <link rel="stylesheet" href="/styles.css?v=20260922a" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:title" content="How this site is hosted — Opute Host Agent" />
+  <meta name="twitter:description" content="Understand the public image build and the private Host Agent deployment controller that serves Opute&#39;s website." />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
 
 <header class="top">
-  <a class="brand" href="/">Opute Host Agent</a>
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
     <div class="search">
-      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
-      <div class="search-results" data-docs-search-results hidden></div>
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
     </div>
     <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
       <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
-    <nav>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
 <div class="doc-shell">
 
-<aside class="doc-nav" aria-label="Documentation">
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
   <h2>Tutorial</h2>
   <ul>
     <li><a href="/docs/get-started/">Get started</a></li>
@@ -55,12 +67,15 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
+  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
     <li><a href="/docs/openapi/">OpenAPI</a></li>
   </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/">Compatibility and verification</a></li></ul>
   <h2>Explanation</h2>
   <ul>
     <li><a href="/docs/concepts/">Concepts</a></li>
@@ -68,70 +83,56 @@
     <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
     <li><a href="/docs/networking/">Networking</a></li>
     <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
   </ul>
 </aside>
-<main class="doc">
+</details>
+<main class="doc" id="main-content" lang="en">
 
 <p class="badge">How-to</p>
-<h1>Publish this site</h1>
-<p class="meta">Public source builds the static-site image. A private deployment controller selects the successful image and submits the private Host Agent recipe on the serving machine.</p>
+<h1>How this site is hosted</h1>
+<p class="meta">The public repository builds a static-site image. A private deployment controller selects that image and asks the local Host Agent to deploy it through typed capabilities.</p>
 
-<h2>Ownership</h2>
+<h2>Ownership boundary</h2>
 <ul>
-  <li>Public source: <a href="https://github.com/wunderous/host-agents">wunderous/host-agents</a> owns site content and publishes GHCR images from GitHub-hosted CI.</li>
-  <li>Private deployment: <a href="https://github.com/wunderous/opute-site-deploy">wunderous/opute-site-deploy</a> owns source-run selection, the Kubernetes manifest, the deployment workflow, and the Host Agent recipe. Repository access is required.</li>
-  <li>The private controller deploys the image by immutable sha256 digest. Its runner is registered only to the private repository and calls the local Host Agent.</li>
+  <li><a href="https://github.com/wunderous/host-agents">Public Host Agent source</a> owns the website, docs generator, and GitHub-hosted image build. Its workflow publishes an immutable image digest without Host Agent deployment credentials.</li>
+  <li><a href="https://github.com/wunderous/opute-site-deploy">Private site deployment</a> owns source-run selection, the controller, deployment recipe, and private rollout evidence. This repository is required to operate or change production deployment.</li>
+  <li>Opute Platform and its MCP endpoint remain separate services with their own owners and route checks.</li>
 </ul>
-<p>Public source CI has no Host Agent credentials and never runs on the deployment machine.</p>
 
-<h2>Flow</h2>
+<h2>Delivery path</h2>
 <pre class="mermaid">
 flowchart LR
-  SRC[Public site source] --> BUILD[GitHub-hosted image build]
-  BUILD -->|run tag and digest| REG[(Public GHCR image)]
-  POLL[Private controller] -->|verify successful main run| REG
-  POLL --> RECIPE[Private host-recipe.v1]
-  RECIPE -->|typed Host Agent tools| HA[Local Host Agent]
-  HA --> K3S[Admitted K3s cluster]
-  K3S --> SITE[Site workload]
-  SITE --> TUN[Dedicated public tunnel]
-  CLIENT[Public browser] --> TUN
+  Source[Public website source] --> Build[Public image build]
+  Build -->|verified run and digest| Registry[Public image registry]
+  Controller[Private deployment controller] -->|select successful source run| Registry
+  Controller --> Recipe[Typed Host Agent recipe]
+  Recipe --> Agent[Local Host Agent]
+  Agent --> Workload[Website workload]
+  Workload --> Routes[www and apex routes]
+  Browser[Visitor] --> Routes
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> Public CI builds and publishes the website image. A private controller verifies and selects that image, then uses a typed Host Agent recipe to update the website workload behind the two public website routes.</p>
 
-<h2>Path of record</h2>
+<h2>What deployment evidence means</h2>
 <ul>
-  <li>Source image workflow: <code>.github/workflows/publish-site-image.yml</code> in the public source repository</li>
-  <li>Deployment workflow, manifest, and recipe: private repository <code>wunderous/opute-site-deploy</code></li>
-  <li>The controller checks the source run, resolves its run-and-attempt tag to a digest, then calls <code>run_host_local_recipe</code></li>
+  <li>The private recipe finishes successfully and the serving workload uses the selected image digest with a Ready Pod.</li>
+  <li>Both <code>www.opute.io</code> and <code>opute.io</code> serve rendered pages and a <code>/build.json</code> marker matching the selected source SHA, run ID, and attempt.</li>
+  <li>Critical docs routes, static assets, and search load and return useful content; HTTP 200 by itself does not prove that the client onboarding path works.</li>
+  <li><code>platform.opute.io</code> and authenticated <code>mcp.opute.io</code> are checked separately and remain outside this site's deployment boundary.</li>
 </ul>
-<p>The recipe is the only cluster mutation path. Ad-hoc <code>kubectl</code> is not accepted as deployment evidence. Scheduled runs do not fall back to an older image; rollback requires an explicit successful main run.</p>
+<p>These checks establish evidence for a particular rollout. They do not create an uptime, high availability, or successful client-onboarding guarantee.</p>
 
-<h2>Isolation invariants</h2>
-<table>
-  <thead><tr><th>Own</th><th>Never touch</th></tr></thead>
-  <tbody>
-    <tr><td>Namespaces <code>host-agent-site</code>, <code>host-agent-www-tunnel</code></td><td>Namespace <code>opute-platform</code></td></tr>
-    <tr><td>Tunnel <code>opute-www-opute-io</code></td><td>Tunnel <code>opute-platform-opute-io</code></td></tr>
-    <tr><td>Hostnames <code>opute.io</code>, <code>www.opute.io</code></td><td><code>platform.opute.io</code>, <code>mcp.opute.io</code></td></tr>
-  </tbody>
-</table>
+<h2>Rollback and credentials</h2>
+<p>Rollback uses the private controller's explicit selection of a previous successful public source run and repeats the deployment and route gates. Public site workflows do not contain deployment credentials; Host Agent and tunnel credentials remain in their owning runtime.</p>
 
-<h2>What pass means</h2>
-<ul>
-  <li>The Host Agent recipe reaches terminal success and the Deployment uses the selected digest with a Ready Pod.</li>
-  <li>External <code>/build.json</code> on both www and apex matches the selected source SHA, run ID, and attempt.</li>
-  <li><code>platform.opute.io</code> and <code>mcp.opute.io</code> remain separate and healthy.</li>
-</ul>
-<div class="note">Site reachability is not two-node write / etcd-quorum HA. Report application readiness separately from cluster consensus availability.</div>
-
-<h2>Credentials</h2>
-<p>Host Agent credentials remain in the local Host Agent process environment. They are not copied to GitHub secrets, the public repository, image layers, logs, or workflow artifacts. Tunnel provider credentials remain on the Host Agent/provider side; the public source workflow only publishes the static image.</p>
+<p>See the private <a href="https://github.com/wunderous/opute-site-deploy">deployment repository</a> for current operating instructions. This public page describes ownership and evidence, not a direct infrastructure procedure.</p>
 
 </main>
 </div>
 <footer>
   <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
@@ -157,7 +158,8 @@ flowchart LR
   });
 </script>
 
-<script src="/search.js?v=20260923a" defer></script>
-<script src="/i18n.js?v=20260923a" defer></script>
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
 </body>
 </html>

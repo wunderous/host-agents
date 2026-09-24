@@ -4,45 +4,57 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Troubleshooting — Opute Host Agent</title>
-  <meta name="description" content="Fix Opute Host Agent authentication, mutation, port, catalog, and recipe-run issues." />
+  <meta name="description" content="Diagnose Host Agent authentication, reachability, identity, discovery, and optional-provider problems." />
   <link rel="canonical" href="https://www.opute.io/docs/troubleshooting/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Opute Host Agent" />
   <meta property="og:title" content="Troubleshooting — Opute Host Agent" />
-  <meta property="og:description" content="Fix Opute Host Agent authentication, mutation, port, catalog, and recipe-run issues." />
+  <meta property="og:description" content="Diagnose Host Agent authentication, reachability, identity, discovery, and optional-provider problems." />
   <meta property="og:url" content="https://www.opute.io/docs/troubleshooting/" />
   <meta property="og:locale" content="en_US" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
   <meta name="twitter:title" content="Troubleshooting — Opute Host Agent" />
-  <meta name="twitter:description" content="Fix Opute Host Agent authentication, mutation, port, catalog, and recipe-run issues." />
-  <link rel="stylesheet" href="/styles.css?v=20260922a" />
+  <meta name="twitter:description" content="Diagnose Host Agent authentication, reachability, identity, discovery, and optional-provider problems." />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
 
 <header class="top">
-  <a class="brand" href="/">Opute Host Agent</a>
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
     <div class="search">
-      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
-      <div class="search-results" data-docs-search-results hidden></div>
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
     </div>
     <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
       <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
-    <nav>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
 <div class="doc-shell">
 
-<aside class="doc-nav" aria-label="Documentation">
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
   <h2>Tutorial</h2>
   <ul>
     <li><a href="/docs/get-started/">Get started</a></li>
@@ -55,12 +67,15 @@
     <li><a href="/docs/troubleshooting/" aria-current="page">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
+  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
     <li><a href="/docs/openapi/">OpenAPI</a></li>
   </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/">Compatibility and verification</a></li></ul>
   <h2>Explanation</h2>
   <ul>
     <li><a href="/docs/concepts/">Concepts</a></li>
@@ -68,64 +83,63 @@
     <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
     <li><a href="/docs/networking/">Networking</a></li>
     <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
   </ul>
 </aside>
-<main class="doc">
+</details>
+<main class="doc" id="main-content" lang="en">
 
 <p class="badge">How-to</p>
 <h1>Troubleshooting</h1>
-<p class="meta">Fix common Host Agent connection and recipe failures. Each section is a goal: symptom → checks → fix.</p>
+<p class="meta">Use the symptom to identify whether the server is live, the client is authenticated, and the requested provider is available.</p>
 
-<h2>HTTP 401 on /mcp</h2>
+<h2>HTTP 401 from <code>/mcp</code></h2>
 <ol>
-  <li>Confirm the agent was started with <code>MCP_AUTH_TOKEN</code> set.</li>
-  <li>Confirm the client sends <code>Authorization: Bearer &lt;same token&gt;</code>.</li>
-  <li><code>GET /health</code> should still succeed without a Bearer — if health fails, the process is down or on another port.</li>
+  <li>Confirm <code>MCP_AUTH_TOKEN</code> is set in the Host Agent process environment.</li>
+  <li>Confirm the client sends <code>Authorization: Bearer</code> with that same token.</li>
+  <li>Use the local check in the <a href="/docs/get-started/">first-success tutorial</a> to verify that a wrong token returns 401 and the correct token can call <code>get_host_info</code>.</li>
 </ol>
+<p><code>GET /health</code> is intentionally open. A successful health response proves liveness, not that MCP authentication works.</p>
 
-<h2>Wrong port or nothing listening</h2>
+<h2>Connection refused or the wrong port</h2>
 <ul>
-  <li>Standalone default: <code>http://127.0.0.1:3014/mcp</code></li>
-  <li>Platform mode default: <code>0.0.0.0:3004</code> — do not paste a platform snippet into a laptop client unless you mean it.</li>
-  <li>Overrides: <code>HOST_MCP_BIND_HOST</code>, <code>HOST_MCP_PORT</code>.</li>
+  <li>Standalone defaults to <code>http://127.0.0.1:3014/mcp</code>.</li>
+  <li>Use the same value for <code>HOST_MCP_PORT</code>, the health URL, and the client's MCP URL.</li>
+  <li>Keep <code>HOST_MCP_BIND_HOST=127.0.0.1</code> for a local client. Check that the port is free and the server is still running.</li>
+  <li>For Windows/WSL, first verify the client can reach an agent running in the same WSL distribution.</li>
 </ul>
 
-<h2>Mutations denied</h2>
-<p>Standalone mutating tools fail closed until <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Platform mode uses enrollment policy instead of that flag.</p>
+<h2>Missing <code>OPUTE_REMOTE_AGENT_ID</code></h2>
+<p>Set one explicit opaque ID before starting the process. The npm launcher fails before binary download or listener startup when it is absent; it does not default to a shared name. Do not use the local daemon ownership ID as the Host Agent identity.</p>
 
-<h2>Missing OPUTE_REMOTE_AGENT_ID</h2>
-<p><code>--check</code> / startup validation requires a canonical agent id. The npm launcher defaults to <code>local-host-agent</code> when unset; from-source runs must export it.</p>
-
-<h2>Client connects but tools look empty or collide</h2>
+<h2>The client connects but the tool list is empty or stale</h2>
 <ul>
-  <li>Always refresh with live <code>tools/list</code> — catalogs are revisioned.</li>
-  <li>Multiple agents in one IDE: set <code>OPUTE_MCP_PREFIX_TOOL_NAMES=true</code> (not on Platform-enrolled agents).</li>
+  <li>Refresh the client's MCP tools after connecting. The live <code>tools/list</code> response is authoritative.</li>
+  <li>Check that the client is connected to the same host and port where <code>/health</code> reports the expected <code>agentId</code>.</li>
+  <li>Review the current <a href="/docs/capabilities/">capability reference</a>; provider readiness varies by host.</li>
 </ul>
 
-<h2>Recipe resume / [redacted] secrets</h2>
-<p>Write-only fields (tunnel run tokens) cannot be pasted back from MCP results. Resume in-process (for example <code>manageHostConnector: true</code>) or re-mint. See <a href="/docs/resources/">Resources &amp; safety</a>.</p>
+<h2>An optional provider tool is unavailable</h2>
+<p>Host facts do not require Incus or Kubernetes. VM inventory requires an Incus provider; cluster discovery requires the relevant Kubernetes provider and host access. A listed tool does not prove the provider service is ready.</p>
 
-<h2>run_host_local_recipe refuses the recipe</h2>
-<ul>
-  <li>Platform-distributed recipes (<code>coordinator: platform</code>) must go to Platform — HA will refuse.</li>
-  <li>Host-local recipes cannot include <code>wait</code> nodes or multi-host targets.</li>
-  <li>Mutating runs require a content <code>sha256</code> pin.</li>
-</ul>
+<h2>Mutation denied</h2>
+<p>Standalone mode denies mutating tools unless <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> is explicitly enabled. Keep it disabled during the first-success tutorial. Platform-enrolled hosts use Platform authorization policy.</p>
 
-<h2>stdio clients</h2>
-<p>The public Host Agent surface is Streamable HTTP only. Configure an HTTP MCP client URL, not a stdio command.</p>
+<h2>Launcher status does not match the health response</h2>
+<p>The launcher uses <code>localInstanceId</code> to identify its managed local process. <code>agentId</code> is the canonical Host Agent identity and <code>instanceId</code> describes the execution mode; these fields have separate meanings.</p>
 
-<p>Related: <a href="/docs/install/">Install</a> · <a href="/docs/mcp-clients/">MCP clients</a> · <a href="/docs/configuration/">Configuration</a> · <a href="/docs/recipes/">Recipes</a></p>
+<p>Related: <a href="/docs/install/">Install and run</a> · <a href="/docs/mcp-clients/">Client setup</a> · <a href="/docs/configuration/">Configuration</a> · <a href="/docs/resources/">Resources &amp; safety</a></p>
 
 </main>
 </div>
 <footer>
   <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
 </footer>
 
 
-<script src="/search.js?v=20260923a" defer></script>
-<script src="/i18n.js?v=20260923a" defer></script>
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
 </body>
 </html>

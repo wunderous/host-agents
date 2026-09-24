@@ -1,56 +1,26 @@
-# Context packet — Host Agent docs / marketing site
+# Context packet - Host Agent docs and marketing site
 
-## Documentation standard
+## Documentation source and invariant
 
-Site docs follow [Diátaxis](https://diataxis.fr/). Operator facts must match
-`README.md` and the live `tools/list` catalog after verifying against code.
+The Bun generator in site/scripts/generate-docs.ts owns rendered pages, search index, sitemap, OpenAPI downloads, llms.txt, and this packet. Do not hand-edit generated HTML.
 
-### Writing rules (keep modes pure)
-
-| Mode | Answers | Voice | Do not |
-|------|---------|-------|--------|
-| Tutorial | Can you teach me? | Guided steps only | Digress into architecture |
-| How-to | How do I …? | Goal → steps | Teach from zero or dump schemas |
-| Reference | What is …? | Dry, complete, neutral | Explain *why* or instruct |
-| Explanation | Why / about …? | Mental model, analogy, judgment | Absorb field catalogs |
-
-Progressive disclosure: one-sentence answer → diagram → choices → link to reference.
-Explanation opens with *about* / *why*; reference opens with facts.
+The active public-documentation-release-parity decision in .agents/decisions/public-documentation-release-parity.json is authoritative for release claims. The default tutorial and stable catalog require matching published-package read-only canary evidence. Unverified candidates are marked preview. The catalog snapshot is an allowlisted projection; live tools/list is authoritative at runtime.
 
 ## Audience jobs
 
-| Job | Route | Mode |
-|-----|-------|------|
-| First success | `/docs/get-started/` | Tutorial |
-| Install & run | `/docs/install/` | How-to |
-| Connect MCP client | `/docs/mcp-clients/` | How-to |
-| Publish this site | `/docs/dogfood/` | How-to |
-| Troubleshooting | `/docs/troubleshooting/` | How-to |
-| Capability facts | `/docs/capabilities/` | Reference |
-| Config facts | `/docs/configuration/` | Reference |
-| Recipe & plan fields | `/docs/recipe-primitives/` | Reference |
-| Mental model | `/docs/concepts/` | Explanation |
-| Architecture + diagrams | `/docs/architecture/` | Explanation |
-| Why recipes & plans | `/docs/recipes/` | Explanation |
-| Networking seams | `/docs/networking/` | Explanation |
-| URIs / admission / redaction | `/docs/resources/` | Explanation |
+- First success: /docs/get-started/
+- Client setup: /docs/mcp-clients/
+- Compatibility evidence: /docs/compatibility/
+- Troubleshooting: /docs/troubleshooting/
+- Capability reference: /docs/capabilities/
+- Use cases: /use-cases/
+- Product boundary: /docs/concepts/#host-agent-and-platform
+- Architecture and trust: /docs/architecture/ and /docs/resources/
 
-## Audited truths (2026-09-21 UTC)
+## Ownership boundary
 
-- Standalone default: `127.0.0.1:3014`; platform default: `0.0.0.0:3004`
-- `OPUTE_REMOTE_AGENT_ID` required; npm defaults to `local-host-agent`
-- `/mcp` needs Bearer `MCP_AUTH_TOKEN` (or OAuth); `/health` is open
-- Mutations denied until `OPUTE_STANDALONE_ALLOW_MUTATIONS=true`
-- Catalog snapshot: 187 tools in `tools-list.redacted.json` (2026-09-21 UTC; network-overlay=0)
-- HA networking: `mesh-runtime.v1` plus three Service Definitions (ADR-0016); `network-overlay.*` is deprecated
-- Dogfood: dedicated tunnel `opute-www-opute-io`; hostnames `opute.io` + `www.opute.io`
+Host Agent executes explicit typed capabilities against one host. Opute Platform owns intent, authorization, routing, and durable orchestration across hosts. Public content and image builds live in this repository; private deployment credentials and production rollout live in the private opute-site-deploy repository. Public workflows must not gain private deployment access.
 
-## Boundaries
+## Release metadata
 
-- Host Agent ≠ Platform (`platform.opute.io` / `mcp.opute.io`)
-- Public site MUST NOT expose Host Agent MCP admin
-- Deploy path = Host Agent recipe only
-
-## Research
-
-Peer synthesis and optimality checklist: `site/context/RESEARCH.md`
+Generated reference metadata is read from site/context/release-catalog.json. Change its release channel to stable only with matching package version, source revision, catalog revision, and passing published read-only canary. Recompute decision anchors when an anchored authority file changes.

@@ -1,6 +1,6 @@
 {
   "name": "@opute/host-agent",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Local Streamable HTTP launcher for the Opute Go host agent",
   "license": "MIT",
   "repository": {
@@ -12,15 +12,26 @@
   "bugs": {
     "url": "https://github.com/wunderous/host-agents/issues"
   },
-  "keywords": ["mcp", "model-context-protocol", "incus", "infrastructure", "opute"],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "incus",
+    "infrastructure",
+    "opute"
+  ],
   "scripts": {
     "test": "node --test index.test.js",
-    "test:published-canary": "RUN_PUBLISHED_NPM_CANARY=true node --test published-canary.test.js"
+    "test:published-canary": "RUN_PUBLISHED_NPM_CANARY=true node --test published-canary.test.js",
+    "test:published-readonly-canary": "RUN_PUBLISHED_READONLY_NPM_CANARY=true node --test published-readonly-canary.test.js"
   },
   "bin": {
     "opute-host-agent": "index.js"
   },
-  "files": ["index.js", "package.json", "README.md"],
+  "files": [
+    "index.js",
+    "package.json",
+    "README.md"
+  ],
   "engines": {
     "node": ">=18"
   }

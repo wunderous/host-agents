@@ -42,12 +42,18 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	}
 	defer authorizer.Close()
 
+	// The local daemon ID belongs to launcher-owned standalone processes; it never replaces canonical Host Agent identity.
+	localInstanceID := ""
+	if cfg.AgentMode == "standalone" {
+		localInstanceID = cfg.StandaloneInstanceID
+	}
 	httpSrv := transport.NewHTTPServer(transport.HTTPOptions{
 		HostServer:                  hostServer,
 		BindHost:                    cfg.HostMCPBindHost,
 		Port:                        cfg.HostMCPPort,
 		Authz:                       authorizer,
 		InstanceID:                  cfg.InstanceID,
+		LocalInstanceID:             localInstanceID,
 		AgentID:                     cfg.RemoteAgentID,
 		PhysicalFingerprint:         cfg.PhysicalFingerprint,
 		FingerprintVersion:          cfg.FingerprintVersion,

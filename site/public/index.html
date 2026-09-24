@@ -12,58 +12,74 @@
   <meta property="og:description" content="Run an authenticated MCP server beside Linux infrastructure. AI clients discover typed tools for Incus, Kubernetes, host services, and networking." />
   <meta property="og:url" content="https://www.opute.io/" />
   <meta property="og:locale" content="en_US" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
   <meta name="twitter:title" content="Opute Host Agent" />
   <meta name="twitter:description" content="Run an authenticated MCP server beside Linux infrastructure. AI clients discover typed tools for Incus, Kubernetes, host services, and networking." />
-  <link rel="stylesheet" href="/styles.css?v=20260922a" />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+  <a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
   
 <header class="top">
-  <a class="brand" href="/">Opute Host Agent</a>
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
     <div class="search">
-      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
-      <div class="search-results" data-docs-search-results hidden></div>
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
     </div>
     <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
       <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
-    <nav>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
-  <main class="hero">
+  <main class="hero" id="main-content" lang="en">
     <p class="eyebrow">For infrastructure operators and agent authors</p>
-    <h1>Give AI agents typed control of your hosts.</h1>
+    <h1>Inspect your Linux hosts through an authenticated AI client.</h1>
     <p class="lede">
-      Run one authenticated MCP server on Linux. AI clients discover tools for host services, Incus guests, Kubernetes, and networking from a revisioned catalog, with identity and mutation policy checked at the boundary.
+      Opute Host Agent gives operators and agent authors a typed MCP connection to host facts and the capabilities this host offers. Start with a read-only check. Opute Platform coordinates authorized work across hosts.
     </p>
     <div class="cta">
-      <a class="btn primary" href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
-      <a class="btn ghost" href="/docs/">Docs</a>
+      <a class="btn primary" href="/docs/get-started/">Run a read-only host check</a>
+      <a class="btn ghost" href="/docs/concepts/#host-agent-and-platform">How Host Agent and Platform fit</a>
     </div>
-    <div class="visual" aria-hidden="true">
-      <pre class="terminal">$ export MCP_AUTH_TOKEN=dev-token # local demo only
-$ npx -y @opute/host-agent start --background
-$ npx -y @opute/host-agent url
-http://127.0.0.1:3014/mcp</pre>
-    </div>
+    <figure class="visual">
+      <figcaption>Example excerpt only; values are redacted and this is not live host output.</figcaption>
+      <pre class="terminal"><code>get_host_info {}
+{
+  "uri": "host:example:host-01",
+  "hostName": "…",
+  "providerId": "…",
+  "lxcBinaryPath": "…",
+  "systemctlPath": "…",
+  "supportedTools": ["…"]
+}</code></pre>
+    </figure>
   </main>
 
   <section class="pitch" aria-label="How it works">
     <h2>How it works</h2>
     <ol class="pitch-steps">
-      <li><span class="step-number" aria-hidden="true"></span><strong>Run the agent</strong> on the host that owns Incus / K3s.</li>
-      <li><span class="step-number" aria-hidden="true"></span><strong>Connect an IDE or Platform</strong> over Streamable HTTP MCP with a Bearer token.</li>
-      <li><span class="step-number" aria-hidden="true"></span><strong>Call named tools</strong> from a revisioned catalog — or pin work in recipes and plans.</li>
+      <li><span class="step-number" aria-hidden="true"></span><strong>Run the agent</strong> beside the Linux host you want to inspect. Incus and Kubernetes are optional for host facts.</li>
+      <li><span class="step-number" aria-hidden="true"></span><strong>Connect an MCP client</strong> to its loopback HTTP endpoint with a Bearer token.</li>
+      <li><span class="step-number" aria-hidden="true"></span><strong>Read before acting</strong> with the live typed catalog and read-only host tools.</li>
     </ol>
     <p class="pitch-for">
       Built for operators and agent authors who already run real infrastructure.
@@ -71,12 +87,23 @@ http://127.0.0.1:3014/mcp</pre>
     </p>
   </section>
 
+  <section class="pitch" aria-labelledby="jobs-heading">
+    <h2 id="jobs-heading">What you can inspect</h2>
+    <div class="grid-cards">
+      <a href="/use-cases/"><strong>Host facts</strong><span>Read host identity and the tools supported by the connected agent.</span></a>
+      <a href="/use-cases/"><strong>VM inventory, when Incus is configured</strong><span>Discover existing guests before selecting any separate mutating action.</span></a>
+      <a href="/use-cases/"><strong>Kubernetes inventory, when configured</strong><span>Discover cluster state through the available Kubernetes provider.</span></a>
+    </div>
+    <div class="callout"><strong>Product boundary.</strong> Host Agent authenticates and executes typed operations against one host. Platform owns intent, authorization, and durable orchestration across hosts. <a href="/docs/concepts/#host-agent-and-platform">Read the explanation</a>.</div>
+  </section>
+
   <footer>
     <span>This site is dogfood — hosted by Host Agent on <code>opute.io</code></span>
     <span><a href="/docs/dogfood/">How it is hosted</a> · <a href="/llms.txt">llms.txt</a> · <a href="/openapi.json">OpenAPI</a></span>
   </footer>
   
-<script src="/search.js?v=20260923a" defer></script>
-<script src="/i18n.js?v=20260923a" defer></script>
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
 </body>
 </html>

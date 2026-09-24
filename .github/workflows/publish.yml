@@ -19,6 +19,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -67,6 +72,10 @@ jobs:
 
       - name: Prepare x64 standalone smoke binary
         run: gzip -dc dist/host-agent-linux-x64.gz > dist/host-agent-linux-x64
+
+      - name: Verify npm tarball read-only path
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: make local-npm-readonly-canary VERSION=$(node -p "require('./npm/local-host-agent/package.json').version")
 
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
@@ -142,6 +151,67 @@ jobs:
         working-directory: npm/local-host-agent
         run: |
           npm test
-          npm publish --access public --provenance
+          version="$(node -p "require('./package.json').version")"
+          package="@opute/host-agent"
+          test "v$version" = "$GITHUB_REF_NAME"
+          registry="https://registry.npmjs.org"
+          existing_version="$(npm view "$package@$version" version --registry="$registry" 2>/dev/null || true)"
+          if [[ "$existing_version" == "$version" ]]; then
+            existing_git_head="$(npm view "$package@$version" gitHead --registry="$registry" 2>/dev/null || true)"
+            if [[ "$existing_git_head" != "$GITHUB_SHA" ]]; then
+              echo "published package version exists for a different source revision"
+              exit 1
+            fi
+            echo "published package already matches this source revision; resuming canary"
+          else
+            npm publish --access public --provenance
+          fi
+          visible=false
+          for attempt in 1 2 3 4 5 6 7 8; do
+            published_version="$(npm view "$package@$version" version --registry="$registry" 2>/dev/null || true)"
+            if [[ "$published_version" == "$version" ]]; then
+              published_git_head="$(npm view "$package@$version" gitHead --registry="$registry" 2>/dev/null || true)"
+              if [[ "$published_git_head" != "$GITHUB_SHA" ]]; then
+                echo "published package source revision does not match this release"
+                exit 1
+              fi
+              visible=true
+              break
+            fi
+            sleep 10
+          done
+          if [[ "$visible" != true ]]; then
+            echo "published npm package did not become visible"
+            exit 1
+          fi
+          canary_passed=false
+          for attempt in 1 2 3 4 5 6 7 8; do
+            if RUN_PUBLISHED_READONLY_NPM_CANARY=true \
+              PUBLISHED_NPM_VERSION="$version" \
+              PUBLISHED_CANARY_SOURCE_SHA="$GITHUB_SHA" \
+              PUBLISHED_CANARY_RUN_ID="$GITHUB_RUN_ID" \
+              PUBLISHED_CANARY_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+              PUBLISHED_CANARY_EVIDENCE_OUTPUT=published-readonly-canary-evidence.json \
+              node --test published-readonly-canary.test.js; then
+              canary_passed=true
+              break
+            fi
+            if [[ "$attempt" != "8" ]]; then
+              echo "published-package canary attempt $attempt failed; retrying registry and binary access"
+              sleep 10
+            fi
+          done
+          if [[ "$canary_passed" != true ]]; then
+            echo "published-package read-only canary did not pass"
+            exit 1
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Upload published read-only canary evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-readonly-canary-evidence
+          if-no-files-found: error
+          retention-days: 90
+          path: npm/local-host-agent/published-readonly-canary-evidence.json

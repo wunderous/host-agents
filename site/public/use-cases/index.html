@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Use cases — Opute Host Agent</title>
+  <meta name="description" content="Read-only examples of host inspection and conditional inventory discovery with Opute Host Agent." />
+  <link rel="canonical" href="https://www.opute.io/use-cases/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Opute Host Agent" />
+  <meta property="og:title" content="Use cases — Opute Host Agent" />
+  <meta property="og:description" content="Read-only examples of host inspection and conditional inventory discovery with Opute Host Agent." />
+  <meta property="og:url" content="https://www.opute.io/use-cases/" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:title" content="Use cases — Opute Host Agent" />
+  <meta name="twitter:description" content="Read-only examples of host inspection and conditional inventory discovery with Opute Host Agent." />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
+
+<header class="top">
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
+  <div class="top-tools">
+    <div class="search">
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
+    </div>
+    <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
+      <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
+    </div>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
+      <a href="/docs/" data-i18n="nav.docs">Docs</a>
+      <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
+    </nav>
+  </div>
+</header>
+<p class="i18n-banner" data-i18n-banner hidden></p>
+<div class="doc-shell">
+
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+    <li><a href="/docs/openapi/">OpenAPI</a></li>
+  </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/">Compatibility and verification</a></li></ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
+  </ul>
+</aside>
+</details>
+<main class="doc" id="main-content" lang="en">
+
+<p class="badge">Use cases</p>
+<h1>Inspect before you act</h1>
+<p class="meta">Host Agent exposes typed operations through authenticated MCP. Begin by reading the host and discovering its current catalog. The available catalog is a host capability description, not proof that an optional provider is configured.</p>
+<h2>Understand the connected host</h2>
+<p>Call <code>get_host_info {}</code> to read the host URI, hostname, provider identity, and supported tools. Use this result to confirm which Host Agent answered before asking for a resource inventory.</p>
+<h2>Discover operations available now</h2>
+<p>Call <code>get_capability_catalog {}</code> and inspect its revision and declared effect. Refresh <code>tools/list</code> after connecting; live discovery is authoritative for that process.</p>
+<h2>Inspect VM inventory when Incus is configured</h2>
+<p>Call <code>list_vms</code> only on a host with its Incus provider available. This is inventory discovery; creating, changing, or deleting a guest is a separate mutating operation and is outside the first-success tutorial.</p>
+<h2>Discover Kubernetes clusters when configured</h2>
+<p>Use <code>list_kubernetes_clusters</code> only when the host has an available Kubernetes provider and the intended source is known. An empty inventory and a failed inventory probe are different outcomes; read the structured response and error status.</p>
+<div class="callout"><strong>Product boundary.</strong> Host Agent executes explicit typed operations against one host. Platform owns intent, authorization, and durable orchestration across hosts. Read <a href="/docs/concepts/#host-agent-and-platform">how they fit together</a>.</div>
+<p>These examples describe verified tool names and their documented purposes. No customer outcome, performance result, or availability guarantee is implied.</p>
+<p>Next: <a href="/docs/get-started/">complete the authenticated read-only check</a> or browse the <a href="/docs/capabilities/">release catalog</a>.</p>
+
+</main>
+</div>
+<footer>
+  <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
+</footer>
+
+
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
+</body>
+</html>

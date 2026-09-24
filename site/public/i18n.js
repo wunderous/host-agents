@@ -5,22 +5,36 @@
 (() => {
   const STRINGS = {
     en: {
+      "nav.skip": "Skip to main content",
+      "nav.documentation": "Documentation navigation",
+      "nav.primary": "Primary",
       "nav.docs": "Docs",
       "nav.getStarted": "Get started",
       "nav.search": "Search docs",
       "search.placeholder": "Search docs…",
       "search.empty": "No matches.",
+      "search.loading": "Loading search index.",
+      "search.error": "Could not load documentation search.",
+      "search.retry": "Retry search",
+      "search.results": "Search results",
       "lang.label": "Language",
       "footer.facts": "Facts track the repository",
       "footer.openapi": "OpenAPI",
       "i18n.banner": "",
     },
     fr: {
+      "nav.skip": "Aller au contenu principal",
+      "nav.documentation": "Navigation de la documentation",
+      "nav.primary": "Navigation principale",
       "nav.docs": "Documentation",
       "nav.getStarted": "Commencer",
       "nav.search": "Rechercher dans la documentation",
       "search.placeholder": "Rechercher dans la documentation…",
       "search.empty": "Aucun résultat.",
+      "search.loading": "Chargement de l’index de recherche.",
+      "search.error": "Impossible de charger la recherche documentaire.",
+      "search.retry": "Réessayer la recherche",
+      "search.results": "Résultats de recherche",
       "lang.label": "Langue",
       "footer.facts": "Les informations reflètent le dépôt",
       "footer.openapi": "OpenAPI",
@@ -53,21 +67,31 @@
     localStorage.setItem("opute-docs-lang", next);
     document.querySelectorAll("[data-i18n]").forEach((el) => {
       const key = el.getAttribute("data-i18n");
-      if (key && dict[key] != null) el.textContent = dict[key];
+      if (key && dict[key] != null) {
+        el.textContent = dict[key];
+        el.setAttribute("lang", next);
+      }
     });
     document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
       const key = el.getAttribute("data-i18n-placeholder");
-      if (key && dict[key] != null) el.setAttribute("placeholder", dict[key]);
+      if (key && dict[key] != null) {
+        el.setAttribute("placeholder", dict[key]);
+        el.setAttribute("lang", next);
+      }
     });
     document.querySelectorAll("[data-i18n-aria]").forEach((el) => {
       const key = el.getAttribute("data-i18n-aria");
-      if (key && dict[key] != null) el.setAttribute("aria-label", dict[key]);
+      if (key && dict[key] != null) {
+        el.setAttribute("aria-label", dict[key]);
+        el.setAttribute("lang", next);
+      }
     });
     const banner = document.querySelector("[data-i18n-banner]");
     if (banner) {
       const text = dict["i18n.banner"] || "";
       banner.hidden = !text;
       banner.textContent = text;
+      banner.setAttribute("lang", next);
     }
     document.querySelectorAll("[data-lang-option]").forEach((btn) => {
       btn.setAttribute("aria-pressed", btn.getAttribute("data-lang-option") === next ? "true" : "false");

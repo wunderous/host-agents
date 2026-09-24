@@ -1,34 +1,279 @@
-openapi: "3.1.0"
-info:
-  title: "Opute Host Agent HTTP edge"
-  version: "1.0.0"
-  description: "Streamable HTTP MCP transport for Opute Host Agent. Tool schemas are revisioned via tools/list — not frozen in this document. See https://www.opute.io/docs/openapi/"
-servers:
-  - url: http://127.0.0.1:3014
-    description: Standalone default
-  - url: http://127.0.0.1:3004
-    description: Platform mode default (local)
-paths:
-  /health:
-    get:
-      operationId: getHealth
-      summary: Liveness and agent identity probe
-      responses:
-        "200":
-          description: Agent is listening
-  /mcp:
-    post:
-      operationId: mcpStreamableHttp
-      summary: Streamable HTTP MCP endpoint
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: JSON or SSE MCP response stream
-        "401":
-          description: Missing or invalid Authorization
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Opute Host Agent HTTP edge",
+    "version": "0.2.0",
+    "description": "Streamable HTTP MCP transport for Opute Host Agent. Tool schemas are revisioned via tools/list — not frozen in this document. See https://www.opute.io/docs/openapi/",
+    "contact": {
+      "url": "https://www.opute.io/docs/"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3014",
+      "description": "Standalone default"
+    },
+    {
+      "url": "http://127.0.0.1:3004",
+      "description": "Platform mode default (local)"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Liveness and agent identity probe",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Agent is listening",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "instanceId": {
+                      "type": "string",
+                      "description": "Host Agent execution instance configuration."
+                    },
+                    "localInstanceId": {
+                      "type": "string",
+                      "description": "Local launcher ownership identity; it is not canonical Host Agent identity."
+                    },
+                    "agentId": {
+                      "type": "string"
+                    },
+                    "mcpToolNamePrefix": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "post": {
+        "operationId": "mcpStreamableHttp",
+        "summary": "Streamable HTTP MCP endpoint",
+        "description": "JSON-RPC MCP over Streamable HTTP (protocol 2026-07-28). Clients must send Accept: application/json, text/event-stream. Prefer live tools/list for tool schemas.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "MCP-Protocol-Version",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "2026-07-28"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "method"
+                ],
+                "properties": {
+                  "jsonrpc": {
+                    "type": "string",
+                    "const": "2.0"
+                  },
+                  "id": {},
+                  "method": {
+                    "type": "string"
+                  },
+                  "params": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JSON or SSE MCP response stream"
+          },
+          "401": {
+            "description": "Missing or invalid Authorization"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Bootstrap MCP_AUTH_TOKEN"
+      }
+    }
+  },
+  "x-opute-mcp": {
+    "protocolVersion": "2026-07-28",
+    "transport": "streamable-http",
+    "catalogAuthority": "tools/list",
+    "packageVersion": "0.2.0",
+    "releaseChannel": "preview",
+    "catalogRevision": "sha256:1efa6beb86423ee9fe3f1e71f978958566950726f45dcc5d21743711135e2b91",
+    "toolCount": 142,
+    "toolNames": [
+      "apply_manifest",
+      "build_and_push_oci_image",
+      "cancel_operation",
+      "check_local_llm_prerequisites",
+      "check_local_prerequisites",
+      "cleanup_container_storage",
+      "compact_wsl_disk",
+      "configure_agent_connection",
+      "configure_local_llm_model",
+      "configure_local_llm_runtime",
+      "configure_network",
+      "configure_oci_storage",
+      "configure_service_domain",
+      "create_vm",
+      "delete_k8s_resource",
+      "delete_oci_registry",
+      "delete_postgresql",
+      "delete_vm",
+      "detect_host_platform",
+      "diagnose_bridge",
+      "discover_service_ingress",
+      "ensure_docker",
+      "ensure_host_artifact",
+      "ensure_host_file",
+      "ensure_host_service_supervisor",
+      "ensure_host_tool",
+      "ensure_local_llm_k3s_proxy",
+      "ensure_local_llm_relay",
+      "ensure_local_llm_server_binary",
+      "ensure_oci_builder",
+      "ensure_public_mcp_quick_tunnel",
+      "ensure_public_mcp_tunnel",
+      "ensure_sqlite_database",
+      "exec_kubernetes_command",
+      "extract_host_archive",
+      "garbage_collect_cluster_registry",
+      "get_capability_catalog",
+      "get_host_capacity",
+      "get_host_info",
+      "get_host_plan_run",
+      "get_k8s_resource",
+      "get_k8s_resource_status",
+      "get_local_status",
+      "get_oci_registry_status",
+      "get_operation",
+      "get_postgresql_service_status",
+      "get_postgresql_status",
+      "get_runtime_recipe_run",
+      "get_sqlite_database_status",
+      "get_tunnel_run",
+      "get_vm_info",
+      "inspect_container_storage",
+      "inspect_guest_storage",
+      "inspect_host_file",
+      "inspect_host_service",
+      "inspect_host_service_supervisor",
+      "inspect_workload",
+      "install_cluster_agent",
+      "install_helm_chart",
+      "install_incus_stack",
+      "install_local_llm_model",
+      "install_oci_registry",
+      "install_postgresql",
+      "install_provider_tools",
+      "list_agents",
+      "list_certificate_issuers",
+      "list_configmap_keys",
+      "list_deployments",
+      "list_host_services",
+      "list_ingress_classes",
+      "list_k8s_events",
+      "list_kubernetes_clusters",
+      "list_local_llm_models",
+      "list_namespaces",
+      "list_operations",
+      "list_pods",
+      "list_secret_keys",
+      "list_services",
+      "list_storage_classes",
+      "list_vms",
+      "open_assistant_session",
+      "opute.provider.install",
+      "opute.provider.reload",
+      "opute.provider.status",
+      "opute.provider.teardown",
+      "opute.provider.validate",
+      "prepare_host_agent_artifacts",
+      "probe_gpu_container",
+      "probe_http_endpoint",
+      "probe_incus_gpu",
+      "probe_local_llm",
+      "probe_openai_compatible_server",
+      "provision_container",
+      "provision_vm",
+      "prune_unused_cluster_images",
+      "put_k8s_secret",
+      "reconcile_host_resource_policy",
+      "reconcile_postgresql_service",
+      "reconcile_serving_assignment",
+      "recover_bridge",
+      "register_kubernetes_cluster",
+      "release_postgresql_service_relay",
+      "remove_host_file",
+      "remove_local_llm_k3s_proxy",
+      "remove_local_llm_model",
+      "remove_local_llm_relay",
+      "remove_postgresql_service",
+      "remove_public_mcp_quick_tunnel",
+      "remove_service_domain",
+      "remove_sqlite_database",
+      "remove_vm_network_device",
+      "render_helm_template",
+      "request_task_input",
+      "reset_incus_stack",
+      "resize_console",
+      "restart_host_service",
+      "restart_vm",
+      "run_host_command",
+      "run_host_local_recipe",
+      "run_host_plan",
+      "run_instance_command",
+      "run_runtime_recipe",
+      "run_sql",
+      "run_tunnel_recipe",
+      "send_console_input",
+      "set_host_service_state",
+      "shutdown_wsl",
+      "stage_build_context",
+      "start_local_llm_runtime",
+      "start_vm",
+      "stop_local_llm_runtime",
+      "stop_vm",
+      "stream_vm_console",
+      "terminate_wsl_distribution",
+      "trim_guest_storage",
+      "uninstall_incus_stack",
+      "uninstall_provider_tools",
+      "update_vm_resources",
+      "validate_host_local_recipe",
+      "validate_host_plan",
+      "validate_runtime_recipe",
+      "validate_tunnel_recipe"
+    ]
+  }
+}

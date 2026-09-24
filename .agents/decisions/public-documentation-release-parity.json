@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "id": "public-documentation-release-parity",
+  "title": "Public first-success instructions and stable capability references match a tested published release",
+  "claim": "The Host Agent-first public tutorial names the exact published @opute/host-agent package version whose read-only package canary passed. Stable capability reference data uses the same package version and catalog revision. Any unverified candidate is visibly labelled preview. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity.",
+  "rationale": "A successful source build, open health endpoint, or tool-name snapshot cannot prove that a visitor can install the published launcher, authenticate, discover tools, and read structured host facts. Matching release and catalog evidence prevents public instructions from silently describing a different artifact or runtime boundary.",
+  "decidedOn": "2026-09-24",
+  "section": "Public website and release parity",
+  "owner": "wunderous/host-agents owns public copy, catalog projection, npm launcher, and release evidence; wunderous/opute-site-deploy owns production deployment.",
+  "authority": {
+    "decision": ".agents/decisions/public-documentation-release-parity.json",
+    "package": "npm/local-host-agent/package.json",
+    "catalog": "site/context/release-catalog.json",
+    "canary": "npm/local-host-agent/published-readonly-canary.test.js",
+    "generator": "site/scripts/generate-docs.ts",
+    "localDaemonHealth": "internal/transport/http.go",
+    "canonicalIdentity": "docs/adr/0006-canonical-host-agent-identity.md",
+    "verifier": "scripts/check_site_release_parity.py",
+    "generatedSiteValidator": "scripts/validate-generated-site.py"
+  },
+  "scope": {
+    "included": [
+      "public tutorial and product claims about Host Agent",
+      "published npm launcher behavior",
+      "allowlisted catalog snapshots and versioned capability routes",
+      "generated static site validation"
+    ],
+    "excluded": [
+      "private deployment credentials, controller, and rollout",
+      "Platform authorization and orchestration behavior",
+      "mutating package canaries and infrastructure state"
+    ]
+  },
+  "exception": "An unpublished or unverified candidate may be shown only with a visible Preview label. Stable tutorial or reference claims require matching package, source, catalog revision, and successful published read-only canary evidence.",
+  "evidence": {
+    "required": [
+      "exact published package version and source SHA",
+      "missing OPUTE_REMOTE_AGENT_ID fails before binary download or listener startup",
+      "explicit identity reaches the launched process",
+      "open health reports liveness and expected identity",
+      "local launcher ownership identity is distinct from agentId and instanceId",
+      "wrong Bearer token receives HTTP 401",
+      "authenticated discovery and non-empty tools/list include get_host_info",
+      "get_host_info with empty arguments returns structured facts",
+      "the tutorial first-success path invokes no mutating tool",
+      "generated catalog, sitemap, search, OpenAPI, and links validate",
+      "all public documentation routes are generated from the maintained Bun source",
+      "tutorial output example includes every schema-required get_host_info field and labels optional fields",
+      "tutorial shows a wrong-token HTTP 401 check without exposing a real credential"
+    ],
+    "canary": "npm/local-host-agent/published-readonly-canary.test.js",
+    "siteVerifier": "scripts/check_site_release_parity.py"
+  },
+  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. Recompute and review file anchors whenever an anchored authority changes.",
+  "anchors": [
+    {
+      "kind": "file",
+      "path": "npm/local-host-agent/package.json",
+      "digest": "cc0730f73af2bd55147ecf6c7b5856353e072eaa475ea0ad59e2e28df554f61c",
+      "note": "Published package name and release version"
+    },
+    {
+      "kind": "file",
+      "path": "npm/local-host-agent/index.js",
+      "digest": "51a1bb0a704afc3c8e4c39fffeb1130706e85445ad5f093e1832be4ed7985796",
+      "note": "Launcher environment and process behavior"
+    },
+    {
+      "kind": "file",
+      "path": "internal/transport/http.go",
+      "digest": "352f1e37bbd9a8d3441f3697171f6b219d3e9821266003014f73f8543efc437d",
+      "note": "Distinct local daemon identity in the health response"
+    },
+    {
+      "kind": "file",
+      "path": "internal/app/app.go",
+      "digest": "b3f2070baf1e022647da0f19bff346174a70165cc987914ef2088d23ded5ee06",
+      "note": "Standalone configuration wiring to local health identity"
+    },
+    {
+      "kind": "file",
+      "path": "internal/transport/http_test.go",
+      "digest": "d4bf1ac2bf71cbecd733933e262acc22a9eeda23cfe8649a5141688421c9e00e",
+      "note": "Canonical agent and local daemon health identities stay distinct"
+    },
+    {
+      "kind": "file",
+      "path": "npm/local-host-agent/published-readonly-canary.test.js",
+      "digest": "1293f37ec4d4ccfab5f2b50f328920a110d8c51d84f0001bd3e0065dcb80b1a5",
+      "note": "Published package authentication and read-only wire proof"
+    },
+    {
+      "kind": "file",
+      "path": "npm/local-host-agent/index.test.js",
+      "digest": "ce17764ca9a9cb8a5b8eb32fe05e2d0d79febf24e03857cd207594a3a5176a3c",
+      "note": "Launcher fails closed without canonical identity and proves daemon ownership"
+    },
+    {
+      "kind": "file",
+      "path": "site/scripts/capture-catalog.mjs",
+      "digest": "27a648d7249f48b1420347d2c0ea72445b9c7f3065985fc628579dfdf2eb0f2f",
+      "note": "Allowlisted runtime catalog projection"
+    },
+    {
+      "kind": "file",
+      "path": "site/scripts/generate-docs.ts",
+      "digest": "283d8fd1000c630754265844bf695a66803189f40d4b415976a36dcd1226ea9e",
+      "note": "Tutorial and generated reference authority"
+    },
+    {
+      "kind": "file",
+      "path": "scripts/check_site_release_parity.py",
+      "digest": "3e390a353aedb9d4c21e668844cb2ad1880c949b15682d11e5fffd1b29e14ed0",
+      "note": "Release metadata and anchor verifier"
+    },
+    {
+      "kind": "file",
+      "path": "scripts/promote_site_release_catalog.py",
+      "digest": "bdd7859d10cbccee0ff560c85cedcf093d42ff5cfb451e903fd0462e5a5312a8",
+      "note": "Evidence-gated stable catalog promotion"
+    },
+    {
+      "kind": "file",
+      "path": "scripts/validate-generated-site.py",
+      "digest": "d15057f0b89aff2b3291b7c3895aff9ab052faaba3d66777a905fdd0f0ce35eb",
+      "note": "Generated route, metadata, link, search, schema, and accessibility validator"
+    },
+    {
+      "kind": "file",
+      "path": "scripts/check_generated_site_clean.py",
+      "digest": "a34ab52d5bc0ecdc5359bfd027df0aa73768cabe04d21c437aabb1f2094acb1e",
+      "note": "Generated files must match the committed revision, including absence of untracked output"
+    },
+    {
+      "kind": "file",
+      "path": "scripts/test_validate_generated_site.py",
+      "digest": "1b88910fa1a73fc0678b8778af4b1542c286482b37b488338ad871f2d0046b0e",
+      "note": "Regression coverage for links that escape the published output tree"
+    }
+  ],
+  "verify": "python3 scripts/check_site_release_parity.py",
+  "enforcedBy": [
+    "npm/local-host-agent/index.js",
+    "npm/local-host-agent/index.test.js",
+    "npm/local-host-agent/published-readonly-canary.test.js",
+    "internal/app/app.go",
+    "internal/transport/http.go",
+    "internal/transport/http_test.go",
+    "site/scripts/capture-catalog.mjs",
+    "site/scripts/generate-docs.ts",
+    "scripts/check_site_release_parity.py",
+    "scripts/promote_site_release_catalog.py",
+    "Makefile",
+    ".github/workflows/ci.yml",
+    ".github/workflows/publish-site-image.yml",
+    ".github/workflows/publish.yml",
+    "scripts/validate-generated-site.py",
+    "scripts/check_generated_site_clean.py",
+    "scripts/test_validate_generated_site.py"
+  ],
+  "supersedes": [],
+  "withdrawn": false,
+  "lastVerified": "2026-09-24"
+}

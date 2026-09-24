@@ -21,11 +21,13 @@ import (
 
 // HTTPServer serves /health and /mcp for Streamable HTTP MCP 2026-07-28.
 type HTTPServer struct {
-	host                        *hostmcp.Server
-	mcpHandler                  *mcp.StreamableHTTPHandler
-	publicMCPHandler            *mcp.StreamableHTTPHandler
-	authz                       *authz.Service
-	instanceID                  string
+	host             *hostmcp.Server
+	mcpHandler       *mcp.StreamableHTTPHandler
+	publicMCPHandler *mcp.StreamableHTTPHandler
+	authz            *authz.Service
+	instanceID       string
+	// localInstanceID proves launcher ownership for local start/status/stop; it is not canonical Host Agent identity.
+	localInstanceID             string
 	agentID                     string
 	physicalFingerprint         string
 	fingerprintVersion          string
@@ -45,6 +47,7 @@ type HTTPOptions struct {
 	Port                        int
 	Authz                       *authz.Service
 	InstanceID                  string
+	LocalInstanceID             string
 	AgentID                     string
 	PhysicalFingerprint         string
 	FingerprintVersion          string
@@ -77,6 +80,7 @@ func NewHTTPServer(opts HTTPOptions) *HTTPServer {
 		host:                        opts.HostServer,
 		authz:                       opts.Authz,
 		instanceID:                  opts.InstanceID,
+		localInstanceID:             opts.LocalInstanceID,
 		agentID:                     opts.AgentID,
 		physicalFingerprint:         opts.PhysicalFingerprint,
 		fingerprintVersion:          opts.FingerprintVersion,
@@ -151,6 +155,9 @@ func (h *HTTPServer) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	payload := map[string]any{"ok": true}
 	if h.instanceID != "" {
 		payload["instanceId"] = h.instanceID
+	}
+	if h.localInstanceID != "" {
+		payload["localInstanceId"] = h.localInstanceID
 	}
 	if h.agentID != "" {
 		payload["agentId"] = h.agentID

@@ -14,6 +14,10 @@ const execFileAsync = promisify(execFile)
 const packageVersion = require('./package.json').version
 const indexPath = path.join(__dirname, 'index.js')
 const servers = []
+const launcherTestEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('OPUTE_') && key !== 'MCP_AUTH_TOKEN')
+)
+launcherTestEnv.OPUTE_REMOTE_AGENT_ID = 'npm-launcher-test-' + crypto.randomUUID()
 
 async function freePort() {
   const server = net.createServer()
@@ -67,7 +71,7 @@ test('downloads, verifies, caches, and re-verifies the release binary', { skip: 
   const address = server.address()
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opute-launcher-'))
   const env = {
-    ...process.env,
+    ...launcherTestEnv,
     OPUTE_HOST_AGENT_CACHE_DIR: cacheDir,
     OPUTE_HOST_AGENT_RELEASE_BASE_URL: `http://127.0.0.1:${address.port}`,
     OPUTE_AGENT_MODE: '',
@@ -93,11 +97,32 @@ test('downloads, verifies, caches, and re-verifies the release binary', { skip: 
   )
 })
 
+test('start requires an explicit canonical Host Agent identity before resolving a binary', async () => {
+  const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opute-missing-agent-id-'))
+  try {
+    await assert.rejects(
+      execFileAsync(process.execPath, [indexPath, 'start', '--background'], {
+        env: {
+          ...launcherTestEnv,
+          OPUTE_REMOTE_AGENT_ID: '',
+          OPUTE_HOST_AGENT_BINARY: path.join(runtimeDir, 'missing-binary'),
+          OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: path.join(runtimeDir, 'runtime'),
+        },
+        timeout: 10_000,
+      }),
+      error => error.stderr.includes('OPUTE_REMOTE_AGENT_ID is required')
+    )
+    assert.equal(fs.existsSync(path.join(runtimeDir, 'runtime', 'daemon.json')), false)
+  } finally {
+    fs.rmSync(runtimeDir, { recursive: true, force: true })
+  }
+})
+
 test('missing local binary fails closed before a listener is claimed', async () => {
   await assert.rejects(
     execFileAsync(process.execPath, [indexPath, 'start'], {
       env: {
-        ...process.env,
+        ...launcherTestEnv,
         OPUTE_HOST_AGENT_BINARY: path.join(os.tmpdir(), 'opute-missing-host-agent-binary'),
       },
       timeout: 10_000,
@@ -109,7 +134,7 @@ test('missing local binary fails closed before a listener is claimed', async () 
 test('url prints the default Streamable HTTP endpoint', async () => {
   const { stdout } = await execFileAsync(process.execPath, [indexPath, 'url'], {
     env: {
-      ...process.env,
+      ...launcherTestEnv,
       HOST_MCP_PORT: '3014',
       HOST_MCP_BIND_HOST: '127.0.0.1',
       OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'opute-url-')),
@@ -131,14 +156,15 @@ const http = require('node:http')
 fs.writeFileSync(process.env.FAKE_ENV_REPORT, JSON.stringify({
   mcpUrl: process.env.OPUTE_MCP_URL || null,
   mcpAuth: process.env.MCP_AUTH_TOKEN || null,
+  agentId: process.env.OPUTE_REMOTE_AGENT_ID || null,
   reverseTunnel: process.env.OPUTE_REVERSE_TUNNEL || null,
   mode: process.env.OPUTE_AGENT_MODE,
   transport: process.env.OPUTE_TRANSPORT || null,
-  instanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null,
+  localInstanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null,
 }, null, 2))
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
-    response.end(JSON.stringify({ ok: true, instanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null }))
+    response.end(JSON.stringify({ ok: true, localInstanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null }))
     return
   }
   response.end('{}')
@@ -150,7 +176,7 @@ process.on('SIGINT', stop)
 `, { mode: 0o700 })
 
   const env = {
-    ...process.env,
+    ...launcherTestEnv,
     OPUTE_HOST_AGENT_BINARY: fakeBinary,
     OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir,
     OPUTE_STANDALONE_STATE_DIR: path.join(runtimeDir, 'state'),
@@ -159,6 +185,7 @@ process.on('SIGINT', stop)
     FAKE_ENV_REPORT: envReport,
     OPUTE_MCP_URL: 'https://platform.example/mcp',
     OPUTE_REVERSE_TUNNEL: 'true',
+    OPUTE_REMOTE_AGENT_ID: 'test-local-agent-identity',
     MCP_AUTH_TOKEN: 'platform-secret',
   }
   const started = await execFileAsync(process.execPath, [indexPath, 'start', '--background'], { env, timeout: 20_000 })
@@ -178,10 +205,11 @@ process.on('SIGINT', stop)
   assert.deepEqual(childEnv, {
     mcpUrl: null,
     mcpAuth: 'platform-secret',
+    agentId: 'test-local-agent-identity',
     reverseTunnel: null,
     mode: 'standalone',
     transport: null,
-    instanceId: secondState.instanceId,
+    localInstanceId: secondState.instanceId,
   })
 
   await execFileAsync(process.execPath, [indexPath, 'stop'], { env, timeout: 15_000 })
@@ -200,7 +228,12 @@ test('background start refuses a foreign listener without overwriting daemon sta
   await new Promise(resolve => foreign.listen(port, '127.0.0.1', resolve))
   await assert.rejects(
     execFileAsync(process.execPath, [indexPath, 'start', '--background'], {
-      env: { ...process.env, HOST_MCP_PORT: String(port), OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir },
+      env: {
+        ...launcherTestEnv,
+        OPUTE_HOST_AGENT_BINARY: path.join(runtimeDir, 'unused-binary'),
+        HOST_MCP_PORT: String(port),
+        OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir,
+      },
       timeout: 10_000,
     }),
     error => error.stderr.includes(`port ${port} already in use`)
@@ -219,7 +252,12 @@ test('background start fails closed for a live reused PID', { skip: process.plat
   }))
   await assert.rejects(
     execFileAsync(process.execPath, [indexPath, 'start', '--background'], {
-      env: { ...process.env, HOST_MCP_PORT: String(port), OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir },
+      env: {
+        ...launcherTestEnv,
+        OPUTE_HOST_AGENT_BINARY: path.join(runtimeDir, 'unused-binary'),
+        HOST_MCP_PORT: String(port),
+        OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir,
+      },
       timeout: 10_000,
     }),
     error => error.stderr.includes('refusing to kill it')
@@ -237,7 +275,7 @@ test('background start clears a dead pid when the port is free', { skip: process
 const http = require('node:http')
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
-    response.end(JSON.stringify({ ok: true, instanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null }))
+    response.end(JSON.stringify({ ok: true, localInstanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null }))
     return
   }
   response.end('{}')
@@ -254,7 +292,7 @@ process.on('SIGINT', stop)
     instanceId: 'dead-stale',
   }))
   const env = {
-    ...process.env,
+    ...launcherTestEnv,
     OPUTE_HOST_AGENT_BINARY: fakeBinary,
     OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir,
     OPUTE_STANDALONE_STATE_DIR: path.join(runtimeDir, 'state'),
@@ -288,7 +326,12 @@ test('background start refuses a dead pid when a foreign listener holds the port
   await new Promise(resolve => foreign.listen(port, '127.0.0.1', resolve))
   await assert.rejects(
     execFileAsync(process.execPath, [indexPath, 'start', '--background'], {
-      env: { ...process.env, HOST_MCP_PORT: String(port), OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir },
+      env: {
+        ...launcherTestEnv,
+        OPUTE_HOST_AGENT_BINARY: path.join(runtimeDir, 'unused-binary'),
+        HOST_MCP_PORT: String(port),
+        OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir,
+      },
       timeout: 10_000,
     }),
     error => error.stderr.includes(`port ${port} already in use`)
@@ -307,7 +350,7 @@ test('stop refuses a live reused PID without ownership', { skip: process.platfor
   }))
   await assert.rejects(
     execFileAsync(process.execPath, [indexPath, 'stop'], {
-      env: { ...process.env, HOST_MCP_PORT: String(port), OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir },
+      env: { ...launcherTestEnv, HOST_MCP_PORT: String(port), OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir },
       timeout: 10_000,
     }),
     error => error.stderr.includes('refusing to kill it')
@@ -326,7 +369,7 @@ test('background start uses stored owned endpoint when daemon state points at an
 const http = require('node:http')
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
-    response.end(JSON.stringify({ ok: true, instanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null }))
+    response.end(JSON.stringify({ ok: true, localInstanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null }))
     return
   }
   response.end('{}')
@@ -337,7 +380,7 @@ process.on('SIGTERM', stop)
 process.on('SIGINT', stop)
 `, { mode: 0o700 })
   const env = {
-    ...process.env,
+    ...launcherTestEnv,
     OPUTE_HOST_AGENT_BINARY: fakeBinary,
     OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir,
     OPUTE_STANDALONE_STATE_DIR: path.join(runtimeDir, 'state'),
@@ -386,7 +429,7 @@ const wait = () => {
 wait()
 `, { mode: 0o700 })
   const env = {
-    ...process.env,
+    ...launcherTestEnv,
     OPUTE_HOST_AGENT_BINARY: fakeBinary,
     OPUTE_LOCAL_HOST_AGENT_RUNTIME_DIR: runtimeDir,
     OPUTE_STANDALONE_STATE_DIR: path.join(runtimeDir, 'state'),
@@ -423,7 +466,7 @@ wait()
 test('native Windows fails before attempting an artifact download', { skip: process.platform !== 'win32' }, async () => {
   await assert.rejects(
     execFileAsync(process.execPath, [indexPath, 'start'], {
-      env: { ...process.env, OPUTE_HOST_AGENT_RELEASE_BASE_URL: 'http://127.0.0.1:1' },
+      env: { ...launcherTestEnv, OPUTE_HOST_AGENT_RELEASE_BASE_URL: 'http://127.0.0.1:1' },
       timeout: 10_000,
     }),
     error => error.stderr.includes('native Windows is not supported')
@@ -455,7 +498,7 @@ test('the packed npm tarball launches the verified binary', { skip: process.plat
   const address = server.address()
   await execFileAsync(process.execPath, [entry, 'start'], {
     env: {
-      ...process.env,
+      ...launcherTestEnv,
       OPUTE_HOST_AGENT_CACHE_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'opute-packed-cache-')),
       OPUTE_HOST_AGENT_RELEASE_BASE_URL: `http://127.0.0.1:${address.port}`,
       OPUTE_HOST_AGENT_SHA256: checksum,
