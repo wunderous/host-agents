@@ -3,8 +3,8 @@
     {
       "url": "/",
       "title": "Opute Host Agent",
-      "description": "Inspect Linux host facts through an authenticated MCP client.",
-      "body": "Host Agent Platform read-only host check get_host_info"
+      "description": "Inspect Linux hosts and discover typed infrastructure capabilities through MCP.",
+      "body": "Host Agent read-only host check get_host_info host-local recipes Kubernetes Incus network tunnels"
     },
     {
       "url": "/docs/install/",

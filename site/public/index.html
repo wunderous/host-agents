@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Opute Host Agent</title>
-  <meta name="description" content="Run an authenticated MCP server beside Linux infrastructure. AI clients discover typed tools for Incus, Kubernetes, host services, and networking." />
+  <title>Opute Host Agent — Typed MCP tools for Linux infrastructure</title>
+  <meta name="description" content="Inspect Linux hosts and operate configured Incus, Kubernetes, and network capabilities through one typed MCP server. Host-local recipes can check readiness and retain results." />
   <link rel="canonical" href="https://www.opute.io/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Opute Host Agent" />
-  <meta property="og:title" content="Opute Host Agent" />
-  <meta property="og:description" content="Run an authenticated MCP server beside Linux infrastructure. AI clients discover typed tools for Incus, Kubernetes, host services, and networking." />
+  <meta property="og:title" content="Opute Host Agent — Typed MCP tools for Linux infrastructure" />
+  <meta property="og:description" content="Inspect Linux hosts and operate configured Incus, Kubernetes, and network capabilities through one typed MCP server. Host-local recipes can check readiness and retain results." />
   <meta property="og:url" content="https://www.opute.io/" />
   <meta property="og:locale" content="en_US" />
   <meta property="og:image" content="https://www.opute.io/og-image.png" />
@@ -20,16 +20,16 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
   <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
-  <meta name="twitter:title" content="Opute Host Agent" />
-  <meta name="twitter:description" content="Run an authenticated MCP server beside Linux infrastructure. AI clients discover typed tools for Incus, Kubernetes, host services, and networking." />
-  <link rel="stylesheet" href="/styles.css?v=724c0efc235eab2b5b3db8acae7b961208a5fec076ce898db121aea7b7b12c6d" />
+  <meta name="twitter:title" content="Opute Host Agent — Typed MCP tools for Linux infrastructure" />
+  <meta name="twitter:description" content="Inspect Linux hosts and operate configured Incus, Kubernetes, and network capabilities through one typed MCP server. Host-local recipes can check readiness and retain results." />
+  <link rel="stylesheet" href="/styles.css?v=a2f0f4b5f59a79fc9ac3abd40132a39aea82ce23379d4c84acda2ebb8aa91d1a" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
 </head>
 <body lang="en">
   <a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
-  
+
 <header class="top">
   <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
@@ -44,24 +44,28 @@
     <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
-      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
-      <a href="https://platform.opute.io/" lang="en">Platform</a>
+
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
-  <main class="hero" id="main-content" lang="en">
-    <p class="eyebrow">For infrastructure operators and agent authors</p>
-    <h1>Inspect your Linux hosts through an authenticated AI client.</h1>
+  <main class="hero home-hero" id="main-content" lang="en">
+    <p class="eyebrow">Opute Host Agent · for Linux operators and agent authors</p>
+    <h1>Operate Linux infrastructure through one typed MCP server.</h1>
     <p class="lede">
-      Opute Host Agent gives operators and agent authors a typed MCP connection to host facts and the capabilities this host offers. Start with a read-only check. Opute Platform coordinates authorized work across hosts.
+      Run the Host Agent beside the systems you own. Start with a read-only host check, then discover the capabilities available for Linux services, Incus guests, Kubernetes, images, and network tunnels. Host-local recipes can check readiness and record what happened.
     </p>
     <div class="cta">
       <a class="btn primary" href="/docs/get-started/">Run a read-only host check</a>
-      <a class="btn ghost" href="/docs/concepts/#host-agent-and-platform">How Host Agent and Platform fit</a>
+      <a class="btn ghost" href="/docs/">Explore the docs</a>
     </div>
-    <figure class="visual">
-      <figcaption>Example excerpt only; values are redacted and this is not live host output.</figcaption>
+    <div class="home-hero-proof" aria-label="Host Agent operating model">
+      <span>Live capability catalog</span>
+      <span>Explicit write gate</span>
+      <span>Durable plan results</span>
+    </div>
+    <figure class="visual home-terminal">
+      <figcaption>Read-only first call · example excerpt with redacted values, not live host output</figcaption>
       <pre class="terminal"><code>get_host_info {}
 {
   "uri": "host:example:host-01",
@@ -71,30 +75,71 @@
   "systemctlPath": "…",
   "supportedTools": ["…"]
 }</code></pre>
+      <p><a href="/docs/get-started/">Install, authenticate, and run this check →</a></p>
     </figure>
   </main>
 
-  <section class="pitch" aria-label="How it works">
-    <h2>How it works</h2>
-    <ol class="pitch-steps">
-      <li><span class="step-number" aria-hidden="true"></span><strong>Run the agent</strong> beside the Linux host you want to inspect. Incus and Kubernetes are optional for host facts.</li>
-      <li><span class="step-number" aria-hidden="true"></span><strong>Connect an MCP client</strong> to its loopback HTTP endpoint with a Bearer token.</li>
-      <li><span class="step-number" aria-hidden="true"></span><strong>Read before acting</strong> with the live typed catalog and read-only host tools.</li>
-    </ol>
-    <p class="pitch-for">
-      Built for operators and agent authors who already run real infrastructure.
-      For Opute Platform, visit <a href="https://platform.opute.io/">platform.opute.io</a>.
-    </p>
+  <section class="home-section" aria-labelledby="what-it-does">
+    <div class="home-section-heading">
+      <p class="eyebrow">What you can operate</p>
+      <h2 id="what-it-does">One host-side endpoint. Real infrastructure tools.</h2>
+      <p>Discover the current tool catalog before every operation. Available capabilities depend on the host and its active providers.</p>
+    </div>
+    <div class="home-capabilities">
+      <article><span class="home-card-index">01 / Compute</span><h3>Linux &amp; Incus</h3><p>Inspect host state, manage services, and provision or inspect guests through typed tools.</p></article>
+      <article><span class="home-card-index">02 / Workloads</span><h3>Kubernetes &amp; images</h3><p>Read cluster resources, build and push OCI images, and apply workload manifests.</p></article>
+      <article><span class="home-card-index">03 / Reachability</span><h3>Networking &amp; tunnels</h3><p>Manage declared network and tunnel capabilities through provider plugins when configured.</p></article>
+    </div>
+    <a class="home-text-link" href="/docs/capabilities/">Browse the captured catalog and learn how to discover yours →</a>
   </section>
 
-  <section class="pitch" aria-labelledby="jobs-heading">
-    <h2 id="jobs-heading">What you can inspect</h2>
-    <div class="grid-cards">
-      <a href="/use-cases/"><strong>Host facts</strong><span>Read host identity and the tools supported by the connected agent.</span></a>
-      <a href="/use-cases/"><strong>VM inventory, when Incus is configured</strong><span>Discover existing guests before selecting any separate mutating action.</span></a>
-      <a href="/use-cases/"><strong>Kubernetes inventory, when configured</strong><span>Discover cluster state through the available Kubernetes provider.</span></a>
+  <section class="home-section home-flow" aria-labelledby="why-it-matters">
+    <div class="home-section-heading">
+      <p class="eyebrow">The operating loop</p>
+      <h2 id="why-it-matters">A tool call can become checked, recoverable work.</h2>
+      <p>Host-local recipes package versioned inputs and a plan. The Host Agent runs that plan against this host, checks observed readiness when the plan declares it, and retains the run for inspection.</p>
     </div>
-    <div class="callout"><strong>Product boundary.</strong> Host Agent authenticates and executes typed operations against one host. Platform owns intent, authorization, and durable orchestration across hosts. <a href="/docs/concepts/#host-agent-and-platform">Read the explanation</a>.</div>
+    <ol class="home-flow-steps">
+      <li><span class="step-number" aria-hidden="true"></span><div><strong>Discover</strong><span>Read the live, revisioned MCP catalog and its schemas.</span></div></li>
+      <li><span class="step-number" aria-hidden="true"></span><div><strong>Admit</strong><span>Authenticate, resolve the target, and check whether a write is allowed.</span></div></li>
+      <li><span class="step-number" aria-hidden="true"></span><div><strong>Execute &amp; verify</strong><span>Run typed actions with readiness checks, retry, and compensation where the plan declares them.</span></div></li>
+      <li><span class="step-number" aria-hidden="true"></span><div><strong>Inspect</strong><span>Read the durable plan result and the observed resource state.</span></div></li>
+    </ol>
+    <p class="home-section-note">The Host Agent runs without an LLM or an outside coordinator. A host-local recipe can establish the first Kubernetes node from the owning host itself.</p>
+    <a class="home-text-link" href="/docs/recipes/">How recipes and plans work →</a>
+  </section>
+
+  <section class="home-section home-proof" aria-labelledby="site-proof">
+    <div class="home-proof-copy">
+      <p class="eyebrow">Built with the same tools</p>
+      <h2 id="site-proof">This site is deployed through Host Agent.</h2>
+      <p>Public CI builds this site's image. A separate deployment controller selects its verified digest and asks a Host Agent to run a host-local recipe: apply the Kubernetes workload, ensure the dedicated tunnel, and probe both public URLs.</p>
+      <p>The recipe and its observed results make the deployment reviewable beyond a successful command response.</p>
+      <a class="home-text-link" href="/docs/dogfood/">See how this site is hosted →</a>
+    </div>
+    <div class="home-proof-trace" aria-label="Site recipe stages">
+      <div><span>01</span><strong>Select image</strong><code>verified public CI digest</code></div>
+      <div><span>02</span><strong>Apply workload</strong><code>apply_manifest</code></div>
+      <div><span>03</span><strong>Open route</strong><code>ensure-host-tunnel</code></div>
+      <div><span>04</span><strong>Probe site</strong><code>probe_http_endpoint</code></div>
+    </div>
+  </section>
+
+  <section class="home-section home-safety" aria-labelledby="built-for-control">
+    <div class="home-section-heading">
+      <p class="eyebrow">Operator control</p>
+      <h2 id="built-for-control">Clear boundaries for consequential work.</h2>
+    </div>
+    <div class="home-safety-grid">
+      <div><strong>Explicit identity</strong><p>Each agent has one canonical host identity. Resource targets use typed URIs.</p></div>
+      <div><strong>Writes opt in</strong><p>Standalone mutations are denied by default and require deliberate enablement.</p></div>
+      <div><strong>Provider choice</strong><p>Providers publish neutral capabilities into a revisioned catalog. Clients use the capability contract.</p></div>
+      <div><strong>Evidence with redaction</strong><p>Plans retain their outcomes; write-only fields are redacted in client-visible results.</p></div>
+    </div>
+    <div class="home-close">
+      <p>Ready to connect your own MCP client?</p>
+      <a class="btn primary" href="/docs/get-started/">Get started</a>
+    </div>
   </section>
 
   <footer>
