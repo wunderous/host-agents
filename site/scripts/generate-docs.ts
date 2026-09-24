@@ -5,6 +5,7 @@
  * Architecture facts track README.md + docs/adr/* (verify before changing).
  */
 import { mkdirSync, writeFileSync, readFileSync } from "fs"
+import { createHash } from "crypto"
 import { dirname, join } from "path"
 import { fileURLToPath } from "url"
 
@@ -134,8 +135,18 @@ if (releaseCatalog.releaseChannel === "stable") {
   }
 }
 
-const CSS = "/styles.css?v=20260924d"
-const ASSET_V = "20260924d"
+type StaticAsset = "styles.css" | "search.js" | "i18n.js" | "docs-nav.js"
+
+const assetURL = (asset: StaticAsset) => {
+  // Normalize checkout line endings so WSL and Linux builds emit the same URL.
+  const contents = readFileSync(join(root, asset), "utf8")
+    .replaceAll("\r\n", "\n")
+    .replaceAll("\r", "\n")
+  const version = createHash("sha256").update(contents, "utf8").digest("hex")
+  return `/${asset}?v=${version}`
+}
+
+const CSS = assetURL("styles.css")
 const SITE_ORIGIN = "https://www.opute.io"
 
 const MERMAID = `
@@ -163,9 +174,9 @@ const MERMAID = `
 </script>`
 
 const SITE_SCRIPTS = `
-<script src="/search.js?v=${ASSET_V}" defer></script>
-<script src="/i18n.js?v=${ASSET_V}" defer></script>
-<script src="/docs-nav.js?v=${ASSET_V}" defer></script>`
+<script src="${assetURL("search.js")}" defer></script>
+<script src="${assetURL("i18n.js")}" defer></script>
+<script src="${assetURL("docs-nav.js")}" defer></script>`
 
 const escapeHTML = (value: string) =>
   value.replace(/[&<>"']/g, (character) => {

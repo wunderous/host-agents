@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.util
 import io
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -26,6 +28,21 @@ class ResolveLocalTargetTest(unittest.TestCase):
         target, fragment = VALIDATOR.resolve_local_target(page, "../index.html#main-content")
         self.assertEqual(target, VALIDATOR.SITE / "index.html")
         self.assertEqual(fragment, "main-content")
+
+
+class AssetCacheKeyTest(unittest.TestCase):
+    def test_fingerprint_normalizes_checkout_line_endings(self) -> None:
+        expected = hashlib.sha256(b"first\nsecond\n").hexdigest()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            asset = Path(temporary_directory) / "styles.css"
+            asset.write_bytes(b"first\r\nsecond\r\n")
+            self.assertEqual(VALIDATOR.content_fingerprint(asset), expected)
+
+    def test_asset_url_must_use_the_current_content_fingerprint(self) -> None:
+        expected = "a" * 64
+        versions = {"/styles.css": expected}
+        self.assertIsNone(VALIDATOR.asset_cache_key_error(f"/styles.css?v={expected}", versions))
+        self.assertIsNotNone(VALIDATOR.asset_cache_key_error("/styles.css?v=20260924d", versions))
 
 
 if __name__ == "__main__":
