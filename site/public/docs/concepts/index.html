@@ -12,37 +12,49 @@
   <meta property="og:description" content="Understand what Opute Host Agent does, how it differs from Opute Platform, and how its typed tools work." />
   <meta property="og:url" content="https://www.opute.io/docs/concepts/" />
   <meta property="og:locale" content="en_US" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
   <meta name="twitter:title" content="Concepts — Opute Host Agent" />
   <meta name="twitter:description" content="Understand what Opute Host Agent does, how it differs from Opute Platform, and how its typed tools work." />
-  <link rel="stylesheet" href="/styles.css?v=20260922a" />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
 
 <header class="top">
-  <a class="brand" href="/">Opute Host Agent</a>
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
     <div class="search">
-      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
-      <div class="search-results" data-docs-search-results hidden></div>
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
     </div>
     <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
       <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
-    <nav>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
 <div class="doc-shell">
 
-<aside class="doc-nav" aria-label="Documentation">
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
   <h2>Tutorial</h2>
   <ul>
     <li><a href="/docs/get-started/">Get started</a></li>
@@ -55,12 +67,15 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
+  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
     <li><a href="/docs/openapi/">OpenAPI</a></li>
   </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/">Compatibility and verification</a></li></ul>
   <h2>Explanation</h2>
   <ul>
     <li><a href="/docs/concepts/" aria-current="page">Concepts</a></li>
@@ -68,18 +83,20 @@
     <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
     <li><a href="/docs/networking/">Networking</a></li>
     <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
   </ul>
 </aside>
-<main class="doc">
+</details>
+<main class="doc" id="main-content" lang="en">
 
 <p class="badge">Explanation</p>
 <h1>Concepts</h1>
-<p class="meta"><strong>Why this exists.</strong> AI clients are good at proposing work and bad at owning a host. Host Agent is the thin, typed execution plane that turns named MCP tools into real guests, clusters, and tunnels — with identity and redaction that fail closed. Not a chat product; not Platform.</p>
-<p class="meta">Mental model only — not a procedure. For diagrams and package layout see <a href="/docs/architecture/">Architecture</a>.</p>
+<p class="meta"><strong>Opute Host Agent connects authenticated MCP clients to Linux host facts and explicit typed operations.</strong> It runs beside a host, applies identity and effect gates, and returns structured observations.</p>
+<p class="meta">Opute Platform coordinates authorized intent and durable work across hosts. For the execution flow and package layout, see <a href="/docs/architecture/">Architecture</a>.</p>
 
-<h2>Host Agent vs Platform</h2>
-<p>The Host Agent is an execution plane on a single Linux host (or enrolled remote). It speaks Streamable HTTP MCP, admits canonical resource URIs, and runs typed tools. Opute Platform is a separate control plane: it decides <em>what</em> should happen, holds durable orchestration, and issues enrollment credentials.</p>
-<p>Public marketing at <code>opute.io</code> / <code>www.opute.io</code> is Host Agent dogfood. <code>platform.opute.io</code> and <code>mcp.opute.io</code> are Platform surfaces. Collapsing those identities is how operators accidentally take down the control plane while “just fixing docs.”</p>
+<h2 id="host-agent-and-platform">Host Agent and Platform</h2>
+<p><strong>Host Agent owns execution on one host:</strong> it authenticates an MCP client, admits canonical resource URIs, checks typed capability effects, dispatches to the host or an available provider, and returns structured observations. <strong>Opute Platform owns intent, authorization, routing, and durable orchestration across hosts.</strong> Platform may assign work to a Host Agent; the Host Agent does not become the cross-host coordinator.</p>
+<p>This website explains and onboards Host Agent. The public Host Agent site uses <code>opute.io</code> and <code>www.opute.io</code>; Opute Platform has separate <code>platform.opute.io</code> and <code>mcp.opute.io</code> routes. A site deployment does not authorize or mutate those Platform resources.</p>
 
 <pre class="mermaid">
 flowchart LR
@@ -89,6 +106,7 @@ flowchart LR
   Platform[Opute Platform] -->|intent + enrollment| Client
   Platform -.->|does not own host exec| HA
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> A local MCP client or Platform sends typed requests to Host Agent. Host Agent executes against its Linux host or provider processes. Platform supplies intent and enrollment context while Host Agent retains host execution.</p>
 
 <h2>Typed catalog, not folklore</h2>
 <p>Clients do not send free-form shell. They discover a revisioned catalog, validate arguments against schemas, and invoke named tools. That is why memorized tool lists go stale and why <code>tools/list</code> is authoritative.</p>
@@ -115,7 +133,7 @@ flowchart LR
 </div>
 <footer>
   <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
@@ -141,7 +159,8 @@ flowchart LR
   });
 </script>
 
-<script src="/search.js?v=20260923a" defer></script>
-<script src="/i18n.js?v=20260923a" defer></script>
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
 </body>
 </html>

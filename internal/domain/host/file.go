@@ -260,19 +260,40 @@ func hostOwnedPath(home, raw string) (string, error) {
 	if raw == "" {
 		return "", fmt.Errorf("path is required")
 	}
+	homeAbsolute, err := filepath.Abs(filepath.Clean(home))
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
 	if raw == "~" || strings.HasPrefix(raw, "~/") {
-		raw = filepath.Join(home, strings.TrimPrefix(raw, "~/"))
+		raw = filepath.Join(homeAbsolute, strings.TrimPrefix(raw, "~/"))
+	} else if !filepath.IsAbs(raw) {
+		raw = filepath.Join(homeAbsolute, raw)
 	}
 	absolute, err := filepath.Abs(filepath.Clean(raw))
 	if err != nil {
 		return "", fmt.Errorf("resolve path: %w", err)
 	}
-	relative, err := filepath.Rel(home, absolute)
+	relative, err := filepath.Rel(homeAbsolute, absolute)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("path must be beneath the current user's home directory")
 	}
-	if info, err := os.Lstat(absolute); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("managed host file path must not be a symlink")
+	// An existing symlink in any component can redirect a lexically in-home path outside the account home.
+	current := homeAbsolute
+	for _, component := range strings.Split(relative, string(filepath.Separator)) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, statErr := os.Lstat(current)
+		if errors.Is(statErr, os.ErrNotExist) {
+			break
+		}
+		if statErr != nil {
+			return "", fmt.Errorf("inspect managed host file path: %w", statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("managed host file path must not traverse a symlink")
+		}
 	}
 	return absolute, nil
 }

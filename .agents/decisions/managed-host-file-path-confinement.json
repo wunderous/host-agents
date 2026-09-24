@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "id": "managed-host-file-path-confinement",
+  "title": "User-scoped managed host files cannot traverse existing symlinks outside the account home",
+  "claim": "User-scoped ensure_host_file, inspect_host_file, and remove_host_file resolve beneath the absolute account home and reject every existing symlink component before operating. Lexical traversal and absolute paths outside the home are also rejected.",
+  "rationale": "A parent symlink can redirect a path that passes a lexical home-prefix check to an external directory. That could let an agent running with broader host privileges read, overwrite, or remove a file outside the user managed scope.",
+  "owner": "wunderous/host-agents owns internal/domain/host managed file resolution and its typed capability behavior.",
+  "authority": {
+    "decision": ".agents/decisions/managed-host-file-path-confinement.json",
+    "implementation": "internal/domain/host/file.go",
+    "tests": "internal/domain/host/file_test.go",
+    "verifier": "scripts/check_managed_host_file_confinement.py"
+  },
+  "scope": {
+    "included": [
+      "user-scoped ensure_host_file",
+      "user-scoped inspect_host_file",
+      "user-scoped remove_host_file",
+      "existing path components below the account home"
+    ],
+    "excluded": [
+      "system-scoped systemd unit paths",
+      "archive extraction and other host file capabilities with their own path contracts"
+    ]
+  },
+  "exception": "No symlink component is allowed in an existing user-scoped managed path. A future exception requires a superseding decision and evidence that the operation remains confined beneath the account home.",
+  "evidence": {
+    "required": [
+      "lexical absolute and traversal paths outside the home are rejected",
+      "existing parent and final symlink components are rejected",
+      "ensure, inspect, and remove cannot affect an outside file reached through a parent symlink"
+    ],
+    "test": "go test ./internal/domain/host -run TestUserScopedFileRejectsSymlinkedParent -count=1",
+    "verifier": "python3 scripts/check_managed_host_file_confinement.py"
+  },
+  "revisionBehavior": "Recompute whole-file anchors and update the symlink regression test whenever user-scope path resolution or managed-file operation semantics change.",
+  "anchors": [
+    {
+      "kind": "file",
+      "path": "internal/domain/host/file.go",
+      "digest": "a4a5572a03eafc80a7d4d0a084f95503ccffb5af082c3bef62f3e881320b2191",
+      "note": "User path resolver and symlink rejection"
+    },
+    {
+      "kind": "file",
+      "path": "internal/domain/host/file_test.go",
+      "digest": "337b1717f1b339297bbea99276a25e67d0c994a7d259e700afedfad6677ce8b8",
+      "note": "Regression test for symlinked parent paths"
+    },
+    {
+      "kind": "file",
+      "path": "scripts/check_managed_host_file_confinement.py",
+      "digest": "03e48a08f89b202b6159a1ee5eb51be0b068289b895e609101f803d6c7e5991f",
+      "note": "Anchored invariant verifier and CI wiring check"
+    },
+    {
+      "kind": "file",
+      "path": "Makefile",
+      "digest": "53846ad3526dbe5decdf47e30332c939fe83619c829d4b745d9dfd60fa936358",
+      "note": "Test target runs the invariant verifier"
+    },
+    {
+      "kind": "file",
+      "path": ".github/workflows/ci.yml",
+      "digest": "b2042dbf6fe5b67ebda9b6aff6710fb734f01dfdbe37659f5cb0059ce109077f",
+      "note": "CI invokes all module tests that depend on the verifier"
+    }
+  ],
+  "verify": "python3 scripts/check_managed_host_file_confinement.py && go test ./internal/domain/host -run TestUserScopedFileRejectsSymlinkedParent -count=1",
+  "enforcedBy": [
+    "internal/domain/host/file.go",
+    "internal/domain/host/file_test.go",
+    "scripts/check_managed_host_file_confinement.py",
+    "Makefile",
+    ".github/workflows/ci.yml"
+  ],
+  "supersedes": [],
+  "withdrawn": false,
+  "lastVerified": "2026-09-24"
+}

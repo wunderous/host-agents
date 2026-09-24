@@ -4,45 +4,57 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Get started — Opute Host Agent</title>
-  <meta name="description" content="Start Opute Host Agent on Linux and verify authenticated MCP tool discovery in about ten minutes." />
+  <meta name="description" content="Start Opute Host Agent on Linux and verify authenticated MCP tool discovery." />
   <link rel="canonical" href="https://www.opute.io/docs/get-started/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Opute Host Agent" />
   <meta property="og:title" content="Get started — Opute Host Agent" />
-  <meta property="og:description" content="Start Opute Host Agent on Linux and verify authenticated MCP tool discovery in about ten minutes." />
+  <meta property="og:description" content="Start Opute Host Agent on Linux and verify authenticated MCP tool discovery." />
   <meta property="og:url" content="https://www.opute.io/docs/get-started/" />
   <meta property="og:locale" content="en_US" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
   <meta name="twitter:title" content="Get started — Opute Host Agent" />
-  <meta name="twitter:description" content="Start Opute Host Agent on Linux and verify authenticated MCP tool discovery in about ten minutes." />
-  <link rel="stylesheet" href="/styles.css?v=20260922a" />
+  <meta name="twitter:description" content="Start Opute Host Agent on Linux and verify authenticated MCP tool discovery." />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
 
 <header class="top">
-  <a class="brand" href="/">Opute Host Agent</a>
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
     <div class="search">
-      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
-      <div class="search-results" data-docs-search-results hidden></div>
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
     </div>
     <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
       <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
-    <nav>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
 <div class="doc-shell">
 
-<aside class="doc-nav" aria-label="Documentation">
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
   <h2>Tutorial</h2>
   <ul>
     <li><a href="/docs/get-started/" aria-current="page">Get started</a></li>
@@ -55,12 +67,15 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
+  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
     <li><a href="/docs/openapi/">OpenAPI</a></li>
   </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/">Compatibility and verification</a></li></ul>
   <h2>Explanation</h2>
   <ul>
     <li><a href="/docs/concepts/">Concepts</a></li>
@@ -68,76 +83,57 @@
     <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
     <li><a href="/docs/networking/">Networking</a></li>
     <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
   </ul>
 </aside>
-<main class="doc">
-
+</details>
+<main class="doc" id="main-content" lang="en">
 <p class="badge">Tutorial</p>
 <h1>Get started</h1>
-<p class="meta"><strong>Outcome.</strong> In about ten minutes, you will start a local Host Agent, connect an MCP client, list its tools, and read host information. This tutorial stays with discovery; it does not enable mutations.</p>
-
-<h2>What you will need</h2>
-<ul>
-  <li>Linux or WSL2 with Node.js, npm, and <code>npx</code></li>
-  <li>Network access to download the Host Agent launcher</li>
-  <li><code>curl</code> for the health check</li>
-  <li>An MCP client that supports authenticated Streamable HTTP</li>
-</ul>
-
+<p class="meta"><strong>Outcome.</strong> Start Host Agent locally, connect VS Code over authenticated HTTP, refresh the live tool list, and read host facts with <code>get_host_info {}</code>. This tutorial does not enable mutations.</p>
+<div class="callout warn"><strong>Preview tutorial.</strong> The published-package canary has not passed for this candidate. Follow the local source-build path below; do not treat it as a verified published release.</div>
+<h2>Prerequisites</h2>
+<ul><li>Linux or WSL2, Node.js 18 or newer, npm, and VS Code with HTTP MCP support.</li><li><code>curl</code> and <code>openssl</code>; loopback port <code>3014</code> must be free.</li><li>Network access for a stable package download. The current preview path also needs the Host Agent checkout and Go toolchain.</li></ul>
 <h2>Start the local agent</h2>
 <ol class="steps">
-  <li>
-    <span class="step-number" aria-hidden="true"></span>
-    <strong>Start the agent</strong>
-    <pre><code>export MCP_AUTH_TOKEN=dev-token
-npx -y @opute/host-agent start --background
-npx -y @opute/host-agent url
-# → http://127.0.0.1:3014/mcp</code></pre>
-    <p><code>dev-token</code> is a local demo value for this loopback-only example. Replace it with a long random secret before exposing the endpoint beyond your machine. The launcher defaults <code>OPUTE_REMOTE_AGENT_ID</code> to <code>local-host-agent</code>. Confirm health:</p>
-    <pre><code>curl -i -sS http://127.0.0.1:3014/health</code></pre>
-    <p>Expect HTTP 200 and JSON containing <code>"agentId":"local-host-agent"</code>.</p>
-  </li>
-  <li>
-    <span class="step-number" aria-hidden="true"></span>
-    <strong>Connect your MCP client</strong>
-    <p>Use <code>http://127.0.0.1:3014/mcp</code> and follow the client-specific steps in <a href="/docs/mcp-clients/">Connect an MCP client</a>. The Bearer token must match <code>MCP_AUTH_TOKEN</code>.</p>
-  </li>
-  <li>
-    <span class="step-number" aria-hidden="true"></span>
-    <strong>List tools, then read the host</strong>
-    <p>Refresh the client’s tool list, then call <code>get_host_info</code>. The result should contain structured host facts.</p>
-  </li>
+<li><strong>Set an explicit identity and random secret</strong><p>Keep the token in your shell and VS Code prompt. Do not commit it or put it in screenshots.</p><pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
+make build VERSION=0.2.0
+./dist/opute-host-agent serve --mode standalone --transport http</code></pre><p>Run preview commands from the Host Agent repository root. Stable instructions pin the published package shown on this page. Stop the foreground process with Ctrl+C in its terminal.</p><pre><code>curl -i -sS http://127.0.0.1:3014/health</code></pre><p>Expect HTTP 200 and the exact <code>agentId</code> you set. This open endpoint proves liveness only, not MCP authentication.</p></li>
+<li><strong>Connect VS Code</strong><p>Create <code>.vscode/mcp.json</code>. VS Code documents this HTTP server and password-prompt setup in its <a href="https://code.visualstudio.com/docs/agents/reference/mcp-configuration">MCP configuration reference</a>.</p><pre><code>{
+  "inputs": [{"type":"promptString","id":"opute-host-token","description":"Local Opute Host Agent token","password":true}],
+  "servers": {"opute-host-agent":{"type":"http","url":"http://127.0.0.1:3014/mcp","headers":{"Authorization":"Bearer ${input:opute-host-token}"}}}
+}</code></pre><p>Start the server and enter the same shell token. Avoid committing the config if the client might persist the entered value.</p></li>
+<li><strong>Refresh tools and read the host</strong><p>Confirm the server is connected, refresh its tools, and call <code>get_host_info</code> with <code>{}</code>. Its schema requires these host facts:</p><pre><code>{
+  "uri": "host:example:host-01",
+  "hostName": "…",
+  "providerId": "…",
+  "lxcBinaryPath": "…",
+  "systemctlPath": "…",
+  "supportedTools": ["…"]
+}</code></pre><p>Those six fields are required by the current schema. Optional fields such as <code>agent</code>, <code>capacity</code>, and <code>system</code> appear only when observable. Values are redacted; this is an example shape, not captured host output. A listed capability does not prove its provider is ready.</p></li>
 </ol>
-
-<div class="callout warn">
-  <strong>Do not enable mutations yet.</strong> Standalone mutating tools stay denied until
-  <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Finish discovery first.
-</div>
-
-<h2>You succeeded when</h2>
-<ul>
-  <li><code>GET /health</code> returns HTTP 200 with the local agent id</li>
-  <li>Your client connects to <code>/mcp</code> with the configured Bearer token and refreshes its tool list</li>
-  <li><code>get_host_info</code> returns structured host facts</li>
-</ul>
-
-<div class="callout">
-  <strong>Trust boundary.</strong> Bearer auth gates <code>/mcp</code>. Write-only fields come back as
-  <code>[redacted]</code>. This process is not Platform — do not reuse
-  <code>platform.opute.io</code> credentials here.
-</div>
-
-<p>Next: <a href="/docs/mcp-clients/">Connect a client</a> · <a href="/docs/install/">Install options</a> · <a href="/docs/troubleshooting/">Troubleshooting</a> · <a href="/docs/concepts/">Concepts</a></p>
+<div class="callout warn"><strong>Keep this first check read-only.</strong> Do not set <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> or call a tool whose declared effect is not <code>read</code>.</div>
+<h2>Verify the authenticated path</h2>
+<p>Check that authentication rejects a deliberately wrong token before completing the valid call in VS Code:</p>
+<pre><code>curl -i -sS http://127.0.0.1:3014/mcp -H 'Accept: application/json, text/event-stream' -H 'Content-Type: application/json' -H 'Authorization: Bearer intentionally-wrong' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'</code></pre>
+<p>Expect HTTP 401. A request with no Authorization header also returns 401. Use the real token only in your local shell and VS Code password prompt.</p>
+<ul><li>No token or a wrong token gets HTTP 401.</li><li>The configured token connects VS Code; non-empty <code>tools/list</code> includes <code>get_host_info</code>.</li><li><code>get_host_info {}</code> returns structured facts and the selected identity.</li><li>No mutation flag was enabled and no mutating tool was called.</li></ul>
+<h2>Troubleshoot</h2>
+<ul><li><strong>Port in use:</strong> The preview process runs in the foreground. Read its terminal output, then set an unused HOST_MCP_PORT and use that same port in curl and VS Code.</li><li><strong>401:</strong> match the VS Code input to <code>MCP_AUTH_TOKEN</code>; restart after changing shell environment.</li><li><strong>Empty tools:</strong> refresh the server, verify the URL ends in <code>/mcp</code>, and check <code>tools/list</code>.</li><li><strong>WSL reachability:</strong> run VS Code and the agent in the same WSL context first.</li><li>For other symptoms, see <a href="/docs/troubleshooting/">troubleshooting</a>.</li></ul>
+<h2>Next</h2>
+<p>Inspect <code>list_vms</code> only if Incus is configured. Otherwise read the <a href="/docs/capabilities/">capability reference</a> and <a href="/docs/concepts/#host-agent-and-platform">product boundary</a>. Keep the mutation gate closed.</p>
 
 </main>
 </div>
 <footer>
   <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
 </footer>
 
 
-<script src="/search.js?v=20260923a" defer></script>
-<script src="/i18n.js?v=20260923a" defer></script>
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
 </body>
 </html>

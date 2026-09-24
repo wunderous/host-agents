@@ -12,37 +12,49 @@
   <meta property="og:description" content="Opute Host Agent docs: install the Linux MCP server, connect a client, browse its tools, and understand how it runs." />
   <meta property="og:url" content="https://www.opute.io/docs/" />
   <meta property="og:locale" content="en_US" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
   <meta name="twitter:title" content="Documentation — Opute Host Agent" />
   <meta name="twitter:description" content="Opute Host Agent docs: install the Linux MCP server, connect a client, browse its tools, and understand how it runs." />
-  <link rel="stylesheet" href="/styles.css?v=20260922a" />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
 
 <header class="top">
-  <a class="brand" href="/">Opute Host Agent</a>
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
     <div class="search">
-      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
-      <div class="search-results" data-docs-search-results hidden></div>
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
     </div>
     <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
       <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
-    <nav>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs" aria-current="page">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
 <div class="doc-shell">
 
-<aside class="doc-nav" aria-label="Documentation">
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
   <h2>Tutorial</h2>
   <ul>
     <li><a href="/docs/get-started/">Get started</a></li>
@@ -55,12 +67,15 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
+  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
     <li><a href="/docs/openapi/">OpenAPI</a></li>
   </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/">Compatibility and verification</a></li></ul>
   <h2>Explanation</h2>
   <ul>
     <li><a href="/docs/concepts/">Concepts</a></li>
@@ -68,15 +83,23 @@
     <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
     <li><a href="/docs/networking/">Networking</a></li>
     <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
   </ul>
 </aside>
-<main class="doc">
+</details>
+<main class="doc" id="main-content" lang="en">
 
 <p class="badge">Diátaxis</p>
 <h1>Documentation</h1>
-<p class="meta"><strong>Opute Host Agent</strong> is an authenticated MCP server for Linux hosts. AI clients discover a revisioned catalog of typed tools for host, guest, Kubernetes, registry, and tunnel operations.</p>
-<p class="meta"><strong>For.</strong> Infrastructure operators and agent authors running Linux hosts with Incus or K3s. Need Opute Platform? <a href="https://platform.opute.io/">Visit Platform</a>.</p>
-<p class="meta">Organized by job, following <a href="https://diataxis.fr/">Diátaxis</a>. This site at <code>opute.io</code> / <code>www.opute.io</code> is Host Agent dogfood — hosted by the agent it documents.</p>
+<p class="meta"><strong>Opute Host Agent</strong> gives an authenticated MCP client a read-only way to inspect Linux host facts and discover the capabilities available on that host. It executes explicit typed operations; Opute Platform owns intent, authorization, and durable orchestration across hosts.</p>
+<p class="meta"><strong>For.</strong> Infrastructure operators and agent authors connecting a client to Linux or WSL2. Incus and Kubernetes are optional for the first host-facts check. Need cross-host coordination? <a href="https://platform.opute.io/">Visit Opute Platform</a>.</p>
+<p class="meta">Choose a task below. These pages follow <a href="https://diataxis.fr/">Diátaxis</a>. This site is Host Agent dogfood; its current public availability is not an uptime claim.</p>
+
+<div class="doc-index-sections task-start">
+  <section><h2>Start</h2><ul><li><a href="/docs/get-started/"><strong>Complete a read-only first check</strong><span>Follow one VS Code path from launch through authenticated get_host_info.</span></a></li></ul></section>
+  <section><h2>Connect</h2><ul><li><a href="/docs/mcp-clients/"><strong>Configure an MCP client</strong><span>Use an HTTP endpoint and a password-prompted Bearer token.</span></a></li></ul></section>
+  <section><h2>Troubleshoot</h2><ul><li><a href="/docs/troubleshooting/"><strong>Find a symptom</strong><span>Check authentication, reachability, discovery, and provider availability.</span></a></li></ul></section>
+</div>
 
 <div class="doc-index-sections">
   <section>
@@ -89,7 +112,7 @@
     <h2>How-to</h2>
     <ul>
       <li><a href="/docs/install/"><strong>Install &amp; run</strong><span>From-source, npm launcher, serve modes, mutations, WSL.</span></a></li>
-      <li><a href="/docs/mcp-clients/"><strong>Connect an MCP client</strong><span>Cursor, Claude Desktop, VS Code — with Bearer auth.</span></a></li>
+      <li><a href="/docs/mcp-clients/"><strong>Connect an MCP client</strong><span>VS Code HTTP setup, with other client paths labelled by verification status.</span></a></li>
       <li><a href="/docs/dogfood/"><strong>Publish this site</strong><span>Public image build; private Host Agent deployment controller.</span></a></li>
       <li><a href="/docs/troubleshooting/"><strong>Troubleshooting</strong><span>401s, mutations denied, wrong port, redacted resume, distributed refused.</span></a></li>
     </ul>
@@ -97,11 +120,19 @@
   <section>
     <h2>Reference</h2>
     <ul>
-      <li><a href="/docs/capabilities/"><strong>Capabilities</strong><span>Every tool in the 187-tool catalog snapshot, grouped by job.</span></a></li>
+      <li><a href="/docs/capabilities/"><strong>Capabilities</strong><span>142 allowlisted descriptors at sha256:1efa6beb86423ee9fe3f1e71f978958566950726f45dcc5d21743711135e2b91; provider readiness varies by host.</span></a></li>
       <li><a href="/docs/configuration/"><strong>Configuration</strong><span>Ports, bind hosts, required identity, auth, Cloudflare env.</span></a></li>
       <li><a href="/docs/recipe-primitives/"><strong>Recipe &amp; plan primitives</strong><span>Fields, statuses, assertion ops, caps — dry facts.</span></a></li>
       <li><a href="/docs/openapi/"><strong>OpenAPI</strong><span>HTTP surface for <code>/health</code> and Streamable HTTP <code>/mcp</code>.</span></a></li>
     </ul>
+  </section>
+  <section>
+    <h2>Compatibility</h2>
+    <ul><li><a href="/docs/compatibility/"><strong>Compatibility</strong><span>Separate documented configuration from combinations exercised end to end.</span></a></li></ul>
+  </section>
+  <section>
+    <h2>Use cases</h2>
+    <ul><li><a href="/use-cases/"><strong>Explore host inspection jobs</strong><span>See read-only workflows and the provider conditions they require.</span></a></li></ul>
   </section>
   <section>
     <h2>Explanation</h2>
@@ -125,11 +156,12 @@
 </div>
 <footer>
   <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
 </footer>
 
 
-<script src="/search.js?v=20260923a" defer></script>
-<script src="/i18n.js?v=20260923a" defer></script>
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
 </body>
 </html>

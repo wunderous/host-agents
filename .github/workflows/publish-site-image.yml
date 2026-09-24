@@ -5,6 +5,19 @@ on:
     branches: [main]
     paths:
       - site/**
+      - README.md
+      - docs/**
+      - npm/local-host-agent/**
+      - cmd/opute-host-agent/**
+      - contracts/**
+      - internal/**
+      - plugins/**
+      - schemas/**
+      - catalog-meta.json
+      - go.mod
+      - go.sum
+      - Makefile
+      - scripts/*site*
       - .github/workflows/publish-site-image.yml
   workflow_dispatch:
 
@@ -19,7 +32,7 @@ jobs:
   publish:
     if: github.repository == 'wunderous/host-agents' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
       packages: write
@@ -28,6 +41,24 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+
+      - name: Verify generated site and published-package behavior
+        run: |
+          make check-site
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3

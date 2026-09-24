@@ -7,10 +7,10 @@ below are copy/paste examples, not named-client certifications.
 ## Quick start
 
 ```bash
-# Optional but recommended for authenticated /mcp calls
-export MCP_AUTH_TOKEN=dev-token
-# Optional; defaults to local-host-agent
-export OPUTE_REMOTE_AGENT_ID=local-host-agent
+# Required canonical identity; keep the same value for this Host Agent
+export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
+# Bearer token for authenticated /mcp calls
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 
 npx -y @opute/host-agent start --background
 npx -y @opute/host-agent url   # http://127.0.0.1:3014/mcp
@@ -57,7 +57,7 @@ tools stay denied until `OPUTE_STANDALONE_ALLOW_MUTATIONS=true`.
 |----------|---------|
 | `HOST_MCP_PORT` | Listen port (default `3014`) |
 | `HOST_MCP_BIND_HOST` | Bind host (default `127.0.0.1`) |
-| `OPUTE_REMOTE_AGENT_ID` | Canonical agent id (default `local-host-agent`) |
+| `OPUTE_REMOTE_AGENT_ID` | Required explicit opaque canonical agent identity |
 | `MCP_AUTH_TOKEN` | Bearer bootstrap token for `/mcp` |
 | `OPUTE_HOST_AGENT_BINARY` | Use a local binary instead of downloading a release |
 | `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` | Enable mutating infrastructure tools |

@@ -32,6 +32,32 @@ func TestValidateModernExtensionRequestRequiresMatchingMetadataAndHeader(t *test
 	}
 }
 
+func TestHealthKeepsLocalLauncherIdentitySeparateFromAgentIdentity(t *testing.T) {
+	server := &HTTPServer{
+		instanceID:      "standalone",
+		localInstanceID: "daemon-run-1",
+		agentID:         "opaque-host-1",
+	}
+	response := httptest.NewRecorder()
+	server.handleHealth(response, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("health status = %d, want %d", response.Code, http.StatusOK)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode health payload: %v", err)
+	}
+	if payload["instanceId"] != "standalone" {
+		t.Fatalf("instanceId = %#v, want execution instance", payload["instanceId"])
+	}
+	if payload["localInstanceId"] != "daemon-run-1" {
+		t.Fatalf("localInstanceId = %#v, want launcher-owned daemon identity", payload["localInstanceId"])
+	}
+	if payload["agentId"] != "opaque-host-1" {
+		t.Fatalf("agentId = %#v, want canonical Host Agent identity", payload["agentId"])
+	}
+}
+
 func TestNormalizeTaskCreationResponseLiftsFlatTaskEnvelope(t *testing.T) {
 	raw, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",

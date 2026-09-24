@@ -12,37 +12,49 @@
   <meta property="og:description" content="Learn how Host Agent&#39;s transport, catalog, providers, domains, and Cordis kernel fit together." />
   <meta property="og:url" content="https://www.opute.io/docs/architecture/" />
   <meta property="og:locale" content="en_US" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
   <meta name="twitter:title" content="Architecture — Opute Host Agent" />
   <meta name="twitter:description" content="Learn how Host Agent&#39;s transport, catalog, providers, domains, and Cordis kernel fit together." />
-  <link rel="stylesheet" href="/styles.css?v=20260922a" />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
 
 <header class="top">
-  <a class="brand" href="/">Opute Host Agent</a>
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
     <div class="search">
-      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
-      <div class="search-results" data-docs-search-results hidden></div>
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
     </div>
     <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
       <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
-    <nav>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
 <div class="doc-shell">
 
-<aside class="doc-nav" aria-label="Documentation">
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
   <h2>Tutorial</h2>
   <ul>
     <li><a href="/docs/get-started/">Get started</a></li>
@@ -55,12 +67,15 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
+  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
     <li><a href="/docs/openapi/">OpenAPI</a></li>
   </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/">Compatibility and verification</a></li></ul>
   <h2>Explanation</h2>
   <ul>
     <li><a href="/docs/concepts/">Concepts</a></li>
@@ -68,9 +83,11 @@
     <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
     <li><a href="/docs/networking/">Networking</a></li>
     <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
   </ul>
 </aside>
-<main class="doc">
+</details>
+<main class="doc" id="main-content" lang="en">
 
 <p class="badge">Explanation</p>
 <h1>Architecture</h1>
@@ -110,6 +127,7 @@ flowchart TB
   HA -->|lifecycle install/reload| plugins
   plugins -->|capability ops| Ext[External APIs / daemons]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> Platform and a local IDE client send typed MCP requests to Host Agent. Host Agent uses shared host seams, domain packages, and provider processes to perform their declared operations.</p>
 
 <h2>MCP edge</h2>
 <ul>
@@ -132,6 +150,7 @@ sequenceDiagram
   Note over HA: admit URI · check effects · dispatch
   HA-->>C: typed result (redacted)
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> The client authenticates a POST to /mcp, discovers server capabilities, lists the current catalog, and calls a named tool. Host Agent admits the resource, checks its effect, and returns a typed result.</p>
 
 <h2>Catalog → admission → dispatch</h2>
 <p>The catalog is authoritative (ADR-0009). Tool dispatch validates against the revision the client saw, admits resource URIs, and applies effect gates before provider or domain code runs.</p>
@@ -145,6 +164,7 @@ flowchart LR
   Eff --> Dom[Domain or provider op]
   Dom --> Out[Observation + redaction]
 </pre>
+<p class="diagram-alt"><strong>Diagram in words:</strong> A tool call is checked against the catalog revision, admitted for its resource URI, gated by its declared effect, dispatched to a domain or provider, and returned as a redacted observation.</p>
 
 <h2>Providers</h2>
 <p>Providers are separate Streamable HTTP MCP processes under <code>plugins/</code>. The Host Agent owns lifecycle (<code>opute.provider.*</code>), activation, and displace-on-activate exclusivity per Service Definition — not vendor CLI folklore.</p>
@@ -177,7 +197,7 @@ flowchart LR
 </div>
 <footer>
   <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
@@ -203,7 +223,8 @@ flowchart LR
   });
 </script>
 
-<script src="/search.js?v=20260923a" defer></script>
-<script src="/i18n.js?v=20260923a" defer></script>
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
 </body>
 </html>

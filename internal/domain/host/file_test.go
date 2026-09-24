@@ -42,6 +42,38 @@ func TestEnsureAndInspectHostFile(t *testing.T) {
 	}
 }
 
+func TestUserScopedFileRejectsSymlinkedParent(t *testing.T) {
+	home := t.TempDir()
+	outside := t.TempDir()
+	t.Setenv("HOME", home)
+	secret := filepath.Join(outside, "secret.conf")
+	if err := os.WriteFile(secret, []byte("outside\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(home, "linked")); err != nil {
+		t.Skipf("symlinks unavailable in this environment: %v", err)
+	}
+	service := testService(hostruntime.Shared{OwnershipMode: "disabled"})
+
+	if _, err := service.EnsureHostFile(EnsureHostFileArgs{
+		Path: filepath.Join(home, "linked", "new.conf"), Content: "owned\n", Mode: 0o600,
+	}); err == nil {
+		t.Fatal("ensure_host_file followed a symlinked parent outside the user's home")
+	}
+	if _, err := service.InspectHostFile(InspectHostFileArgs{Path: filepath.Join(home, "linked", "secret.conf")}); err == nil {
+		t.Fatal("inspect_host_file followed a symlinked parent outside the user's home")
+	}
+	if _, err := service.RemoveHostFile(RemoveHostFileArgs{
+		Path: filepath.Join(home, "linked", "secret.conf"), Confirm: true,
+	}); err == nil {
+		t.Fatal("remove_host_file followed a symlinked parent outside the user's home")
+	}
+	observed, err := os.ReadFile(secret)
+	if err != nil || string(observed) != "outside\n" {
+		t.Fatalf("outside file changed: %q, %v", observed, err)
+	}
+}
+
 func TestSystemdUnitPathRejectsNonServiceOrOutsideSystemDirectory(t *testing.T) {
 	path, err := systemdUnitPath("/etc/systemd/system/opute-provider-k3s.service")
 	if err != nil {
@@ -89,11 +121,16 @@ func TestInspectHostFileMatchesExpectedContentWithoutReturningIt(t *testing.T) {
 }
 
 func TestRemoveHostFileRequiresConfirmationAndHash(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	service := testService(hostruntime.Shared{OwnershipMode: "disabled"})
 	path := ".config/opute/test-remove-host-file"
 	created, err := service.EnsureHostFile(EnsureHostFileArgs{Path: path, Content: "owned\n", Mode: 0o600})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if created["path"] != filepath.Join(home, path) {
+		t.Fatalf("relative path resolved outside the temporary home: %#v", created)
 	}
 	if _, err := service.RemoveHostFile(RemoveHostFileArgs{Path: path}); err == nil {
 		t.Fatal("remove without confirmation succeeded")

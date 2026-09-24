@@ -41,10 +41,10 @@ against schemas, and call tools on the public contract.
 ```bash
 make build   # → dist/opute-host-agent
 
-export OPUTE_REMOTE_AGENT_ID=local-host-agent
+export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 export OPUTE_INFRA_PROVIDER_ID=incus
 export OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone"
-export MCP_AUTH_TOKEN=dev-token   # optional but recommended
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"   # recommended for authenticated /mcp
 
 # Validate config without listening
 ./dist/opute-host-agent --check
@@ -60,8 +60,8 @@ Default endpoint: **`http://127.0.0.1:3014/mcp`**.
 ### Option B — npm launcher
 
 ```bash
-export MCP_AUTH_TOKEN=dev-token
-# OPUTE_REMOTE_AGENT_ID defaults to local-host-agent inside the launcher
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
+export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 npx -y @opute/host-agent start --background
 npx -y @opute/host-agent url
 ```
@@ -69,6 +69,8 @@ npx -y @opute/host-agent url
 For a local binary during development:
 
 ```bash
+OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)" \
+MCP_AUTH_TOKEN="$(openssl rand -hex 32)" \
 OPUTE_HOST_AGENT_BINARY="$PWD/dist/opute-host-agent" \
   npx -y @opute/host-agent start --background
 ```

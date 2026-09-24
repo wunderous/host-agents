@@ -3,46 +3,58 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Install &amp; run — Opute Host Agent</title>
-  <meta name="description" content="Install Opute Host Agent from source or npm, choose a serve mode, and configure Linux, WSL2, or production hosts." />
+  <title>Install and run — Opute Host Agent</title>
+  <meta name="description" content="Build or launch Opute Host Agent locally with explicit identity, authentication, and safe loopback defaults." />
   <link rel="canonical" href="https://www.opute.io/docs/install/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Opute Host Agent" />
-  <meta property="og:title" content="Install &amp; run — Opute Host Agent" />
-  <meta property="og:description" content="Install Opute Host Agent from source or npm, choose a serve mode, and configure Linux, WSL2, or production hosts." />
+  <meta property="og:title" content="Install and run — Opute Host Agent" />
+  <meta property="og:description" content="Build or launch Opute Host Agent locally with explicit identity, authentication, and safe loopback defaults." />
   <meta property="og:url" content="https://www.opute.io/docs/install/" />
   <meta property="og:locale" content="en_US" />
-  <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="Install &amp; run — Opute Host Agent" />
-  <meta name="twitter:description" content="Install Opute Host Agent from source or npm, choose a serve mode, and configure Linux, WSL2, or production hosts." />
-  <link rel="stylesheet" href="/styles.css?v=20260922a" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:title" content="Install and run — Opute Host Agent" />
+  <meta name="twitter:description" content="Build or launch Opute Host Agent locally with explicit identity, authentication, and safe loopback defaults." />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
 
 <header class="top">
-  <a class="brand" href="/">Opute Host Agent</a>
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
     <div class="search">
-      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
-      <div class="search-results" data-docs-search-results hidden></div>
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
     </div>
     <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
       <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
-    <nav>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
 <div class="doc-shell">
 
-<aside class="doc-nav" aria-label="Documentation">
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
   <h2>Tutorial</h2>
   <ul>
     <li><a href="/docs/get-started/">Get started</a></li>
@@ -55,12 +67,15 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
+  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
     <li><a href="/docs/openapi/">OpenAPI</a></li>
   </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/">Compatibility and verification</a></li></ul>
   <h2>Explanation</h2>
   <ul>
     <li><a href="/docs/concepts/">Concepts</a></li>
@@ -68,68 +83,56 @@
     <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
     <li><a href="/docs/networking/">Networking</a></li>
     <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
   </ul>
 </aside>
-<main class="doc">
+</details>
+<main class="doc" id="main-content" lang="en">
 
 <p class="badge">How-to</p>
 <h1>Install &amp; run</h1>
-<p class="meta">Goal-oriented procedures for getting a Host Agent listening. Choose the path that matches your environment.</p>
+<p class="meta">Choose a local source build or the published npm launcher. For a tested end-to-end setup, begin with the <a href="/docs/get-started/">first-success tutorial</a>.</p>
 
 <h2>From source</h2>
-<pre><code>make build
-export OPUTE_REMOTE_AGENT_ID=local-host-agent
-export OPUTE_INFRA_PROVIDER_ID=incus
-export OPUTE_STANDALONE_STATE_DIR="$HOME/.opute/standalone"
-export MCP_AUTH_TOKEN=dev-token
-./dist/opute-host-agent --check
+<p>From the Host Agent repository root, build and start the standalone HTTP server. Host inspection does not require Incus or Kubernetes.</p>
+<pre><code>make build VERSION=0.2.0
+export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 ./dist/opute-host-agent serve --mode standalone --transport http</code></pre>
-<p>Bare <code>./dist/opute-host-agent</code> is equivalent (defaults to standalone + http).</p>
+<p>Keep both values in your local shell. The agent ID is an explicit opaque identity; the launcher does not invent a default. The token authenticates MCP requests.</p>
 
-<h2>npm launcher</h2>
-<pre><code>export MCP_AUTH_TOKEN=dev-token
-npx -y @opute/host-agent start --background
-npx -y @opute/host-agent url      # http://127.0.0.1:3014/mcp
-npx -y @opute/host-agent status
-npx -y @opute/host-agent stop</code></pre>
-<p>The launcher defaults <code>OPUTE_REMOTE_AGENT_ID</code> to <code>local-host-agent</code> when unset. It strips most other <code>OPUTE_*</code> values so a Platform-enrolled shell cannot leak enrollment secrets into standalone.</p>
-<p>Development binary override:</p>
-<pre><code>OPUTE_HOST_AGENT_BINARY="$PWD/dist/opute-host-agent" \
-  npx -y @opute/host-agent start --background</code></pre>
+<h2>Published npm launcher</h2>
+<p>The current package candidate is labelled Preview because its published-package canary has not passed. Use the source-build path above until a tested release is published. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>
 
-<h2>Serve modes</h2>
+<h2>Local endpoint and modes</h2>
 <table>
-  <thead><tr><th>Mode</th><th>Default bind</th><th>Default port</th><th>Use</th></tr></thead>
+  <thead><tr><th>Mode</th><th>Default address</th><th>Purpose</th></tr></thead>
   <tbody>
-    <tr><td><code>standalone</code></td><td><code>127.0.0.1</code></td><td><strong>3014</strong></td><td>Local IDE / laptop</td></tr>
-    <tr><td><code>platform</code></td><td><code>0.0.0.0</code></td><td><strong>3004</strong></td><td>Enrolled host beside Opute control plane</td></tr>
+    <tr><td><code>standalone</code></td><td><code>127.0.0.1:3014</code></td><td>Local editor or laptop</td></tr>
+    <tr><td><code>platform</code></td><td><code>0.0.0.0:3004</code></td><td>Platform-enrolled host</td></tr>
   </tbody>
 </table>
-<p>Override with <code>HOST_MCP_BIND_HOST</code> and <code>HOST_MCP_PORT</code>. Do not copy a platform <code>:3004</code> snippet into a standalone laptop config unless you intend that collision.</p>
+<p>Set <code>HOST_MCP_BIND_HOST</code> and <code>HOST_MCP_PORT</code> when needed. Keep a local tutorial on loopback and use the same port in the agent URL and client configuration.</p>
 
 <h2>Mutations</h2>
-<pre><code>export OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code></pre>
-<p>Without this, standalone mutation tools fail closed with an explicit error.</p>
+<p>Standalone mutations are denied by default. This first-success path stays read-only. Only enable <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> after reviewing the capability effects, approval requirements, and host-local consequences.</p>
 
-<h2>WSL</h2>
-<p>Run the <strong>Linux</strong> binary inside WSL. Point the Windows MCP client at <code>http://127.0.0.1:3014/mcp</code> (enable localhost forwarding / portproxy as needed). Native Windows is not an Incus host runtime.</p>
+<h2>WSL and production</h2>
+<p>For a first client connection, run the Linux agent and VS Code integration in the same WSL environment. Verify reachability before configuring a client across Windows and WSL.</p>
+<p>Production hosts are connected through Opute Platform's <strong>Connect Remote Host</strong> flow. Platform owns enrollment and authorization; use the generated host configuration for that host rather than copying local tutorial credentials.</p>
 
-<h2>Production hosts</h2>
-<p>Remote production installs come from the Opute platform UI (<strong>Connect Remote Host</strong>). The generated script writes <code>host-agent.env</code> with canonical <code>OPUTE_REMOTE_AGENT_ID</code> and <code>MCP_AUTH_TOKEN</code>, then starts the systemd unit. GitHub Releases are for CI and manual smoke — not the primary production credential path.</p>
-
-<p>Related: <a href="/docs/get-started/">Get started</a> · <a href="/docs/mcp-clients/">MCP clients</a> · <a href="/docs/troubleshooting/">Troubleshooting</a> · <a href="/docs/configuration/">Configuration</a></p>
-
-<div class="note">Release artifacts from <code>make artifacts</code> include <code>host-agent-linux-*.gz</code>, Windows gzip, k3s/cloudflare/tailscale provider binaries, and <code>SHA256SUMS</code>. The day-to-day build product remains <code>dist/opute-host-agent</code>.</div>
+<p>Related: <a href="/docs/get-started/">First success</a> · <a href="/docs/mcp-clients/">Client configuration</a> · <a href="/docs/troubleshooting/">Troubleshooting</a> · <a href="/docs/configuration/">Configuration</a></p>
 
 </main>
 </div>
 <footer>
   <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
 </footer>
 
 
-<script src="/search.js?v=20260923a" defer></script>
-<script src="/i18n.js?v=20260923a" defer></script>
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
 </body>
 </html>

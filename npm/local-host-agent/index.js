@@ -246,7 +246,7 @@ async function probeHealth(url, timeoutMs = 2000) {
 
 async function probeOwnedHealth(url, instanceId, timeoutMs = 2000) {
   const payload = await readHealth(url, timeoutMs)
-  return payload?.ok === true && payload.instanceId === instanceId
+  return payload?.ok === true && payload.localInstanceId === instanceId
 }
 
 function probeTcp(host, port, timeoutMs = 500) {
@@ -319,12 +319,14 @@ function buildAgentEnv(instanceId = '') {
   env.HOST_MCP_BIND_HOST = bindHost()
   env.HOST_MCP_PORT = String(mcpPort())
   if (!env.OPUTE_INFRA_PROVIDER_ID) env.OPUTE_INFRA_PROVIDER_ID = 'incus'
-  // Standalone always needs a canonical agent id. Prefer an explicit operator
-  // value; otherwise use a stable local default so `npx … start` works.
-  if (!String(env.OPUTE_REMOTE_AGENT_ID || '').trim()) {
-    env.OPUTE_REMOTE_AGENT_ID = 'local-host-agent'
-  }
+  requireCanonicalAgentID(env)
   return env
+}
+
+function requireCanonicalAgentID(env = process.env) {
+  if (!String(env.OPUTE_REMOTE_AGENT_ID || '').trim()) {
+    throw new Error('OPUTE_REMOTE_AGENT_ID is required; set one explicit opaque canonical id before starting the Host Agent')
+  }
 }
 
 function printUsage() {
@@ -339,7 +341,7 @@ Commands:
 Environment:
   HOST_MCP_PORT            Listen port (default 3014)
   HOST_MCP_BIND_HOST       Bind host (default 127.0.0.1)
-  OPUTE_REMOTE_AGENT_ID    Canonical agent id (default local-host-agent)
+  OPUTE_REMOTE_AGENT_ID    Required explicit opaque canonical agent id
   MCP_AUTH_TOKEN           Bearer token required by /mcp when set
   OPUTE_HOST_AGENT_BINARY  Use a local binary instead of downloading a release
   OPUTE_STANDALONE_ALLOW_MUTATIONS=true  Enable mutating tools
@@ -505,6 +507,7 @@ async function main() {
     throw new Error(`unknown command: ${command}`)
   }
 
+  requireCanonicalAgentID()
   const background = rest.includes('--background') || rest.includes('-d')
   const passthroughArgs = rest.filter(arg => arg !== '--background' && arg !== '-d')
   const binary = await resolveBinary()

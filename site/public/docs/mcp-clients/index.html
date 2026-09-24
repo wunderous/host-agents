@@ -4,45 +4,57 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Connect an MCP client — Opute Host Agent</title>
-  <meta name="description" content="Connect Cursor, Claude Desktop, VS Code, or another MCP client to an authenticated Opute Host Agent." />
+  <meta name="description" content="Configure VS Code to connect to a local Opute Host Agent over authenticated Streamable HTTP." />
   <link rel="canonical" href="https://www.opute.io/docs/mcp-clients/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Opute Host Agent" />
   <meta property="og:title" content="Connect an MCP client — Opute Host Agent" />
-  <meta property="og:description" content="Connect Cursor, Claude Desktop, VS Code, or another MCP client to an authenticated Opute Host Agent." />
+  <meta property="og:description" content="Configure VS Code to connect to a local Opute Host Agent over authenticated Streamable HTTP." />
   <meta property="og:url" content="https://www.opute.io/docs/mcp-clients/" />
   <meta property="og:locale" content="en_US" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
   <meta name="twitter:title" content="Connect an MCP client — Opute Host Agent" />
-  <meta name="twitter:description" content="Connect Cursor, Claude Desktop, VS Code, or another MCP client to an authenticated Opute Host Agent." />
-  <link rel="stylesheet" href="/styles.css?v=20260922a" />
+  <meta name="twitter:description" content="Configure VS Code to connect to a local Opute Host Agent over authenticated Streamable HTTP." />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
 </head>
-<body>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
 
 <header class="top">
-  <a class="brand" href="/">Opute Host Agent</a>
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
   <div class="top-tools">
     <div class="search">
-      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" placeholder="Search docs…" autocomplete="off" />
-      <div class="search-results" data-docs-search-results hidden></div>
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
     </div>
     <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
       <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
       <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
     </div>
-    <nav>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
 <div class="doc-shell">
 
-<aside class="doc-nav" aria-label="Documentation">
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
   <h2>Tutorial</h2>
   <ul>
     <li><a href="/docs/get-started/">Get started</a></li>
@@ -55,12 +67,15 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
+  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
     <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
     <li><a href="/docs/openapi/">OpenAPI</a></li>
   </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/">Compatibility and verification</a></li></ul>
   <h2>Explanation</h2>
   <ul>
     <li><a href="/docs/concepts/">Concepts</a></li>
@@ -68,79 +83,45 @@
     <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
     <li><a href="/docs/networking/">Networking</a></li>
     <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
   </ul>
 </aside>
-<main class="doc">
+</details>
+<main class="doc" id="main-content" lang="en">
 
 <p class="badge">How-to</p>
 <h1>Connect an MCP client</h1>
-<p class="meta">Wire Cursor, Claude Desktop, or VS Code to a running Host Agent over Streamable HTTP.</p>
-
-<h2>Prerequisites</h2>
-<ul>
-  <li>Host Agent listening (see <a href="/docs/install/">Install</a>)</li>
-  <li>Matching <code>MCP_AUTH_TOKEN</code> on the agent process</li>
-</ul>
-
-<h2>Cursor / Claude Desktop</h2>
-<pre><code>{
-  "mcpServers": {
-    "opute-local": {
-      "type": "http",
-      "url": "http://127.0.0.1:3014/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-token"
-      }
-    }
-  }
-}</code></pre>
-
-<h2>VS Code-style</h2>
-<pre><code>{
-  "servers": {
-    "opute-local": {
-      "type": "http",
-      "url": "http://127.0.0.1:3014/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-token"
-      }
-    }
-  }
-}</code></pre>
-
-<div class="callout warn">
-  <strong>Auth is not optional when a bootstrap token is configured.</strong>
-  A config with only <code>url</code> against a token-gated agent returns HTTP 401.
-  Omit headers only when the agent has no bootstrap token and the client completes OAuth for this resource.
-</div>
-
-<h2>What the client should do</h2>
+<p class="meta">Connect VS Code to a Host Agent running in the same Linux or WSL context. The documented path uses Streamable HTTP and a password-prompted Bearer token.</p>
+<h2>VS Code</h2>
 <ol>
-  <li>Connect over Streamable HTTP (stdio is not supported).</li>
-  <li>Discover the revisioned capability catalog.</li>
-  <li>Validate tool arguments against catalog schemas.</li>
-  <li>Call tools by catalog name — the Host Agent does not interpret prose.</li>
+  <li>Start Host Agent on loopback and retain <code>MCP_AUTH_TOKEN</code> in the same shell.</li>
+  <li>Create a workspace <code>.vscode/mcp.json</code> with an HTTP MCP server and a password input:</li>
 </ol>
-
-<h2>Verify the connection</h2>
-<ol>
-  <li>Client shows the server connected (no 401).</li>
-  <li><code>tools/list</code> returns a non-empty revisioned catalog.</li>
-  <li>A read-only call such as <code>get_host_info</code> succeeds.</li>
+<pre><code>{
+  "inputs": [{"type":"promptString","id":"opute-host-token","description":"Local Opute Host Agent token","password":true}],
+  "servers": {"opute-host-agent":{"type":"http","url":"http://127.0.0.1:3014/mcp","headers":{"Authorization":"Bearer ${input:opute-host-token}"}}}
+}</code></pre>
+<ol start="3">
+  <li>Start the server from VS Code and enter the local token at its prompt.</li>
+  <li>Refresh tools and call <code>get_host_info {}</code> to confirm the authenticated path.</li>
 </ol>
-
-<h2>Multiple agents in one workspace</h2>
-<p>Set <code>OPUTE_MCP_PREFIX_TOOL_NAMES=true</code> on each agent so tool names do not collide. <code>GET /health</code> exposes <code>mcpToolNamePrefix</code>. Wire names become <code>{prefix}_{catalogName}</code>. Do <strong>not</strong> enable this on Platform-enrolled instances — the control plane calls unprefixed catalog names.</p>
+<p>See the official <a href="https://code.visualstudio.com/docs/agents/reference/mcp-configuration">VS Code MCP configuration reference</a>. This site has not yet recorded a human client run for a specific VS Code release; see <a href="/docs/compatibility/">compatibility evidence</a>.</p>
+<h2>WSL and local networking</h2>
+<p>Keep the editor MCP client and Host Agent in a networking context where <code>127.0.0.1:3014</code> reaches the agent. Start with both in the same WSL distribution. If VS Code runs on Windows while the agent runs in WSL, follow the editor's current WSL integration guidance and verify connectivity before configuring MCP.</p>
+<h2>Other clients</h2>
+<p>Other clients must support Streamable HTTP MCP and the required Bearer header for this setup. Client-specific recipes are not published as tested until a named version completes the read-only canary.</p>
+<p>Next: <a href="/docs/get-started/">complete the full first-success tutorial</a>.</p>
 
 </main>
 </div>
 <footer>
   <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
-  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/">Architecture</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
 </footer>
 
 
-<script src="/search.js?v=20260923a" defer></script>
-<script src="/i18n.js?v=20260923a" defer></script>
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
 </body>
 </html>

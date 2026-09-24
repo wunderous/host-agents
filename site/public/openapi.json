@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Opute Host Agent HTTP edge",
-    "version": "1.0.0",
+    "version": "0.2.0",
     "description": "Streamable HTTP MCP transport for Opute Host Agent. Tool schemas are revisioned via tools/list — not frozen in this document. See https://www.opute.io/docs/openapi/",
     "contact": {
       "url": "https://www.opute.io/docs/"
@@ -32,6 +32,14 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "instanceId": {
+                      "type": "string",
+                      "description": "Host Agent execution instance configuration."
+                    },
+                    "localInstanceId": {
+                      "type": "string",
+                      "description": "Local launcher ownership identity; it is not canonical Host Agent identity."
+                    },
                     "agentId": {
                       "type": "string"
                     },
@@ -55,11 +63,6 @@
         "security": [
           {
             "bearerAuth": []
-          },
-          {
-            "oauth2": [
-              "mcp"
-            ]
           }
         ],
         "parameters": [
@@ -117,19 +120,6 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Bootstrap MCP_AUTH_TOKEN"
-      },
-      "oauth2": {
-        "type": "oauth2",
-        "flows": {
-          "authorizationCode": {
-            "authorizationUrl": "https://example.invalid/oauth/authorize",
-            "tokenUrl": "https://example.invalid/oauth/token",
-            "scopes": {
-              "mcp": "Call Host Agent MCP tools"
-            }
-          }
-        },
-        "description": "Optional OAuth when no bootstrap token is configured"
       }
     }
   },
@@ -137,11 +127,16 @@
     "protocolVersion": "2026-07-28",
     "transport": "streamable-http",
     "catalogAuthority": "tools/list",
-    "capturedToolCount": 187,
-    "capturedToolNames": [
+    "packageVersion": "0.2.0",
+    "releaseChannel": "preview",
+    "catalogRevision": "sha256:1efa6beb86423ee9fe3f1e71f978958566950726f45dcc5d21743711135e2b91",
+    "toolCount": 142,
+    "toolNames": [
       "apply_manifest",
       "build_and_push_oci_image",
+      "cancel_operation",
       "check_local_llm_prerequisites",
+      "check_local_prerequisites",
       "cleanup_container_storage",
       "compact_wsl_disk",
       "configure_agent_connection",
@@ -149,15 +144,15 @@
       "configure_local_llm_runtime",
       "configure_network",
       "configure_oci_storage",
+      "configure_service_domain",
       "create_vm",
-      "delete_cloudflared_connector",
       "delete_k8s_resource",
       "delete_oci_registry",
+      "delete_postgresql",
       "delete_vm",
       "detect_host_platform",
       "diagnose_bridge",
       "discover_service_ingress",
-      "ensure_cloudflared_tunnel",
       "ensure_docker",
       "ensure_host_artifact",
       "ensure_host_file",
@@ -174,14 +169,16 @@
       "extract_host_archive",
       "garbage_collect_cluster_registry",
       "get_capability_catalog",
-      "get_cloudflare_tunnel_status",
       "get_host_capacity",
       "get_host_info",
       "get_host_plan_run",
       "get_k8s_resource",
       "get_k8s_resource_status",
+      "get_local_status",
       "get_oci_registry_status",
+      "get_operation",
       "get_postgresql_service_status",
+      "get_postgresql_status",
       "get_runtime_recipe_run",
       "get_sqlite_database_status",
       "get_tunnel_run",
@@ -192,12 +189,12 @@
       "inspect_host_service",
       "inspect_host_service_supervisor",
       "inspect_workload",
-      "install_cloudflared_connector",
       "install_cluster_agent",
       "install_helm_chart",
       "install_incus_stack",
       "install_local_llm_model",
       "install_oci_registry",
+      "install_postgresql",
       "install_provider_tools",
       "list_agents",
       "list_certificate_issuers",
@@ -209,62 +206,13 @@
       "list_kubernetes_clusters",
       "list_local_llm_models",
       "list_namespaces",
+      "list_operations",
       "list_pods",
       "list_secret_keys",
       "list_services",
       "list_storage_classes",
       "list_vms",
       "open_assistant_session",
-      "opute.capability.kubernetes.apply-manifest",
-      "opute.capability.kubernetes.configure-registry",
-      "opute.capability.kubernetes.delete-resource",
-      "opute.capability.kubernetes.ensure-ha-endpoint",
-      "opute.capability.kubernetes.exec-command",
-      "opute.capability.kubernetes.garbage-collect-registry",
-      "opute.capability.kubernetes.get-cluster-info",
-      "opute.capability.kubernetes.get-join-receiver-key",
-      "opute.capability.kubernetes.get-resource",
-      "opute.capability.kubernetes.get-resource-status",
-      "opute.capability.kubernetes.inspect-guest-storage",
-      "opute.capability.kubernetes.inspect-membership",
-      "opute.capability.kubernetes.join-node",
-      "opute.capability.kubernetes.list-clusters",
-      "opute.capability.kubernetes.list-events",
-      "opute.capability.kubernetes.prepare-ha",
-      "opute.capability.kubernetes.prepare-join",
-      "opute.capability.kubernetes.provision",
-      "opute.capability.kubernetes.prune-unused-images",
-      "opute.capability.kubernetes.put-secret",
-      "opute.capability.kubernetes.recover-quorum",
-      "opute.capability.kubernetes.redeem-join",
-      "opute.capability.kubernetes.remove",
-      "opute.capability.kubernetes.remove-node",
-      "opute.capability.kubernetes.restart",
-      "opute.capability.kubernetes.status",
-      "opute.capability.kubernetes.trim-guest-storage",
-      "opute.capability.kubernetes.validate",
-      "opute.capability.llm-serving.get-context-size",
-      "opute.capability.llm-serving.set-context-size",
-      "opute.capability.llm-serving.validate",
-      "opute.capability.mesh-membership.enroll",
-      "opute.capability.mesh-membership.leave",
-      "opute.capability.mesh-membership.status",
-      "opute.capability.mesh-runtime.ensure-agent",
-      "opute.capability.mesh-runtime.ensure-control-plane",
-      "opute.capability.mesh-runtime.status",
-      "opute.capability.mesh-runtime.validate",
-      "opute.capability.private-mesh.ensure",
-      "opute.capability.private-mesh.ensure-service",
-      "opute.capability.private-mesh.probe",
-      "opute.capability.public-ingress.ensure",
-      "opute.capability.public-ingress.probe",
-      "opute.capability.public-ingress.promote",
-      "opute.capability.tunneling.delete-kubernetes-connector",
-      "opute.capability.tunneling.ensure-host-tunnel",
-      "opute.capability.tunneling.install-kubernetes-connector",
-      "opute.capability.tunneling.probe-host-tunnel",
-      "opute.capability.tunneling.remove-host-tunnel",
-      "opute.capability.tunneling.validate",
       "opute.provider.install",
       "opute.provider.reload",
       "opute.provider.status",
@@ -272,7 +220,6 @@
       "opute.provider.validate",
       "prepare_host_agent_artifacts",
       "probe_gpu_container",
-      "probe_host_exposure",
       "probe_http_endpoint",
       "probe_incus_gpu",
       "probe_local_llm",
@@ -287,17 +234,17 @@
       "recover_bridge",
       "register_kubernetes_cluster",
       "release_postgresql_service_relay",
-      "remove_host_exposure",
       "remove_host_file",
-      "remove_local_llm_cloudflared_tunnel",
       "remove_local_llm_k3s_proxy",
       "remove_local_llm_model",
       "remove_local_llm_relay",
       "remove_postgresql_service",
       "remove_public_mcp_quick_tunnel",
+      "remove_service_domain",
       "remove_sqlite_database",
       "remove_vm_network_device",
       "render_helm_template",
+      "request_task_input",
       "reset_incus_stack",
       "resize_console",
       "restart_host_service",
@@ -307,6 +254,7 @@
       "run_host_plan",
       "run_instance_command",
       "run_runtime_recipe",
+      "run_sql",
       "run_tunnel_recipe",
       "send_console_input",
       "set_host_service_state",

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Compatibility — Opute Host Agent</title>
+  <meta name="description" content="See Host Agent package targets and distinguish documented MCP client setup from tested client combinations." />
+  <link rel="canonical" href="https://www.opute.io/docs/compatibility/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Opute Host Agent" />
+  <meta property="og:title" content="Compatibility — Opute Host Agent" />
+  <meta property="og:description" content="See Host Agent package targets and distinguish documented MCP client setup from tested client combinations." />
+  <meta property="og:url" content="https://www.opute.io/docs/compatibility/" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:image" content="https://www.opute.io/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
+  <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
+  <meta name="twitter:title" content="Compatibility — Opute Host Agent" />
+  <meta name="twitter:description" content="See Host Agent package targets and distinguish documented MCP client setup from tested client combinations." />
+  <link rel="stylesheet" href="/styles.css?v=20260924d" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+</head>
+<body lang="en">
+<a class="skip-link" href="#main-content" data-i18n="nav.skip">Skip to main content</a>
+
+<header class="top">
+  <a class="brand" href="/" lang="en">Opute Host Agent</a>
+  <div class="top-tools">
+    <div class="search">
+      <input type="search" data-docs-search data-i18n-placeholder="search.placeholder" data-i18n-aria="nav.search" aria-label="Search documentation" placeholder="Search docs…" autocomplete="off" />
+      <div class="search-results" data-docs-search-results role="region" aria-label="Search results" data-i18n-aria="search.results" aria-live="polite" aria-atomic="true" lang="en" hidden></div>
+    </div>
+    <div class="lang" role="group" aria-label="Language" data-i18n-aria="lang.label">
+      <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang-option="fr" aria-pressed="false">FR</button>
+    </div>
+    <nav aria-label="Primary" data-i18n-aria="nav.primary">
+      <a href="/docs/" data-i18n="nav.docs">Docs</a>
+      <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
+    </nav>
+  </div>
+</header>
+<p class="i18n-banner" data-i18n-banner hidden></p>
+<div class="doc-shell">
+
+<details class="doc-nav-toggle" open>
+<summary data-i18n="nav.documentation">Documentation navigation</summary>
+<aside class="doc-nav" aria-label="Documentation" lang="en">
+  <h2>Tutorial</h2>
+  <ul>
+    <li><a href="/docs/get-started/">Get started</a></li>
+  </ul>
+  <h2>How-to</h2>
+  <ul>
+    <li><a href="/docs/install/">Install &amp; run</a></li>
+    <li><a href="/docs/mcp-clients/">Connect an MCP client</a></li>
+    <li><a href="/docs/dogfood/">Publish this site</a></li>
+    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
+  </ul>
+  <h2>Reference</h2>
+  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
+  <ul>
+    <li><a href="/docs/capabilities/">Capabilities</a></li>
+    <li><a href="/docs/configuration/">Configuration</a></li>
+    <li><a href="/docs/recipe-primitives/">Recipe &amp; plan primitives</a></li>
+    <li><a href="/docs/openapi/">OpenAPI</a></li>
+  </ul>
+  <h2>Compatibility</h2>
+  <ul><li><a href="/docs/compatibility/" aria-current="page">Compatibility and verification</a></li></ul>
+  <h2>Explanation</h2>
+  <ul>
+    <li><a href="/docs/concepts/">Concepts</a></li>
+    <li><a href="/docs/architecture/">Architecture</a></li>
+    <li><a href="/docs/recipes/">Recipes &amp; plans</a></li>
+    <li><a href="/docs/networking/">Networking</a></li>
+    <li><a href="/docs/resources/">Resources &amp; safety</a></li>
+    <li><a href="/use-cases/">Use cases</a></li>
+  </ul>
+</aside>
+</details>
+<main class="doc" id="main-content" lang="en">
+
+<p class="badge">Reference</p>
+<h1>Compatibility and verification</h1>
+<p class="meta">This page records the evidence available for each compatibility claim. A configuration example documents a supported setup shape; it does not mean a named client/version has passed a live end-to-end test.</p>
+<h2>Host Agent package</h2>
+<ul>
+  <li>Launcher runtime: Node.js 18 or newer.</li>
+  <li>Packaged Host Agent binaries: Linux x64 and Linux arm64.</li>
+  <li>On Windows, run the Linux binary in WSL and keep the editor and agent in a reachable networking context.</li>
+  <li>Transport: authenticated Streamable HTTP at <code>/mcp</code>; public Host Agent does not support stdio.</li>
+</ul>
+<h2>Client evidence</h2>
+<table><thead><tr><th>Client path</th><th>Evidence</th><th>State</th></tr></thead><tbody>
+<tr><td>VS Code MCP configuration</td><td>Official editor documentation describes HTTP servers and password-prompt inputs. This site provides the corresponding configuration.</td><td>Documented; local human end-to-end run still required before claiming tested.</td></tr>
+<tr><td>Other MCP clients</td><td>No client/version evidence is recorded here.</td><td>Unverified for this release. Follow that client vendor's HTTP, authentication, and local-network guidance.</td></tr>
+</tbody></table>
+<p>When a client combination is exercised, record client and version, OS/runtime, transport, auth method, package version, catalog revision, and the read-only result. Redact tokens, host identity, and private host facts.</p>
+<p>Related: <a href="/docs/get-started/">First success</a> · <a href="/docs/mcp-clients/">Client configuration</a> · <a href="/docs/troubleshooting/">Troubleshooting</a></p>
+
+</main>
+</div>
+<footer>
+  <span><span data-i18n="footer.facts">Facts track the repository</span> <a href="https://github.com/wunderous/host-agents/blob/main/README.md">README</a></span>
+  <span><a href="/openapi.json" data-i18n="footer.openapi">OpenAPI</a> · <a href="/docs/architecture/" lang="en">Architecture</a></span>
+</footer>
+
+
+<script src="/search.js?v=20260924d" defer></script>
+<script src="/i18n.js?v=20260924d" defer></script>
+<script src="/docs-nav.js?v=20260924d" defer></script>
+</body>
+</html>
