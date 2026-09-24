@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,28 +13,29 @@ GENERATED_PATHS = (
 )
 
 
-def main() -> int:
-    result = subprocess.run(
-        [
-            "git",
-            "-c",
-            "core.autocrlf=true",
-            "-c",
-            "core.filemode=false",
-            "status",
-            "--porcelain=v1",
-            "--untracked-files=all",
-            "--",
-            *GENERATED_PATHS,
-        ],
-        cwd=ROOT,
+def changed_generated_paths(root: Path = ROOT) -> list[str]:
+    tracked = subprocess.run(
+        ["git", "diff", "--name-only", "HEAD", "--", *GENERATED_PATHS],
+        cwd=root,
         check=True,
         capture_output=True,
         text=True,
     )
-    if result.stdout.strip():
+    untracked = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard", "-z", "--", *GENERATED_PATHS],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    untracked_paths = untracked.stdout.decode("utf-8").split("\0")
+    return sorted(set(tracked.stdout.splitlines()) | {path for path in untracked_paths if path})
+
+
+def main() -> int:
+    changed = changed_generated_paths()
+    if changed:
         print("generated site outputs differ from the checked-in revision:")
-        print(result.stdout.rstrip())
+        print("\n".join(f" {path}" for path in changed))
         return 1
     print("generated site outputs match the checked-in revision")
     return 0

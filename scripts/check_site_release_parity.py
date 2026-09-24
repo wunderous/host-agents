@@ -146,6 +146,7 @@ def verify_enforcement_wiring() -> None:
         "scripts/check_site_release_boundary.py",
         "scripts/check_site_release_parity.py",
         "scripts/test_validate_generated_site.py",
+        "scripts/test_check_generated_site_clean.py",
         "scripts/validate-generated-site.py",
         "scripts/check_generated_site_clean.py",
     )
@@ -157,7 +158,10 @@ def verify_enforcement_wiring() -> None:
         if "make check-site" not in workflow:
             fail(relative + " no longer runs make check-site")
     clean_checker = (ROOT / "scripts/check_generated_site_clean.py").read_text(encoding="utf-8")
-    if "--untracked-files=all" not in clean_checker or "git" not in clean_checker:
+    if any(
+        token not in clean_checker
+        for token in ('"git"', '"diff"', '"ls-files"', '"--others"', '"--exclude-standard"')
+    ):
         fail("generated-output gate must detect untracked files as well as tracked drift")
 
 
