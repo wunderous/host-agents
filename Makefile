@@ -62,6 +62,7 @@ check-site: local-npm-readonly-canary
 	python3 scripts/check_site_release_boundary.py
 	python3 scripts/check_site_release_parity.py
 	python3 scripts/test_validate_generated_site.py
+	python3 scripts/test_check_generated_site_clean.py
 	python3 scripts/validate-generated-site.py
 	python3 scripts/check_generated_site_clean.py
 

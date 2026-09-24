@@ -16,7 +16,8 @@
     "localDaemonHealth": "internal/transport/http.go",
     "canonicalIdentity": "docs/adr/0006-canonical-host-agent-identity.md",
     "verifier": "scripts/check_site_release_parity.py",
-    "generatedSiteValidator": "scripts/validate-generated-site.py"
+    "generatedSiteValidator": "scripts/validate-generated-site.py",
+    "generatedSiteCleanTest": "scripts/test_check_generated_site_clean.py"
   },
   "scope": {
     "included": [
@@ -44,6 +45,7 @@
       "get_host_info with empty arguments returns structured facts",
       "the tutorial first-success path invokes no mutating tool",
       "generated catalog, sitemap, search, OpenAPI, and links validate",
+      "regeneration leaves no tracked generated-content drift from HEAD or untracked generated output",
       "all public documentation routes are generated from the maintained Bun source",
       "tutorial output example includes every schema-required get_host_info field and labels optional fields",
       "tutorial shows a wrong-token HTTP 401 check without exposing a real credential"
@@ -110,7 +112,7 @@
     {
       "kind": "file",
       "path": "scripts/check_site_release_parity.py",
-      "digest": "3e390a353aedb9d4c21e668844cb2ad1880c949b15682d11e5fffd1b29e14ed0",
+      "digest": "40dc85d2a8808bccbb37a0e7716cc4b585ea63b4839030fb9f9c090957f08f89",
       "note": "Release metadata and anchor verifier"
     },
     {
@@ -128,7 +130,7 @@
     {
       "kind": "file",
       "path": "scripts/check_generated_site_clean.py",
-      "digest": "a34ab52d5bc0ecdc5359bfd027df0aa73768cabe04d21c437aabb1f2094acb1e",
+      "digest": "b8da5d1df1ba9b02b6019b7d35d5dccd6317732aaaa18f048ae68540e9c8651f",
       "note": "Generated files must match the committed revision, including absence of untracked output"
     },
     {
@@ -136,6 +138,12 @@
       "path": "scripts/test_validate_generated_site.py",
       "digest": "1b88910fa1a73fc0678b8778af4b1542c286482b37b488338ad871f2d0046b0e",
       "note": "Regression coverage for links that escape the published output tree"
+    },
+    {
+      "kind": "file",
+      "path": "scripts/test_check_generated_site_clean.py",
+      "digest": "a23d7429569b4a3041f275d5bbe5d524cfa7d7f632ce771e20c3f267f98d281e",
+      "note": "Regression coverage for tracked and untracked generated-output drift"
     }
   ],
   "verify": "python3 scripts/check_site_release_parity.py",
@@ -156,7 +164,8 @@
     ".github/workflows/publish.yml",
     "scripts/validate-generated-site.py",
     "scripts/check_generated_site_clean.py",
-    "scripts/test_validate_generated_site.py"
+    "scripts/test_validate_generated_site.py",
+    "scripts/test_check_generated_site_clean.py"
   ],
   "supersedes": [],
   "withdrawn": false,
