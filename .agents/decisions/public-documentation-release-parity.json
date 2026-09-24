@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "public-documentation-release-parity",
   "title": "Public first-success instructions and stable capability references match a tested published release",
-  "claim": "The Host Agent-first public tutorial names the exact published @opute/host-agent package version whose read-only package canary passed. Stable capability reference data uses the same package version and catalog revision. Any unverified candidate is visibly labelled preview. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity.",
+  "claim": "The Host Agent-first public tutorial names the exact published @opute/host-agent package version whose read-only package canary passed. Stable capability reference data uses the same package version and catalog revision. Any unverified candidate is visibly labelled preview. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity. Generated HTML addresses its stylesheet and client scripts using each asset's LF-normalized SHA-256 fingerprint, and CI rejects missing or stale fingerprints.",
   "rationale": "A successful source build, open health endpoint, or tool-name snapshot cannot prove that a visitor can install the published launcher, authenticate, discover tools, and read structured host facts. Matching release and catalog evidence prevents public instructions from silently describing a different artifact or runtime boundary.",
   "decidedOn": "2026-09-24",
   "section": "Public website and release parity",
@@ -47,13 +47,14 @@
       "generated catalog, sitemap, search, OpenAPI, and links validate",
       "regeneration leaves no tracked generated-content drift from HEAD or untracked generated output",
       "all public documentation routes are generated from the maintained Bun source",
+      "generated CSS and client-script URLs match the content fingerprint of each checked-in asset",
       "tutorial output example includes every schema-required get_host_info field and labels optional fields",
       "tutorial shows a wrong-token HTTP 401 check without exposing a real credential"
     ],
     "canary": "npm/local-host-agent/published-readonly-canary.test.js",
     "siteVerifier": "scripts/check_site_release_parity.py"
   },
-  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. Recompute and review file anchors whenever an anchored authority changes.",
+  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. CSS and client-script URL fingerprints change automatically with LF-normalized asset content; update the validator's asset allowlist and tests when that asset set changes. Recompute and review file anchors whenever an anchored authority changes.",
   "anchors": [
     {
       "kind": "file",
@@ -106,7 +107,7 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "f7223243fe4b4e111f18b25a2b17ed1a0584f264591d580540b63b6faf1844b3",
+      "digest": "4dcb919ad838e101cd5bed40fa554aad72d79e92630bdade0560ea239ac7e1a4",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
@@ -124,7 +125,7 @@
     {
       "kind": "file",
       "path": "scripts/validate-generated-site.py",
-      "digest": "d15057f0b89aff2b3291b7c3895aff9ab052faaba3d66777a905fdd0f0ce35eb",
+      "digest": "6578f720fe11407cf677ad02564ad9a6d035f635642326eeb3ea505912256811",
       "note": "Generated route, metadata, link, search, schema, and accessibility validator"
     },
     {
@@ -136,7 +137,7 @@
     {
       "kind": "file",
       "path": "scripts/test_validate_generated_site.py",
-      "digest": "1b88910fa1a73fc0678b8778af4b1542c286482b37b488338ad871f2d0046b0e",
+      "digest": "a2092791ffd81c31e84f35ac8aeb6ba61d9c258b873c7103956e15d773db73c9",
       "note": "Regression coverage for links that escape the published output tree"
     },
     {

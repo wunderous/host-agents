@@ -2,17 +2,19 @@
 """Validate generated routes, metadata, links, search, OpenAPI, and basic a11y."""
 from __future__ import annotations
 
+import hashlib
 import json
 import struct
 import sys
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site" / "public"
 ORIGIN = "https://www.opute.io"
+ASSET_URL_PATHS = ("/styles.css", "/search.js", "/i18n.js", "/docs-nav.js")
 
 
 def fail(message: str) -> None:
@@ -118,6 +120,21 @@ def html_parser(path: Path) -> PageParser:
     return parser
 
 
+def content_fingerprint(path: Path) -> str:
+    contents = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(contents).hexdigest()
+
+
+def asset_cache_key_error(raw: str, expected_versions: dict[str, str]) -> str | None:
+    parsed = urlsplit(raw)
+    expected = expected_versions.get(parsed.path)
+    if expected is None:
+        return None
+    if parse_qs(parsed.query).get("v") != [expected]:
+        return f"{parsed.path} does not use its current content fingerprint"
+    return None
+
+
 def resolve_local_target(page: Path, raw: str) -> tuple[Path | None, str]:
     parsed = urlsplit(raw)
     if parsed.scheme or parsed.netloc:
@@ -151,6 +168,12 @@ def main() -> None:
     canonicals: dict[str, Path] = {}
     expected_routes: set[str] = set()
     link_errors: list[str] = []
+    asset_versions: dict[str, str] = {}
+    for asset_path in ASSET_URL_PATHS:
+        asset_file = SITE / asset_path.lstrip("/")
+        if not asset_file.is_file():
+            fail(f"cache-addressed asset is missing: {asset_path}")
+        asset_versions[asset_path] = content_fingerprint(asset_file)
     for page in html_files:
         parser = html_parser(page)
         parsers[page] = parser
@@ -203,6 +226,9 @@ def main() -> None:
         if parser.twitter_image != parser.og_image:
             fail(f"{route} Twitter and Open Graph preview images differ")
         for raw in parser.links:
+            asset_error = asset_cache_key_error(raw, asset_versions)
+            if asset_error:
+                fail(f"{route} {asset_error}")
             target, fragment = resolve_local_target(page, raw)
             if target is None:
                 continue
@@ -283,7 +309,7 @@ def main() -> None:
     for required in ("search-loading", "search-error", "search-retry", "search-empty", "loadPromise = null", "malformed pages"):
         if required not in search_script:
             fail(f"search state implementation is missing {required}")
-    print(f"Validated {len(html_files)} HTML pages, {len(search_routes)} search routes, sitemap, links, OpenAPI parity, and basic accessibility structure.")
+    print(f"Validated {len(html_files)} HTML pages, {len(search_routes)} search routes, sitemap, asset cache keys, links, OpenAPI parity, and basic accessibility structure.")
 
 
 if __name__ == "__main__":
