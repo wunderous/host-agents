@@ -104,8 +104,8 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "283d8fd1000c630754265844bf695a66803189f40d4b415976a36dcd1226ea9e",
-      "note": "Tutorial and generated reference authority"
+      "digest": "f7223243fe4b4e111f18b25a2b17ed1a0584f264591d580540b63b6faf1844b3",
+      "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
       "kind": "file",

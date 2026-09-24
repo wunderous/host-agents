@@ -309,10 +309,22 @@ const tutorialStartCommand =
       "\n./dist/opute-host-agent serve --mode standalone --transport http"
 const tutorialStopText =
   releaseCatalog.releaseChannel === "stable"
-    ? "Stop it with npx -y @opute/host-agent@" +
+    ? "Stop the background process with npx -y @opute/host-agent@" +
       releaseCatalog.packageVersion +
       " stop."
     : "Stop the foreground process with Ctrl+C in its terminal."
+const tutorialPlatformPrerequisite =
+  releaseCatalog.releaseChannel === "stable"
+    ? "Linux or WSL2, Node.js 18 or newer, npm, and VS Code with HTTP MCP support."
+    : "Linux or WSL2, Go, and VS Code with HTTP MCP support."
+const tutorialArtifactPrerequisite =
+  releaseCatalog.releaseChannel === "stable"
+    ? `Network access to npm and the <a href="https://github.com/wunderous/host-agents/releases/tag/v${releaseCatalog.packageVersion}">matching Linux binary in GitHub Releases</a>.`
+    : "A Host Agent checkout and Go toolchain to build the preview."
+const tutorialLaunchContext =
+  releaseCatalog.releaseChannel === "stable"
+    ? "This starts the pinned published package shown on this page."
+    : "Run source-build commands from the Host Agent repository root."
 const tutorialReleaseNotice =
   releaseCatalog.releaseChannel === "stable"
     ? '<p class="meta"><strong>Verified release.</strong> This path pins the published package whose authenticated read-only canary passed for the catalog revision shown in the capability reference.</p>'
@@ -641,12 +653,12 @@ flowchart LR
 <p class="meta"><strong>Outcome.</strong> Start Host Agent locally, connect VS Code over authenticated HTTP, refresh the live tool list, and read host facts with <code>get_host_info {}</code>. This tutorial does not enable mutations.</p>
 ${tutorialReleaseNotice}
 <h2>Prerequisites</h2>
-<ul><li>Linux or WSL2, Node.js 18 or newer, npm, and VS Code with HTTP MCP support.</li><li><code>curl</code> and <code>openssl</code>; loopback port <code>3014</code> must be free.</li><li>Network access for a stable package download. The current preview path also needs the Host Agent checkout and Go toolchain.</li></ul>
+<ul><li>${tutorialPlatformPrerequisite}</li><li><code>curl</code> and <code>openssl</code>; loopback port <code>3014</code> must be free.</li><li>${tutorialArtifactPrerequisite}</li></ul>
 <h2>Start the local agent</h2>
 <ol class="steps">
 <li><strong>Set an explicit identity and random secret</strong><p>Keep the token in your shell and VS Code prompt. Do not commit it or put it in screenshots.</p><pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
-${tutorialStartCommand}</code></pre><p>Run preview commands from the Host Agent repository root. Stable instructions pin the published package shown on this page. ${tutorialStopText}</p><pre><code>curl -i -sS http://127.0.0.1:3014/health</code></pre><p>Expect HTTP 200 and the exact <code>agentId</code> you set. This open endpoint proves liveness only, not MCP authentication.</p></li>
+${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopText}</p><pre><code>curl -i -sS http://127.0.0.1:3014/health</code></pre><p>Expect HTTP 200 and the exact <code>agentId</code> you set. This open endpoint proves liveness only, not MCP authentication.</p></li>
 <li><strong>Connect VS Code</strong><p>Create <code>.vscode/mcp.json</code>. VS Code documents this HTTP server and password-prompt setup in its <a href="https://code.visualstudio.com/docs/agents/reference/mcp-configuration">MCP configuration reference</a>.</p><pre><code>{
   "inputs": [{"type":"promptString","id":"opute-host-token","description":"Local Opute Host Agent token","password":true}],
   "servers": {"opute-host-agent":{"type":"http","url":"http://127.0.0.1:3014/mcp","headers":{"Authorization":"Bearer \${input:opute-host-token}"}}}

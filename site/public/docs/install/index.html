@@ -102,7 +102,13 @@ export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 <p>Keep both values in your local shell. The agent ID is an explicit opaque identity; the launcher does not invent a default. The token authenticates MCP requests.</p>
 
 <h2>Published npm launcher</h2>
-<p>The current package candidate is labelled Preview because its published-package canary has not passed. Use the source-build path above until a tested release is published. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>
+<pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
+npx -y @opute/host-agent@0.2.0 start --background
+npx -y @opute/host-agent@0.2.0 url
+npx -y @opute/host-agent@0.2.0 status
+npx -y @opute/host-agent@0.2.0 stop</code></pre>
+<p>The launcher keeps the explicit identity and token in the child process. Stop the background process when you finish.</p>
 
 <h2>Local endpoint and modes</h2>
 <table>
