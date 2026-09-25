@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DECISION_PATH = ROOT / ".agents" / "decisions" / "public-documentation-release-parity.json"
 PACKAGE_PATH = ROOT / "npm" / "local-host-agent" / "package.json"
 CATALOG_PATH = ROOT / "site" / "context" / "release-catalog.json"
+HA_PROOF_PATH = ROOT / "site" / "context" / "ha-proof.json"
 REQUIRED_CHECKS = {
     "explicitIdentity",
     "openHealth",
@@ -40,6 +41,32 @@ ALLOWED_TOOL_KEYS = {
     "requiresApproval",
     "inputSchema",
     "outputSchema",
+}
+ALLOWED_HA_PROOF_KEYS = {
+    "schemaVersion", "id", "evidenceDate", "hostAgentRuntime", "hostAgentCatalogRevision",
+    "providerId", "providerVersion", "k3sVersion", "datastoreMode", "guestKind",
+    "serverCount", "readyBefore", "readyWhileOneGuestStopped", "readyAfter", "failedGuestCount",
+    "physicalHostCount", "setupThroughHostAgent", "failureAndRecoveryThroughHostAgent",
+    "typedWriteDuringFailure", "typedReadDuringFailure", "externalEndpointConfigured",
+    "publishedPackageHaCanary", "verifiedOperations", "notEstablished",
+}
+REQUIRED_HA_OPERATIONS = {
+    "provision_vm",
+    "run_host_local_recipe",
+    "opute.capability.kubernetes.get-cluster-info",
+    "stop_vm",
+    "opute.capability.kubernetes.apply-manifest",
+    "opute.capability.kubernetes.get-resource",
+    "start_vm",
+}
+REQUIRED_HA_LIMITATIONS = {
+    "physical-host or site failure",
+    "network partition",
+    "application workload continued serving",
+    "durable application data survived",
+    "new workload scheduling during failure",
+    "external endpoint failover",
+    "the published npm package HA setup path",
 }
 
 
@@ -260,6 +287,39 @@ def main() -> None:
 
     package = load_json(PACKAGE_PATH, "npm package metadata")
     catalog = load_json(CATALOG_PATH, "public release catalog")
+    ha_proof = load_json(HA_PROOF_PATH, "local HA evidence")
+    if (
+        ha_proof.keys() - ALLOWED_HA_PROOF_KEYS
+        or ha_proof.get("schemaVersion") != 1
+        or ha_proof.get("id") != "local-k3s-single-guest-loss-2026-09-25"
+        or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(ha_proof.get("evidenceDate", "")))
+        or ha_proof.get("hostAgentRuntime") != "dev"
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", str(ha_proof.get("hostAgentCatalogRevision", "")))
+        or ha_proof.get("providerId") != "com.opute.k3s"
+        or not re.fullmatch(r"\d+\.\d+\.\d+", str(ha_proof.get("providerVersion", "")))
+        or not re.fullmatch(r"v\d+\.\d+\.\d+\+k3s\d+", str(ha_proof.get("k3sVersion", "")))
+        or ha_proof.get("datastoreMode") != "embedded-etcd"
+        or ha_proof.get("guestKind") != "Incus system container"
+        or ha_proof.get("serverCount") != 3
+        or ha_proof.get("readyBefore") != 3
+        or ha_proof.get("readyWhileOneGuestStopped") != 2
+        or ha_proof.get("readyAfter") != 3
+        or ha_proof.get("failedGuestCount") != 1
+        or ha_proof.get("physicalHostCount") != 1
+        or ha_proof.get("setupThroughHostAgent") is not True
+        or ha_proof.get("failureAndRecoveryThroughHostAgent") is not True
+        or ha_proof.get("typedWriteDuringFailure") is not True
+        or ha_proof.get("typedReadDuringFailure") is not True
+        or ha_proof.get("externalEndpointConfigured") is not False
+        or ha_proof.get("publishedPackageHaCanary") is not False
+        or not isinstance(ha_proof.get("verifiedOperations"), list)
+        or any(not isinstance(value, str) for value in ha_proof.get("verifiedOperations", []))
+        or REQUIRED_HA_OPERATIONS - set(ha_proof.get("verifiedOperations", []))
+        or not isinstance(ha_proof.get("notEstablished"), list)
+        or any(not isinstance(value, str) for value in ha_proof.get("notEstablished", []))
+        or REQUIRED_HA_LIMITATIONS - set(ha_proof.get("notEstablished", []))
+    ):
+        fail("local HA evidence is incomplete, overbroad, or outside its recorded failure scope")
     version = package.get("version")
     if package.get("name") != "@opute/host-agent" or not isinstance(version, str):
         fail("npm package identity is invalid")
@@ -326,6 +386,22 @@ def main() -> None:
         fail("generated first-success tutorial is missing")
     if version not in tutorial:
         fail("generated tutorial does not name the selected package version")
+    availability_path = ROOT / "site" / "public" / "docs" / "availability" / "index.html"
+    try:
+        availability = availability_path.read_text(encoding="utf-8")
+    except OSError:
+        fail("generated Kubernetes availability page is missing")
+    for required in (
+        "local-host-agent-test",
+        str(ha_proof["evidenceDate"]),
+        str(ha_proof["hostAgentCatalogRevision"]),
+        "typed ConfigMap apply and read both succeeded",
+        "get-cluster-info.readyNodeCount",
+        "does not establish host or site failure recovery",
+        version,
+    ):
+        if required not in availability:
+            fail("generated availability page omits scoped local proof detail: " + required)
     generator_source = (ROOT / "site/scripts/generate-docs.ts").read_text(encoding="utf-8")
     if "host://" in generator_source or '"uri": "host:example:host-01"' not in generator_source:
         fail("site examples must use a parseable canonical host resource id")

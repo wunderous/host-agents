@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "provider-activation-recipe-provenance",
-  "title": "Provider bootstrap recipes carry one explicit activation source, revision, and digest",
-  "claim": "Every Host Agent local provider bootstrap recipe that overrides opute.provider.install.recipeSource must pass the source, its exact immutable commit revision, and its SHA-256 from required recipe inputs. The Host Agent rejects a remote source whose explicit revision disagrees with the commit in its URL; provider descriptor fallback metadata never replaces the caller's revision.",
-  "rationale": "A recipe that supplies a pinned raw GitHub URL and digest but omits revision can inherit a descriptor's working-tree revision. The Host Agent correctly rejects that mismatch, but only after earlier bootstrap nodes may have installed a binary and service.",
+  "title": "Provider bootstrap recipes pin activation provenance and wait for the requested provider generation",
+  "claim": "Every Host Agent local provider bootstrap recipe that overrides opute.provider.install.recipeSource must pass the source, its exact immutable commit revision, and its SHA-256 from required recipe inputs. The Host Agent rejects a remote source whose explicit revision disagrees with the commit in its URL; provider descriptor fallback metadata never replaces the caller's revision. The K3s bootstrap defaults to starting its provider service, allows an explicit restart for a version upgrade, and is successful only when an active, connected generation reports the exact provider version selected by the descriptor.",
+  "rationale": "A recipe that supplies a pinned raw GitHub URL and digest but omits revision can inherit a descriptor's working-tree revision. The Host Agent correctly rejects that mismatch, but only after earlier bootstrap nodes may have installed a binary and service. Separately, replacing a provider binary does not replace a process already running from the previous version; a status check for active and connected alone can therefore report an old generation as a successful upgrade. The version gate prevents that false green, while the explicit service-state input avoids silently restarting a healthy provider.",
   "decidedOn": "2026-09-25",
   "section": "Provider bootstrap provenance",
   "owner": "wunderous/host-agents owns provider bootstrap recipes, source parsing, and their typed regression evidence.",
@@ -21,7 +21,9 @@
       "Host Agent local K3s provider installation recipe",
       "Host Agent local Tailscale provider installation recipe",
       "nested opute.provider.install actions with an explicit recipeSource override",
-      "remote raw GitHub source and exact commit revision matching"
+      "remote raw GitHub source and exact commit revision matching",
+      "K3s provider service start versus explicit version-upgrade restart",
+      "K3s bootstrap readiness against the active provider generation version"
     ],
     "excluded": [
       "provider installs that use their descriptor's default source",
@@ -29,24 +31,27 @@
       "source types without a declared immutable revision contract"
     ]
   },
-  "exception": "No remote source may inherit descriptor revision fallback when a recipe overrides recipeSource. Adding another source type requires an explicit typed source, revision, and content-digest contract with matching validation and regression evidence.",
+  "exception": "No remote source may inherit descriptor revision fallback when a recipe overrides recipeSource. K3s bootstrap may not treat an older active generation as success for a newer descriptor version, and it may not silently restart an active provider. Adding another source type requires an explicit typed source, revision, and content-digest contract with matching validation and regression evidence.",
   "evidence": {
     "required": [
       "both bootstrap recipes require a lowercase 40-character activationRecipeRevision input",
       "both nested provider install actions pass source, revision, and SHA-256 from those inputs",
       "resolved plan arguments preserve the three supplied values together",
+      "K3s install defaults serviceState to start and accepts only start or restart",
+      "K3s install validates active, connected status against the provider version selected by plugin.yaml",
+      "the K3s recipe verifier rejects removal or mismatch of that version gate",
       "the Host Agent parser accepts a matching URL revision and rejects a mismatch",
       "the verifier checks file anchors and confirms CI reaches the regression tests"
     ],
     "test": "go test ./internal/recipe -run 'TestProviderInstallRecipesPassPinnedActivationProvenance|TestRawGitHubRecipeSourceRequiresMatchingExplicitRevision' -count=1",
     "verifier": "python3 scripts/check_provider_activation_recipe_provenance.py"
   },
-  "revisionBehavior": "Bump each recipe's major version when the required provenance input contract changes. Recompute and review whole-file anchors when either recipe, source parser, regression test, Makefile verifier wiring, or CI test entry point changes.",
+  "revisionBehavior": "Bump a recipe's patch or minor version when its behavior changes without making a new input mandatory; bump its major version when the required input contract changes. Keep the K3s plugin descriptor, install-recipe descriptor, active-version status gate, and provider wire metadata aligned. Recompute and review whole-file anchors when either recipe, source parser, regression test, Makefile verifier wiring, or CI test entry point changes.",
   "anchors": [
     {
       "kind": "file",
       "path": "plugins/kubernetes/k3s/recipes/install.yaml",
-      "digest": "a1a1cf9ed698ca9db6996cd9f961ee6c93a77d0618ef9ea8c46aca9b06b561a2",
+      "digest": "850d6940c00eca5b9f6dd9207e196aa28ed22fdf9e70521c80a4ef1484d8f111",
       "note": "K3s activation provenance inputs and provider install projection"
     },
     {
@@ -64,7 +69,7 @@
     {
       "kind": "file",
       "path": "internal/recipe/provider_install_recipe_test.go",
-      "digest": "24433921238e53250526ca55516718b200e269fdec4560785989c12f91974d45",
+      "digest": "9a3b4039b2d2ceb9b67b9c1279a90b881c743b9798055cd3dbb7e1eb7263fa48",
       "note": "Resolved source, revision, and digest regression for both recipes"
     },
     {

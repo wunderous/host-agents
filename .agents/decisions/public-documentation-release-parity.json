@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "public-documentation-release-parity",
-  "title": "Public first-success instructions and stable capability references match a tested published release",
-  "claim": "The Host Agent-first public tutorial names the exact published @opute/host-agent package version whose read-only package canary passed. Stable capability reference data uses the same package version and catalog revision. Each archived release reference is generated from its own immutable, allowlisted release catalog snapshot and remains discoverable in the sitemap and search index. Any unverified candidate is visibly labelled preview. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity. Generated HTML addresses its stylesheet and client scripts using each asset's LF-normalized SHA-256 fingerprint, and CI rejects missing or stale fingerprints.",
-  "rationale": "A successful source build, open health endpoint, or tool-name snapshot cannot prove that a visitor can install the published launcher, authenticate, discover tools, and read structured host facts. Matching release and catalog evidence prevents public instructions from silently describing a different artifact or runtime boundary.",
+  "title": "Public product claims stay within verified release and failure-test scope",
+  "claim": "The Host Agent-first public tutorial names the exact published @opute/host-agent package version whose read-only package canary passed. Stable capability reference data uses the same package version and catalog revision. Each archived release reference is generated from its own immutable, allowlisted release catalog snapshot and remains discoverable in the sitemap and search index. Any unverified candidate is visibly labelled preview. Empirical infrastructure claims use a generated evidence record that names the Host Agent runtime and catalog revision, provider and Kubernetes versions, datastore, failure domain, observed membership, typed API results, recovery, and outcomes that were not tested. A local development-runtime result never proves the published package has the same capability path. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity. Generated HTML addresses its stylesheet and client scripts using each asset's LF-normalized SHA-256 fingerprint, and CI rejects missing or stale fingerprints.",
+  "rationale": "A successful source build, open health endpoint, or tool-name snapshot cannot prove that a visitor can install the published launcher, authenticate, discover tools, and read structured host facts. A local cluster membership result also cannot prove API write continuity or failures outside its stated domain. Matching release evidence and a bounded test record prevent public instructions from silently describing a different artifact, runtime, or failure scope.",
   "decidedOn": "2026-09-24",
   "section": "Public website and release parity",
   "owner": "wunderous/host-agents owns public copy, catalog projection, npm launcher, and release evidence; wunderous/opute-site-deploy owns production deployment.",
@@ -11,6 +11,7 @@
     "decision": ".agents/decisions/public-documentation-release-parity.json",
     "package": "npm/local-host-agent/package.json",
     "catalog": "site/context/release-catalog.json",
+    "localHAEvidence": "site/context/ha-proof.json",
     "archivedCatalogExample": "site/context/release-archives/v0.2.0.json",
     "canary": "npm/local-host-agent/published-readonly-canary.test.js",
     "generator": "site/scripts/generate-docs.ts",
@@ -26,15 +27,17 @@
       "public tutorial and product claims about Host Agent",
       "published npm launcher behavior",
       "allowlisted catalog snapshots and versioned capability routes",
+      "locally tested Host Agent Kubernetes setup and guest-failure claims",
       "generated static site validation"
     ],
     "excluded": [
       "private deployment credentials, controller, and rollout",
       "Platform authorization and orchestration behavior",
-      "mutating package canaries and infrastructure state"
+      "published package HA support not covered by a matching test",
+      "mutating canaries outside the named disposable fixture and failure scope"
     ]
   },
-  "exception": "An unpublished or unverified candidate may be shown only with a visible Preview label. Stable tutorial or reference claims require matching package, source, catalog revision, and successful published read-only canary evidence.",
+  "exception": "An unpublished or unverified candidate may be shown only with a visible Preview label. Stable tutorial or reference claims require matching package, source, catalog revision, and successful published read-only canary evidence. Local infrastructure evidence may describe only its recorded runtime, topology, and tested failure; extending it to a published package, a different failure domain, or application-serving behavior requires a new matching test record.",
   "evidence": {
     "required": [
       "exact published package version and source SHA",
@@ -53,13 +56,27 @@
       "stable promotion archives the prior stable catalog when the package version advances and refuses conflicting archive content",
       "generated CSS and client-script URLs match the content fingerprint of each checked-in asset",
       "tutorial output example includes every schema-required get_host_info field and labels optional fields",
-      "tutorial shows a wrong-token HTTP 401 check without exposing a real credential"
+      "tutorial shows a wrong-token HTTP 401 check without exposing a real credential",
+      "local HA evidence records the exact Host Agent runtime and catalog revision, provider and K3s versions, datastore, host and guest failure domains, typed API read/write outcomes, recovery, and untested outcomes",
+      "generated availability content includes the recorded one-guest failure boundary and explicitly separates it from the published read-only package canary"
     ],
     "canary": "npm/local-host-agent/published-readonly-canary.test.js",
     "siteVerifier": "scripts/check_site_release_parity.py"
   },
-  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. The stable promotion script archives the prior stable catalog as site/context/release-archives/v<version>.json when the package version advances and refuses conflicting archive content. Archived snapshots are immutable, must include matching published read-only canary evidence, and drive their own versioned page, JSON download, search entry, and sitemap route. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. CSS and client-script URL fingerprints change automatically with LF-normalized asset content; update the validator's asset allowlist and tests when that asset set changes. Recompute and review file anchors whenever an anchored authority changes.",
+  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. The stable promotion script archives the prior stable catalog as site/context/release-archives/v<version>.json when the package version advances and refuses conflicting archive content. Archived snapshots are immutable, must include matching published read-only canary evidence, and drive their own versioned page, JSON download, search entry, and sitemap route. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. Update site/context/ha-proof.json for each new empirical Kubernetes claim; keep the Host Agent runtime and catalog revision, provider and Kubernetes versions, datastore, topology, fault, observations, recovery, and exclusions together. Do not promote the local development-runtime test as published-package HA evidence. CSS and client-script URL fingerprints change automatically with LF-normalized asset content; update the validator's asset allowlist and tests when that asset set changes. Recompute and review file anchors whenever an anchored authority changes.",
   "anchors": [
+    {
+      "kind": "file",
+      "path": "site/context/release-catalog.json",
+      "digest": "bd7fb006b871b5eaa07f347bff8372fd782dfec6913314fa789ec4421e6002f9",
+      "note": "Current published package, catalog revision, and read-only canary provenance"
+    },
+    {
+      "kind": "file",
+      "path": "site/context/ha-proof.json",
+      "digest": "0343496a8665af3669cd0294f2091454e22e1212299393559d011b45371b84a5",
+      "note": "Scoped local K3s guest-loss evidence and explicit exclusions"
+    },
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
@@ -111,13 +128,13 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "9a9b0cd15b001efed371b5dc1ef279ccaf03bc803223b607225b6bd5e91f60d0",
+      "digest": "0ffb094f555fa2196289aea492627aac3e5186a5711dbb638aba6c7e1f4dc20d",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
       "kind": "file",
       "path": "scripts/check_site_release_parity.py",
-      "digest": "2c60220f7949fe4d4545342fcb8b1446ac32cabfc05528e15675a6bc62e72a89",
+      "digest": "bb928edc703511c5235089846169f03bfe3273770a560ecae090f5c367cd3e3a",
       "note": "Release metadata and anchor verifier"
     },
     {

@@ -22,7 +22,7 @@
 # manager in /home and a root agent under the system manager in /root.
 contractVersion: host-recipe.v1
 recipeId: com.opute.k3s.install
-recipeVersion: 2.0.0
+recipeVersion: 2.0.1
 execution:
   coordinator: host-agent
   mode: local
@@ -56,6 +56,10 @@ inputs:
     default: 4320
     description: Loopback port the provider module serves its MCP endpoint on.
     schema: {type: integer, minimum: 1024, maximum: 65535}
+  serviceState:
+    default: start
+    description: Keep the current provider process running by default; use restart only for an explicit version upgrade after checking that no sessions are active.
+    schema: {type: string, enum: [start, restart]}
   # Materialisation is repeatable, and the plan store keys a run by its
   # idempotency key: re-submitting the SAME document under the same nonce
   # converges, while a revised document under the same nonce is refused rather
@@ -193,14 +197,14 @@ plan:
         assert:
           - {path: /enabled, op: eq, value: true}
 
-    # start, not restart: a re-run must leave a healthy provider alone.
+    # start is the default; restart is an explicit version-upgrade choice.
     - id: start
       dependsOn: [enable]
       action:
         tool: set_host_service_state
         args:
           uri: host-service:local:${nodes.agent.output.agent.serviceScope}/opute-provider-k3s.service
-          state: start
+          state: ${vars.inputs.serviceState}
           scope: ${nodes.agent.output.agent.serviceScope}
       validate:
         tool: inspect_host_service
@@ -253,6 +257,7 @@ plan:
         assert:
           - {path: /active, op: eq, value: true}
           - {path: /connected, op: eq, value: true}
+          - {path: /generation/Provider/version, op: eq, value: 1.0.2}
         pollIntervalMs: 3000
         timeoutMs: 600000
 

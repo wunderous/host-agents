@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Opute Host Agent — Typed MCP tools for Linux infrastructure</title>
-  <meta name="description" content="Inspect Linux hosts and operate configured Incus, Kubernetes, and network capabilities through one typed MCP server. Host-local recipes can check readiness and retain results." />
+  <title>Opute Host Agent — Configure and verify K3s clusters</title>
+  <meta name="description" content="Configure K3s servers with authenticated typed MCP operations, inspect membership, and test one-guest recovery through Opute Host Agent." />
   <link rel="canonical" href="https://www.opute.io/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Opute Host Agent" />
-  <meta property="og:title" content="Opute Host Agent — Typed MCP tools for Linux infrastructure" />
-  <meta property="og:description" content="Inspect Linux hosts and operate configured Incus, Kubernetes, and network capabilities through one typed MCP server. Host-local recipes can check readiness and retain results." />
+  <meta property="og:title" content="Opute Host Agent — Configure and verify K3s clusters" />
+  <meta property="og:description" content="Configure K3s servers with authenticated typed MCP operations, inspect membership, and test one-guest recovery through Opute Host Agent." />
   <meta property="og:url" content="https://www.opute.io/" />
   <meta property="og:locale" content="en_US" />
   <meta property="og:image" content="https://www.opute.io/og-image.png" />
@@ -20,8 +20,8 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
   <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
-  <meta name="twitter:title" content="Opute Host Agent — Typed MCP tools for Linux infrastructure" />
-  <meta name="twitter:description" content="Inspect Linux hosts and operate configured Incus, Kubernetes, and network capabilities through one typed MCP server. Host-local recipes can check readiness and retain results." />
+  <meta name="twitter:title" content="Opute Host Agent — Configure and verify K3s clusters" />
+  <meta name="twitter:description" content="Configure K3s servers with authenticated typed MCP operations, inspect membership, and test one-guest recovery through Opute Host Agent." />
   <link rel="stylesheet" href="/styles.css?v=df4a76b78d3e268a6895513c9a058d7e5c0171a96c15926db64247828951098f" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -52,19 +52,19 @@
 <p class="i18n-banner" data-i18n-banner hidden></p>
   <main class="hero home-hero" id="main-content" lang="en">
     <p class="eyebrow">Opute Host Agent · for Linux operators and agent authors</p>
-    <h1>Inspect your Linux hosts with your AI client.</h1>
+    <h1>Configure and verify K3s clusters through Opute Host Agent.</h1>
     <p class="lede">
-      Host Agent runs beside each Linux host. Connect an authenticated MCP client to read host facts and discover available tools. Opute Platform coordinates authorized work across hosts; Host Agent executes each host-scoped operation.
+      Use authenticated, typed MCP operations to provision K3s servers, inspect membership, and test recovery. In a local three-server test, a typed API write and read succeeded after one guest stopped. The guests shared one physical host, so this proves guest-level behavior only. Opute Platform coordinates authorized work across hosts; Host Agent executes each host-scoped operation.
     </p>
     <div class="cta">
-      <a class="btn primary" href="/docs/get-started/">Run a read-only host check</a>
-      <a class="btn ghost" href="/docs/concepts/#host-agent-and-platform">How Host Agent and Platform fit</a>
+      <a class="btn primary" href="/docs/availability/#local-host-agent-test">See the K3s setup and one-guest test</a>
+      <a class="btn ghost" href="/docs/get-started/">Start with an authenticated read-only check</a>
     </div>
-    <p class="home-product-boundary"><strong>Kubernetes HA:</strong> review the current release evidence and the failure tests each claim needs. <a href="/docs/availability/">Read the guide</a>.</p>
-    <div class="home-hero-proof" aria-label="Host Agent operating model">
-      <span>Authenticated MCP</span>
-      <span>Discoverable typed tools</span>
-      <span>Read-first workflow</span>
+    <p class="home-product-boundary"><strong>Test scope:</strong> 2 of 3 nodes stayed Ready with one Incus guest stopped; the provider reported no external HA endpoint. <a href="/docs/availability/">Read all evidence and limits</a>.</p>
+    <div class="home-hero-proof" aria-label="Local K3s test results">
+      <span>3 K3s servers</span>
+      <span>embedded-etcd</span>
+      <span>Typed API write/read during one guest loss</span>
     </div>
     <figure class="visual home-terminal">
       <figcaption>Read-only first call · example excerpt with redacted values, not live host output</figcaption>
@@ -84,16 +84,16 @@
   <section class="home-section" aria-labelledby="what-it-does">
     <div class="home-section-heading">
       <p class="eyebrow">What you can operate</p>
-      <h2 id="what-it-does">Inspect hosts, connect providers, and act with a plan.</h2>
+      <h2 id="what-it-does">Build cluster membership, inspect hosts, and verify each step.</h2>
       <p>Discover the current tool catalog before every operation. Available capabilities depend on the host and its active providers.</p>
     </div>
     <div class="home-capabilities">
       <article><span class="home-card-index">01 / Compute</span><h3>Linux &amp; Incus</h3><p>Inspect host state, manage services, and provision or inspect guests through typed tools.</p></article>
-      <article><span class="home-card-index">02 / Workloads</span><h3>Kubernetes &amp; images</h3><p>Read cluster resources, build and push OCI images, and apply workload manifests.</p></article>
+      <article><span class="home-card-index">02 / Workloads</span><h3>Kubernetes &amp; images</h3><p>Provision and join K3s servers, inspect node readiness, apply manifests, and read resources through the configured provider.</p></article>
       <article><span class="home-card-index">03 / Reachability</span><h3>Networking &amp; tunnels</h3><p>Manage declared network and tunnel capabilities through provider plugins when configured.</p></article>
     </div>
     <a class="home-text-link" href="/docs/capabilities/">Browse the captured catalog and learn how to discover yours →</a>
-    <a class="home-text-link" href="/docs/availability/">Kubernetes HA setup: current evidence and required failure tests →</a>
+    <a class="home-text-link" href="/docs/availability/#local-host-agent-test">K3s setup evidence: one guest failed, and typed API writes continued →</a>
   </section>
 
   <section class="home-section home-flow" aria-labelledby="why-it-matters">
@@ -108,7 +108,7 @@
       <li><span class="step-number" aria-hidden="true"></span><div><strong>Execute &amp; verify</strong><span>Run typed actions with readiness checks, retry, and compensation where the plan declares them.</span></div></li>
       <li><span class="step-number" aria-hidden="true"></span><div><strong>Inspect</strong><span>Read the durable plan result and the observed resource state.</span></div></li>
     </ol>
-    <p class="home-section-note">A host-local recipe can run declared steps on one host. For work across hosts, Platform coordinates the plan and Host Agent executes each host-scoped action. Cluster setup has separate quorum and failure-domain requirements; see the <a href="/docs/availability/">availability guide</a>.</p>
+    <p class="home-section-note">A host-local recipe runs declared steps on one host. For work across hosts, Platform coordinates the plan and Host Agent executes each host-scoped action. The local K3s test covers one guest failure, not failure of the physical host or a user-facing serving path; see the <a href="/docs/availability/">availability guide</a>.</p>
     <a class="home-text-link" href="/docs/recipes/">How recipes and plans work →</a>
   </section>
 

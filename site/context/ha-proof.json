@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "local-k3s-single-guest-loss-2026-09-25",
+  "evidenceDate": "2026-09-25",
+  "hostAgentRuntime": "dev",
+  "hostAgentCatalogRevision": "sha256:1399404a31f51c6120e4ea84c5691b61e93a5c4fb23356600bfd28b3aa6f9e2b",
+  "providerId": "com.opute.k3s",
+  "providerVersion": "1.0.2",
+  "k3sVersion": "v1.31.8+k3s1",
+  "datastoreMode": "embedded-etcd",
+  "guestKind": "Incus system container",
+  "serverCount": 3,
+  "readyBefore": 3,
+  "readyWhileOneGuestStopped": 2,
+  "readyAfter": 3,
+  "failedGuestCount": 1,
+  "physicalHostCount": 1,
+  "setupThroughHostAgent": true,
+  "failureAndRecoveryThroughHostAgent": true,
+  "typedWriteDuringFailure": true,
+  "typedReadDuringFailure": true,
+  "externalEndpointConfigured": false,
+  "publishedPackageHaCanary": false,
+  "verifiedOperations": [
+    "provision_vm",
+    "run_host_local_recipe",
+    "opute.capability.kubernetes.get-cluster-info",
+    "stop_vm",
+    "opute.capability.kubernetes.apply-manifest",
+    "opute.capability.kubernetes.get-resource",
+    "start_vm",
+    "opute.capability.kubernetes.delete-resource"
+  ],
+  "notEstablished": [
+    "physical-host or site failure",
+    "network partition",
+    "application workload continued serving",
+    "durable application data survived",
+    "new workload scheduling during failure",
+    "external endpoint failover",
+    "the published npm package HA setup path"
+  ]
+}
