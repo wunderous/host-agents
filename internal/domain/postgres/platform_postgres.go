@@ -822,10 +822,13 @@ func (s *Service) waitForPostgreSQLService(ctx context.Context, spec postgresqlS
 }
 
 func (s *Service) postgresqlServiceCRDPresent(ctx context.Context, spec postgresqlServiceSpec) (bool, error) {
-	if _, err := s.deps.RunKubectlContext(ctx, spec.VMName, []string{"get", "crd", "clusters.postgresql.cnpg.io"}, "get CloudNativePG CRD", defaultDiscoveryTimeout); err != nil {
-		return false, nil
+	result, err := s.deps.RunKubectlContext(ctx, spec.VMName, []string{
+		"get", "crd", "clusters.postgresql.cnpg.io", "--ignore-not-found=true", "-o", "name",
+	}, "get CloudNativePG CRD", defaultDiscoveryTimeout)
+	if err != nil {
+		return false, fmt.Errorf("get CloudNativePG Cluster CRD: %w", err)
 	}
-	return true, nil
+	return strings.TrimSpace(result) != "", nil
 }
 
 // postgresqlServiceWebhookReady reports whether the CloudNativePG admission
