@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "id": "provider-activation-recipe-provenance",
+  "title": "Provider bootstrap recipes carry one explicit activation source, revision, and digest",
+  "claim": "Every Host Agent local provider bootstrap recipe that overrides opute.provider.install.recipeSource must pass the source, its exact immutable commit revision, and its SHA-256 from required recipe inputs. The Host Agent rejects a remote source whose explicit revision disagrees with the commit in its URL; provider descriptor fallback metadata never replaces the caller's revision.",
+  "rationale": "A recipe that supplies a pinned raw GitHub URL and digest but omits revision can inherit a descriptor's working-tree revision. The Host Agent correctly rejects that mismatch, but only after earlier bootstrap nodes may have installed a binary and service.",
+  "decidedOn": "2026-09-25",
+  "section": "Provider bootstrap provenance",
+  "owner": "wunderous/host-agents owns provider bootstrap recipes, source parsing, and their typed regression evidence.",
+  "authority": {
+    "decision": ".agents/decisions/provider-activation-recipe-provenance.json",
+    "sourceParser": "internal/recipe/recipe.go",
+    "k3sBootstrap": "plugins/kubernetes/k3s/recipes/install.yaml",
+    "tailscaleBootstrap": "plugins/tunneling/tailscale/recipes/install.yaml",
+    "recipeTests": "internal/recipe/provider_install_recipe_test.go",
+    "revisionMismatchTest": "internal/recipe/recipe_test.go",
+    "verifier": "scripts/check_provider_activation_recipe_provenance.py"
+  },
+  "scope": {
+    "included": [
+      "Host Agent local K3s provider installation recipe",
+      "Host Agent local Tailscale provider installation recipe",
+      "nested opute.provider.install actions with an explicit recipeSource override",
+      "remote raw GitHub source and exact commit revision matching"
+    ],
+    "excluded": [
+      "provider installs that use their descriptor's default source",
+      "distributed Platform recipe orchestration",
+      "source types without a declared immutable revision contract"
+    ]
+  },
+  "exception": "No remote source may inherit descriptor revision fallback when a recipe overrides recipeSource. Adding another source type requires an explicit typed source, revision, and content-digest contract with matching validation and regression evidence.",
+  "evidence": {
+    "required": [
+      "both bootstrap recipes require a lowercase 40-character activationRecipeRevision input",
+      "both nested provider install actions pass source, revision, and SHA-256 from those inputs",
+      "resolved plan arguments preserve the three supplied values together",
+      "the Host Agent parser accepts a matching URL revision and rejects a mismatch",
+      "the verifier checks file anchors and confirms CI reaches the regression tests"
+    ],
+    "test": "go test ./internal/recipe -run 'TestProviderInstallRecipesPassPinnedActivationProvenance|TestRawGitHubRecipeSourceRequiresMatchingExplicitRevision' -count=1",
+    "verifier": "python3 scripts/check_provider_activation_recipe_provenance.py"
+  },
+  "revisionBehavior": "Bump each recipe's major version when the required provenance input contract changes. Recompute and review whole-file anchors when either recipe, source parser, regression test, Makefile verifier wiring, or CI test entry point changes.",
+  "anchors": [
+    {
+      "kind": "file",
+      "path": "plugins/kubernetes/k3s/recipes/install.yaml",
+      "digest": "a1a1cf9ed698ca9db6996cd9f961ee6c93a77d0618ef9ea8c46aca9b06b561a2",
+      "note": "K3s activation provenance inputs and provider install projection"
+    },
+    {
+      "kind": "file",
+      "path": "plugins/tunneling/tailscale/recipes/install.yaml",
+      "digest": "c841b175bbb154a698cb57b2b481baf3da1e7603008907404554babb57e6b627",
+      "note": "Tailscale activation provenance inputs and provider install projection"
+    },
+    {
+      "kind": "file",
+      "path": "internal/recipe/recipe.go",
+      "digest": "c6f80813cfd2337067a9875d7045f092a8c3b61f0c31325c3bdebf575681cf97",
+      "note": "Raw GitHub source and explicit revision validation"
+    },
+    {
+      "kind": "file",
+      "path": "internal/recipe/provider_install_recipe_test.go",
+      "digest": "24433921238e53250526ca55516718b200e269fdec4560785989c12f91974d45",
+      "note": "Resolved source, revision, and digest regression for both recipes"
+    },
+    {
+      "kind": "file",
+      "path": "internal/recipe/recipe_test.go",
+      "digest": "cdfd335d262187ff074432485d163ec53746f04f0a4f60f19d324ae58d06933e",
+      "note": "Matching and mismatched raw URL revision parser regression"
+    },
+    {
+      "kind": "file",
+      "path": "Makefile",
+      "digest": "baa6b1724c6778dc19538cb40378ff62150380cfb2dddd23a24819316f29a99b",
+      "note": "Invariant verifier is part of the normal test target"
+    },
+    {
+      "kind": "file",
+      "path": ".github/workflows/ci.yml",
+      "digest": "b2042dbf6fe5b67ebda9b6aff6710fb734f01dfdbe37659f5cb0059ce109077f",
+      "note": "CI runs the module test target that includes the invariant verifier"
+    }
+  ],
+  "verify": "python3 scripts/check_provider_activation_recipe_provenance.py && go test ./internal/recipe -run 'TestProviderInstallRecipesPassPinnedActivationProvenance|TestRawGitHubRecipeSourceRequiresMatchingExplicitRevision' -count=1",
+  "enforcedBy": [
+    "plugins/kubernetes/k3s/recipes/install.yaml",
+    "plugins/tunneling/tailscale/recipes/install.yaml",
+    "internal/recipe/recipe.go",
+    "internal/recipe/provider_install_recipe_test.go",
+    "internal/recipe/recipe_test.go",
+    "scripts/check_provider_activation_recipe_provenance.py",
+    "Makefile",
+    ".github/workflows/ci.yml"
+  ],
+  "supersedes": [],
+  "withdrawn": false,
+  "lastVerified": "2026-09-25"
+}

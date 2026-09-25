@@ -67,7 +67,7 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
-  <p><a href="/docs/versions/v0.2.0/capabilities/">Versioned catalog</a></p>
+  <p><a href="/docs/versions/v0.2.1/capabilities/">Versioned catalog</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
@@ -92,14 +92,15 @@
 <p class="badge">Tutorial</p>
 <h1>Get started</h1>
 <p class="meta"><strong>Outcome.</strong> Start Host Agent locally, connect VS Code over authenticated HTTP, refresh the live tool list, and read host facts with <code>get_host_info {}</code>. This tutorial does not enable mutations.</p>
-<p class="meta"><strong>Verified release.</strong> This path pins the published package whose authenticated read-only canary passed for the catalog revision shown in the capability reference.</p>
+<div class="callout warn"><strong>Preview tutorial.</strong> The published-package canary has not passed for this candidate. Follow the local source-build path below; do not treat it as a verified published release.</div>
 <h2>Prerequisites</h2>
-<ul><li>Linux or WSL2, Node.js 18 or newer, npm, and VS Code with HTTP MCP support.</li><li><code>curl</code> and <code>openssl</code>; loopback port <code>3014</code> must be free.</li><li>Network access to npm and the <a href="https://github.com/wunderous/host-agents/releases/tag/v0.2.0">matching Linux binary in GitHub Releases</a>.</li></ul>
+<ul><li>Linux or WSL2, Go, and VS Code with HTTP MCP support.</li><li><code>curl</code> and <code>openssl</code>; loopback port <code>3014</code> must be free.</li><li>A Host Agent checkout and Go toolchain to build the preview.</li></ul>
 <h2>Start the local agent</h2>
 <ol class="steps">
 <li><strong>Set an explicit identity and random secret</strong><p>Keep the token in your shell and VS Code prompt. Do not commit it or put it in screenshots.</p><pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
-npx -y @opute/host-agent@0.2.0 start --background</code></pre><p>This starts the pinned published package shown on this page. Stop the background process with npx -y @opute/host-agent@0.2.0 stop.</p><pre><code>curl -i -sS http://127.0.0.1:3014/health</code></pre><p>Expect HTTP 200 and the exact <code>agentId</code> you set. This open endpoint proves liveness only, not MCP authentication.</p></li>
+make build VERSION=0.2.1
+./dist/opute-host-agent serve --mode standalone --transport http</code></pre><p>Run source-build commands from the Host Agent repository root. Stop the foreground process with Ctrl+C in its terminal.</p><pre><code>curl -i -sS http://127.0.0.1:3014/health</code></pre><p>Expect HTTP 200 and the exact <code>agentId</code> you set. This open endpoint proves liveness only, not MCP authentication.</p></li>
 <li><strong>Connect VS Code</strong><p>Create <code>.vscode/mcp.json</code>. VS Code documents this HTTP server and password-prompt setup in its <a href="https://code.visualstudio.com/docs/agents/reference/mcp-configuration">MCP configuration reference</a>.</p><pre><code>{
   "inputs": [{"type":"promptString","id":"opute-host-token","description":"Local Opute Host Agent token","password":true}],
   "servers": {"opute-host-agent":{"type":"http","url":"http://127.0.0.1:3014/mcp","headers":{"Authorization":"Bearer ${input:opute-host-token}"}}}
@@ -120,7 +121,7 @@ npx -y @opute/host-agent@0.2.0 start --background</code></pre><p>This starts the
 <p>Expect HTTP 401. A request with no Authorization header also returns 401. Use the real token only in your local shell and VS Code password prompt.</p>
 <ul><li>No token or a wrong token gets HTTP 401.</li><li>The configured token connects VS Code; non-empty <code>tools/list</code> includes <code>get_host_info</code>.</li><li><code>get_host_info {}</code> returns structured facts and the selected identity.</li><li>No mutation flag was enabled and no mutating tool was called.</li></ul>
 <h2>Troubleshoot</h2>
-<ul><li><strong>Port in use:</strong> Check the launcher with npx -y @opute/host-agent@0.2.0 status, stop it if needed, then choose an unused HOST_MCP_PORT and use that same port in curl and VS Code.</li><li><strong>401:</strong> match the VS Code input to <code>MCP_AUTH_TOKEN</code>; restart after changing shell environment.</li><li><strong>Empty tools:</strong> refresh the server, verify the URL ends in <code>/mcp</code>, and check <code>tools/list</code>.</li><li><strong>WSL reachability:</strong> run VS Code and the agent in the same WSL context first.</li><li>For other symptoms, see <a href="/docs/troubleshooting/">troubleshooting</a>.</li></ul>
+<ul><li><strong>Port in use:</strong> The preview process runs in the foreground. Read its terminal output, then set an unused HOST_MCP_PORT and use that same port in curl and VS Code.</li><li><strong>401:</strong> match the VS Code input to <code>MCP_AUTH_TOKEN</code>; restart after changing shell environment.</li><li><strong>Empty tools:</strong> refresh the server, verify the URL ends in <code>/mcp</code>, and check <code>tools/list</code>.</li><li><strong>WSL reachability:</strong> run VS Code and the agent in the same WSL context first.</li><li>For other symptoms, see <a href="/docs/troubleshooting/">troubleshooting</a>.</li></ul>
 <h2>Next</h2>
 <p>Inspect <code>list_vms</code> only if Incus is configured. Otherwise read the <a href="/docs/capabilities/">capability reference</a> and <a href="/docs/concepts/#host-agent-and-platform">product boundary</a>. Keep the mutation gate closed.</p>
 

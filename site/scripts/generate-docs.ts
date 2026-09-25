@@ -4,7 +4,7 @@
  * Capability reference data comes from an allowlisted standalone catalog export.
  * Architecture facts track README.md + docs/adr/* (verify before changing).
  */
-import { mkdirSync, writeFileSync, readFileSync } from "fs"
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from "fs"
 import { createHash } from "crypto"
 import { dirname, join } from "path"
 import { fileURLToPath } from "url"
@@ -47,10 +47,92 @@ type ReleaseCatalog = {
 const releaseCatalog = JSON.parse(
   readFileSync(join(contextDir, "release-catalog.json"), "utf8"),
 ) as ReleaseCatalog
-
 const allowedCatalogKeys = new Set([
   "packageName", "packageVersion", "releaseChannel", "catalogRevision", "toolCount", "tools", "publishedCanary",
 ])
+const allowedCanaryKeys = new Set([
+  "packageVersion", "catalogRevision", "sourceSha", "runId", "runAttempt", "checks",
+])
+const allowedToolKeys = new Set([
+  "name", "title", "description", "version", "capabilityId", "effect", "idempotent", "requiresApproval", "inputSchema", "outputSchema",
+])
+const releaseArchiveDir = join(contextDir, "release-archives")
+const archivedReleaseCatalogs: Array<{ filename: string; catalog: ReleaseCatalog }> = (existsSync(releaseArchiveDir)
+  ? readdirSync(releaseArchiveDir)
+      .filter((name) => /^v\d+\.\d+\.\d+\.json$/.test(name))
+      .sort()
+      .map((filename) => ({
+        filename,
+        catalog: JSON.parse(readFileSync(join(releaseArchiveDir, filename), "utf8")) as ReleaseCatalog,
+      }))
+  : [])
+const archivedVersions = new Set<string>()
+for (const { filename, catalog: archive } of archivedReleaseCatalogs) {
+  const version = archive.packageVersion
+  const evidence = archive.publishedCanary
+  const requiredChecks = [
+    "explicitIdentity",
+    "openHealth",
+    "invalidTokenRejected",
+    "authenticatedDiscovery",
+    "authenticatedToolsList",
+    "structuredGetHostInfo",
+    "readOnly",
+  ]
+  if (
+    Object.keys(archive).some((key) => !allowedCatalogKeys.has(key)) ||
+    archive.packageName !== "@opute/host-agent" ||
+    !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version) ||
+    filename !== "v" + version + ".json" ||
+    version === releaseCatalog.packageVersion ||
+    archivedVersions.has(version) ||
+    archive.releaseChannel !== "stable" ||
+    !/^sha256:[0-9a-f]{64}$/.test(archive.catalogRevision) ||
+    !Number.isSafeInteger(archive.toolCount) ||
+    !Array.isArray(archive.tools) ||
+    archive.toolCount !== archive.tools.length ||
+    !evidence ||
+    Object.keys(evidence).some((key) => !allowedCanaryKeys.has(key)) ||
+    evidence.packageVersion !== version ||
+    evidence.catalogRevision !== archive.catalogRevision ||
+    !/^[0-9a-f]{40}$/.test(evidence.sourceSha) ||
+    !Number.isSafeInteger(evidence.runId) ||
+    evidence.runId < 1 ||
+    !Number.isSafeInteger(evidence.runAttempt) ||
+    evidence.runAttempt < 1 ||
+    requiredChecks.some((check) => evidence.checks?.[check] !== true) ||
+    Object.keys(evidence.checks ?? {}).some((check) => !requiredChecks.includes(check))
+  ) {
+    throw new Error("archived release catalog is invalid or missing matching published read-only canary evidence")
+  }
+  const names = new Set<string>()
+  const orderedNames: string[] = []
+  for (const tool of archive.tools) {
+    if (
+      Object.keys(tool).some((key) => !allowedToolKeys.has(key)) ||
+      !tool.name ||
+      names.has(tool.name) ||
+      !new Set(["read", "mutation", "destructive", "credential_bearing"]).has(tool.effect) ||
+      tool.inputSchema?.type !== "object" ||
+      typeof tool.description !== "string" ||
+      typeof tool.idempotent !== "boolean" ||
+      (tool.version !== undefined && (!Number.isSafeInteger(tool.version) || tool.version < 1)) ||
+      (tool.requiresApproval !== undefined && typeof tool.requiresApproval !== "boolean")
+    ) {
+      throw new Error("archived release catalog contains an invalid or unapproved descriptor")
+    }
+    names.add(tool.name)
+    orderedNames.push(tool.name)
+  }
+  if (!names.has("get_host_info")) {
+    throw new Error("archived release catalog omits get_host_info")
+  }
+  if (orderedNames.some((name, index) => name !== [...orderedNames].sort()[index])) {
+    throw new Error("archived release catalog descriptors are not in deterministic name order")
+  }
+  archivedVersions.add(version)
+}
+
 if (Object.keys(releaseCatalog).some((key) => !allowedCatalogKeys.has(key))) {
   throw new Error("release-catalog.json contains fields outside the public catalog contract")
 }
@@ -72,18 +154,12 @@ if (!Number.isSafeInteger(releaseCatalog.toolCount) || releaseCatalog.toolCount 
 if (releaseCatalog.tools.length !== releaseCatalog.toolCount) {
   throw new Error("release-catalog.json toolCount does not match tools")
 }
-const allowedCanaryKeys = new Set([
-  "packageVersion", "catalogRevision", "sourceSha", "runId", "runAttempt", "checks",
-])
 if (
   releaseCatalog.publishedCanary &&
   Object.keys(releaseCatalog.publishedCanary).some((key) => !allowedCanaryKeys.has(key))
 ) {
   throw new Error("release-catalog.json publishedCanary contains fields outside the evidence contract")
 }
-const allowedToolKeys = new Set([
-  "name", "title", "description", "version", "capabilityId", "effect", "idempotent", "requiresApproval", "inputSchema", "outputSchema",
-])
 const catalogNames = new Set<string>()
 for (const tool of releaseCatalog.tools) {
   if (Object.keys(tool).some((key) => !allowedToolKeys.has(key))) {
@@ -347,14 +423,6 @@ const tutorialPortHelp =
       releaseCatalog.packageVersion +
       " status, stop it if needed, then choose an unused HOST_MCP_PORT and use that same port in curl and VS Code."
     : "The preview process runs in the foreground. Read its terminal output, then set an unused HOST_MCP_PORT and use that same port in curl and VS Code."
-const toolGroups = new Map<string, PublicCatalogTool[]>()
-for (const tool of releaseCatalog.tools) {
-  const group = tool.capabilityId || "Host operations"
-  const groupTools = toolGroups.get(group) ?? []
-  groupTools.push(tool)
-  toolGroups.set(group, groupTools)
-}
-
 const schemaDisclosure = (label: string, schema?: Record<string, unknown>) =>
   schema
     ? '<details class="schema-disclosure"><summary>' +
@@ -364,85 +432,118 @@ const schemaDisclosure = (label: string, schema?: Record<string, unknown>) =>
       "</code></pre></details>"
     : ""
 
-const capabilityCards = [...toolGroups.entries()]
-  .sort(([left], [right]) => left.localeCompare(right))
-  .map(([group, groupTools]) => {
-    const cards = groupTools
-      .map((tool) => {
-        const index = releaseCatalog.tools.indexOf(tool)
-        const version = tool.version
-          ? '<li>Capability version: <code>' + tool.version + "</code></li>"
-          : ""
-        const approval = tool.requiresApproval
-          ? "<li>Requires an approval gate: <strong>yes</strong></li>"
-          : ""
-        return (
-          '<details class="catalog-tool" id="catalog-tool-' +
-          index +
-          '"><summary><code>' +
-          escapeHTML(tool.name) +
-          '</code><span class="effect-tag">' +
-          escapeHTML(tool.effect) +
-          "</span></summary><p>" +
-          escapeHTML(tool.description || "No description is published for this capability.") +
-          '</p><ul class="catalog-facts">' +
-          version +
-          "<li>Idempotent: <strong>" +
-          (tool.idempotent ? "yes" : "no") +
-          "</strong></li>" +
-          approval +
-          "</ul>" +
-          schemaDisclosure("Input schema", tool.inputSchema) +
-          schemaDisclosure("Output schema", tool.outputSchema) +
-          "</details>"
-        )
-      })
-      .join("\n")
-    return (
-      '<section class="catalog-group"><h2>' +
-      escapeHTML(group) +
-      '</h2><div class="catalog-tools">' +
-      cards +
-      "</div></section>"
-    )
-  })
-  .join("\n")
+const capabilityCardsFor = (catalog: ReleaseCatalog) => {
+  const toolGroups = new Map<string, PublicCatalogTool[]>()
+  for (const tool of catalog.tools) {
+    const group = tool.capabilityId || "Host operations"
+    const groupTools = toolGroups.get(group) ?? []
+    groupTools.push(tool)
+    toolGroups.set(group, groupTools)
+  }
+  return [...toolGroups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([group, groupTools]) => {
+      const cards = groupTools
+        .map((tool) => {
+          const index = catalog.tools.indexOf(tool)
+          const version = tool.version
+            ? '<li>Capability version: <code>' + tool.version + "</code></li>"
+            : ""
+          const approval = tool.requiresApproval
+            ? "<li>Requires an approval gate: <strong>yes</strong></li>"
+            : ""
+          return (
+            '<details class="catalog-tool" id="catalog-tool-' +
+            index +
+            '"><summary><code>' +
+            escapeHTML(tool.name) +
+            '</code><span class="effect-tag">' +
+            escapeHTML(tool.effect) +
+            "</span></summary><p>" +
+            escapeHTML(tool.description || "No description is published for this capability.") +
+            '</p><ul class="catalog-facts">' +
+            version +
+            "<li>Idempotent: <strong>" +
+            (tool.idempotent ? "yes" : "no") +
+            "</strong></li>" +
+            approval +
+            "</ul>" +
+            schemaDisclosure("Input schema", tool.inputSchema) +
+            schemaDisclosure("Output schema", tool.outputSchema) +
+            "</details>"
+          )
+        })
+        .join("\n")
+      return (
+        '<section class="catalog-group"><h2>' +
+        escapeHTML(group) +
+        '</h2><div class="catalog-tools">' +
+        cards +
+        "</div></section>"
+      )
+    })
+    .join("\n")
+}
 
-const catalogPreviewNotice =
-  releaseCatalog.releaseChannel === "stable"
-    ? '<p class="meta">Published reference for <code>' +
-      releaseCatalog.packageName +
+const catalogNoticeFor = (catalog: ReleaseCatalog, archived = false) =>
+  archived
+    ? '<p class="meta"><strong>Archived verified release.</strong> ' +
+      escapeHTML(catalog.packageName) +
       "@" +
-      releaseCatalog.packageVersion +
-      "</code>. Its read-only package canary passed for catalog revision <code>" +
-      releaseCatalog.catalogRevision +
+      escapeHTML(catalog.packageVersion) +
+      " passed its published read-only package canary for catalog revision <code>" +
+      escapeHTML(catalog.catalogRevision) +
       ".</code></p>"
-    : '<div class="callout warn"><strong>Preview catalog.</strong> This source candidate is <code>' +
-      releaseCatalog.packageName +
-      "@" +
-      releaseCatalog.packageVersion +
-      "</code> at revision <code>" +
-      releaseCatalog.catalogRevision +
-      "</code>. The published-package canary has not passed for this version, so this snapshot is not a verified release reference.</div>"
+    : catalog.releaseChannel === "stable"
+      ? '<p class="meta">Published reference for <code>' +
+        escapeHTML(catalog.packageName) +
+        "@" +
+        escapeHTML(catalog.packageVersion) +
+        "</code>. Its read-only package canary passed for catalog revision <code>" +
+        escapeHTML(catalog.catalogRevision) +
+        ".</code></p>"
+      : '<div class="callout warn"><strong>Preview catalog.</strong> This source candidate is <code>' +
+        escapeHTML(catalog.packageName) +
+        "@" +
+        escapeHTML(catalog.packageVersion) +
+        "</code> at revision <code>" +
+        escapeHTML(catalog.catalogRevision) +
+        "</code>. The published-package canary has not passed for this version, so this snapshot is not a verified release reference.</div>"
 
-const capabilityReferenceBody = (versioned = false) =>
-  [
+const capabilityReferenceBody = (
+  catalog: ReleaseCatalog = releaseCatalog,
+  versioned = false,
+  archived = false,
+) => {
+  const downloadPath =
+    "/docs/versions/v" + catalog.packageVersion + "/capabilities/catalog.json"
+  return [
     '<p class="badge">' + (versioned ? "Versioned reference" : "Reference") + "</p>",
     "<h1>" +
-      (versioned ? "Capabilities — v" + releaseCatalog.packageVersion : "Capabilities") +
+      (versioned ? "Capabilities — v" + catalog.packageVersion : "Capabilities") +
       "</h1>",
-    catalogPreviewNotice,
+    catalogNoticeFor(catalog, archived),
+    archived
+      ? '<p><a href="/docs/capabilities/">Return to the current capability reference</a>.</p>'
+      : archivedReleaseCatalogs.length > 0
+        ? '<p>Archived release snapshots: ' +
+          archivedReleaseCatalogs
+            .map(({ catalog: archive }) => '<a href="/docs/versions/v' + archive.packageVersion + '/capabilities/">v' + archive.packageVersion + '</a>')
+            .join(" · ") +
+          ".</p>"
+        : "",
     '<p class="meta">This standalone catalog contains ' +
-      releaseCatalog.toolCount +
+      catalog.toolCount +
       " typed descriptors. Each entry shows its declared effect, idempotency, and available JSON schemas. A tool appearing here does not prove that its provider or required host service is ready.</p>",
     "<p>Catalog revision: <code>" +
-      releaseCatalog.catalogRevision +
+      catalog.catalogRevision +
       "</code>. Download the allowlisted descriptor snapshot as <a href=\"" +
-      versionedCatalogDownload +
-      '">JSON</a>. At runtime, <code>tools/list</code> and <code>get_capability_catalog</code> remain authoritative; refresh them when a client connects.</p>',
+      downloadPath +
+      '\">JSON</a>. At runtime, <code>tools/list</code> and <code>get_capability_catalog</code> remain authoritative; refresh them when a client connects.</p>',
     '<div class="callout"><strong>Ownership boundary.</strong> Host Agent executes explicit typed capabilities against one host. Opute Platform owns intent, authorization, and durable orchestration across hosts. See <a href="/docs/concepts/#host-agent-and-platform">how the products fit together</a>.</div>',
-    capabilityCards,
+    capabilityCardsFor(catalog),
   ].join("\n")
+}
 
 const pages: Record<string, { title: string; description: string; current: string; body: string; mermaid?: boolean }> = {
   "docs/install/index.html": {
@@ -781,13 +882,13 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
     title: "Capabilities",
     description: "Browse the versioned Opute Host Agent catalog, including declared effects and JSON schemas.",
     current: "capabilities",
-    body: capabilityReferenceBody(),
+    body: capabilityReferenceBody(releaseCatalog),
   },
   [versionedCapabilityPath]: {
     title: "Capabilities — v" + releaseCatalog.packageVersion,
     description: "Versioned Opute Host Agent capability descriptors and JSON schemas.",
     current: "capabilities",
-    body: capabilityReferenceBody(true),
+    body: capabilityReferenceBody(releaseCatalog, true),
   },  "docs/configuration/index.html": {
     title: "Configuration",
     description: "Configure Opute Host Agent identity, bind address, port, authentication, providers, and mutation controls.",
@@ -1545,6 +1646,19 @@ flowchart LR
   },
 }
 
+for (const { catalog: archive } of archivedReleaseCatalogs) {
+  const rel = "docs/versions/v" + archive.packageVersion + "/capabilities/index.html"
+  if (pages[rel]) {
+    throw new Error("archived release route collides with a generated page: " + rel)
+  }
+  pages[rel] = {
+    title: "Capabilities — v" + archive.packageVersion,
+    description: "Archived, verified Opute Host Agent capability descriptors and JSON schemas.",
+    current: "capabilities",
+    body: capabilityReferenceBody(archive, true, true),
+  }
+}
+
 for (const [rel, spec] of Object.entries(pages)) {
   const full = join(root, rel)
   mkdirSync(dirname(full), { recursive: true })
@@ -1559,6 +1673,14 @@ writeFileSync(
   join(root, versionedCatalogDownload.replace(/^\//, "")),
   JSON.stringify(releaseCatalog, null, 2) + "\n",
 )
+for (const { catalog: archive } of archivedReleaseCatalogs) {
+  const archiveDownload =
+    "docs/versions/v" + archive.packageVersion + "/capabilities/catalog.json"
+  const archiveFile = join(root, archiveDownload)
+  mkdirSync(dirname(archiveFile), { recursive: true })
+  writeFileSync(archiveFile, JSON.stringify(archive, null, 2) + "\n")
+}
+
 
 writeFileSync(
   join(root, "index.html"),
@@ -1705,16 +1827,27 @@ console.log("wrote robots.txt and sitemap.xml", sitemapPaths.length)
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim()
+  const catalogByPage = new Map<string, ReleaseCatalog>([
+    ["docs/capabilities/index.html", releaseCatalog],
+    [versionedCapabilityPath, releaseCatalog],
+  ])
+  for (const { catalog: archive } of archivedReleaseCatalogs) {
+    catalogByPage.set(
+      "docs/versions/v" + archive.packageVersion + "/capabilities/index.html",
+      archive,
+    )
+  }
   const searchPages = Object.entries(pages).map(([rel, spec]) => {
     const url = "/" + rel.replace(/index\.html$/, "").replace(/\.html$/, "")
+    const catalog = catalogByPage.get(rel)
     return {
       url: url.endsWith("/") || url === "/docs" ? (url.endsWith("/") ? url : url + "/") : url + "/",
       title: spec.title,
       description: spec.description,
-    body: rel === "docs/capabilities/index.html"
-      ? releaseCatalog.tools.map((tool) => tool.name + " " + tool.description).join(" ") +
-        " " + strip(spec.body).slice(0, 12000)
-      : strip(spec.body).slice(0, 12000),
+      body: catalog
+        ? catalog.tools.map((tool) => tool.name + " " + tool.description).join(" ") +
+          " " + strip(spec.body).slice(0, 12000)
+        : strip(spec.body).slice(0, 12000),
     }
   })
   writeFileSync(join(root, "search-index.json"), JSON.stringify({ pages: [{ url: "/", title: "Opute Host Agent", description: "Inspect Linux hosts and discover typed infrastructure capabilities through MCP.", body: "Host Agent read-only host check get_host_info host-local recipes Kubernetes Incus network tunnels" }, ...searchPages] }, null, 2))

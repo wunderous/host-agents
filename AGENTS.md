@@ -128,3 +128,6 @@ ownership.
 - Provider adapters are generation-bound. Durable evidence uses schema-driven
   redaction; unknown projections fail closed.
 - Boundary claims require wire, lifecycle, cleanup, and durable-state evidence.
+
+For K3s Node readiness projections, follow the invariant and verifier in
+`.agents/decisions/kubernetes-node-readiness-projection.json`.

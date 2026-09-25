@@ -1,6 +1,6 @@
 contractVersion: host-recipe.v1
 recipeId: com.opute.tailscale.install
-recipeVersion: 1.0.0
+recipeVersion: 2.0.0
 execution:
   coordinator: host-agent
   mode: local
@@ -33,10 +33,15 @@ inputs:
     schema: {type: string, minLength: 1, maxLength: 128}
   activationRecipeSource:
     required: true
+    description: Pinned source of the provider's activation recipe -- a raw.githubusercontent.com URL whose 40-character commit matches activationRecipeRevision, or a local path pinned by the SHA-256.
     schema: {type: string, minLength: 1}
   activationRecipeSha256:
     required: true
     schema: {type: string, pattern: "^[0-9a-f]{64}$"}
+  activationRecipeRevision:
+    required: true
+    description: The 40-character commit revision in activationRecipeSource; passed explicitly so provider metadata cannot substitute another revision.
+    schema: {type: string, pattern: "^[0-9a-f]{40}$"}
 plan:
   contractVersion: host-plan.v1
   planId: com.opute.tailscale.install
@@ -163,6 +168,7 @@ plan:
           endpoint: http://127.0.0.1:${vars.inputs.providerPort}/mcp
           mode: activate
           recipeSource: ${vars.inputs.activationRecipeSource}
+          revision: ${vars.inputs.activationRecipeRevision}
           sha256: ${vars.inputs.activationRecipeSha256}
           inputs:
             providerId: ${vars.inputs.providerId}

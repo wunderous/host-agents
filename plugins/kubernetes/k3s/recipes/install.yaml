@@ -22,7 +22,7 @@
 # manager in /home and a root agent under the system manager in /root.
 contractVersion: host-recipe.v1
 recipeId: com.opute.k3s.install
-recipeVersion: 1.0.0
+recipeVersion: 2.0.0
 execution:
   coordinator: host-agent
   mode: local
@@ -66,18 +66,22 @@ inputs:
     default: default
     schema: {type: string, minLength: 1, maxLength: 128}
   # The provider's activation recipe is sourced and pinned like any other
-  # recipe. It is an input rather than a literal because it names a specific
-  # published revision of the plugin repository, which this document cannot know
-  # about itself. A raw.githubusercontent.com URL carries its own immutable
-  # commit; a path on this host is accepted too, and the digest pins either form.
+  # recipe. Its source, revision, and digest are separate required inputs so an
+  # explicit URL revision cannot be replaced by the provider descriptor's
+  # working-tree fallback. A local path is also content-pinned by its digest;
+  # its revision input identifies the repository state that supplied it.
   activationRecipeSource:
     required: true
-    description: Pinned source of the provider's activation recipe -- a raw.githubusercontent.com URL containing a 40-character commit, or a path on this host.
+    description: Pinned source of the provider's activation recipe -- a raw.githubusercontent.com URL whose 40-character commit matches activationRecipeRevision, or a local path pinned by the SHA-256.
     schema: {type: string, minLength: 1}
   activationRecipeSha256:
     required: true
     description: SHA-256 of the activation recipe document at activationRecipeSource.
     schema: {type: string, pattern: "^[0-9a-f]{64}$"}
+  activationRecipeRevision:
+    required: true
+    description: The 40-character commit revision in activationRecipeSource; passed explicitly so provider metadata cannot substitute another revision.
+    schema: {type: string, pattern: "^[0-9a-f]{40}$"}
 plan:
   contractVersion: host-plan.v1
   planId: com.opute.k3s.install
@@ -218,7 +222,7 @@ plan:
           descriptor:
             schema: opute-provider-plugin.v1
             pluginId: ${vars.inputs.providerId}
-            version: 1.0.1
+            version: 1.0.2
             capabilities:
               - id: opute.capability.kubernetes.v1
                 version: 1
@@ -228,6 +232,7 @@ plan:
           endpoint: http://127.0.0.1:${vars.inputs.providerPort}/mcp
           mode: kubernetes
           recipeSource: ${vars.inputs.activationRecipeSource}
+          revision: ${vars.inputs.activationRecipeRevision}
           sha256: ${vars.inputs.activationRecipeSha256}
           # One nonce governs both runs. The activation plan is keyed by it for
           # the same reason this one is: without it a months-old terminal run

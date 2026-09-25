@@ -145,6 +145,7 @@ def verify_enforcement_wiring() -> None:
     required_make_steps = (
         "scripts/check_site_release_boundary.py",
         "scripts/check_site_release_parity.py",
+        "scripts/test_promote_site_release_catalog.py",
         "scripts/test_validate_generated_site.py",
         "scripts/test_check_generated_site_clean.py",
         "scripts/validate-generated-site.py",
@@ -165,6 +166,93 @@ def verify_enforcement_wiring() -> None:
         fail("generated-output gate must detect untracked files as well as tracked drift")
 
 
+def verify_archived_catalogs(current_version: str) -> None:
+    archive_dir = ROOT / "site" / "context" / "release-archives"
+    paths = sorted(archive_dir.glob("v*.json"))
+    if not paths:
+        fail("no archived release catalog snapshots are maintained")
+    versions = set()
+    for path in paths:
+        if not re.fullmatch(r"v\d+\.\d+\.\d+\.json", path.name):
+            fail("archived release catalog filename is invalid: " + path.name)
+        archive = load_json(path, "archived release catalog")
+        version = archive.get("packageVersion")
+        revision = archive.get("catalogRevision")
+        if (
+            archive.keys() - {"packageName", "packageVersion", "releaseChannel", "catalogRevision", "toolCount", "tools", "publishedCanary"}
+            or archive.get("packageName") != "@opute/host-agent"
+            or not isinstance(version, str)
+            or path.name != "v" + version + ".json"
+            or version == current_version
+            or version in versions
+            or archive.get("releaseChannel") != "stable"
+            or not isinstance(revision, str)
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", revision)
+        ):
+            fail("archived release catalog identity or channel is invalid: " + path.name)
+        versions.add(version)
+        tools = archive.get("tools")
+        if not isinstance(tools, list) or not tools or type(archive.get("toolCount")) is not int or archive["toolCount"] != len(tools):
+            fail("archived catalog toolCount does not match its descriptors: " + version)
+        names = []
+        for tool in tools:
+            if not isinstance(tool, dict) or tool.keys() - ALLOWED_TOOL_KEYS:
+                fail("archived catalog contains an unapproved descriptor: " + version)
+            name = tool.get("name")
+            if not isinstance(name, str) or not name:
+                fail("archived catalog descriptor has no name: " + version)
+            names.append(name)
+            if (
+                tool.get("effect") not in {"read", "mutation", "destructive", "credential_bearing"}
+                or not isinstance(tool.get("description"), str)
+                or not isinstance(tool.get("idempotent"), bool)
+                or not isinstance(tool.get("inputSchema"), dict)
+                or tool["inputSchema"].get("type") != "object"
+            ):
+                fail("archived catalog descriptor is missing public typed metadata: " + name)
+        if names != sorted(names) or len(names) != len(set(names)) or "get_host_info" not in names:
+            fail("archived catalog names are not unique, sorted, or missing get_host_info: " + version)
+        evidence = archive.get("publishedCanary")
+        if (
+            not isinstance(evidence, dict)
+            or evidence.keys() - ALLOWED_CANARY_KEYS
+            or evidence.get("packageVersion") != version
+            or evidence.get("catalogRevision") != revision
+            or not re.fullmatch(r"[0-9a-f]{40}", str(evidence.get("sourceSha", "")))
+            or type(evidence.get("runId")) is not int
+            or evidence.get("runId", 0) < 1
+            or type(evidence.get("runAttempt")) is not int
+            or evidence.get("runAttempt", 0) < 1
+            or not isinstance(evidence.get("checks"), dict)
+            or evidence["checks"].keys() != REQUIRED_CHECKS
+            or any(evidence["checks"].get(check) is not True for check in REQUIRED_CHECKS)
+        ):
+            fail("archived catalog lacks matching published read-only canary evidence: " + version)
+        route = ROOT / "site" / "public" / "docs" / "versions" / ("v" + version) / "capabilities"
+        published = load_json(route / "catalog.json", "generated archived catalog")
+        if published != archive:
+            fail("generated archived catalog differs from its immutable source snapshot: " + version)
+        try:
+            page = (route / "index.html").read_text(encoding="utf-8")
+        except OSError:
+            fail("generated archived capability page is missing: " + version)
+        if "Archived verified release" not in page or version not in page or revision not in page:
+            fail("generated archived capability page does not identify its verified release: " + version)
+        search = load_json(ROOT / "site" / "public" / "search-index.json", "generated search index")
+        search_routes = {
+            item.get("url") for item in search.get("pages", []) if isinstance(item, dict)
+        }
+        public_route = "/docs/versions/v" + version + "/capabilities/"
+        if public_route not in search_routes:
+            fail("archived capability route is missing from search index: " + version)
+        try:
+            sitemap = (ROOT / "site" / "public" / "sitemap.xml").read_text(encoding="utf-8")
+        except OSError:
+            fail("generated sitemap is missing")
+        if "https://www.opute.io" + public_route not in sitemap:
+            fail("archived capability route is missing from sitemap: " + version)
+
+
 def main() -> None:
     decision = load_json(DECISION_PATH, "release parity decision")
     verify_decision(decision)
@@ -175,6 +263,7 @@ def main() -> None:
     version = package.get("version")
     if package.get("name") != "@opute/host-agent" or not isinstance(version, str):
         fail("npm package identity is invalid")
+    verify_archived_catalogs(version)
     if catalog.get("packageName") != package["name"] or catalog.get("packageVersion") != version:
         fail("catalog package identity/version differs from npm/local-host-agent/package.json")
     if catalog.get("releaseChannel") not in {"preview", "stable"}:

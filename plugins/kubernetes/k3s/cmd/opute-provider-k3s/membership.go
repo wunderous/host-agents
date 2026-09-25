@@ -808,6 +808,20 @@ func parseNativeMembership(raw []byte) ([]map[string]any, error) {
 	return nodes, nil
 }
 
+func parseClusterNodeSnapshot(raw []byte) ([]map[string]any, int, error) {
+	nodes, err := parseNativeMembership(raw)
+	if err != nil {
+		return nil, 0, err
+	}
+	readyNodeCount := 0
+	for _, node := range nodes {
+		if ready, _ := node["ready"].(bool); ready {
+			readyNodeCount++
+		}
+	}
+	return nodes, readyNodeCount, nil
+}
+
 func validateEndpoint(value string) error {
 	parsed, err := url.Parse(strings.TrimSpace(value))
 	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || strings.ContainsAny(value, "\x00\r\n") {

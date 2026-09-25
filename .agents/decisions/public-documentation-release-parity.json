@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "public-documentation-release-parity",
   "title": "Public first-success instructions and stable capability references match a tested published release",
-  "claim": "The Host Agent-first public tutorial names the exact published @opute/host-agent package version whose read-only package canary passed. Stable capability reference data uses the same package version and catalog revision. Any unverified candidate is visibly labelled preview. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity. Generated HTML addresses its stylesheet and client scripts using each asset's LF-normalized SHA-256 fingerprint, and CI rejects missing or stale fingerprints.",
+  "claim": "The Host Agent-first public tutorial names the exact published @opute/host-agent package version whose read-only package canary passed. Stable capability reference data uses the same package version and catalog revision. Each archived release reference is generated from its own immutable, allowlisted release catalog snapshot and remains discoverable in the sitemap and search index. Any unverified candidate is visibly labelled preview. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity. Generated HTML addresses its stylesheet and client scripts using each asset's LF-normalized SHA-256 fingerprint, and CI rejects missing or stale fingerprints.",
   "rationale": "A successful source build, open health endpoint, or tool-name snapshot cannot prove that a visitor can install the published launcher, authenticate, discover tools, and read structured host facts. Matching release and catalog evidence prevents public instructions from silently describing a different artifact or runtime boundary.",
   "decidedOn": "2026-09-24",
   "section": "Public website and release parity",
@@ -11,13 +11,15 @@
     "decision": ".agents/decisions/public-documentation-release-parity.json",
     "package": "npm/local-host-agent/package.json",
     "catalog": "site/context/release-catalog.json",
+    "archivedCatalogExample": "site/context/release-archives/v0.2.0.json",
     "canary": "npm/local-host-agent/published-readonly-canary.test.js",
     "generator": "site/scripts/generate-docs.ts",
     "localDaemonHealth": "internal/transport/http.go",
     "canonicalIdentity": "docs/adr/0006-canonical-host-agent-identity.md",
     "verifier": "scripts/check_site_release_parity.py",
     "generatedSiteValidator": "scripts/validate-generated-site.py",
-    "generatedSiteCleanTest": "scripts/test_check_generated_site_clean.py"
+    "generatedSiteCleanTest": "scripts/test_check_generated_site_clean.py",
+    "promotionTests": "scripts/test_promote_site_release_catalog.py"
   },
   "scope": {
     "included": [
@@ -47,6 +49,8 @@
       "generated catalog, sitemap, search, OpenAPI, and links validate",
       "regeneration leaves no tracked generated-content drift from HEAD or untracked generated output",
       "all public documentation routes are generated from the maintained Bun source",
+      "every archived versioned capability page is generated from a validated release catalog snapshot and included in search and sitemap",
+      "stable promotion archives the prior stable catalog when the package version advances and refuses conflicting archive content",
       "generated CSS and client-script URLs match the content fingerprint of each checked-in asset",
       "tutorial output example includes every schema-required get_host_info field and labels optional fields",
       "tutorial shows a wrong-token HTTP 401 check without exposing a real credential"
@@ -54,12 +58,12 @@
     "canary": "npm/local-host-agent/published-readonly-canary.test.js",
     "siteVerifier": "scripts/check_site_release_parity.py"
   },
-  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. CSS and client-script URL fingerprints change automatically with LF-normalized asset content; update the validator's asset allowlist and tests when that asset set changes. Recompute and review file anchors whenever an anchored authority changes.",
+  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. The stable promotion script archives the prior stable catalog as site/context/release-archives/v<version>.json when the package version advances and refuses conflicting archive content. Archived snapshots are immutable, must include matching published read-only canary evidence, and drive their own versioned page, JSON download, search entry, and sitemap route. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. CSS and client-script URL fingerprints change automatically with LF-normalized asset content; update the validator's asset allowlist and tests when that asset set changes. Recompute and review file anchors whenever an anchored authority changes.",
   "anchors": [
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "cc0730f73af2bd55147ecf6c7b5856353e072eaa475ea0ad59e2e28df554f61c",
+      "digest": "5d5e8d9c134eab4b7fd6c81a601f3e8c7d0093f7b7c65857644e9843bb0f2648",
       "note": "Published package name and release version"
     },
     {
@@ -107,19 +111,19 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "f3bccefbf3229dbd4a85b0f168d447d96cbc95a1eede66a990eb2f46c8c1bac2",
+      "digest": "9a9b0cd15b001efed371b5dc1ef279ccaf03bc803223b607225b6bd5e91f60d0",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
       "kind": "file",
       "path": "scripts/check_site_release_parity.py",
-      "digest": "40dc85d2a8808bccbb37a0e7716cc4b585ea63b4839030fb9f9c090957f08f89",
+      "digest": "2c60220f7949fe4d4545342fcb8b1446ac32cabfc05528e15675a6bc62e72a89",
       "note": "Release metadata and anchor verifier"
     },
     {
       "kind": "file",
       "path": "scripts/promote_site_release_catalog.py",
-      "digest": "bdd7859d10cbccee0ff560c85cedcf093d42ff5cfb451e903fd0462e5a5312a8",
+      "digest": "b2fb11916687c31e9e185bf595a675718a7854692b54c35a31321b1b591610d0",
       "note": "Evidence-gated stable catalog promotion"
     },
     {
@@ -145,6 +149,18 @@
       "path": "scripts/test_check_generated_site_clean.py",
       "digest": "a23d7429569b4a3041f275d5bbe5d524cfa7d7f632ce771e20c3f267f98d281e",
       "note": "Regression coverage for tracked and untracked generated-output drift"
+    },
+    {
+      "kind": "file",
+      "path": "site/context/release-archives/v0.2.0.json",
+      "digest": "ce4b7d38f05f4c68eaf555c2574d8bade2e5f6ffeb3ac15e7613d1cb75946eee",
+      "note": "Immutable allowlisted catalog snapshot and published canary for the archived v0.2.0 release"
+    },
+    {
+      "kind": "file",
+      "path": "scripts/test_promote_site_release_catalog.py",
+      "digest": "f2b96e4582d080bf848e560975f0619fd5a2e0b91912fa3a5a93aafa9ddb759a",
+      "note": "Regression tests for preserving prior stable release catalogs"
     }
   ],
   "verify": "python3 scripts/check_site_release_parity.py",
