@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "kubernetes-node-readiness-projection",
   "title": "Kubernetes node readiness comes from the Ready condition status",
-  "claim": "Every K3s provider projection of Kubernetes node readiness derives ready and status from the node condition whose type is Ready and whose status is True. get-cluster-info and list-clusters use the same parser, preserve each node's ready/status fields, and derive aggregate counts from those node observations. A node condition type alone never means the node is Ready. The plugin catalog, installer descriptor, MCP server metadata, and HTTP discovery metadata report one identical provider version.",
-  "rationale": "Projecting .status.conditions[-1].type labels a stopped node Ready because the condition type remains Ready while its status changes to False. That false state can make HA evidence and operator decisions untrustworthy.",
+  "claim": "Every K3s provider projection of Kubernetes node readiness derives ready and status from the node condition whose type is Ready and whose status is True. get-cluster-info and list-clusters use the same parser, preserve each node's ready/status fields, and derive aggregate counts from those node observations. A node condition type alone never means the node is Ready. The plugin catalog, installer descriptor, MCP server metadata, and HTTP discovery metadata report one identical provider version. Node role labels remain a string array across K3s provider output and Host Agent cluster inventory, preserving all role labels through list-clusters decoding and runtime detail enrichment.",
+  "rationale": "Projecting .status.conditions[-1].type labels a stopped node Ready because the condition type remains Ready while its status changes to False. That false state can make HA evidence and operator decisions untrustworthy. The K3s provider emits multiple native role labels as an array. Decoding that payload into a scalar string makes cluster discovery fail and silently drops runtime node details.",
   "decidedOn": "2026-09-25",
   "section": "Kubernetes readiness evidence",
   "owner": "wunderous/host-agents owns the provider-neutral Kubernetes capability projection and the K3s provider implementation.",
@@ -12,16 +12,19 @@
     "kubernetesNodeParser": "plugins/kubernetes/k3s/cmd/opute-provider-k3s/membership.go",
     "clusterInfoProjection": "plugins/kubernetes/k3s/cmd/opute-provider-k3s/main.go",
     "providerVersion": "plugins/kubernetes/k3s/plugin.yaml and plugins/kubernetes/k3s/recipes/install.yaml",
-    "regressionTests": "plugins/kubernetes/k3s/cmd/opute-provider-k3s/main_test.go",
+    "regressionTests": "internal/domain/kubernetes/provider_test.go, internal/domain/cluster/cluster_discovery_test.go, and plugins/kubernetes/k3s/cmd/opute-provider-k3s/main_test.go",
     "verifier": "scripts/check_kubernetes_node_readiness_projection.py",
     "agentRouting": "AGENTS.md and .agents/skills/host-agent-boundaries/SKILL.md",
-    "releaseBuild": ".github/workflows/publish.yml and npm/local-host-agent/package.json"
+    "releaseBuild": ".github/workflows/publish.yml and npm/local-host-agent/package.json",
+    "clusterNodeRolesContract": "internal/contract/clusterinfo/clusterinfo.go",
+    "clusterInventoryProjection": "internal/domain/kubernetes/provider.go and internal/domain/cluster/cluster_discovery.go"
   },
   "scope": {
     "included": [
       "K3s provider get-cluster-info node status and aggregate readiness",
       "K3s provider list-clusters node status and aggregate readiness",
-      "native Kubernetes Node condition and node-role metadata projection"
+      "native Kubernetes Node condition and node-role metadata projection",
+      "typed node-role label preservation from K3s list-clusters and get-cluster-info into Host Agent cluster inventory"
     ],
     "excluded": [
       "embedded-etcd membership and quorum classification",
@@ -29,7 +32,7 @@
       "node health interpretations owned by other Kubernetes providers"
     ]
   },
-  "exception": "Malformed Kubernetes node JSON or an unnamed node must fail the projection. A provider may not infer node readiness from node existence, condition ordering, instance status, or condition type. A different readiness definition requires an explicit superseding decision and consumer migration.",
+  "exception": "Malformed Kubernetes node JSON or an unnamed node must fail the projection. A provider may not infer node readiness from node existence, condition ordering, instance status, or condition type. Providers must preserve role labels as arrays at the Host Agent cluster inventory boundary. A scalar legacy role representation requires an explicit provider adapter and regression. A different readiness or role representation requires an explicit superseding decision and consumer migration.",
   "evidence": {
     "required": [
       "a focused regression projects a node with Ready=True as Ready and Ready=false as NotReady",
@@ -37,12 +40,14 @@
       "list-clusters uses the same node parser and does not project condition type as status",
       "the provider manifest, plugin catalog, install recipe, MCP server metadata, and HTTP discovery metadata report one matching provider version",
       "the Host Agent release tag matches the npm package version and publishes the K3s artifact",
-      "the verifier checks source anchors and confirms the regression runs in the normal test target"
+      "the verifier checks source anchors and confirms the regression runs in the normal test target",
+      "a provider result with multiple node role labels passes through ListKubernetesClusters with every label preserved as a string array",
+      "get-cluster-info runtime enrichment preserves multiple role labels in the shared ClusterNode contract"
     ],
-    "test": "cd plugins/kubernetes/k3s && go test ./cmd/opute-provider-k3s -run 'TestClusterInfoProjectsActualNodeReadiness|TestParseClusterNodeSnapshotUsesReadyCondition' -count=1",
+    "test": "go test ./internal/domain/kubernetes ./internal/domain/cluster -run 'TestListKubernetesClustersPreservesMultipleNodeRoles|TestClusterRuntimeProjectionPreservesMultipleNodeRoles|TestParseClusterNodesPreservesSchemaFieldsWhenAgeIsUnavailable' -count=1",
     "verifier": "python3 scripts/check_kubernetes_node_readiness_projection.py"
   },
-  "revisionBehavior": "Any change to the Ready condition interpretation, node status output, or aggregate readiness fields requires updating the focused test and reviewed whole-file anchors. Provider behavior increments the provider plugin version and install recipe together, and publishes the K3s artifact in the next Host Agent release tag before live claims use the revised projection. Every wire-facing provider version string must be derived from and match the same provider catalog version.",
+  "revisionBehavior": "Any change to the Ready condition interpretation, node status output, or aggregate readiness fields requires updating the focused test and reviewed whole-file anchors. Provider behavior increments the provider plugin version and install recipe together, and publishes the K3s artifact in the next Host Agent release tag before live claims use the revised projection. Every wire-facing provider version string must be derived from and match the same provider catalog version. The ClusterNode.roles JSON type is a list of provider-observed labels. Changes to that type require a Host Agent package/catalog revision, generated release reference update, focused decode tests, and a new published read-only canary before the tutorial targets that release.",
   "anchors": [
     {
       "kind": "file",
@@ -71,7 +76,7 @@
     {
       "kind": "file",
       "path": "plugins/kubernetes/k3s/recipes/install.yaml",
-      "digest": "a1a1cf9ed698ca9db6996cd9f961ee6c93a77d0618ef9ea8c46aca9b06b561a2",
+      "digest": "850d6940c00eca5b9f6dd9207e196aa28ed22fdf9e70521c80a4ef1484d8f111",
       "note": "Installer selects the matching readiness provider version"
     },
     {
@@ -89,7 +94,7 @@
     {
       "kind": "file",
       "path": "scripts/check_kubernetes_node_readiness_projection.py",
-      "digest": "6ceeaf2ac8a352cd4ea8414a1d7e7fbfe8f7940d526fb3ad125ddd4efcd2fea8",
+      "digest": "f1a32b8635880ead2724b65fb073f13d1a5bfb44e1838a62c42602cc91f53286",
       "note": "Fail-closed decision and projection verifier"
     },
     {
@@ -115,22 +120,57 @@
       "path": ".github/workflows/ci.yml",
       "digest": "b2042dbf6fe5b67ebda9b6aff6710fb734f01dfdbe37659f5cb0059ce109077f",
       "note": "CI reaches the normal Host Agent test target"
+    },
+    {
+      "kind": "file",
+      "path": "internal/contract/clusterinfo/clusterinfo.go",
+      "digest": "ca945da55afa0ad177e210572ed3d3beec8e4033706a0c28e21ef33957f94a3e",
+      "note": "Neutral node inventory wire shape, including typed role labels"
+    },
+    {
+      "kind": "file",
+      "path": "internal/domain/kubernetes/provider.go",
+      "digest": "b43caa160d83f65e1fef3511ec9e9eb09b4b1a378f1fc4ddf39ae4f4ab7f423f",
+      "note": "Provider result decoding into the shared cluster inventory contract"
+    },
+    {
+      "kind": "file",
+      "path": "internal/domain/kubernetes/provider_test.go",
+      "digest": "00e2fddc5e043839a2ca7f1d2957e9c344d640c3c320b980e444ab4ca67c95d5",
+      "note": "Regression for preserving multiple roles through K3s list-clusters decoding"
+    },
+    {
+      "kind": "file",
+      "path": "internal/domain/cluster/cluster_discovery.go",
+      "digest": "79698a4e46c50661f8cb8e142209dcf747e3095d9f1e6cd8bbb95da7473f42f6",
+      "note": "Runtime node-detail enrichment projection"
+    },
+    {
+      "kind": "file",
+      "path": "internal/domain/cluster/cluster_discovery_test.go",
+      "digest": "b0ccd3c15785cb44b937feeb58081e6cafe9d783b7c3022277a0a507bb842769",
+      "note": "Regression for preserving multiple roles in cluster detail enrichment"
     }
   ],
-  "verify": "python3 scripts/check_kubernetes_node_readiness_projection.py && cd plugins/kubernetes/k3s && go test ./cmd/opute-provider-k3s -run 'TestClusterInfoProjectsActualNodeReadiness|TestParseClusterNodeSnapshotUsesReadyCondition' -count=1",
+  "verify": "python3 scripts/check_kubernetes_node_readiness_projection.py && go test ./internal/domain/kubernetes ./internal/domain/cluster -run 'TestListKubernetesClustersPreservesMultipleNodeRoles|TestClusterRuntimeProjectionPreservesMultipleNodeRoles|TestParseClusterNodesPreservesSchemaFieldsWhenAgeIsUnavailable' -count=1 && cd plugins/kubernetes/k3s && go test ./cmd/opute-provider-k3s -run 'TestClusterInfoProjectsActualNodeReadiness|TestParseClusterNodeSnapshotUsesReadyCondition' -count=1",
   "enforcedBy": [
-    "plugins/kubernetes/k3s/cmd/opute-provider-k3s/membership.go",
+    ".agents/skills/host-agent-boundaries/SKILL.md",
+    ".github/workflows/ci.yml",
+    ".github/workflows/publish.yml",
+    "AGENTS.md",
+    "Makefile",
+    "internal/contract/clusterinfo/clusterinfo.go",
+    "internal/domain/cluster/cluster_discovery.go",
+    "internal/domain/cluster/cluster_discovery_test.go",
+    "internal/domain/kubernetes/provider.go",
+    "internal/domain/kubernetes/provider_test.go",
+    "npm/local-host-agent/package.json",
     "plugins/kubernetes/k3s/cmd/opute-provider-k3s/main.go",
     "plugins/kubernetes/k3s/cmd/opute-provider-k3s/main_test.go",
+    "plugins/kubernetes/k3s/cmd/opute-provider-k3s/membership.go",
     "plugins/kubernetes/k3s/plugin.yaml",
     "plugins/kubernetes/k3s/recipes/install.yaml",
-    "npm/local-host-agent/package.json",
-    ".github/workflows/publish.yml",
-    "scripts/check_kubernetes_node_readiness_projection.py",
-    "AGENTS.md",
-    ".agents/skills/host-agent-boundaries/SKILL.md",
-    "Makefile",
-    ".github/workflows/ci.yml"
+    "scripts/check_kubernetes_node_readiness_projection.py"
   ],
   "supersedes": [],
   "withdrawn": false,

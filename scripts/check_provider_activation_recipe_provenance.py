@@ -70,13 +70,13 @@ def main() -> None:
         if hashlib.sha256(content).hexdigest() != digest:
             fail("anchor changed; review and re-anchor: " + relative)
 
-    for relative in (
-        "plugins/kubernetes/k3s/recipes/install.yaml",
-        "plugins/tunneling/tailscale/recipes/install.yaml",
+    for relative, wanted_version in (
+        ("plugins/kubernetes/k3s/recipes/install.yaml", "2.0.1"),
+        ("plugins/tunneling/tailscale/recipes/install.yaml", "2.0.0"),
     ):
         source = read(relative)
-        if 'recipeVersion: 2.0.0' not in source:
-            fail(relative + " did not version the required input contract")
+        if f"recipeVersion: {wanted_version}" not in source:
+            fail(relative + " has an unexpected recipe version")
         if "activationRecipeRevision" not in source or 'pattern: "^[0-9a-f]{40}$"' not in source:
             fail(relative + " lacks the required immutable revision input")
         if "revision: ${vars.inputs.activationRecipeRevision}" not in source:
@@ -84,6 +84,18 @@ def main() -> None:
         for argument in ("recipeSource", "sha256"):
             if argument + ": ${vars.inputs.activationRecipe" not in source:
                 fail(relative + " does not pass activation recipe " + argument)
+
+    k3s = read("plugins/kubernetes/k3s/recipes/install.yaml")
+    plugin = read("plugins/kubernetes/k3s/plugin.yaml")
+    plugin_version = next((line.split(":", 1)[1].strip() for line in plugin.splitlines() if line.startswith("version:")), None)
+    if plugin_version is None:
+        fail("K3s plugin descriptor has no version")
+    if "serviceState:\n    default: start" not in k3s or "schema: {type: string, enum: [start, restart]}" not in k3s:
+        fail("K3s install does not default to start and constrain explicit service restarts")
+    if "state: ${vars.inputs.serviceState}" not in k3s:
+        fail("K3s install does not pass the explicit service state to the typed action")
+    if f"- {{path: /generation/Provider/version, op: eq, value: {plugin_version}}}" not in k3s:
+        fail("K3s install does not wait for the active provider version selected by plugin.yaml")
 
     parser = read("internal/recipe/recipe.go")
     if "GitHub source revision disagrees with URL" not in parser:

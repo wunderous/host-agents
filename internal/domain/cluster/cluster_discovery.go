@@ -185,7 +185,7 @@ func parseClusterNodes(output, fallbackName string) []ClusterNode {
 		if name == "" {
 			name = fallbackName
 		}
-		node := ClusterNode{Name: name, Status: "Unknown", Roles: "control-plane"}
+		node := ClusterNode{Name: name, Status: "Unknown", Roles: []string{"control-plane"}}
 		if len(parts) > 1 {
 			node.Status = parts[1]
 		}

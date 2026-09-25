@@ -41,7 +41,34 @@ func TestParseClusterNodesPreservesSchemaFieldsWhenAgeIsUnavailable(t *testing.T
 	if nodes[0].Age != "" {
 		t.Fatalf("age = %q, want empty unavailable value", nodes[0].Age)
 	}
-	if nodes[0].Roles == "" || nodes[0].Version == "" {
+	if len(nodes[0].Roles) == 0 || nodes[0].Version == "" {
 		t.Fatalf("node = %#v, want schema-complete role and version fields", nodes[0])
+	}
+}
+
+func TestClusterRuntimeProjectionPreservesMultipleNodeRoles(t *testing.T) {
+	service := New(nil, Deps{
+		ExecuteKubernetesProvider: func(_, _ string, _ map[string]any) (map[string]any, bool, error) {
+			return map[string]any{
+				"version": "v1.31.8+k3s1",
+				"nodes": []any{map[string]any{
+					"name":    "server-a",
+					"status":  "Ready",
+					"roles":   []string{"control-plane", "etcd"},
+					"version": "v1.31.8+k3s1",
+				}},
+			}, true, nil
+		},
+	})
+
+	got, err := service.enrichClusterDetailRuntimeByURI("cluster:local:proof", ClusterDetail{
+		URI:  "cluster:local:proof",
+		Name: "proof",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Nodes) != 1 || len(got.Nodes[0].Roles) != 2 || got.Nodes[0].Roles[0] != "control-plane" || got.Nodes[0].Roles[1] != "etcd" {
+		t.Fatalf("runtime node roles = %#v, want both provider-observed labels", got.Nodes)
 	}
 }

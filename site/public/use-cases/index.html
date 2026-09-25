@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Use cases — Opute Host Agent</title>
-  <meta name="description" content="Read-only examples of host inspection and conditional inventory discovery with Opute Host Agent." />
+  <meta name="description" content="See how Opute Host Agent configures K3s clusters, verifies membership, and exposes read-only host facts." />
   <link rel="canonical" href="https://www.opute.io/use-cases/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Opute Host Agent" />
   <meta property="og:title" content="Use cases — Opute Host Agent" />
-  <meta property="og:description" content="Read-only examples of host inspection and conditional inventory discovery with Opute Host Agent." />
+  <meta property="og:description" content="See how Opute Host Agent configures K3s clusters, verifies membership, and exposes read-only host facts." />
   <meta property="og:url" content="https://www.opute.io/use-cases/" />
   <meta property="og:locale" content="en_US" />
   <meta property="og:image" content="https://www.opute.io/og-image.png" />
@@ -21,7 +21,7 @@
   <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
   <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
   <meta name="twitter:title" content="Use cases — Opute Host Agent" />
-  <meta name="twitter:description" content="Read-only examples of host inspection and conditional inventory discovery with Opute Host Agent." />
+  <meta name="twitter:description" content="See how Opute Host Agent configures K3s clusters, verifies membership, and exposes read-only host facts." />
   <link rel="stylesheet" href="/styles.css?v=df4a76b78d3e268a6895513c9a058d7e5c0171a96c15926db64247828951098f" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -91,8 +91,8 @@
 <main class="doc" id="main-content" lang="en">
 
 <p class="badge">Use cases</p>
-<h1>Inspect before you act</h1>
-<p class="meta">Host Agent exposes typed operations through authenticated MCP. Begin by reading the host and discovering its current catalog. The available catalog is a host capability description, not proof that an optional provider is configured.</p>
+<h1>Configure, verify, then inspect</h1>
+<p class="meta">Host Agent exposes typed operations through authenticated MCP. Available workflows depend on the live catalog and configured providers. Read the current catalog before acting; it is a capability description, not proof that a provider is ready.</p>
 <h2>Understand the connected host</h2>
 <p>Call <code>get_host_info {}</code> to read the host URI, hostname, provider identity, and supported tools. Use this result to confirm which Host Agent answered before asking for a resource inventory.</p>
 <h2>Discover operations available now</h2>
@@ -102,9 +102,9 @@
 <h2>Discover Kubernetes clusters when configured</h2>
 <p>Use <code>list_kubernetes_clusters</code> only when the host has an available Kubernetes provider and the intended source is known. An empty inventory and a failed inventory probe are different outcomes; read the structured response and error status.</p>
 <h2>Plan cluster setup and availability</h2>
-<p>Host Agent executes host-scoped typed operations; Platform coordinates authorized work across hosts. Membership alone does not prove high availability. For Kubernetes, test datastore quorum, API writes, already-running workloads, durable state, and the serving path as separate outcomes. See <a href="/docs/availability/">Kubernetes availability and failure scope</a> for the requirements and a proof checklist.</p>
+<p>Host Agent can provision and configure K3s server membership through typed operations. A local test used 3 Incus server containers with embedded-etcd; after one guest stopped, 2 of 3 Kubernetes nodes remained Ready and a typed API write and read succeeded. Those guests shared one physical host. See <a href="/docs/availability/#local-host-agent-test">the test record and its exact scope</a>.</p>
 <div class="callout"><strong>Product boundary.</strong> Host Agent executes explicit typed operations against one host. Platform owns intent, authorization, and durable orchestration across hosts. Read <a href="/docs/concepts/#host-agent-and-platform">how they fit together</a>.</div>
-<p>These examples describe verified tool names and their documented purposes. No customer outcome, performance result, or availability guarantee is implied.</p>
+<p>This is local dogfood evidence, not a customer outcome, performance result, or availability guarantee. It does not establish physical-host failover, application serving, durable application data, or external endpoint failover.</p>
 <p>Next: <a href="/docs/get-started/">complete the authenticated read-only check</a> or browse the <a href="/docs/capabilities/">release catalog</a>.</p>
 
 </main>

@@ -13,11 +13,11 @@ type ClusterListResult struct {
 }
 
 type ClusterNode struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"`
-	Roles   string `json:"roles"`
-	Age     string `json:"age"`
-	Version string `json:"version"`
+	Name    string   `json:"name"`
+	Status  string   `json:"status"`
+	Roles   []string `json:"roles"`
+	Age     string   `json:"age"`
+	Version string   `json:"version"`
 }
 
 type ClusterDetail struct {

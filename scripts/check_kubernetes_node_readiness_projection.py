@@ -92,6 +92,19 @@ def main() -> None:
         if '"-o", "json"' not in projection or "parseClusterNodeSnapshot" not in projection:
             fail(name + " does not use the shared JSON readiness projection")
 
+    cluster_contract = read("internal/contract/clusterinfo/clusterinfo.go")
+    if re.search(r'Roles\s+\[\]string\s+`json:"roles"`', cluster_contract) is None:
+        fail("Host Agent cluster inventory does not preserve node roles as a string array")
+    cluster_parser = read("internal/domain/cluster/cluster_discovery.go")
+    if 'Roles: []string{"control-plane"}' not in cluster_parser:
+        fail("cluster detail fallback does not use the shared role-array contract")
+    kubernetes_provider = read("internal/domain/kubernetes/provider_test.go")
+    if "TestListKubernetesClustersPreservesMultipleNodeRoles" not in kubernetes_provider:
+        fail("missing Host Agent list-clusters role-array regression")
+    cluster_tests = read("internal/domain/cluster/cluster_discovery_test.go")
+    if "TestClusterRuntimeProjectionPreservesMultipleNodeRoles" not in cluster_tests:
+        fail("missing Host Agent runtime-detail role-array regression")
+
     tests = read("plugins/kubernetes/k3s/cmd/opute-provider-k3s/main_test.go")
     for test_name in (
         "TestParseClusterNodeSnapshotUsesReadyCondition",

@@ -10,11 +10,15 @@ import (
 type recordingKubernetesExecutor struct {
 	operation string
 	request   KubernetesProviderRequest
+	result    map[string]any
 }
 
 func (r *recordingKubernetesExecutor) Execute(_ context.Context, operation string, request KubernetesProviderRequest) (map[string]any, error) {
 	r.operation = operation
 	r.request = request
+	if r.result != nil {
+		return r.result, nil
+	}
 	return map[string]any{"uri": request.TargetURI, "applied": true}, nil
 }
 
@@ -40,6 +44,38 @@ func TestGenericKubernetesOperationDelegatesAfterCanonicalResolution(t *testing.
 	}
 	if _, err := service.ApplyManifest(ApplyManifestArgs{URI: "cluster:tenant-b:k3s", Manifest: "apiVersion: v1"}, nil); err == nil {
 		t.Fatal("foreign tenant target was delegated")
+	}
+}
+
+func TestListKubernetesClustersPreservesMultipleNodeRoles(t *testing.T) {
+	service := testService("tenant-a")
+	executor := &recordingKubernetesExecutor{result: map[string]any{
+		"clusters": []any{map[string]any{
+			"name":         "k3s-proof",
+			"instanceType": "container",
+			"nodes": []any{map[string]any{
+				"name":    "server-a",
+				"status":  "Ready",
+				"roles":   []string{"control-plane", "etcd"},
+				"version": "v1.31.8+k3s1",
+			}},
+		}},
+	}}
+	service.SetKubernetesProviderExecutor(executor)
+
+	got, err := service.ListKubernetesClusters("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executor.operation != KubernetesListClustersOperation {
+		t.Fatalf("provider operation = %q, want %q", executor.operation, KubernetesListClustersOperation)
+	}
+	if len(got.Clusters) != 1 || len(got.Clusters[0].Nodes) != 1 {
+		t.Fatalf("clusters = %#v, want one cluster with one node", got.Clusters)
+	}
+	roles := got.Clusters[0].Nodes[0].Roles
+	if len(roles) != 2 || roles[0] != "control-plane" || roles[1] != "etcd" {
+		t.Fatalf("node roles = %#v, want both provider-observed labels", roles)
 	}
 }
 

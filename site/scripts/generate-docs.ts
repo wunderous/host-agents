@@ -44,15 +44,102 @@ type ReleaseCatalog = {
   }
 }
 
+type LocalHAProof = {
+  schemaVersion: number
+  id: string
+  evidenceDate: string
+  hostAgentRuntime: string
+  hostAgentCatalogRevision: string
+  providerId: string
+  providerVersion: string
+  k3sVersion: string
+  datastoreMode: string
+  guestKind: string
+  serverCount: number
+  readyBefore: number
+  readyWhileOneGuestStopped: number
+  readyAfter: number
+  failedGuestCount: number
+  physicalHostCount: number
+  setupThroughHostAgent: boolean
+  failureAndRecoveryThroughHostAgent: boolean
+  typedWriteDuringFailure: boolean
+  typedReadDuringFailure: boolean
+  externalEndpointConfigured: boolean
+  publishedPackageHaCanary: boolean
+  verifiedOperations: string[]
+  notEstablished: string[]
+}
+
 const releaseCatalog = JSON.parse(
   readFileSync(join(contextDir, "release-catalog.json"), "utf8"),
 ) as ReleaseCatalog
+const localHAProof = JSON.parse(
+  readFileSync(join(contextDir, "ha-proof.json"), "utf8"),
+) as LocalHAProof
 const allowedCatalogKeys = new Set([
   "packageName", "packageVersion", "releaseChannel", "catalogRevision", "toolCount", "tools", "publishedCanary",
 ])
 const allowedCanaryKeys = new Set([
   "packageVersion", "catalogRevision", "sourceSha", "runId", "runAttempt", "checks",
 ])
+const allowedHAProofKeys = new Set([
+  "schemaVersion", "id", "evidenceDate", "hostAgentRuntime", "hostAgentCatalogRevision",
+  "providerId", "providerVersion", "k3sVersion", "datastoreMode", "guestKind",
+  "serverCount", "readyBefore", "readyWhileOneGuestStopped", "readyAfter", "failedGuestCount",
+  "physicalHostCount", "setupThroughHostAgent", "failureAndRecoveryThroughHostAgent",
+  "typedWriteDuringFailure", "typedReadDuringFailure", "externalEndpointConfigured",
+  "publishedPackageHaCanary", "verifiedOperations", "notEstablished",
+])
+const requiredHAOperations = [
+  "provision_vm",
+  "run_host_local_recipe",
+  "opute.capability.kubernetes.get-cluster-info",
+  "stop_vm",
+  "opute.capability.kubernetes.apply-manifest",
+  "opute.capability.kubernetes.get-resource",
+  "start_vm",
+]
+const requiredHALimitations = [
+  "physical-host or site failure",
+  "network partition",
+  "application workload continued serving",
+  "durable application data survived",
+  "new workload scheduling during failure",
+  "external endpoint failover",
+  "the published npm package HA setup path",
+]
+if (
+  Object.keys(localHAProof).some((key) => !allowedHAProofKeys.has(key)) ||
+  localHAProof.schemaVersion !== 1 ||
+  localHAProof.id !== "local-k3s-single-guest-loss-2026-09-25" ||
+  !/^\d{4}-\d{2}-\d{2}$/.test(localHAProof.evidenceDate) ||
+  localHAProof.hostAgentRuntime !== "dev" ||
+  !/^sha256:[0-9a-f]{64}$/.test(localHAProof.hostAgentCatalogRevision) ||
+  localHAProof.providerId !== "com.opute.k3s" ||
+  !/^\d+\.\d+\.\d+$/.test(localHAProof.providerVersion) ||
+  !/^v\d+\.\d+\.\d+\+k3s\d+$/.test(localHAProof.k3sVersion) ||
+  localHAProof.datastoreMode !== "embedded-etcd" ||
+  localHAProof.guestKind !== "Incus system container" ||
+  localHAProof.serverCount !== 3 ||
+  localHAProof.readyBefore !== 3 ||
+  localHAProof.readyWhileOneGuestStopped !== 2 ||
+  localHAProof.readyAfter !== 3 ||
+  localHAProof.failedGuestCount !== 1 ||
+  localHAProof.physicalHostCount !== 1 ||
+  localHAProof.setupThroughHostAgent !== true ||
+  localHAProof.failureAndRecoveryThroughHostAgent !== true ||
+  localHAProof.typedWriteDuringFailure !== true ||
+  localHAProof.typedReadDuringFailure !== true ||
+  localHAProof.externalEndpointConfigured !== false ||
+  localHAProof.publishedPackageHaCanary !== false ||
+  !Array.isArray(localHAProof.verifiedOperations) ||
+  requiredHAOperations.some((operation) => !localHAProof.verifiedOperations.includes(operation)) ||
+  !Array.isArray(localHAProof.notEstablished) ||
+  requiredHALimitations.some((limitation) => !localHAProof.notEstablished.includes(limitation))
+) {
+  throw new Error("site/context/ha-proof.json is incomplete, overbroad, or outside its evidence boundary")
+}
 const allowedToolKeys = new Set([
   "name", "title", "description", "version", "capabilityId", "effect", "idempotent", "requiresApproval", "inputSchema", "outputSchema",
 ])
@@ -856,12 +943,12 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
 
   "use-cases/index.html": {
     title: "Use cases",
-    description: "Read-only examples of host inspection and conditional inventory discovery with Opute Host Agent.",
+    description: "See how Opute Host Agent configures K3s clusters, verifies membership, and exposes read-only host facts.",
     current: "use-cases",
     body: `
 <p class="badge">Use cases</p>
-<h1>Inspect before you act</h1>
-<p class="meta">Host Agent exposes typed operations through authenticated MCP. Begin by reading the host and discovering its current catalog. The available catalog is a host capability description, not proof that an optional provider is configured.</p>
+<h1>Configure, verify, then inspect</h1>
+<p class="meta">Host Agent exposes typed operations through authenticated MCP. Available workflows depend on the live catalog and configured providers. Read the current catalog before acting; it is a capability description, not proof that a provider is ready.</p>
 <h2>Understand the connected host</h2>
 <p>Call <code>get_host_info {}</code> to read the host URI, hostname, provider identity, and supported tools. Use this result to confirm which Host Agent answered before asking for a resource inventory.</p>
 <h2>Discover operations available now</h2>
@@ -871,9 +958,9 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
 <h2>Discover Kubernetes clusters when configured</h2>
 <p>Use <code>list_kubernetes_clusters</code> only when the host has an available Kubernetes provider and the intended source is known. An empty inventory and a failed inventory probe are different outcomes; read the structured response and error status.</p>
 <h2>Plan cluster setup and availability</h2>
-<p>Host Agent executes host-scoped typed operations; Platform coordinates authorized work across hosts. Membership alone does not prove high availability. For Kubernetes, test datastore quorum, API writes, already-running workloads, durable state, and the serving path as separate outcomes. See <a href="/docs/availability/">Kubernetes availability and failure scope</a> for the requirements and a proof checklist.</p>
+<p>Host Agent can provision and configure K3s server membership through typed operations. A local test used ${localHAProof.serverCount} Incus server containers with ${localHAProof.datastoreMode}; after one guest stopped, ${localHAProof.readyWhileOneGuestStopped} of ${localHAProof.serverCount} Kubernetes nodes remained Ready and a typed API write and read succeeded. Those guests shared one physical host. See <a href="/docs/availability/#local-host-agent-test">the test record and its exact scope</a>.</p>
 <div class="callout"><strong>Product boundary.</strong> Host Agent executes explicit typed operations against one host. Platform owns intent, authorization, and durable orchestration across hosts. Read <a href="/docs/concepts/#host-agent-and-platform">how they fit together</a>.</div>
-<p>These examples describe verified tool names and their documented purposes. No customer outcome, performance result, or availability guarantee is implied.</p>
+<p>This is local dogfood evidence, not a customer outcome, performance result, or availability guarantee. It does not establish physical-host failover, application serving, durable application data, or external endpoint failover.</p>
 <p>Next: <a href="/docs/get-started/">complete the authenticated read-only check</a> or browse the <a href="/docs/capabilities/">release catalog</a>.</p>
 `,
   },
@@ -1045,13 +1132,15 @@ flowchart LR
 
   "docs/availability/index.html": {
     title: "Kubernetes availability",
-    description: "Understand Kubernetes quorum and define the failure scope an Opute cluster setup must prove.",
+    description: "Review Opute Host Agent's local K3s setup and one-guest-loss evidence, including what the test does not prove.",
     current: "availability",
     body: `
 <p class="badge">Explanation</p>
 <h1>Kubernetes availability and failure scope</h1>
 <p class="meta">“High availability” is a behavior under a named failure. State which behavior should continue, where the failed component lives, and how recovery works.</p>
-<aside class="callout"><strong>Current evidence.</strong> The published <code>@opute/host-agent@${releaseCatalog.packageVersion}</code> reference and existing join coverage do not establish a complete clean-host HA setup and node-failure flow. This page explains the proof required; it does not claim that a turnkey HA setup is already verified.</aside>
+<aside class="callout" id="local-host-agent-test"><strong>Verified local Host Agent test · ${escapeHTML(localHAProof.evidenceDate)}.</strong> Three fresh ${escapeHTML(localHAProof.guestKind)} server guests were provisioned and configured through typed Host Agent MCP operations as a K3s ${escapeHTML(localHAProof.k3sVersion)} cluster with ${escapeHTML(localHAProof.datastoreMode)}. The guests shared one physical host. With one guest stopped, ${localHAProof.readyWhileOneGuestStopped} of ${localHAProof.serverCount} nodes were Ready; a typed ConfigMap apply and read both succeeded through the surviving control plane. Starting the guest restored ${localHAProof.readyAfter} of ${localHAProof.serverCount} Ready nodes.</aside>
+<p>The test used K3s provider <code>${escapeHTML(localHAProof.providerVersion)}</code>. The Host Agent process reported runtime <code>${escapeHTML(localHAProof.hostAgentRuntime)}</code> and catalog revision <code>${escapeHTML(localHAProof.hostAgentCatalogRevision)}</code>. The published <code>@opute/host-agent@${releaseCatalog.packageVersion}</code> canary separately proves the authenticated read-only first-success path; it did not test this HA setup flow.</p>
+<p>This result covers one Incus guest/server failure on one physical host. It does not establish host or site failure recovery, network partition behavior, workload serving, durable application data, new workload scheduling, or external endpoint failover. The membership probe also reported that no external HA endpoint was configured.</p>
 
 <h2>Separate the outcomes</h2>
 <p>One healthy member list is not an availability test. Check each property that matters to the user:</p>
@@ -1063,6 +1152,7 @@ flowchart LR
   <li><strong>Durable state:</strong> does application data remain readable and writable?</li>
 </ul>
 <p>Record these separately. A service returning HTTP 200 does not prove Kubernetes write availability, and a healthy cluster status does not prove the application path is serving.</p>
+<p>In this K3s provider, <code>get-cluster-info.readyNodeCount</code> and each node's <code>status</code> expose the per-node observation. Its aggregate <code>ready</code> field is true when at least one node is Ready; that boolean alone does not prove etcd quorum or application health. The typed write and read during the guest failure supply the API write-continuity evidence for this specific test.</p>
 
 <h2>K3s datastore quorum</h2>
 <p>For embedded etcd, K3s documents an HA cluster as <strong>three or more server nodes</strong>. Quorum requires a majority. With only two voting members, losing either member removes quorum, so automatic Kubernetes write continuity is not established.</p>
@@ -1074,6 +1164,9 @@ flowchart LR
 
 <h2>Failure domains matter</h2>
 <p>Three guests on one physical computer can demonstrate guest-level setup and failure behavior. They share the computer’s power, storage, host networking, and physical failure domain, so that test cannot establish resilience to losing the host or site. State the tested boundary with the result.</p>
+
+<h2>What remains untested</h2>
+<ul>${localHAProof.notEstablished.map((limitation) => `<li>${escapeHTML(limitation)}</li>`).join("\n  ")}</ul>
 
 <h2>What a clean setup test should record</h2>
 <ol>
@@ -1689,7 +1782,7 @@ writeFileSync(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  ${seoMeta("Opute Host Agent — Typed MCP tools for Linux infrastructure", "Inspect Linux hosts and operate configured Incus, Kubernetes, and network capabilities through one typed MCP server. Host-local recipes can check readiness and retain results.", `${SITE_ORIGIN}/`)}
+  ${seoMeta("Opute Host Agent — Configure and verify K3s clusters", "Configure K3s servers with authenticated typed MCP operations, inspect membership, and test one-guest recovery through Opute Host Agent.", `${SITE_ORIGIN}/`)}
   <link rel="stylesheet" href="${CSS}" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -1700,19 +1793,19 @@ writeFileSync(
 ${nav("home")}
   <main class="hero home-hero" id="main-content" lang="en">
     <p class="eyebrow">Opute Host Agent · for Linux operators and agent authors</p>
-    <h1>Inspect your Linux hosts with your AI client.</h1>
+    <h1>Configure and verify K3s clusters through Opute Host Agent.</h1>
     <p class="lede">
-      Host Agent runs beside each Linux host. Connect an authenticated MCP client to read host facts and discover available tools. Opute Platform coordinates authorized work across hosts; Host Agent executes each host-scoped operation.
+      Use authenticated, typed MCP operations to provision K3s servers, inspect membership, and test recovery. In a local three-server test, a typed API write and read succeeded after one guest stopped. The guests shared one physical host, so this proves guest-level behavior only. Opute Platform coordinates authorized work across hosts; Host Agent executes each host-scoped operation.
     </p>
     <div class="cta">
-      <a class="btn primary" href="/docs/get-started/">Run a read-only host check</a>
-      <a class="btn ghost" href="/docs/concepts/#host-agent-and-platform">How Host Agent and Platform fit</a>
+      <a class="btn primary" href="/docs/availability/#local-host-agent-test">See the K3s setup and one-guest test</a>
+      <a class="btn ghost" href="/docs/get-started/">Start with an authenticated read-only check</a>
     </div>
-    <p class="home-product-boundary"><strong>Kubernetes HA:</strong> review the current release evidence and the failure tests each claim needs. <a href="/docs/availability/">Read the guide</a>.</p>
-    <div class="home-hero-proof" aria-label="Host Agent operating model">
-      <span>Authenticated MCP</span>
-      <span>Discoverable typed tools</span>
-      <span>Read-first workflow</span>
+    <p class="home-product-boundary"><strong>Test scope:</strong> ${localHAProof.readyWhileOneGuestStopped} of ${localHAProof.serverCount} nodes stayed Ready with one Incus guest stopped; the provider reported no external HA endpoint. <a href="/docs/availability/">Read all evidence and limits</a>.</p>
+    <div class="home-hero-proof" aria-label="Local K3s test results">
+      <span>${localHAProof.serverCount} K3s servers</span>
+      <span>${localHAProof.datastoreMode}</span>
+      <span>Typed API write/read during one guest loss</span>
     </div>
     <figure class="visual home-terminal">
       <figcaption>Read-only first call · example excerpt with redacted values, not live host output</figcaption>
@@ -1732,16 +1825,16 @@ ${nav("home")}
   <section class="home-section" aria-labelledby="what-it-does">
     <div class="home-section-heading">
       <p class="eyebrow">What you can operate</p>
-      <h2 id="what-it-does">Inspect hosts, connect providers, and act with a plan.</h2>
+      <h2 id="what-it-does">Build cluster membership, inspect hosts, and verify each step.</h2>
       <p>Discover the current tool catalog before every operation. Available capabilities depend on the host and its active providers.</p>
     </div>
     <div class="home-capabilities">
       <article><span class="home-card-index">01 / Compute</span><h3>Linux &amp; Incus</h3><p>Inspect host state, manage services, and provision or inspect guests through typed tools.</p></article>
-      <article><span class="home-card-index">02 / Workloads</span><h3>Kubernetes &amp; images</h3><p>Read cluster resources, build and push OCI images, and apply workload manifests.</p></article>
+      <article><span class="home-card-index">02 / Workloads</span><h3>Kubernetes &amp; images</h3><p>Provision and join K3s servers, inspect node readiness, apply manifests, and read resources through the configured provider.</p></article>
       <article><span class="home-card-index">03 / Reachability</span><h3>Networking &amp; tunnels</h3><p>Manage declared network and tunnel capabilities through provider plugins when configured.</p></article>
     </div>
     <a class="home-text-link" href="/docs/capabilities/">Browse the captured catalog and learn how to discover yours →</a>
-    <a class="home-text-link" href="/docs/availability/">Kubernetes HA setup: current evidence and required failure tests →</a>
+    <a class="home-text-link" href="/docs/availability/#local-host-agent-test">K3s setup evidence: one guest failed, and typed API writes continued →</a>
   </section>
 
   <section class="home-section home-flow" aria-labelledby="why-it-matters">
@@ -1756,7 +1849,7 @@ ${nav("home")}
       <li><span class="step-number" aria-hidden="true"></span><div><strong>Execute &amp; verify</strong><span>Run typed actions with readiness checks, retry, and compensation where the plan declares them.</span></div></li>
       <li><span class="step-number" aria-hidden="true"></span><div><strong>Inspect</strong><span>Read the durable plan result and the observed resource state.</span></div></li>
     </ol>
-    <p class="home-section-note">A host-local recipe can run declared steps on one host. For work across hosts, Platform coordinates the plan and Host Agent executes each host-scoped action. Cluster setup has separate quorum and failure-domain requirements; see the <a href="/docs/availability/">availability guide</a>.</p>
+    <p class="home-section-note">A host-local recipe runs declared steps on one host. For work across hosts, Platform coordinates the plan and Host Agent executes each host-scoped action. The local K3s test covers one guest failure, not failure of the physical host or a user-facing serving path; see the <a href="/docs/availability/">availability guide</a>.</p>
     <a class="home-text-link" href="/docs/recipes/">How recipes and plans work →</a>
   </section>
 
