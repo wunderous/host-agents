@@ -53,7 +53,7 @@ invocation) when an external MCP client needs the Host Agent.
 
 | Skill | When to load |
 |-------|-------------|
-| **opute-host-agent-mcp** | Using Host Agent as an agentic MCP client (connect, tools/list, recipes, mutations, anti-patterns). Public docs: https://www.opute.io/docs/ |
+| **opute-host-agent-mcp** | Host Agent MCP use, including local direct access, tool discovery, recipes, and safe mutations. Public docs: https://www.opute.io/docs/ |
 | **reflect** | Concluding non-trivial work, after debugging obscure bugs/quirks, or when leaving explanatory inline comments and elevating permanent invariants. |
 | **inline-context-discipline** | Reading/authoring code comments, handling edge cases, workarounds, or wire/protocol boundaries. |
 | **codex-wsl** | Configuring, diagnosing, or executing OpenAI Codex CLI in WSL or across the Windows-WSL boundary, Host Agent MCP integration, and headless execution. |

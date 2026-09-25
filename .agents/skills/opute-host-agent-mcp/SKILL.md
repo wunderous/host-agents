@@ -28,6 +28,50 @@ Not Platform: `platform.opute.io` / `mcp.opute.io` are a different surface.
 - Auth: `Authorization: Bearer <token>` when a bootstrap token is set.
 - Probe: unauthenticated `GET /health`, then authenticated `tools/list`.
 
+### Direct access to a same-machine instance
+
+If Codex has no preconfigured MCP connector, the local Host Agent may still be
+running. Use its local Streamable HTTP endpoint as an MCP client. The calling
+shell may not inherit the service environment. Inspect the listener process
+and its `OPUTE_HOST_AGENT_ENV_FILE`
+path; enrolled instances use a protected per-instance `host-agent.env` under
+`~/.config/opute/instances/<instance>/`. That file/process environment can hold
+`MCP_AUTH_TOKEN` and the exact `OPUTE_REMOTE_AGENT_ID` even when those variables
+are unset in the calling shell. Use the live service values without printing,
+logging, committing, or hardcoding the token. Do not guess the instance ID.
+
+The Host Agent uses the stateless `2026-07-28` MCP request contract. Each JSON-RPC
+request must include `params._meta` with
+`io.modelcontextprotocol/protocolVersion`, `io.modelcontextprotocol/clientInfo`,
+and `io.modelcontextprotocol/clientCapabilities`. The
+`MCP-Protocol-Version` and `Mcp-Method` HTTP headers must match the body; for
+`tools/call`, `Mcp-Name` must match `params.name`.
+
+Example `tools/list` request metadata (send with `Accept:
+application/json, text/event-stream`, `Content-Type: application/json`, and the
+runtime Bearer token):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/list",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": { "name": "codex", "version": "1" },
+      "io.modelcontextprotocol/clientCapabilities": {}
+    }
+  }
+}
+```
+
+Send matching headers `MCP-Protocol-Version: 2026-07-28` and
+`Mcp-Method: tools/list`. A `401` indicates an auth problem; HTTP `400` with
+`HeaderMismatch` indicates missing or mismatched request metadata. After a
+successful fresh catalog request, call the exact listed tool and validate its
+schema before acting.
+
 Cursor / Claude Desktop shape:
 
 ```json
