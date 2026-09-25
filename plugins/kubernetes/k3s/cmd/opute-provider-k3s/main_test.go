@@ -20,7 +20,7 @@ import (
 
 func TestK3sManifestDeclaresNeutralCapabilityAndOperations(t *testing.T) {
 	manifest := k3sManifest()
-	if err := providercontract.ValidateInstallManifest(manifest, providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.1"}); err != nil {
+	if err := providercontract.ValidateInstallManifest(manifest, providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.2"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(manifest.Provides) != 1 || manifest.Provides[0].ID != capabilitycontract.Kubernetes {
@@ -158,6 +158,11 @@ func TestK3sHTTPHandlerAdvertisesModernProviderProtocol(t *testing.T) {
 	var response struct {
 		Result struct {
 			SupportedVersions []string `json:"supportedVersions"`
+			Meta              struct {
+				ServerInfo struct {
+					Version string `json:"version"`
+				} `json:"io.modelcontextprotocol/serverInfo"`
+			} `json:"_meta"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
@@ -165,6 +170,9 @@ func TestK3sHTTPHandlerAdvertisesModernProviderProtocol(t *testing.T) {
 	}
 	if len(response.Result.SupportedVersions) != 1 || response.Result.SupportedVersions[0] != "2026-07-28" {
 		t.Fatalf("supported versions = %#v", response.Result.SupportedVersions)
+	}
+	if response.Result.Meta.ServerInfo.Version != providerVersion {
+		t.Fatalf("server version = %q, want %q", response.Result.Meta.ServerInfo.Version, providerVersion)
 	}
 }
 
@@ -202,7 +210,7 @@ func TestProbeHAEndpointRejectsMissingPublicEndpoint(t *testing.T) {
 }
 
 func newTestServer() *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-k3s", Version: "1.0.0"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-k3s", Version: providerVersion}, nil)
 	addManifestTool(server, k3sManifest())
 	addOperations(server)
 	addTeardownTool(server)
@@ -404,7 +412,7 @@ func TestNativeMembershipParsingUsesReadyAndRoleLabels(t *testing.T) {
 	nodes, err := parseNativeMembership([]byte(`{
       "items": [
         {"metadata":{"name":"server-a","labels":{"node-role.kubernetes.io/control-plane":"true","node-role.kubernetes.io/etcd":"true"}},"status":{"conditions":[{"type":"Ready","status":"True"}],"nodeInfo":{"kubeletVersion":"v1.31.8+k3s1"}}},
-        {"metadata":{"name":"server-b","labels":{"node-role.kubernetes.io/control-plane":"true"}},"status":{"conditions":[{"type":"Ready","status":"False"}],"nodeInfo":{"kubeletVersion":"v1.31.8+k3s1"}}}
+        {"metadata":{"name":"server-b","labels":{"node-role.kubernetes.io/control-plane":"true"}},"status":{"conditions":[{"type":"MemoryPressure","status":"False"},{"type":"Ready","status":"False"}],"nodeInfo":{"kubeletVersion":"v1.31.8+k3s1"}}}
       ]
     }`))
 	if err != nil {
@@ -416,6 +424,62 @@ func TestNativeMembershipParsingUsesReadyAndRoleLabels(t *testing.T) {
 	roles, ok := nodes[0]["roles"].([]string)
 	if !ok || len(roles) != 2 || roles[0] == roles[1] {
 		t.Fatalf("expected distinct role labels, got %#v", nodes[0]["roles"])
+	}
+	if nodes[1]["ready"] != false || nodes[1]["status"] != "NotReady" {
+		t.Fatalf("NotReady condition was not preserved: %#v", nodes[1])
+	}
+}
+
+func TestParseClusterNodeSnapshotUsesReadyCondition(t *testing.T) {
+	nodes, readyNodeCount, err := parseClusterNodeSnapshot([]byte(`{
+      "items": [
+        {"metadata":{"name":"server-a","labels":{"node-role.kubernetes.io/control-plane":"true"}},"status":{"conditions":[{"type":"Ready","status":"True"}],"nodeInfo":{"kubeletVersion":"v1.31.8+k3s1"}}},
+        {"metadata":{"name":"server-b","labels":{"node-role.kubernetes.io/control-plane":"true"}},"status":{"conditions":[{"type":"Ready","status":"False"}],"nodeInfo":{"kubeletVersion":"v1.31.8+k3s1"}}}
+      ]
+    }`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 2 || readyNodeCount != 1 {
+		t.Fatalf("got %d nodes and %d ready, want 2 nodes and 1 ready", len(nodes), readyNodeCount)
+	}
+	if nodes[0]["status"] != "Ready" || nodes[0]["ready"] != true || nodes[1]["status"] != "NotReady" || nodes[1]["ready"] != false {
+		t.Fatalf("unexpected node readiness: %#v", nodes)
+	}
+}
+
+func TestClusterInfoProjectsActualNodeReadiness(t *testing.T) {
+	args := map[string]any{"targetUri": "cluster:local:ha-test", "providerInstanceName": "ha-test"}
+	nodeSnapshot := []byte(`{"items":[
+      {"metadata":{"name":"server-a","labels":{"node-role.kubernetes.io/control-plane":"true"}},"status":{"conditions":[{"type":"Ready","status":"True"}]}},
+      {"metadata":{"name":"server-b","labels":{"node-role.kubernetes.io/control-plane":"true"}},"status":{"conditions":[{"type":"Ready","status":"False"}]}}
+    ]}`)
+	run := func(_ context.Context, command []string, _ []byte) ([]byte, error) {
+		joined := strings.Join(command, " ")
+		switch {
+		case strings.Contains(joined, "k3s --version"):
+			return []byte("k3s version v1.31.8+k3s1 (example)\n"), nil
+		case strings.Contains(joined, "get nodes -o json"):
+			return nodeSnapshot, nil
+		default:
+			return nil, fmt.Errorf("unexpected command: %s", joined)
+		}
+	}
+
+	result, err := getClusterInfoWithRunner(context.Background(), args, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected cluster info result: %#v", result.StructuredContent)
+	}
+	if object["nodeCount"] != 2 || object["readyNodeCount"] != 1 || object["ready"] != true {
+		t.Fatalf("unexpected aggregate readiness: %#v", object)
+	}
+	nodes, ok := object["nodes"].([]map[string]any)
+	if !ok || len(nodes) != 2 || nodes[1]["status"] != "NotReady" {
+		t.Fatalf("unexpected node projection: %#v", object["nodes"])
 	}
 }
 
@@ -467,12 +531,12 @@ func TestRestartWaitsForKubernetesApiAfterRestart(t *testing.T) {
 			return nil, nil
 		case strings.HasSuffix(joined, "k3s --version"):
 			return []byte("k3s version v1.31.8+k3s1 (test)"), nil
-		case strings.Contains(joined, "k3s kubectl get nodes"):
+		case strings.Contains(joined, "get nodes -o json"):
 			nodeReads++
 			if nodeReads == 1 {
 				return nil, fmt.Errorf("ServiceUnavailable")
 			}
-			return []byte("restart-test Ready v1.31.8+k3s1\n"), nil
+			return readyNodeSnapshot("restart-test"), nil
 		default:
 			return nil, fmt.Errorf("unexpected command: %s", joined)
 		}
@@ -517,12 +581,12 @@ func TestConfigureRegistryWaitsForKubernetesApiAfterRestart(t *testing.T) {
 			return nil, nil
 		case strings.HasSuffix(joined, "k3s --version"):
 			return []byte("k3s version v1.31.8+k3s1 (test)"), nil
-		case strings.Contains(joined, "k3s kubectl get nodes"):
+		case strings.Contains(joined, "get nodes -o json"):
 			nodeReads++
 			if nodeReads == 1 {
 				return nil, fmt.Errorf("ServiceUnavailable")
 			}
-			return []byte("registry-test Ready v1.31.8+k3s1\n"), nil
+			return readyNodeSnapshot("registry-test"), nil
 		default:
 			return nil, fmt.Errorf("unexpected command: %s", joined)
 		}
@@ -539,6 +603,10 @@ func TestConfigureRegistryWaitsForKubernetesApiAfterRestart(t *testing.T) {
 	if nodeReads != 2 {
 		t.Fatalf("node reads = %d, want one retry after ServiceUnavailable", nodeReads)
 	}
+}
+
+func readyNodeSnapshot(name string) []byte {
+	return []byte(fmt.Sprintf(`{"items":[{"metadata":{"name":%q},"status":{"conditions":[{"type":"Ready","status":"True"}]}}]}`, name))
 }
 
 // A join installs K3s on a guest that is deliberately not a cluster yet, so its

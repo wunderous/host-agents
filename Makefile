@@ -1,9 +1,9 @@
-.PHONY: build build-agent test check-host-file-confinement test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary published-npm-readonly-canary npm-test local-npm-readonly-canary check-site artifacts build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-provider-tailscale-linux-x64 build-windows-x64 clean agent-work
+.PHONY: build build-agent test check-host-file-confinement check-provider-activation-recipe-provenance check-kubernetes-node-readiness-projection test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary published-npm-readonly-canary npm-test local-npm-readonly-canary check-site artifacts build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-provider-tailscale-linux-x64 build-windows-x64 clean agent-work
 
 BINARY=opute-host-agent
 DIST=dist
 MODULE=github.com/wunderous/host-agents
-VERSION ?= 0.2.0
+VERSION ?= 0.2.1
 LDFLAGS=-s -w -X $(MODULE)/internal/version.Version=$(VERSION)
 
 build: build-agent
@@ -12,11 +12,17 @@ build-agent:
 	mkdir -p $(DIST)
 	go build -ldflags="$(LDFLAGS)" -o $(DIST)/$(BINARY) ./cmd/opute-host-agent
 
-test: check-host-file-confinement
+test: check-host-file-confinement check-provider-activation-recipe-provenance check-kubernetes-node-readiness-projection
 	go test ./...
 
 check-host-file-confinement:
 	python3 scripts/check_managed_host_file_confinement.py
+
+check-provider-activation-recipe-provenance:
+	python3 scripts/check_provider_activation_recipe_provenance.py
+
+check-kubernetes-node-readiness-projection:
+	python3 scripts/check_kubernetes_node_readiness_projection.py
 
 test-all-modules: test
 	cd plugins/kubernetes/k3s && go test ./...
@@ -61,6 +67,7 @@ check-site: local-npm-readonly-canary
 	bun run site/scripts/generate-docs.ts
 	python3 scripts/check_site_release_boundary.py
 	python3 scripts/check_site_release_parity.py
+	python3 scripts/test_promote_site_release_catalog.py
 	python3 scripts/test_validate_generated_site.py
 	python3 scripts/test_check_generated_site_clean.py
 	python3 scripts/validate-generated-site.py

@@ -26,7 +26,7 @@ Host Agent documentation covers the execution server. Opute Platform: https://pl
 
 ## Reference
 - [Capabilities](https://www.opute.io/docs/capabilities/)
-- [Versioned capability catalog](https://www.opute.io/docs/versions/v0.2.0/capabilities/)
+- [Versioned capability catalog](https://www.opute.io/docs/versions/v0.2.1/capabilities/)
 - [Configuration](https://www.opute.io/docs/configuration/)
 - [Recipe & plan primitives](https://www.opute.io/docs/recipe-primitives/)
 

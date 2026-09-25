@@ -56,7 +56,7 @@
     {
       "kind": "file",
       "path": "Makefile",
-      "digest": "8386d4c1464d73fed84c01d2d6269146a9bb4f60092a45e6c9a77eab997d0daa",
+      "digest": "baa6b1724c6778dc19538cb40378ff62150380cfb2dddd23a24819316f29a99b",
       "note": "Test target runs the invariant verifier"
     },
     {
@@ -76,5 +76,5 @@
   ],
   "supersedes": [],
   "withdrawn": false,
-  "lastVerified": "2026-09-24"
+  "lastVerified": "2026-09-25"
 }

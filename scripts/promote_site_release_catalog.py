@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "npm" / "local-host-agent" / "package.json"
 CATALOG = ROOT / "site" / "context" / "release-catalog.json"
+ARCHIVE_DIR = ROOT / "site" / "context" / "release-archives"
 CHECKS = {
     "explicitIdentity",
     "openHealth",
@@ -36,6 +37,37 @@ def read_json(path: Path, label: str) -> dict:
     if not isinstance(value, dict):
         fail(label + " must be a JSON object")
     return value
+
+
+def write_json_atomic(path: Path, value: dict) -> None:
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(value, output, indent=2)
+            output.write("\n")
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def archive_previous_stable_catalog(catalog: dict, next_version: str, archive_dir: Path) -> bool:
+    previous_version = catalog.get("packageVersion")
+    if catalog.get("releaseChannel") != "stable" or previous_version == next_version:
+        return False
+    if not isinstance(previous_version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", previous_version):
+        fail("previous stable catalog has an invalid package version")
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = archive_dir / ("v" + previous_version + ".json")
+    if archive_path.exists():
+        if read_json(archive_path, "existing archived release catalog") != catalog:
+            fail("existing archive conflicts with the previous stable catalog: " + previous_version)
+        return False
+    write_json_atomic(archive_path, catalog)
+    return True
 
 
 def main() -> None:
@@ -74,22 +106,24 @@ def main() -> None:
     except (subprocess.CalledProcessError, FileNotFoundError):
         fail("published source SHA is not an ancestor of this checkout")
 
+    archive_created = archive_previous_stable_catalog(
+        catalog,
+        evidence["packageVersion"],
+        ARCHIVE_DIR,
+    )
     catalog["releaseChannel"] = "stable"
     catalog["publishedCanary"] = {
         key: evidence[key]
         for key in ("packageVersion", "catalogRevision", "sourceSha", "runId", "runAttempt", "checks")
     }
-    descriptor, temporary = tempfile.mkstemp(prefix=CATALOG.name + ".", dir=CATALOG.parent)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            json.dump(catalog, output, indent=2)
-            output.write("\n")
-        os.replace(temporary, CATALOG)
+        write_json_atomic(CATALOG, catalog)
     except BaseException:
-        try:
-            os.unlink(temporary)
-        except FileNotFoundError:
-            pass
+        if archive_created:
+            try:
+                (ARCHIVE_DIR / ("v" + str(evidence["packageVersion"]) + ".json")).unlink()
+            except FileNotFoundError:
+                pass
         raise
     print(
         "Promoted "

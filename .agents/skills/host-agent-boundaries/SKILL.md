@@ -46,6 +46,7 @@ nested KVM is healthy but local Incus/QEMU-on-Hyper-V fails above about
   (`production-completion-evidence`).
 - Provider adapters are generation-bound. Candidate adapters stay isolated
   until readiness and catalog publication succeed.
+- K3s Node readiness projection is governed by [its typed decision](../decisions/kubernetes-node-readiness-projection.json); update its regression evidence and anchors with provider behavior.
 
 ## Agentic E2E
 

@@ -246,6 +246,23 @@ func TestParseGitHubReference(t *testing.T) {
 	}
 }
 
+func TestRawGitHubRecipeSourceRequiresMatchingExplicitRevision(t *testing.T) {
+	urlRevision := strings.Repeat("a", 40)
+	metadataRevision := strings.Repeat("b", 40)
+	source := "https://raw.githubusercontent.com/wunderous/host-agents/" + urlRevision + "/activation.yaml"
+	parsed, err := parseRawGitHubURL(source, urlRevision)
+	if err != nil {
+		t.Fatalf("matching source and metadata revisions: %v", err)
+	}
+	if parsed.Revision != urlRevision {
+		t.Fatalf("parsed revision = %q, want %q", parsed.Revision, urlRevision)
+	}
+	_, err = parseRawGitHubURL(source, metadataRevision)
+	if err == nil || !strings.Contains(err.Error(), "GitHub source revision disagrees with URL") {
+		t.Fatalf("mismatched source and metadata revisions error = %v", err)
+	}
+}
+
 func TestRemoteMutationRequiresExpectedHash(t *testing.T) {
 	_, _, err := fetchRemote("https://raw.githubusercontent.com/example/repo/"+strings.Repeat("a", 40)+"/recipe.yaml", strings.Repeat("a", 40), "", true)
 	if err == nil || !strings.Contains(err.Error(), "expected sha256") {

@@ -27,12 +27,13 @@ import (
 const (
 	kubernetesCapability = capabilitycontract.Kubernetes
 	maxManifestBytes     = 4 * 1024 * 1024
+	providerVersion      = "1.0.2"
 )
 
 func main() {
 	port := firstNonEmpty(os.Getenv("OPUTE_PROVIDER_PORT"), "4320")
 	manifest := k3sManifest()
-	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-k3s", Version: "1.0.0"}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}}})
+	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-k3s", Version: providerVersion}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}}})
 	addManifestTool(server, manifest)
 	addOperations(server)
 	addTeardownTool(server)
@@ -46,14 +47,14 @@ func main() {
 func newHTTPHandler(server *mcp.Server) http.Handler {
 	return mcphttp.WrapProviderHandler(
 		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true}),
-		map[string]any{"name": "opute-provider-k3s", "version": "1.0.0"},
+		map[string]any{"name": "opute-provider-k3s", "version": providerVersion},
 	)
 }
 
 func k3sManifest() providercontract.InstallManifest {
 	return providercontract.InstallManifest{
 		Schema:   providercontract.InstallManifestVersion,
-		Provider: providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.1"},
+		Provider: providercontract.ProviderRef{ID: "com.opute.k3s", Version: "1.0.2"},
 		Provides: []providercontract.CapabilityRef{{ID: kubernetesCapability, Version: 1}},
 		Recipes:  []providercontract.RecipeRef{{ID: "com.opute.k3s.managed", Source: providercontract.RecipeSource{URI: "recipes/kubernetes.yaml", Revision: "working-tree", SHA256: "sha256:91f0b596492e3c72fb5eacba4c14c6141e7da584eebfa88bc4ffbc72573c7788"}, Mode: "kubernetes"}},
 		Services: []providercontract.ServiceDefinition{{ID: "opute.capability.kubernetes", CapabilityID: kubernetesCapability, Version: 1, Operations: operations()}},
@@ -941,10 +942,15 @@ func listClusters(ctx context.Context, _ map[string]any) (*mcp.CallToolResult, e
 			continue
 		}
 		cluster := map[string]any{"name": name, "status": instance["status"], "instanceType": instanceType, "provider": "k3s", "version": parseK3sVersion(string(versionOutput))}
-		if nodesOutput, nodesErr := runCommand(ctx, []string{"exec", name, "--", "k3s", "kubectl", "get", "nodes", "-o", "custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type,VERSION:.status.nodeInfo.kubeletVersion", "--no-headers"}, nil); nodesErr == nil {
-			nodes := parseClusterNodes(string(nodesOutput))
+		if nodesOutput, nodesErr := runCommand(ctx, []string{"exec", name, "--", "k3s", "kubectl", "get", "nodes", "-o", "json"}, nil); nodesErr == nil {
+			nodes, readyNodeCount, parseErr := parseClusterNodeSnapshot(nodesOutput)
+			if parseErr != nil {
+				return nil, fmt.Errorf("parse Kubernetes nodes for cluster %q: %w", name, parseErr)
+			}
 			cluster["nodes"] = nodes
 			cluster["nodeCount"] = len(nodes)
+			cluster["readyNodeCount"] = readyNodeCount
+			cluster["ready"] = readyNodeCount > 0
 		}
 		clusters = append(clusters, cluster)
 	}
@@ -961,17 +967,21 @@ func getClusterInfoWithRunner(ctx context.Context, args map[string]any, run prov
 	if err != nil {
 		return nil, err
 	}
-	nodesOutput, err := run(ctx, []string{"exec", instance, "--", "k3s", "kubectl", "get", "nodes", "-o", "custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type,VERSION:.status.nodeInfo.kubeletVersion", "--no-headers"}, nil)
+	nodesOutput, err := run(ctx, []string{"exec", instance, "--", "k3s", "kubectl", "get", "nodes", "-o", "json"}, nil)
 	if err != nil {
 		return nil, err
 	}
-	nodes := parseClusterNodes(string(nodesOutput))
+	nodes, readyNodeCount, err := parseClusterNodeSnapshot(nodesOutput)
+	if err != nil {
+		return nil, fmt.Errorf("parse Kubernetes nodes: %w", err)
+	}
 	return structured(map[string]any{
-		"targetUri": stringInput(args, "targetUri"),
-		"version":   parseK3sVersion(string(versionOutput)),
-		"nodes":     nodes,
-		"nodeCount": len(nodes),
-		"ready":     len(nodes) > 0,
+		"targetUri":      stringInput(args, "targetUri"),
+		"version":        parseK3sVersion(string(versionOutput)),
+		"nodes":          nodes,
+		"nodeCount":      len(nodes),
+		"readyNodeCount": readyNodeCount,
+		"ready":          readyNodeCount > 0,
 	})
 }
 
@@ -989,26 +999,6 @@ func parseK3sVersion(output string) string {
 		return ""
 	}
 	return fields[0]
-}
-
-func parseClusterNodes(output string) []map[string]any {
-	lines := strings.Split(output, "\n")
-	nodes := make([]map[string]any, 0, len(lines))
-	for _, line := range lines {
-		parts := strings.Fields(strings.TrimSpace(line))
-		if len(parts) == 0 {
-			continue
-		}
-		node := map[string]any{"name": parts[0], "status": "Unknown", "roles": "control-plane", "age": ""}
-		if len(parts) > 1 {
-			node["status"] = parts[1]
-		}
-		if len(parts) > 2 {
-			node["version"] = parts[2]
-		}
-		nodes = append(nodes, node)
-	}
-	return nodes
 }
 
 func runKubectl(ctx context.Context, args map[string]any, kubectlArgs []string, input []byte) ([]byte, error) {
