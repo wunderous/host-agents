@@ -22,7 +22,7 @@
   <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
   <meta name="twitter:title" content="Opute Host Agent — Typed MCP tools for Linux infrastructure" />
   <meta name="twitter:description" content="Inspect Linux hosts and operate configured Incus, Kubernetes, and network capabilities through one typed MCP server. Host-local recipes can check readiness and retain results." />
-  <link rel="stylesheet" href="/styles.css?v=a2f0f4b5f59a79fc9ac3abd40132a39aea82ce23379d4c84acda2ebb8aa91d1a" />
+  <link rel="stylesheet" href="/styles.css?v=df4a76b78d3e268a6895513c9a058d7e5c0171a96c15926db64247828951098f" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
@@ -44,25 +44,27 @@
     <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs">Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
-
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How Host Agent and Platform fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
 <p class="i18n-banner" data-i18n-banner hidden></p>
   <main class="hero home-hero" id="main-content" lang="en">
     <p class="eyebrow">Opute Host Agent · for Linux operators and agent authors</p>
-    <h1>Operate Linux infrastructure through one typed MCP server.</h1>
+    <h1>Inspect your Linux hosts with your AI client.</h1>
     <p class="lede">
-      Run the Host Agent beside the systems you own. Start with a read-only host check, then discover the capabilities available for Linux services, Incus guests, Kubernetes, images, and network tunnels. Host-local recipes can check readiness and record what happened.
+      Host Agent runs beside each Linux host. Connect an authenticated MCP client to read host facts and discover available tools. Opute Platform coordinates authorized work across hosts; Host Agent executes each host-scoped operation.
     </p>
     <div class="cta">
       <a class="btn primary" href="/docs/get-started/">Run a read-only host check</a>
-      <a class="btn ghost" href="/docs/">Explore the docs</a>
+      <a class="btn ghost" href="/docs/concepts/#host-agent-and-platform">How Host Agent and Platform fit</a>
     </div>
+    <p class="home-product-boundary"><strong>Kubernetes HA:</strong> review the current release evidence and the failure tests each claim needs. <a href="/docs/availability/">Read the guide</a>.</p>
     <div class="home-hero-proof" aria-label="Host Agent operating model">
-      <span>Live capability catalog</span>
-      <span>Explicit write gate</span>
-      <span>Durable plan results</span>
+      <span>Authenticated MCP</span>
+      <span>Discoverable typed tools</span>
+      <span>Read-first workflow</span>
     </div>
     <figure class="visual home-terminal">
       <figcaption>Read-only first call · example excerpt with redacted values, not live host output</figcaption>
@@ -82,7 +84,7 @@
   <section class="home-section" aria-labelledby="what-it-does">
     <div class="home-section-heading">
       <p class="eyebrow">What you can operate</p>
-      <h2 id="what-it-does">One host-side endpoint. Real infrastructure tools.</h2>
+      <h2 id="what-it-does">Inspect hosts, connect providers, and act with a plan.</h2>
       <p>Discover the current tool catalog before every operation. Available capabilities depend on the host and its active providers.</p>
     </div>
     <div class="home-capabilities">
@@ -91,6 +93,7 @@
       <article><span class="home-card-index">03 / Reachability</span><h3>Networking &amp; tunnels</h3><p>Manage declared network and tunnel capabilities through provider plugins when configured.</p></article>
     </div>
     <a class="home-text-link" href="/docs/capabilities/">Browse the captured catalog and learn how to discover yours →</a>
+    <a class="home-text-link" href="/docs/availability/">Kubernetes HA setup: current evidence and required failure tests →</a>
   </section>
 
   <section class="home-section home-flow" aria-labelledby="why-it-matters">
@@ -105,7 +108,7 @@
       <li><span class="step-number" aria-hidden="true"></span><div><strong>Execute &amp; verify</strong><span>Run typed actions with readiness checks, retry, and compensation where the plan declares them.</span></div></li>
       <li><span class="step-number" aria-hidden="true"></span><div><strong>Inspect</strong><span>Read the durable plan result and the observed resource state.</span></div></li>
     </ol>
-    <p class="home-section-note">The Host Agent runs without an LLM or an outside coordinator. A host-local recipe can establish the first Kubernetes node from the owning host itself.</p>
+    <p class="home-section-note">A host-local recipe can run declared steps on one host. For work across hosts, Platform coordinates the plan and Host Agent executes each host-scoped action. Cluster setup has separate quorum and failure-domain requirements; see the <a href="/docs/availability/">availability guide</a>.</p>
     <a class="home-text-link" href="/docs/recipes/">How recipes and plans work →</a>
   </section>
 

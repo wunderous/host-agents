@@ -15,6 +15,7 @@ The active public-documentation-release-parity decision in .agents/decisions/pub
 - Capability reference: /docs/capabilities/
 - Use cases: /use-cases/
 - Product boundary: /docs/concepts/#host-agent-and-platform
+- Kubernetes availability and failure scope: /docs/availability/
 - Architecture and trust: /docs/architecture/ and /docs/resources/
 
 ## Ownership boundary
