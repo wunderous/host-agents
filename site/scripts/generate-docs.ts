@@ -231,8 +231,8 @@ const nav = (current: string) => `
     <nav aria-label="Primary" data-i18n-aria="nav.primary">
       <a href="/docs/" data-i18n="nav.docs"${current === "docs" ? ' aria-current="page"' : ""}>Docs</a>
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
-${current === "home" ? "" : `      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How the products fit</a>
-      <a href="https://platform.opute.io/" lang="en">Platform</a>`}
+      <a href="/docs/concepts/#host-agent-and-platform" lang="en">How Host Agent and Platform fit</a>
+      <a href="https://platform.opute.io/" lang="en">Platform</a>
     </nav>
   </div>
 </header>
@@ -268,6 +268,7 @@ const side = (current: string) => `
     <li><a href="/docs/concepts/"${current === "concepts" ? ' aria-current="page"' : ""}>Concepts</a></li>
     <li><a href="/docs/architecture/"${current === "architecture" ? ' aria-current="page"' : ""}>Architecture</a></li>
     <li><a href="/docs/recipes/"${current === "recipes" ? ' aria-current="page"' : ""}>Recipes &amp; plans</a></li>
+    <li><a href="/docs/availability/"${current === "availability" ? ' aria-current="page"' : ""}>Kubernetes availability</a></li>
     <li><a href="/docs/networking/"${current === "networking" ? ' aria-current="page"' : ""}>Networking</a></li>
     <li><a href="/docs/resources/"${current === "resources" ? ' aria-current="page"' : ""}>Resources &amp; safety</a></li>
     <li><a href="/use-cases/">Use cases</a></li>
@@ -641,6 +642,7 @@ flowchart LR
       <li><a href="/docs/concepts/"><strong>Concepts</strong><span>Host Agent vs Platform, catalog authority, fail-closed identity.</span></a></li>
       <li><a href="/docs/architecture/"><strong>Architecture</strong><span>Planes, providers, Cordis kernel — with diagrams.</span></a></li>
       <li><a href="/docs/recipes/"><strong>Recipes &amp; plans</strong><span>Why both exist; when to use which family.</span></a></li>
+      <li><a href="/docs/availability/"><strong>Kubernetes availability</strong><span>Quorum, failure scope, and what an HA test must prove.</span></a></li>
       <li><a href="/docs/networking/"><strong>Networking</strong><span>Three HA seams, tunnels, public vs private paths.</span></a></li>
       <li><a href="/docs/resources/"><strong>Resources &amp; safety</strong><span>Canonical URIs, admission, effects, redaction.</span></a></li>
     </ul>
@@ -767,6 +769,8 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
 <p>Call <code>list_vms</code> only on a host with its Incus provider available. This is inventory discovery; creating, changing, or deleting a guest is a separate mutating operation and is outside the first-success tutorial.</p>
 <h2>Discover Kubernetes clusters when configured</h2>
 <p>Use <code>list_kubernetes_clusters</code> only when the host has an available Kubernetes provider and the intended source is known. An empty inventory and a failed inventory probe are different outcomes; read the structured response and error status.</p>
+<h2>Plan cluster setup and availability</h2>
+<p>Host Agent executes host-scoped typed operations; Platform coordinates authorized work across hosts. Membership alone does not prove high availability. For Kubernetes, test datastore quorum, API writes, already-running workloads, durable state, and the serving path as separate outcomes. See <a href="/docs/availability/">Kubernetes availability and failure scope</a> for the requirements and a proof checklist.</p>
 <div class="callout"><strong>Product boundary.</strong> Host Agent executes explicit typed operations against one host. Platform owns intent, authorization, and durable orchestration across hosts. Read <a href="/docs/concepts/#host-agent-and-platform">how they fit together</a>.</div>
 <p>These examples describe verified tool names and their documented purposes. No customer outcome, performance result, or availability guarantee is implied.</p>
 <p>Next: <a href="/docs/get-started/">complete the authenticated read-only check</a> or browse the <a href="/docs/capabilities/">release catalog</a>.</p>
@@ -936,6 +940,55 @@ flowchart LR
 <p>Pages follow <a href="https://diataxis.fr/">Diátaxis</a>: tutorials teach a first success; how-tos accomplish a known goal; reference states facts without narrative; explanation answers <em>why</em> and builds mental models. Mixing those modes produces pages that intimidate without operating — so recipe <em>why</em> lives under Explanation, and the field catalog under Reference.</p>
 `,
     mermaid: true,
+  },
+
+  "docs/availability/index.html": {
+    title: "Kubernetes availability",
+    description: "Understand Kubernetes quorum and define the failure scope an Opute cluster setup must prove.",
+    current: "availability",
+    body: `
+<p class="badge">Explanation</p>
+<h1>Kubernetes availability and failure scope</h1>
+<p class="meta">“High availability” is a behavior under a named failure. State which behavior should continue, where the failed component lives, and how recovery works.</p>
+<aside class="callout"><strong>Current evidence.</strong> The published <code>@opute/host-agent@${releaseCatalog.packageVersion}</code> reference and existing join coverage do not establish a complete clean-host HA setup and node-failure flow. This page explains the proof required; it does not claim that a turnkey HA setup is already verified.</aside>
+
+<h2>Separate the outcomes</h2>
+<p>One healthy member list is not an availability test. Check each property that matters to the user:</p>
+<ul>
+  <li><strong>Control-plane writes:</strong> can the Kubernetes API accept a change while a server is down?</li>
+  <li><strong>Existing workloads:</strong> do already-running Pods continue on a surviving node?</li>
+  <li><strong>New scheduling:</strong> can the control plane place or replace workloads?</li>
+  <li><strong>Application serving:</strong> does the user-facing endpoint remain reachable?</li>
+  <li><strong>Durable state:</strong> does application data remain readable and writable?</li>
+</ul>
+<p>Record these separately. A service returning HTTP 200 does not prove Kubernetes write availability, and a healthy cluster status does not prove the application path is serving.</p>
+
+<h2>K3s datastore quorum</h2>
+<p>For embedded etcd, K3s documents an HA cluster as <strong>three or more server nodes</strong>. Quorum requires a majority. With only two voting members, losing either member removes quorum, so automatic Kubernetes write continuity is not established.</p>
+<p>With an external datastore, K3s uses two or more server nodes. The external datastore has its own availability requirements and must survive the failure being tested; two K3s servers alone do not make that database highly available.</p>
+<ul>
+  <li><a href="https://docs.k3s.io/datastore/ha-embedded">K3s: High Availability Embedded etcd</a></li>
+  <li><a href="https://docs.k3s.io/datastore/ha">K3s: High Availability External DB</a></li>
+</ul>
+
+<h2>Failure domains matter</h2>
+<p>Three guests on one physical computer can demonstrate guest-level setup and failure behavior. They share the computer’s power, storage, host networking, and physical failure domain, so that test cannot establish resilience to losing the host or site. State the tested boundary with the result.</p>
+
+<h2>What a clean setup test should record</h2>
+<ol>
+  <li>Start from isolated hosts with no K3s service, datastore, or prior cluster membership. If the claim includes installing and enrolling Host Agent itself, test that bootstrap as a separate step.</li>
+  <li>Record each exact Host Agent identity, software revision, active provider/catalog revision, and the empty baseline.</li>
+  <li>Use the exact setup capabilities exposed by the tested release. Platform may coordinate authorized cross-host intent and durable runs; each host change should remain attributable to its owning Host Agent. If any setup step uses a shell, CLI, cloud console, or other out-of-band path, record it and narrow the claim: that run did not prove Host Agent-only setup.</li>
+  <li>Verify the expected server membership and the configured datastore mode before injecting failure.</li>
+  <li>Stop or isolate each server in turn. Measure API reads and writes, workload serving, durable application state, and recovery separately.</li>
+  <li>Restore the failed node through the supported typed path, verify it rejoins, and retain redacted run evidence.</li>
+</ol>
+<p>A successful join proves membership, not clean-room bootstrap or availability. Only the failure checks prove the stated behavior. Use disposable, isolated test hosts for destructive setup and failure injection.</p>
+
+<h2>Opute ownership boundary</h2>
+<p>Host Agent is the typed executor on one host. Opute Platform owns intent, authorization, routing, and durable orchestration across hosts. A multi-host result must show both the coordinator’s durable outcome and the Host Agent evidence for each affected host. See <a href="/docs/concepts/#host-agent-and-platform">how the products fit together</a> and <a href="/docs/recipes/">how recipes and plans work</a>.</p>
+<p>This guide states the evidence required for an HA claim. Check the <a href="/docs/capabilities/">release reference</a> and live <code>tools/list</code> for the capabilities available in a particular installation.</p>
+`,
   },
 
   "docs/architecture/index.html": {
@@ -1525,18 +1578,19 @@ writeFileSync(
 ${nav("home")}
   <main class="hero home-hero" id="main-content" lang="en">
     <p class="eyebrow">Opute Host Agent · for Linux operators and agent authors</p>
-    <h1>Operate Linux infrastructure through one typed MCP server.</h1>
+    <h1>Inspect your Linux hosts with your AI client.</h1>
     <p class="lede">
-      Run the Host Agent beside the systems you own. Start with a read-only host check, then discover the capabilities available for Linux services, Incus guests, Kubernetes, images, and network tunnels. Host-local recipes can check readiness and record what happened.
+      Host Agent runs beside each Linux host. Connect an authenticated MCP client to read host facts and discover available tools. Opute Platform coordinates authorized work across hosts; Host Agent executes each host-scoped operation.
     </p>
     <div class="cta">
       <a class="btn primary" href="/docs/get-started/">Run a read-only host check</a>
-      <a class="btn ghost" href="/docs/">Explore the docs</a>
+      <a class="btn ghost" href="/docs/concepts/#host-agent-and-platform">How Host Agent and Platform fit</a>
     </div>
+    <p class="home-product-boundary"><strong>Kubernetes HA:</strong> review the current release evidence and the failure tests each claim needs. <a href="/docs/availability/">Read the guide</a>.</p>
     <div class="home-hero-proof" aria-label="Host Agent operating model">
-      <span>Live capability catalog</span>
-      <span>Explicit write gate</span>
-      <span>Durable plan results</span>
+      <span>Authenticated MCP</span>
+      <span>Discoverable typed tools</span>
+      <span>Read-first workflow</span>
     </div>
     <figure class="visual home-terminal">
       <figcaption>Read-only first call · example excerpt with redacted values, not live host output</figcaption>
@@ -1556,7 +1610,7 @@ ${nav("home")}
   <section class="home-section" aria-labelledby="what-it-does">
     <div class="home-section-heading">
       <p class="eyebrow">What you can operate</p>
-      <h2 id="what-it-does">One host-side endpoint. Real infrastructure tools.</h2>
+      <h2 id="what-it-does">Inspect hosts, connect providers, and act with a plan.</h2>
       <p>Discover the current tool catalog before every operation. Available capabilities depend on the host and its active providers.</p>
     </div>
     <div class="home-capabilities">
@@ -1565,6 +1619,7 @@ ${nav("home")}
       <article><span class="home-card-index">03 / Reachability</span><h3>Networking &amp; tunnels</h3><p>Manage declared network and tunnel capabilities through provider plugins when configured.</p></article>
     </div>
     <a class="home-text-link" href="/docs/capabilities/">Browse the captured catalog and learn how to discover yours →</a>
+    <a class="home-text-link" href="/docs/availability/">Kubernetes HA setup: current evidence and required failure tests →</a>
   </section>
 
   <section class="home-section home-flow" aria-labelledby="why-it-matters">
@@ -1579,7 +1634,7 @@ ${nav("home")}
       <li><span class="step-number" aria-hidden="true"></span><div><strong>Execute &amp; verify</strong><span>Run typed actions with readiness checks, retry, and compensation where the plan declares them.</span></div></li>
       <li><span class="step-number" aria-hidden="true"></span><div><strong>Inspect</strong><span>Read the durable plan result and the observed resource state.</span></div></li>
     </ol>
-    <p class="home-section-note">The Host Agent runs without an LLM or an outside coordinator. A host-local recipe can establish the first Kubernetes node from the owning host itself.</p>
+    <p class="home-section-note">A host-local recipe can run declared steps on one host. For work across hosts, Platform coordinates the plan and Host Agent executes each host-scoped action. Cluster setup has separate quorum and failure-domain requirements; see the <a href="/docs/availability/">availability guide</a>.</p>
     <a class="home-text-link" href="/docs/recipes/">How recipes and plans work →</a>
   </section>
 
@@ -1806,6 +1861,9 @@ Host Agent documentation covers the execution server. Opute Platform: https://pl
 ## Use cases
 - [Host inspection and optional provider workflows](https://www.opute.io/use-cases/)
 
+## Explanation
+- [Kubernetes availability and failure scope](https://www.opute.io/docs/availability/)
+
 ## Reference
 - [Capabilities](https://www.opute.io/docs/capabilities/)
 - [Versioned capability catalog](https://www.opute.io/docs/versions/v${releaseCatalog.packageVersion}/capabilities/)
@@ -1844,6 +1902,7 @@ The active public-documentation-release-parity decision in .agents/decisions/pub
 - Capability reference: /docs/capabilities/
 - Use cases: /use-cases/
 - Product boundary: /docs/concepts/#host-agent-and-platform
+- Kubernetes availability and failure scope: /docs/availability/
 - Architecture and trust: /docs/architecture/ and /docs/resources/
 
 ## Ownership boundary

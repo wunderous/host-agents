@@ -107,7 +107,7 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "942fe423d428fd0c5434f863cee15887ef17704663018b3221a263034fd3807b",
+      "digest": "f3bccefbf3229dbd4a85b0f168d447d96cbc95a1eede66a990eb2f46c8c1bac2",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
@@ -170,5 +170,5 @@
   ],
   "supersedes": [],
   "withdrawn": false,
-  "lastVerified": "2026-09-24"
+  "lastVerified": "2026-09-25"
 }
