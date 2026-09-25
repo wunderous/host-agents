@@ -100,7 +100,7 @@
     {
       "kind": "file",
       "path": "AGENTS.md",
-      "digest": "78129dcf6e6ece11f2152b75d77004ee37f4b7dfed8166198472ff6d4cd6b0c5",
+      "digest": "ac2ca59b3b1e3e2488c4497acd87071289d5c2a0f18ed825439df35d33c29dfe",
       "note": "Routes agents to the typed readiness authority"
     },
     {
@@ -112,7 +112,7 @@
     {
       "kind": "file",
       "path": "Makefile",
-      "digest": "baa6b1724c6778dc19538cb40378ff62150380cfb2dddd23a24819316f29a99b",
+      "digest": "d28042a09571abd4ef8c24afb5241f9604c6554e63301bc07f5b37c6d4682ac1",
       "note": "Verifier is part of the normal Host Agent test target"
     },
     {

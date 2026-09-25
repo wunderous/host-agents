@@ -91,10 +91,10 @@
 <main class="doc" id="main-content" lang="en">
 <p class="badge">Versioned reference</p>
 <h1>Capabilities — v0.2.1</h1>
-<p class="meta">Published reference for <code>@opute/host-agent@0.2.1</code>. Its read-only package canary passed for catalog revision <code>sha256:1efa6beb86423ee9fe3f1e71f978958566950726f45dcc5d21743711135e2b91.</code></p>
+<div class="callout warn"><strong>Preview catalog.</strong> This source candidate is <code>@opute/host-agent@0.2.1</code> at revision <code>sha256:761488e3d57ef63c6b51ed3df4bf8b2893929e2be6e083de7a2cff9e6b573bf7</code>. The published-package canary has not passed for this version, so this snapshot is not a verified release reference.</div>
 <p>Archived release snapshots: <a href="/docs/versions/v0.2.0/capabilities/">v0.2.0</a>.</p>
 <p class="meta">This standalone catalog contains 142 typed descriptors. Each entry shows its declared effect, idempotency, and available JSON schemas. A tool appearing here does not prove that its provider or required host service is ready.</p>
-<p>Catalog revision: <code>sha256:1efa6beb86423ee9fe3f1e71f978958566950726f45dcc5d21743711135e2b91</code>. Download the allowlisted descriptor snapshot as <a href="/docs/versions/v0.2.1/capabilities/catalog.json">JSON</a>. At runtime, <code>tools/list</code> and <code>get_capability_catalog</code> remain authoritative; refresh them when a client connects.</p>
+<p>Catalog revision: <code>sha256:761488e3d57ef63c6b51ed3df4bf8b2893929e2be6e083de7a2cff9e6b573bf7</code>. Download the allowlisted descriptor snapshot as <a href="/docs/versions/v0.2.1/capabilities/catalog.json">JSON</a>. At runtime, <code>tools/list</code> and <code>get_capability_catalog</code> remain authoritative; refresh them when a client connects.</p>
 <div class="callout"><strong>Ownership boundary.</strong> Host Agent executes explicit typed capabilities against one host. Opute Platform owns intent, authorization, and durable orchestration across hosts. See <a href="/docs/concepts/#host-agent-and-platform">how the products fit together</a>.</div>
 <section class="catalog-group"><h2>Host operations</h2><div class="catalog-tools"><details class="catalog-tool" id="catalog-tool-0"><summary><code>apply_manifest</code><span class="effect-tag">mutation</span></summary><p>Apply a generic Kubernetes manifest to a VM-backed cluster.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
@@ -774,7 +774,8 @@
 <details class="catalog-tool" id="catalog-tool-23"><summary><code>ensure_host_file</code><span class="effect-tag">mutation</span></summary><p>Atomically reconcile a caller-declared managed file; user scope is home-owned and system scope is limited to systemd service units.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;content&quot;: {
-      &quot;type&quot;: &quot;string&quot;
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;writeOnly&quot;: true
     },
     &quot;mode&quot;: {
       &quot;maximum&quot;: 493,

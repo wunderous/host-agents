@@ -24,4 +24,4 @@ Host Agent executes explicit typed capabilities against one host. Opute Platform
 
 ## Release metadata
 
-Generated reference metadata is read from site/context/release-catalog.json. Change its release channel to stable only with matching package version, source revision, catalog revision, and passing published read-only canary. Recompute decision anchors when an anchored authority file changes.
+Generated reference metadata is read from site/context/release-catalog.json. Change its release channel to stable only with matching package version, source revision, catalog revision, and passing published read-only canary. Catalog capture drops stable status and old canary evidence whenever either the package version or catalog revision changes. Recompute decision anchors when an anchored authority file changes.
