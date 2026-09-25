@@ -367,6 +367,37 @@ func TestIncusCatalogAdvertisesHelmPrerequisiteOperation(t *testing.T) {
 	t.Fatal("install_helm_chart must be advertised by the Incus catalog")
 }
 
+func TestCredentialBearingHostInputsAreWriteOnly(t *testing.T) {
+	assertWriteOnly := func(definitions []ToolDefinition, toolName, propertyName string) {
+		t.Helper()
+		for _, definition := range definitions {
+			if definition.Name != toolName {
+				continue
+			}
+			properties, ok := definition.InputSchema["properties"].(map[string]any)
+			if !ok {
+				t.Fatalf("%s schema has no properties", toolName)
+			}
+			property, ok := properties[propertyName].(map[string]any)
+			if !ok || property["writeOnly"] != true {
+				t.Fatalf("%s.%s must be write-only: %#v", toolName, propertyName, properties[propertyName])
+			}
+			return
+		}
+		t.Fatalf("tool schema %q was not found", toolName)
+	}
+	assertWriteOnly(StandaloneToolDefinitions(), "ensure_host_file", "content")
+	fallback := appendGenericHostDefinitions(nil)
+	assertWriteOnly(fallback, "ensure_host_file", "content")
+	assertWriteOnly(fallback, "run_instance_command", "stdin")
+	incus, err := HostToolDefinitionsForProvider("incus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertWriteOnly(incus, "ensure_host_file", "content")
+	assertWriteOnly(incus, "run_instance_command", "stdin")
+}
+
 func TestHostToolDefinitionsAlwaysExposeOutputSchemas(t *testing.T) {
 	definitions, err := HostToolDefinitionsForProvider("incus")
 	if err != nil {

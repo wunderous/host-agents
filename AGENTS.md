@@ -100,6 +100,11 @@ production-like rollouts may be used by other worktrees — load
 `shared-runtime-leases` before restarting or mutating shared runtime
 resources. Canonical new-resource profile is **2 vCPU / 2 GiB**.
 
+Cloudflare connector credential handling is governed by
+[cloudflare-connector-secret-redaction](.agents/decisions/cloudflare-connector-secret-redaction.json);
+consult it when changing the provider schema, nested secret write, or evidence
+projection.
+
 For the normative Cordis architecture, LLM/tool authority rules, MCP
 2026-07-28 boundary, invariant catalog, five-whys debugging discipline, and
 E2E release gate, read

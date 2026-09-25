@@ -5806,7 +5806,8 @@
           "minLength": 1
         },
         "content": {
-          "type": "string"
+          "type": "string",
+          "writeOnly": true
         },
         "mode": {
           "type": "integer",

@@ -17,6 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	capabilitycontract "github.com/wunderous/host-agents/contracts/capability"
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
+	"github.com/wunderous/host-agents/internal/contract/k8sname"
 	"github.com/wunderous/host-agents/internal/mcphttp"
 	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/pkg/hostagentclient"
@@ -27,13 +28,13 @@ const tunnelingCapability = "opute.capability.tunneling.v1"
 func main() {
 	port := firstNonEmpty(os.Getenv("OPUTE_PROVIDER_PORT"), "4319")
 	manifest := cloudflareManifest()
-	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-cloudflare", Version: "1.0.0"}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}}})
+	server := mcp.NewServer(&mcp.Implementation{Name: "opute-provider-cloudflare", Version: "1.0.1"}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}}})
 	addManifestTool(server, manifest)
 	addCloudflareOperations(server)
 	addTeardownTool(server)
 	handler := mcphttp.WrapProviderHandler(
 		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true}),
-		map[string]any{"name": "opute-provider-cloudflare", "version": "1.0.0"},
+		map[string]any{"name": "opute-provider-cloudflare", "version": "1.0.1"},
 	)
 	log.Printf("Opute Cloudflare provider listening on :%s/mcp", port)
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
@@ -43,7 +44,7 @@ func main() {
 
 func cloudflareManifest() providercontract.InstallManifest {
 	return providercontract.InstallManifest{
-		Schema: providercontract.InstallManifestVersion, Provider: providercontract.ProviderRef{ID: "com.opute.cloudflare", Version: "1.0.0"},
+		Schema: providercontract.InstallManifestVersion, Provider: providercontract.ProviderRef{ID: "com.opute.cloudflare", Version: "1.0.1"},
 		Provides: []providercontract.CapabilityRef{
 			{ID: tunnelingCapability, Version: 1},
 			{ID: capabilitycontract.MeshRuntime, Version: 1},
@@ -134,7 +135,7 @@ func tunnelSchema() map[string]any {
 		"originHostId":   map[string]any{"type": "string", "minLength": 1},
 		"placement":      map[string]any{"type": "string", "enum": []string{"host", "container", "kubernetes"}},
 		"targetUri":      map[string]any{"type": "string"},
-		"artifactUri":    map[string]any{"type": "string"},
+		"artifactUri":    map[string]any{"type": "string", "description": "For container placement, use remotely managed cloudflared 2025.4.0 or later, which supports --token-file."},
 		"artifactSha256": map[string]any{"type": "string"},
 		"artifactPath":   map[string]any{"type": "string"},
 		"serviceName":    map[string]any{"type": "string"},
@@ -143,7 +144,7 @@ func tunnelSchema() map[string]any {
 	}}
 }
 func connectorSchema() map[string]any {
-	return map[string]any{"type": "object", "required": []string{"token", "namespace"}, "properties": map[string]any{"token": map[string]any{"type": "string", "minLength": 1}, "namespace": map[string]any{"type": "string", "minLength": 1}, "name": map[string]any{"type": "string"}, "image": map[string]any{"type": "string"}, "replicas": map[string]any{"type": "integer", "minimum": 1}, "targetUri": map[string]any{"type": "string"}, "placement": map[string]any{"type": "string", "enum": []string{"kubernetes", "container"}}, "artifactUri": map[string]any{"type": "string"}, "artifactSha256": map[string]any{"type": "string"}, "localTargets": localTargetsSchema(), "forwarderImage": map[string]any{"type": "string"}}}
+	return map[string]any{"type": "object", "required": []string{"token", "namespace"}, "properties": map[string]any{"token": map[string]any{"type": "string", "minLength": 1, "writeOnly": true}, "namespace": map[string]any{"type": "string", "minLength": 1}, "name": map[string]any{"type": "string"}, "image": map[string]any{"type": "string", "description": "For Kubernetes placement, use cloudflared 2025.4.0 or later to support --token-file; the default image meets this requirement."}, "replicas": map[string]any{"type": "integer", "minimum": 1}, "targetUri": map[string]any{"type": "string"}, "placement": map[string]any{"type": "string", "enum": []string{"kubernetes", "container"}}, "artifactUri": map[string]any{"type": "string", "description": "For container placement, use remotely managed cloudflared 2025.4.0 or later, which supports --token-file."}, "artifactSha256": map[string]any{"type": "string"}, "localTargets": localTargetsSchema(), "forwarderImage": map[string]any{"type": "string"}}}
 }
 
 func connectorTargetSchema() map[string]any {
@@ -451,20 +452,35 @@ func reconcileLegacyHostTunnel(ctx context.Context, client *hostagentclient.Clie
 }
 
 func reconcileContainerTunnel(ctx context.Context, client *hostagentclient.Client, args map[string]any) error {
+	return reconcileContainerTunnelWith(ctx, func(ctx context.Context, name string, arguments map[string]any) error {
+		_, err := callHost(ctx, client, name, arguments)
+		return err
+	}, args)
+}
+
+func reconcileContainerTunnelWith(ctx context.Context, call func(context.Context, string, map[string]any) error, args map[string]any) error {
 	targetURI := stringInput(args, "targetUri", "")
 	target, err := typedTargetURI(targetURI, resourceid.TypeContainer)
 	if err != nil {
 		return err
 	}
-	if _, err := callHost(ctx, client, "provision_container", map[string]any{"containerName": target.ResourceID, "image": stringInput(args, "image", ""), "nesting": true}); err != nil {
-		return err
-	}
-	if stringInput(args, "runToken", "") == "" || stringInput(args, "artifactUri", "") == "" || stringInput(args, "artifactSha256", "") == "" {
+	token := stringInput(args, "runToken", "")
+	artifactURI := stringInput(args, "artifactUri", "")
+	artifactSHA := strings.TrimPrefix(stringInput(args, "artifactSha256", ""), "sha256:")
+	if token == "" || artifactURI == "" || artifactSHA == "" {
 		return fmt.Errorf("container placement requires runToken, artifactUri, and artifactSha256")
 	}
-	script := "set -eu; command -v cloudflared >/dev/null 2>&1 || { curl -fsSL --proto =https --tlsv1.2 \"$1\" -o /tmp/cloudflared; echo \"$2  /tmp/cloudflared\" | sha256sum -c -; install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared; }; mkdir -p /etc/systemd/system; printf '%s\\n' '[Unit]' 'After=network-online.target' '' '[Service]' 'ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate run --token " + shellQuote(stringInput(args, "runToken", "")) + "' 'Restart=on-failure' > /etc/systemd/system/opute-cloudflare-tunnel.service; systemctl daemon-reload; systemctl enable --now opute-cloudflare-tunnel.service"
-	_, err = callHost(ctx, client, "run_instance_command", map[string]any{"uri": target.String(), "command": "sh", "args": []any{"-lc", script, "cloudflared", stringInput(args, "artifactUri", ""), strings.TrimPrefix(stringInput(args, "artifactSha256", ""), "sha256:")}, "timeoutMs": 120000})
-	return err
+	if err := call(ctx, "provision_container", map[string]any{"containerName": target.ResourceID, "image": stringInput(args, "image", ""), "nesting": true}); err != nil {
+		return err
+	}
+	script := "set -eu; curl -fsSL --proto =https --tlsv1.2 \"$1\" -o /tmp/cloudflared; echo \"$2  /tmp/cloudflared\" | sha256sum -c -; install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared; umask 077; mkdir -p /etc/opute-cloudflare; cat > /etc/opute-cloudflare/tunnel-token; chmod 0600 /etc/opute-cloudflare/tunnel-token; chmod 0700 /etc/opute-cloudflare; cat > /etc/systemd/system/opute-cloudflare-tunnel.service <<'UNIT'\n[Unit]\nAfter=network-online.target\n\n[Service]\nExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate run --token-file /etc/opute-cloudflare/tunnel-token\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\nUNIT\nchmod 0644 /etc/systemd/system/opute-cloudflare-tunnel.service; systemctl daemon-reload; systemctl enable --now opute-cloudflare-tunnel.service"
+	return call(ctx, "run_instance_command", map[string]any{
+		"uri":       target.String(),
+		"command":   "sh",
+		"args":      []any{"-lc", script, "cloudflared", artifactURI, artifactSHA},
+		"stdin":     token,
+		"timeoutMs": 120000,
+	})
 }
 
 func installConnector(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -499,19 +515,62 @@ func installConnector(ctx context.Context, args map[string]any) (*mcp.CallToolRe
 }
 
 func installKubernetesConnector(ctx context.Context, client *hostagentclient.Client, args map[string]any) error {
+	return installKubernetesConnectorWith(ctx, func(ctx context.Context, name string, arguments map[string]any) error {
+		_, err := callHost(ctx, client, name, arguments)
+		return err
+	}, args)
+}
+
+// installKubernetesConnectorWith keeps the credential-bearing call explicit:
+// only put_k8s_secret receives the token, in its schema-declared write-only
+// data field. Generic manifests contain resource configuration only.
+func installKubernetesConnectorWith(ctx context.Context, call func(context.Context, string, map[string]any) error, args map[string]any) error {
 	target, err := typedTargetURI(stringInput(args, "targetUri", ""), resourceid.TypeCluster)
 	if err != nil {
 		return err
 	}
-	namespace, name, image := firstNonEmpty(stringInput(args, "namespace", ""), "cloudflare-connector"), firstNonEmpty(stringInput(args, "name", ""), "cloudflared"), firstNonEmpty(stringInput(args, "image", ""), "cloudflare/cloudflared:2026.7.2")
+	namespace := firstNonEmpty(stringInput(args, "namespace", ""), "cloudflare-connector")
+	name := firstNonEmpty(stringInput(args, "name", ""), "cloudflared")
+	image := firstNonEmpty(stringInput(args, "image", ""), "cloudflare/cloudflared:2026.7.2")
 	localTargets, err := parseLocalTargets(args["localTargets"])
 	if err != nil {
 		return err
 	}
 	forwarderImage := firstNonEmpty(stringInput(args, "forwarderImage", ""), defaultForwarderImage)
 	token := firstNonEmpty(stringInput(args, "token", ""), stringInput(args, "runToken", ""))
-	_, err = callHost(ctx, client, "apply_manifest", map[string]any{"uri": target.String(), "manifest": cloudflaredManifest(namespace, name, image, intInput(args, "replicas", 1), token, localTargets, forwarderImage)})
-	return err
+	if token == "" {
+		return errors.New("Cloudflare connector token is required")
+	}
+	if err := k8sname.Validate(namespace, "namespace"); err != nil {
+		return err
+	}
+	if err := k8sname.Validate(name, "name"); err != nil {
+		return err
+	}
+	secretName := name + "-token"
+	if err := k8sname.Validate(secretName, "name"); err != nil {
+		return err
+	}
+	if err := call(ctx, "apply_manifest", map[string]any{
+		"uri":      target.String(),
+		"manifest": cloudflaredNamespaceManifest(namespace),
+	}); err != nil {
+		return err
+	}
+	if err := call(ctx, "put_k8s_secret", map[string]any{
+		"uri":       target.String(),
+		"namespace": namespace,
+		"name":      secretName,
+		"data":      map[string]any{"token": token},
+	}); err != nil {
+		return err
+	}
+	return call(ctx, "apply_manifest", map[string]any{
+		"uri": target.String(),
+		"manifest": cloudflaredManifest(
+			namespace, name, image, intInput(args, "replicas", 1), localTargets, forwarderImage,
+		),
+	})
 }
 
 func deleteConnector(ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
@@ -710,55 +769,20 @@ func defaultCloudflaredArtifactPath(scope string) string {
 	return "~/.local/share/opute/providers/com.opute.cloudflare/bin/cloudflared"
 }
 
-func cloudflaredManifest(namespace, name, image string, replicas int, token string, targets []localTarget, forwarderImage string) string {
+func cloudflaredNamespaceManifest(namespace string) string {
+	return fmt.Sprintf("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: %s\n", yamlQuote(namespace))
+}
+
+func cloudflaredManifest(namespace, name, image string, replicas int, targets []localTarget, forwarderImage string) string {
 	if replicas < 1 {
 		replicas = 1
 	}
-	manifest := `apiVersion: v1
-kind: Namespace
-metadata:
-  name: %s
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: %s-token
-  namespace: %s
-stringData:
-  token: %s
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  replicas: %d
-  selector:
-    matchLabels:
-      app: %s
-  template:
-    metadata:
-      labels:
-        app: %s
-    spec:
-      containers:
-      - name: cloudflared
-        image: %s
-        args: [tunnel, --no-autoupdate, run, --token, $(TOKEN)]
-        env:
-        - name: TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: %s-token
-              key: token
-        readinessProbe:
-          exec:
-            command: [cloudflared, --version]
-          initialDelaySeconds: 5
-          periodSeconds: 10
-`
-	return fmt.Sprintf(manifest, namespace, name, namespace, yamlQuote(token), name, namespace, replicas, name, name, image, name) + forwarderContainers(targets, forwarderImage)
+	manifest := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: %s\n  namespace: %s\nspec:\n  replicas: %d\n  selector:\n    matchLabels:\n      app: %s\n  template:\n    metadata:\n      labels:\n        app: %s\n    spec:\n      containers:\n      - name: cloudflared\n        image: %s\n        args: [tunnel, --no-autoupdate, run, --token-file, /etc/cloudflared/tunnel-token]\n        volumeMounts:\n        - name: tunnel-token\n          mountPath: /etc/cloudflared/tunnel-token\n          subPath: tunnel-token\n          readOnly: true\n        readinessProbe:\n          exec:\n            command: [cloudflared, --version]\n          initialDelaySeconds: 5\n          periodSeconds: 10\n      volumes:\n      - name: tunnel-token\n        secret:\n          secretName: %s\n          defaultMode: 0444\n          items:\n          - key: token\n            path: tunnel-token\n"
+	return fmt.Sprintf(
+		manifest,
+		yamlQuote(name), yamlQuote(namespace), replicas,
+		yamlQuote(name), yamlQuote(name), yamlQuote(image), yamlQuote(name+"-token"),
+	) + forwarderContainers(targets, forwarderImage)
 }
 
 func addTeardownTool(server *mcp.Server) {
@@ -1000,8 +1024,10 @@ func firstNonEmpty(values ...string) string {
 }
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 func yamlQuote(value string) string {
-	return "\"" + strings.ReplaceAll(strings.ReplaceAll(value, "\\", "\\\\"), "\"", "\\\"") + "\""
+	encoded, _ := json.Marshal(value)
+	return string(encoded)
 }
+
 func cloudflareDelete(ctx context.Context, token, endpoint string) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {

@@ -87,7 +87,7 @@ func forwarderContainers(targets []localTarget, image string) string {
 		listen := fmt.Sprintf("TCP-LISTEN:%d,fork,reuseaddr,bind=127.0.0.1", target.LocalPort)
 		connect := "TCP:" + target.Target
 		fmt.Fprintf(&out, "      - name: forward-%d\n", target.LocalPort)
-		fmt.Fprintf(&out, "        image: %s\n", image)
+		fmt.Fprintf(&out, "        image: %s\n", yamlQuote(image))
 		fmt.Fprintf(&out, "        args: [%s, %s]\n", yamlQuote(listen), yamlQuote(connect))
 		// Without a limit one mapping under load can evict the connector it
 		// exists to serve, and the tunnel goes down for every other hostname

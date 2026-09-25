@@ -110,7 +110,7 @@ func cfMeshRuntimeOut(rec cfMeshRuntimeRecord, ready bool) map[string]any {
 		"agentVersion":      rec.AgentVersion,
 		"controlPlaneRef":   rec.ControlPlaneRef,
 		"ingressClassName":  rec.IngressClassName,
-		"generation":        "com.opute.cloudflare@1.0.0",
+		"generation":        "com.opute.cloudflare@1.0.1",
 		"probe": map[string]any{
 			"agentReady":        rec.AgentReady,
 			"controlPlaneReady": rec.ControlPlaneReady,

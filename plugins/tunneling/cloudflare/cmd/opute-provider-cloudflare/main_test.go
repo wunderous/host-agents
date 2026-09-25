@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,10 @@ func TestCloudflareManifestDeclaresDynamicCompatibilityOperations(t *testing.T) 
 	if publicHostRecipe.Source.URI != "recipes/tunneling-public-host.yaml" || publicHostRecipe.Mode != "public-host" || !strings.HasPrefix(publicHostRecipe.Source.SHA256, "sha256:") {
 		t.Fatalf("manifest public-host recipe reference is incomplete: %#v", *publicHostRecipe)
 	}
+	if manifest.Provider.Version != "1.0.1" {
+		t.Fatalf("Cloudflare provider version = %q, want 1.0.1", manifest.Provider.Version)
+	}
+
 	seen := map[string]bool{}
 	for _, operation := range manifest.Services[0].Operations {
 		seen[operation.ID] = true
@@ -44,6 +49,62 @@ func TestCloudflareManifestDeclaresDynamicCompatibilityOperations(t *testing.T) 
 		if seen[name] {
 			t.Fatalf("manifest must not publish retired catalog route %q", name)
 		}
+	}
+
+	operationByID := map[string]providercontract.Operation{}
+	for _, operation := range manifest.Services[0].Operations {
+		operationByID[operation.ID] = operation
+	}
+	for schemaName, schema := range map[string]map[string]any{"tunnel": tunnelSchema(), "connector": connectorSchema()} {
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s schema has no properties", schemaName)
+		}
+		artifact, ok := properties["artifactUri"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s artifact schema is missing: %#v", schemaName, properties["artifactUri"])
+		}
+		description, _ := artifact["description"].(string)
+		if !strings.Contains(description, "2025.4.0") || !strings.Contains(description, "--token-file") {
+			t.Fatalf("%s artifact prerequisite is not documented: %#v", schemaName, properties["artifactUri"])
+		}
+		if schemaName == "connector" {
+			image, ok := properties["image"].(map[string]any)
+			imageDescription, _ := image["description"].(string)
+			if !ok || !strings.Contains(imageDescription, "2025.4.0") || !strings.Contains(imageDescription, "--token-file") {
+				t.Fatalf("Kubernetes image prerequisite is not documented: %#v", properties["image"])
+			}
+		}
+	}
+	for _, field := range []struct {
+		operationID string
+		property    string
+	}{
+		{"opute.capability.tunneling.ensure-host-tunnel", "runToken"},
+		{"ensure_cloudflared_tunnel", "runToken"},
+		{"opute.capability.tunneling.install-kubernetes-connector", "token"},
+		{"install_cloudflared_connector", "token"},
+	} {
+		operation, ok := operationByID[field.operationID]
+		if !ok {
+			t.Fatalf("missing credential-bearing operation %q", field.operationID)
+		}
+		properties, ok := operation.InputSchema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("credential-bearing operation %q has no properties", field.operationID)
+		}
+		secret, ok := properties[field.property].(map[string]any)
+		if !ok || secret["writeOnly"] != true {
+			t.Fatalf("%s.%s must be declared write-only: %#v", field.operationID, field.property, properties[field.property])
+		}
+	}
+	outputProperties, ok := operationByID["opute.capability.tunneling.ensure-host-tunnel"].OutputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("host tunnel output schema has no properties")
+	}
+	outputToken, ok := outputProperties["runToken"].(map[string]any)
+	if !ok || outputToken["writeOnly"] != true {
+		t.Fatalf("host tunnel result must be write-only in durable evidence: %#v", outputProperties["runToken"])
 	}
 }
 
@@ -251,10 +312,24 @@ func TestCloudflareMeshTargetAdmissionAcceptsVMsAndContainers(t *testing.T) {
 	}
 }
 
-func TestCloudflareConnectorManifestDoesNotReturnToken(t *testing.T) {
-	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 1, "secret-token", nil, defaultForwarderImage)
-	if !strings.Contains(manifest, "secret-token") {
-		t.Fatal("connector manifest must carry token to the host callback")
+func TestCloudflareConnectorManifestReferencesWriteOnlySecret(t *testing.T) {
+	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 1, nil, defaultForwarderImage)
+	if strings.Contains(manifest, "secret-token") || strings.Contains(manifest, "stringData:") {
+		t.Fatal("connector deployment manifest must not contain secret material")
+	}
+	for _, required := range []string{
+		"secretName: \"cloudflared-token\"",
+		"mountPath: /etc/cloudflared/tunnel-token",
+		"subPath: tunnel-token",
+		"readOnly: true",
+		"args: [tunnel, --no-autoupdate, run, --token-file, /etc/cloudflared/tunnel-token]",
+	} {
+		if !strings.Contains(manifest, required) {
+			t.Fatalf("connector deployment is missing %q:\n%s", required, manifest)
+		}
+	}
+	if strings.Contains(manifest, "secretKeyRef:") || strings.Contains(manifest, "TOKEN") {
+		t.Fatalf("connector deployment must keep the token out of env and process arguments:\n%s", manifest)
 	}
 	result, err := structured(map[string]any{"contractVersion": tunnelingCapability, "ready": true, "placement": "kubernetes"})
 	if err != nil {
@@ -263,6 +338,101 @@ func TestCloudflareConnectorManifestDoesNotReturnToken(t *testing.T) {
 	encoded, _ := json.Marshal(result.StructuredContent)
 	if strings.Contains(string(encoded), "secret-token") {
 		t.Fatal("provider result leaked connector token")
+	}
+}
+
+func TestInstallKubernetesConnectorKeepsTokenOutOfGenericManifests(t *testing.T) {
+	const secretToken = "never-persist-this-token"
+	type invocation struct {
+		name string
+		args map[string]any
+	}
+	var calls []invocation
+	err := installKubernetesConnectorWith(context.Background(), func(_ context.Context, name string, args map[string]any) error {
+		calls = append(calls, invocation{name: name, args: args})
+		return nil
+	}, map[string]any{
+		"targetUri": "cluster:local:demo",
+		"namespace": "edge-system",
+		"name":      "cloudflared",
+		"token":     secretToken,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 3 {
+		t.Fatalf("host callback sequence = %#v", calls)
+	}
+	for index, want := range []string{"apply_manifest", "put_k8s_secret", "apply_manifest"} {
+		if calls[index].name != want {
+			t.Fatalf("host callback %d = %q, want %q", index, calls[index].name, want)
+		}
+	}
+	for _, call := range []invocation{calls[0], calls[2]} {
+		encoded, err := json.Marshal(call.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), secretToken) {
+			t.Fatalf("%s persisted connector token in generic arguments: %s", call.name, encoded)
+		}
+	}
+	secretArgs := calls[1].args
+	if secretArgs["name"] != "cloudflared-token" || secretArgs["namespace"] != "edge-system" {
+		t.Fatalf("Secret target = %#v", secretArgs)
+	}
+	data, ok := secretArgs["data"].(map[string]any)
+	if !ok || len(data) != 1 || data["token"] != secretToken {
+		t.Fatalf("write-only Secret payload = %#v", secretArgs["data"])
+	}
+}
+
+func TestContainerConnectorKeepsTokenOutOfCommandArguments(t *testing.T) {
+	const secretToken = "container-token-never-in-command-arguments"
+	type invocation struct {
+		name string
+		args map[string]any
+	}
+	var calls []invocation
+	err := reconcileContainerTunnelWith(context.Background(), func(_ context.Context, name string, args map[string]any) error {
+		calls = append(calls, invocation{name: name, args: args})
+		return nil
+	}, map[string]any{
+		"targetUri":      "container:local:cloudflared",
+		"runToken":       secretToken,
+		"artifactUri":    "https://example.invalid/cloudflared",
+		"artifactSha256": strings.Repeat("a", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 || calls[0].name != "provision_container" || calls[1].name != "run_instance_command" {
+		t.Fatalf("host callback sequence = %#v", calls)
+	}
+	command := calls[1].args
+	if command["stdin"] != secretToken {
+		t.Fatalf("container token was not sent through write-only stdin: %#v", command["stdin"])
+	}
+	nonSecret := map[string]any{}
+	for key, value := range command {
+		if key != "stdin" {
+			nonSecret[key] = value
+		}
+	}
+	encoded, err := json.Marshal(nonSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), secretToken) {
+		t.Fatalf("container token entered command or argv: %s", encoded)
+	}
+	args, ok := command["args"].([]any)
+	if !ok || len(args) < 2 {
+		t.Fatalf("run_instance_command args = %#v", command["args"])
+	}
+	script, ok := args[1].(string)
+	if !ok || !strings.Contains(script, "chmod 0600 /etc/opute-cloudflare/tunnel-token") || !strings.Contains(script, "--token-file /etc/opute-cloudflare/tunnel-token") || !strings.Contains(script, "sha256sum -c -") {
+		t.Fatalf("container command does not use the versioned token-file interface: %#v", args[1])
 	}
 }
 
