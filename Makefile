@@ -63,6 +63,7 @@ local-npm-readonly-canary: build-agent
 	cd npm/local-host-agent && PUBLISHED_NPM_PACKAGE=$(CURDIR)/$(DIST)/npm-package/opute-host-agent-$(VERSION).tgz OPUTE_HOST_AGENT_BINARY=$(CURDIR)/$(DIST)/$(BINARY) RUN_PUBLISHED_READONLY_NPM_CANARY=true node --test published-readonly-canary.test.js
 
 check-site: local-npm-readonly-canary
+	node --test site/scripts/capture-catalog.test.mjs
 	node site/scripts/capture-catalog.mjs
 	bun run site/scripts/generate-docs.ts
 	python3 scripts/check_site_release_boundary.py

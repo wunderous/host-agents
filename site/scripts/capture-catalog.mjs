@@ -8,6 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { selectCatalogRelease } from './catalog-release-policy.mjs'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteDir = path.resolve(scriptDir, '..')
@@ -165,13 +166,12 @@ async function main() {
     if (missing.length) throw new Error(`catalog descriptors omitted tools/list names: ${missing.join(', ')}`)
     if (descriptorNames.size !== listedNames.size) throw new Error('catalog descriptor set differs from tools/list')
 
-    const priorVersionMatches = previous.packageVersion === packageInfo.version
-    const releaseChannel = process.env.SITE_CATALOG_CHANNEL || (priorVersionMatches ? previous.releaseChannel : 'preview')
-    const publishedCanary = priorVersionMatches ? previous.publishedCanary : undefined
-    if (!['preview', 'stable'].includes(releaseChannel)) throw new Error('release channel must be preview or stable')
-    if (releaseChannel === 'stable' && publishedCanary?.packageVersion !== packageInfo.version) {
-      throw new Error('stable catalog requires matching published read-only canary evidence')
-    }
+    const { releaseChannel, publishedCanary } = selectCatalogRelease({
+      previous,
+      packageVersion: packageInfo.version,
+      catalogRevision: catalog.catalogRevision,
+      requestedChannel: process.env.SITE_CATALOG_CHANNEL,
+    })
 
     const output = {
       packageName: packageInfo.name,

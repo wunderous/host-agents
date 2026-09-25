@@ -399,6 +399,48 @@ func TestTaskProjectionUsesDeclaredWriteOnlySchema(t *testing.T) {
 	if projected["label"] != "token-shaped-but-not-secret-by-schema" {
 		t.Fatalf("projection still uses key-name heuristics: %#v", projected)
 	}
+
+	const connectorOperation = "opute.capability.tunneling.install-kubernetes-connector"
+	server.catalogMu.Lock()
+	server.catalog.Tools = append(server.catalog.Tools, tools.CapabilityDescriptor{
+		OperationID: connectorOperation,
+		Name:        connectorOperation,
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"token": map[string]any{"type": "string", "writeOnly": true},
+		}},
+	})
+	server.catalogMu.Unlock()
+	connector := server.redactTaskArgs(connectorOperation, map[string]any{
+		"namespace": "edge-system",
+		"token":     "connector-token-must-not-persist",
+	})
+	if connector["token"] != redactedEvidenceValue {
+		t.Fatalf("connector token was not redacted from task evidence: %#v", connector)
+	}
+	encoded, err := json.Marshal(connector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "connector-token-must-not-persist") {
+		t.Fatalf("connector token entered durable task evidence: %s", encoded)
+	}
+
+	hostFile := server.redactTaskArgs("ensure_host_file", map[string]any{
+		"path":    "/etc/cloudflared/tunnel-token",
+		"content": "host-file-token-must-not-persist",
+	})
+	if hostFile["content"] != redactedEvidenceValue {
+		t.Fatalf("host file content was not redacted from task evidence: %#v", hostFile)
+	}
+	command := server.redactTaskArgs("run_instance_command", map[string]any{
+		"uri":     "container:local:cloudflared",
+		"command": "sh",
+		"args":    []any{"-lc", "cat > /etc/cloudflared/tunnel-token"},
+		"stdin":   "container-token-must-not-persist",
+	})
+	if command["stdin"] != redactedEvidenceValue {
+		t.Fatalf("command stdin was not redacted from task evidence: %#v", command)
+	}
 }
 
 func TestStandaloneServerCloseIsIdempotent(t *testing.T) {

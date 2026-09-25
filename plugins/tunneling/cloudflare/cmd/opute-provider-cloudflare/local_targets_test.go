@@ -21,7 +21,7 @@ func TestConnectorManifestForwardsEachLocalTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 2, "token", targets, defaultForwarderImage)
+	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 2, targets, defaultForwarderImage)
 
 	for _, want := range []string{
 		"      - name: forward-9190\n",
@@ -30,7 +30,7 @@ func TestConnectorManifestForwardsEachLocalTarget(t *testing.T) {
 		"      - name: forward-9191\n",
 		"TCP-LISTEN:9191,fork,reuseaddr,bind=127.0.0.1",
 		"TCP:platform-opute-mcp.opute-platform.svc.cluster.local:9091",
-		"image: " + defaultForwarderImage,
+		"image: " + yamlQuote(defaultForwarderImage),
 	} {
 		if !strings.Contains(manifest, want) {
 			t.Fatalf("manifest is missing %q:\n%s", want, manifest)
@@ -55,7 +55,7 @@ func TestConnectorManifestWithoutLocalTargetsAddsNoSidecar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 1, "token", targets, defaultForwarderImage)
+	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 1, targets, defaultForwarderImage)
 	if strings.Contains(manifest, "forward-") || strings.Contains(manifest, defaultForwarderImage) {
 		t.Fatalf("empty mappings rendered a sidecar:\n%s", manifest)
 	}
@@ -85,8 +85,8 @@ func TestForwarderImageIsOverridable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 1, "token", targets, "registry.internal/socat:1.8.0.0")
-	if !strings.Contains(manifest, "image: registry.internal/socat:1.8.0.0") || strings.Contains(manifest, defaultForwarderImage) {
+	manifest := cloudflaredManifest("edge-system", "cloudflared", "cloudflare/cloudflared:test", 1, targets, "registry.internal/socat:1.8.0.0")
+	if !strings.Contains(manifest, "image: "+yamlQuote("registry.internal/socat:1.8.0.0")) || strings.Contains(manifest, defaultForwarderImage) {
 		t.Fatalf("forwarder image was not honoured:\n%s", manifest)
 	}
 }

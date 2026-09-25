@@ -599,7 +599,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Title:       "Ensure managed host file",
 		Description: "Atomically reconcile a caller-declared managed file; user scope is home-owned and system scope is limited to systemd service units.",
 		InputSchema: map[string]any{"type": "object", "required": []string{"path", "content"}, "properties": map[string]any{
-			"path": map[string]any{"type": "string", "minLength": 1}, "content": map[string]any{"type": "string"}, "mode": map[string]any{"type": "integer", "minimum": 384, "maximum": 493}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}},
+			"path": map[string]any{"type": "string", "minLength": 1}, "content": map[string]any{"type": "string", "writeOnly": true}, "mode": map[string]any{"type": "integer", "minimum": 384, "maximum": 493}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}},
 		}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"path", "scope", "changed", "contentSha256", "mode"}},
 	}, ToolDefinition{

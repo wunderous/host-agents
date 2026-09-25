@@ -170,6 +170,7 @@ def verify_enforcement_wiring() -> None:
         fail("Makefile does not define check-site")
     check_site = makefile.split("check-site:", 1)[1].split("\n\n", 1)[0]
     required_make_steps = (
+        "site/scripts/capture-catalog.test.mjs",
         "scripts/check_site_release_boundary.py",
         "scripts/check_site_release_parity.py",
         "scripts/test_promote_site_release_catalog.py",
