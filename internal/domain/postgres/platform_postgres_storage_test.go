@@ -51,6 +51,8 @@ func TestAdmitPostgreSQLStorageFailsClosedWithoutExpansion(t *testing.T) {
 	service.setKubectlRunner(func(_ context.Context, _ string, kubectlArgs []string, _ []byte, _ string, _ time.Duration) (string, error) {
 		cmd := strings.Join(kubectlArgs, " ")
 		switch {
+		case strings.HasPrefix(cmd, "get crd clusters.postgresql.cnpg.io"):
+			return "customresourcedefinition.apiextensions.k8s.io/clusters.postgresql.cnpg.io", nil
 		case strings.HasPrefix(cmd, "get cluster.postgresql.cnpg.io"):
 			return `{"spec":{"storage":{"size":"10Gi","storageClass":"local-path"}}}`, nil
 		case strings.HasPrefix(cmd, "get storageclass local-path"):
@@ -75,7 +77,10 @@ func TestAdmitPostgreSQLStorageFailsClosedWithoutExpansion(t *testing.T) {
 
 func TestAdmitPostgreSQLStorageTreatsMissingClusterAsCreate(t *testing.T) {
 	service := validResetService()
-	service.setKubectlRunner(func(_ context.Context, _ string, _ []string, _ []byte, _ string, _ time.Duration) (string, error) {
+	service.setKubectlRunner(func(_ context.Context, _ string, kubectlArgs []string, _ []byte, _ string, _ time.Duration) (string, error) {
+		if len(kubectlArgs) > 1 && kubectlArgs[1] == "crd" {
+			return "customresourcedefinition.apiextensions.k8s.io/clusters.postgresql.cnpg.io", nil
+		}
 		return "", fmt.Errorf(`clusters.postgresql.cnpg.io %q not found`, "test-postgres")
 	})
 	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{
@@ -94,8 +99,12 @@ func TestAdmitPostgreSQLStorageTreatsMissingClusterAsCreate(t *testing.T) {
 
 func TestAdmitPostgreSQLStorageFailsClosedOnReadError(t *testing.T) {
 	service := validResetService()
-	service.setKubectlRunner(func(_ context.Context, _ string, _ []string, _ []byte, _ string, _ time.Duration) (string, error) {
-		return "", fmt.Errorf("connection refused")
+	service.setKubectlRunner(func(_ context.Context, _ string, kubectlArgs []string, _ []byte, _ string, _ time.Duration) (string, error) {
+		if len(kubectlArgs) > 1 && kubectlArgs[1] == "crd" {
+			return "", fmt.Errorf("connection refused")
+		}
+		t.Fatalf("storage lookup must not run after an indeterminate CRD query: %v", kubectlArgs)
+		return "", nil
 	})
 	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{
 		VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system",
@@ -108,6 +117,55 @@ func TestAdmitPostgreSQLStorageFailsClosedOnReadError(t *testing.T) {
 	}
 	if err := service.admitPostgreSQLStorage(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "cannot be admitted") {
 		t.Fatalf("expected fail-closed read error, got %v", err)
+	}
+}
+
+func TestAdmitPostgreSQLStorageFailsClosedWhenClusterReadFails(t *testing.T) {
+	service := validResetService()
+	service.setKubectlRunner(func(_ context.Context, _ string, kubectlArgs []string, _ []byte, _ string, _ time.Duration) (string, error) {
+		if len(kubectlArgs) > 1 && kubectlArgs[1] == "crd" {
+			return "customresourcedefinition.apiextensions.k8s.io/clusters.postgresql.cnpg.io", nil
+		}
+		return "", fmt.Errorf("connection refused")
+	})
+	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{
+		VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system",
+		StorageSize: "20Gi", Databases: []string{"testdb"}, ConsumerSecretName: "test-db",
+		ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service",
+		ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.admitPostgreSQLStorage(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "cannot be admitted") {
+		t.Fatalf("expected fail-closed Cluster read error, got %v", err)
+	}
+}
+
+func TestAdmitPostgreSQLStorageSkipsClusterReadWhenCRDIsAbsent(t *testing.T) {
+	service := validResetService()
+	service.setKubectlRunner(func(_ context.Context, _ string, kubectlArgs []string, _ []byte, _ string, _ time.Duration) (string, error) {
+		if len(kubectlArgs) > 1 && kubectlArgs[1] == "crd" {
+			query := strings.Join(kubectlArgs, " ")
+			if !strings.Contains(query, "--ignore-not-found=true") || !strings.Contains(query, "-o name") {
+				t.Fatalf("CRD lookup must return empty output for a successfully checked absent object: %v", kubectlArgs)
+			}
+			return "", nil
+		}
+		t.Fatalf("storage lookup must not run when the CNPG CRD is absent: %v", kubectlArgs)
+		return "", nil
+	})
+	spec, err := validatePostgreSQLServiceSpec(PostgreSQLServiceArgs{
+		VMName: "opute-local", ClusterName: "test-postgres", Namespace: "test-system",
+		StorageSize: "20Gi", Databases: []string{"testdb"}, ConsumerSecretName: "test-db",
+		ConsumerSecretLabel: "host-agent.io/test", ServiceOwner: "test-owner", ServicePartOf: "test-service",
+		ConsumerDatabaseKeys: map[string]string{"testdb": "testDatabaseUrl", "test_ledger": "testLedgerDatabaseUrl"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.admitPostgreSQLStorage(context.Background(), spec); err != nil {
+		t.Fatalf("fresh cluster must proceed to ordered operator bootstrap, got %v", err)
 	}
 }
 

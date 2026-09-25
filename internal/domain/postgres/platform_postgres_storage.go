@@ -9,6 +9,16 @@ import (
 )
 
 func (s *Service) admitPostgreSQLStorage(ctx context.Context, spec postgresqlServiceSpec) error {
+	crdPresent, err := s.postgresqlServiceCRDPresent(ctx, spec)
+	if err != nil {
+		return fmt.Errorf("storageSize cannot be admitted: could not determine whether CloudNativePG Cluster storage exists: %w", err)
+	}
+	if !crdPresent {
+		// A fresh Kubernetes cluster lacks the CNPG API until ordered bootstrap installs its operator.
+		// Only a successful empty CRD query permits skipping existing-PVC checks.
+		return nil
+	}
+
 	cluster, err := s.postgresqlServiceJSON(ctx, spec, []string{"get", "cluster.postgresql.cnpg.io", spec.ClusterName, "-n", spec.Namespace}, "get PostgreSQL service Cluster storage")
 	if err != nil {
 		if isKubernetesNotFound(err) {

@@ -21,9 +21,9 @@ func TestEnsurePostgreSQLServiceAppliesOperatorBeforeCluster(t *testing.T) {
 			return `{"items":[{"status":{"conditions":[{"type":"Ready","status":"True"}]}}]}`, nil
 		case kubectlArgs[0] == "get" && kubectlArgs[1] == "crd":
 			if !applied {
-				return "", fmt.Errorf("CRD not installed yet")
+				return "", nil
 			}
-			return "", nil
+			return "customresourcedefinition.apiextensions.k8s.io/clusters.postgresql.cnpg.io", nil
 		case kubectlArgs[0] == "get" && kubectlArgs[1] == "endpoints":
 			return `{"subsets":[{"addresses":[{"ip":"10.42.0.9"}]}]}`, nil
 		case kubectlArgs[0] == "apply":
@@ -93,7 +93,7 @@ func TestEnsurePostgreSQLServiceKeepsAReadyOperatorInstalled(t *testing.T) {
 		case kubectlArgs[0] == "get" && kubectlArgs[1] == "nodes":
 			return `{"items":[{"status":{"conditions":[{"type":"Ready","status":"True"}]}}]}`, nil
 		case kubectlArgs[0] == "get" && kubectlArgs[1] == "crd":
-			return "", nil
+			return "customresourcedefinition.apiextensions.k8s.io/clusters.postgresql.cnpg.io", nil
 		case kubectlArgs[0] == "get" && kubectlArgs[1] == "deployments":
 			return `{"items":[{"spec":{"replicas":1},"status":{"availableReplicas":1}}]}`, nil
 		case kubectlArgs[0] == "get" && kubectlArgs[1] == "endpoints":
@@ -231,9 +231,9 @@ func TestEnsurePostgreSQLServiceCompletesSQLGatedResult(t *testing.T) {
 			return "", nil
 		case command == "get" && kubectlArgs[1] == "crd":
 			if !operatorApplied {
-				return "", fmt.Errorf("operator HelmChart not applied")
+				return "", nil
 			}
-			return "", nil
+			return "customresourcedefinition.apiextensions.k8s.io/clusters.postgresql.cnpg.io", nil
 		case command == "apply":
 			manifest := string(input)
 			if strings.Contains(manifest, "chart: cloudnative-pg") {
