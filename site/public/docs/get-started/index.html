@@ -116,8 +116,8 @@ npx -y @opute/host-agent@0.2.2 start --background</code></pre><p>This starts the
 </ol>
 <div class="callout warn"><strong>Keep this first check read-only.</strong> Do not set <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> or call a tool whose declared effect is not <code>read</code>.</div>
 <h2>Verify the authenticated path</h2>
-<p>Check that authentication rejects a deliberately wrong token before completing the valid call in VS Code:</p>
-<pre><code>curl -i -sS http://127.0.0.1:3014/mcp -H 'Accept: application/json, text/event-stream' -H 'Content-Type: application/json' -H 'Authorization: Bearer intentionally-wrong' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'</code></pre>
+<p>Check that authentication rejects a deliberately wrong token before completing the valid call in VS Code. This request uses the Host Agent's stateless MCP protocol version and matching request metadata:</p>
+<pre><code>curl -i -sS http://127.0.0.1:3014/mcp -H 'Accept: application/json, text/event-stream' -H 'Content-Type: application/json' -H 'Authorization: Bearer intentionally-wrong' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/list' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"curl","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}'</code></pre>
 <p>Expect HTTP 401. A request with no Authorization header also returns 401. Use the real token only in your local shell and VS Code password prompt.</p>
 <ul><li>No token or a wrong token gets HTTP 401.</li><li>The configured token connects VS Code; non-empty <code>tools/list</code> includes <code>get_host_info</code>.</li><li><code>get_host_info {}</code> returns structured facts and the selected identity.</li><li>No mutation flag was enabled and no mutating tool was called.</li></ul>
 <h2>Troubleshoot</h2>

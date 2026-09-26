@@ -448,6 +448,36 @@ def main() -> None:
     for required in ("OPUTE_REMOTE_AGENT_ID", "MCP_AUTH_TOKEN", "tools/list", "get_host_info", "HTTP 401", "lxcBinaryPath", "systemctlPath", "Optional fields such as", "intentionally-wrong", "A request with no Authorization header"):
         if required not in tutorial:
             fail("generated tutorial is missing first-success evidence for " + required)
+    wrong_token_request = re.search(
+        r"curl -i -sS http://127[.]0[.]0[.]1:3014/mcp(.*?)</code></pre>",
+        tutorial,
+    )
+    if not wrong_token_request:
+        fail("generated tutorial is missing the wrong-token MCP request")
+    for required in (
+        "MCP-Protocol-Version: 2026-07-28",
+        "Mcp-Method: tools/list",
+        "io.modelcontextprotocol/protocolVersion",
+        "io.modelcontextprotocol/clientInfo",
+        "io.modelcontextprotocol/clientCapabilities",
+    ):
+        if required not in wrong_token_request.group(1):
+            fail("wrong-token request is missing stateless MCP metadata: " + required)
+    request_body = re.search(r"--data '([^']+)'", wrong_token_request.group(1))
+    if not request_body:
+        fail("wrong-token request has no parseable JSON body")
+    try:
+        request = json.loads(request_body.group(1))
+    except json.JSONDecodeError as error:
+        fail("wrong-token request body is not valid JSON: " + str(error))
+    metadata = request.get("params", {}).get("_meta", {})
+    if (
+        request.get("method") != "tools/list"
+        or metadata.get("io.modelcontextprotocol/protocolVersion") != "2026-07-28"
+        or not isinstance(metadata.get("io.modelcontextprotocol/clientInfo"), dict)
+        or not isinstance(metadata.get("io.modelcontextprotocol/clientCapabilities"), dict)
+    ):
+        fail("wrong-token request body does not match stateless MCP 2026-07-28")
     if catalog["releaseChannel"] == "preview":
         preview_path = ROOT / "site" / "public" / "docs" / "previews" / ("v" + version) / "capabilities"
         if load_json(preview_path / "catalog.json", "generated preview catalog") != catalog:
