@@ -183,7 +183,10 @@ func TestProviderCallbackTaskBridgePreservesParentAdmissionOwner(t *testing.T) {
 
 	childTaskID := "bridged-child-task"
 	type untrustedContextKey struct{}
-	callbackCtx = context.WithValue(callbackCtx, untrustedContextKey{}, "do not copy")
+	untrustedCallbackCtx := context.WithValue(callbackCtx, untrustedContextKey{}, "do not copy")
+	if untrustedCallbackCtx.Value(untrustedContextKey{}) != "do not copy" {
+		t.Fatal("test setup did not attach its untrusted callback context value")
+	}
 	taskCtx := asyncTaskExecutionContext(context.Background(), "apply_manifest", childTaskID, owner)
 	if taskCtx.Value(untrustedContextKey{}) != nil {
 		t.Fatal("async task copied an arbitrary provider callback context value")

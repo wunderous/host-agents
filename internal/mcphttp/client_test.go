@@ -31,7 +31,7 @@ func TestCallToolCancelsChildTaskWhenCallerContextEnds(t *testing.T) {
 		callsMu.Unlock()
 		method, _ := request["method"].(string)
 		params, _ := request["params"].(map[string]any)
-		result := map[string]any{}
+		var result map[string]any
 		switch method {
 		case "tools/call":
 			result = map[string]any{"resultType": "task", "taskId": "child-task", "pollIntervalMs": 60_000}
