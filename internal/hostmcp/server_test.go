@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/wunderous/host-agents/internal/hostruntime"
 	"github.com/wunderous/host-agents/internal/plan"
 	"github.com/wunderous/host-agents/internal/resource"
+	"github.com/wunderous/host-agents/internal/state"
 	"github.com/wunderous/host-agents/internal/tasks"
 	"github.com/wunderous/host-agents/internal/tools"
 )
@@ -64,7 +66,7 @@ func TestStandaloneServerDoesNotExposePlatformTools(t *testing.T) {
 
 func TestTaskAugmentedResultUsesMCPCreateTaskShape(t *testing.T) {
 	server := newStandaloneTestServer(t, true)
-	result, err := server.createAsyncTask("run_host_command", map[string]any{"command": "true"})
+	result, err := server.createAsyncTask(context.Background(), "run_host_command", map[string]any{"command": "true"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +78,140 @@ func TestTaskAugmentedResultUsesMCPCreateTaskShape(t *testing.T) {
 		if _, exists := content[key]; !exists {
 			t.Fatalf("task result missing %q: %#v", key, content)
 		}
+	}
+}
+
+func TestUnacknowledgedCallbackTaskExpiresWithoutStarting(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	server.asyncTaskStartTimeout = 15 * time.Millisecond
+	var started atomic.Bool
+	rec := server.Tasks().CreateWithCancel("apply_manifest", nil, time.Hour, "pending callback", nil, func() {})
+	server.registerPendingAsyncTaskStart(rec.TaskID, func() { started.Store(true) })
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		updated, ok := server.Tasks().Get(rec.TaskID)
+		if ok && updated.Status == tasks.StatusCancelled {
+			if updated.StatusMessage != "The callback task handle was not acknowledged before its timeout." {
+				t.Fatalf("expiry message = %q", updated.StatusMessage)
+			}
+			if started.Load() {
+				t.Fatal("expired callback task started without acknowledgement")
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("unacknowledged callback task did not expire")
+}
+
+func TestServerCloseCancelsUnacknowledgedCallbackTask(t *testing.T) {
+	server := newStandaloneTestServer(t, true)
+	var started atomic.Bool
+	rec := server.Tasks().CreateWithCancel("apply_manifest", nil, time.Hour, "pending callback", nil, func() {})
+	server.registerPendingAsyncTaskStart(rec.TaskID, func() { started.Store(true) })
+	if err := server.Close(); err != nil {
+		t.Fatalf("close server: %v", err)
+	}
+	updated, ok := server.Tasks().Get(rec.TaskID)
+	if !ok || updated.Status != tasks.StatusCancelled {
+		t.Fatalf("task after shutdown = %#v, want cancelled", updated)
+	}
+	if updated.StatusMessage != "The Host Agent shut down before the callback task handle was acknowledged." {
+		t.Fatalf("shutdown message = %q", updated.StatusMessage)
+	}
+	if started.Load() {
+		t.Fatal("server shutdown started an unacknowledged callback task")
+	}
+}
+
+func TestCloseWaitsForAcceptedAsyncTaskRegistrationToPersistCancellation(t *testing.T) {
+	server, stateDir := newBindingTestServer(t)
+	if !server.beginAsyncTaskStart() {
+		t.Fatal("server rejected async task admission before shutdown")
+	}
+	creatorReferenceHeld := true
+	defer func() {
+		if creatorReferenceHeld {
+			server.asyncTaskStartWG.Done()
+		}
+	}()
+
+	closed := make(chan error, 1)
+	go func() { closed <- server.Close() }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		server.asyncTaskStartMu.Lock()
+		startsClosed := server.asyncTaskStartsClosed
+		server.asyncTaskStartMu.Unlock()
+		if startsClosed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Close did not close async task admission")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if server.beginAsyncTaskStart() {
+		server.asyncTaskStartWG.Done()
+		t.Fatal("server admitted async task creation after shutdown began")
+	}
+	secondCloseStarted := make(chan struct{})
+	secondClosed := make(chan error, 1)
+	go func() {
+		close(secondCloseStarted)
+		secondClosed <- server.Close()
+	}()
+	<-secondCloseStarted
+	select {
+	case err := <-secondClosed:
+		t.Fatalf("concurrent Close returned before async task drain completed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	// Model a creator admitted just before shutdown that has not yet reached
+	// callback registration. Close must keep the state store open until the
+	// closed-registration path records cancellation durably.
+	rec := server.tasks.Create("run_host_command", map[string]any{"command": "true"}, time.Hour, "running", nil)
+	if err := server.state.Create(rec.TaskID, rec.ToolName, rec.Description); err != nil {
+		t.Fatalf("create durable operation: %v", err)
+	}
+	server.persistTask(rec)
+	started := atomic.Bool{}
+	server.registerPendingAsyncTaskStart(rec.TaskID, func() { started.Store(true) })
+	server.asyncTaskStartWG.Done()
+	creatorReferenceHeld = false
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not wait for accepted async task registration")
+	}
+	select {
+	case err := <-secondClosed:
+		if err != nil {
+			t.Fatalf("concurrent Close: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("concurrent Close did not wait for the first shutdown to finish")
+	}
+	if started.Load() {
+		t.Fatal("callback task started after shutdown began")
+	}
+
+	reopened, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("reopen task state: %v", err)
+	}
+	defer reopened.Close()
+	snapshots, err := reopened.ListTaskSnapshots()
+	if err != nil {
+		t.Fatalf("list task snapshots: %v", err)
+	}
+	if len(snapshots) != 1 || snapshots[0]["status"] != string(tasks.StatusCancelled) {
+		t.Fatalf("durable task after shutdown = %#v, want cancelled", snapshots)
 	}
 }
 

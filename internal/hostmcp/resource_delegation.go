@@ -35,6 +35,16 @@ type resourceDelegationClaims struct {
 	ExpiresAt          int64
 }
 
+// providerCallbackTaskOwner is created only from the typed values attached by
+// contextForProviderCallback after it verifies a signed, active delegation.
+// The MCP child task keeps its own task ID in the Tasks registry, while
+// resource admission remains owned by the provider operation's parent task.
+type providerCallbackTaskOwner struct {
+	reservation *resource.Reservation
+	operation   string
+	taskID      string
+}
+
 func newResourceDelegationKey() ([]byte, error) {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
@@ -55,6 +65,9 @@ func (s *Server) withProviderResourceDelegation(ctx context.Context, providerID,
 	taskOperation, taskID := resource.OperationIdentityFromContext(ctx)
 	if taskID == "" || reservation.Request.TaskID != taskID {
 		return nil, nil, fmt.Errorf("host_resource_delegation_owner_invalid: provider callback reservation is not bound to the active durable task")
+	}
+	if taskOperation == "" || reservation.Request.OperationID != taskOperation {
+		return nil, nil, fmt.Errorf("host_resource_delegation_owner_invalid: provider callback operation does not match its reservation owner")
 	}
 	agentID := strings.TrimSpace(s.agent.AgentID())
 	if agentID == "" || reservation.Request.AgentID != agentID {
@@ -131,6 +144,38 @@ func (s *Server) contextForProviderCallback(ctx context.Context, request *mcp.Ca
 	}
 	ctx = resource.WithReservation(ctx, parent)
 	return resource.WithOperationIdentity(ctx, claims.TaskOperation, claims.TaskID), nil
+}
+
+func (s *Server) providerCallbackTaskOwnerFromContext(ctx context.Context) (*providerCallbackTaskOwner, error) {
+	reservation, ok := resource.ReservationFromContext(ctx)
+	if !ok {
+		return nil, nil
+	}
+	operation, taskID := resource.OperationIdentityFromContext(ctx)
+	if s == nil || s.agent == nil || s.tasks == nil || reservation.ID == "control" || reservation.ID == "unmanaged" ||
+		strings.TrimSpace(operation) == "" || strings.TrimSpace(taskID) == "" ||
+		reservation.Request.AgentID != strings.TrimSpace(s.agent.AgentID()) ||
+		reservation.Request.OperationID != operation || reservation.Request.TaskID != taskID {
+		return nil, fmt.Errorf("host_resource_delegation_owner_invalid: provider callback reservation and task owner do not match")
+	}
+	if reservation.ExpiresAt.IsZero() || !time.Now().Before(reservation.ExpiresAt) {
+		return nil, fmt.Errorf("host_resource_delegation_expired: provider callback reservation has expired")
+	}
+	if !s.tasks.IsWorking(taskID) {
+		return nil, fmt.Errorf("host_resource_delegation_task_inactive: the provider callback task is not active")
+	}
+	return &providerCallbackTaskOwner{reservation: reservation, operation: operation, taskID: taskID}, nil
+}
+
+// asyncTaskExecutionContext starts from the independent child task context and
+// copies only the verified typed resource owner. Arbitrary callback context
+// values and cancellation state are not carried into the durable task.
+func asyncTaskExecutionContext(taskCtx context.Context, name, taskID string, owner *providerCallbackTaskOwner) context.Context {
+	if owner == nil {
+		return resource.WithOperationIdentity(taskCtx, name, taskID)
+	}
+	taskCtx = resource.WithReservation(taskCtx, owner.reservation)
+	return resource.WithOperationIdentity(taskCtx, owner.operation, owner.taskID)
 }
 
 func (s *Server) verifyResourceDelegation(token string) (resourceDelegationClaims, error) {

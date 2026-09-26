@@ -260,7 +260,8 @@ func (s *Server) handleRunHostPlanWithMetadata(ctx context.Context, args map[str
 	s.planCancels[record.RunID] = cancel
 	s.planMu.Unlock()
 	launched = true
-	// A reservation is inherited by task identity, and this run is its own task.
+	// A reservation is inherited by its exact operation/task owner, and this run
+	// binds both identities before any plan node can issue a callback.
 	// When the context carries a reservation admitted for a DIFFERENT task --
 	// which is what happens when a durable run is launched from inside another
 	// one, as opute.provider.install launches a provider's activation plan --
@@ -275,7 +276,7 @@ func (s *Server) handleRunHostPlanWithMetadata(ctx context.Context, args map[str
 		}
 	}
 	lease := claimReservationLease(ctx)
-	if err := lease.bindTask(rec.TaskID); err != nil {
+	if err := lease.bindTask(taskName, rec.TaskID); err != nil {
 		cancel()
 		s.tasks.Fail(rec.TaskID, err.Error())
 		if failed, ok := s.tasks.Get(rec.TaskID); ok {

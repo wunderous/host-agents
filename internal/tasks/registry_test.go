@@ -48,6 +48,97 @@ func TestInputRequiredTaskAcceptsStandardUpdates(t *testing.T) {
 	}
 }
 
+func TestRegistryReadAPIsReturnStableDeepSnapshots(t *testing.T) {
+	registry := NewRegistry()
+	inputIDs := []int{1, 2}
+	inputGroups := map[string][]int{"blue": {3, 4}}
+	inputCycle := map[string]any{"label": "cycle"}
+	inputCycle["self"] = inputCycle
+	type pointerKey struct{ Value *int }
+	keyValue := 5
+	inputKeys := map[pointerKey]string{{Value: &keyValue}: "stable"}
+	created := registry.Create("inspect_host", map[string]any{
+		"filter": map[string]any{"labels": []any{"production"}},
+		"ids":    inputIDs,
+		"groups": inputGroups,
+		"cycle":  inputCycle,
+		"keys":   inputKeys,
+	}, time.Minute, "inspect", map[string]any{"source": "client"})
+	inputIDs[0] = 99
+	inputGroups["blue"][0] = 99
+	inputCycle["label"] = "mutated-input"
+	keyValue = 99
+	created.ToolArgs["filter"].(map[string]any)["labels"].([]any)[0] = "mutated-create-result"
+	created.ToolArgs["ids"].([]int)[0] = 98
+	created.ToolArgs["groups"].(map[string][]int)["blue"][0] = 98
+	created.ToolArgs["cycle"].(map[string]any)["label"] = "mutated-create-cycle"
+
+	firstRead, ok := registry.Get(created.TaskID)
+	if !ok {
+		t.Fatal("created task was not found")
+	}
+	resultCodes := []int{7, 8}
+	registry.Complete(created.TaskID, ToolResult{StructuredContent: map[string]any{
+		"host":  map[string]any{"name": "node-a"},
+		"codes": resultCodes,
+	}})
+	resultCodes[0] = 97
+	if firstRead.Status != StatusWorking {
+		t.Fatalf("previous snapshot changed after completion: status=%s", firstRead.Status)
+	}
+	firstRead.Metadata["source"] = "mutated-get-result"
+
+	completed, ok := registry.Get(created.TaskID)
+	if !ok || completed.Status != StatusCompleted {
+		t.Fatalf("completed task snapshot = %#v, found=%v", completed, ok)
+	}
+	completed.ToolResult.StructuredContent.(map[string]any)["host"].(map[string]any)["name"] = "mutated-result"
+	completed.ToolResult.StructuredContent.(map[string]any)["codes"].([]int)[0] = 96
+	listed := registry.List()
+	listed[0].Status = StatusFailed
+
+	stored, ok := registry.Get(created.TaskID)
+	if !ok || stored.Status != StatusCompleted {
+		t.Fatalf("read snapshot mutation changed registry status: %#v", stored)
+	}
+	args := stored.ToolArgs["filter"].(map[string]any)["labels"].([]any)
+	if args[0] != "production" {
+		t.Fatalf("created/read snapshot aliased stored arguments: %#v", args)
+	}
+	if stored.ToolArgs["ids"].([]int)[0] != 1 || stored.ToolArgs["groups"].(map[string][]int)["blue"][0] != 3 {
+		t.Fatalf("typed input composites aliased task state: %#v", stored.ToolArgs)
+	}
+	keys := stored.ToolArgs["keys"].(map[pointerKey]string)
+	for key, value := range keys {
+		if value != "stable" || key.Value == nil || *key.Value != 5 {
+			t.Fatalf("map-key pointer aliased task state: key=%#v value=%q", key, value)
+		}
+		*key.Value = 42
+	}
+	storedAfterKeyMutation, ok := registry.Get(created.TaskID)
+	if !ok {
+		t.Fatal("task disappeared after map-key snapshot mutation")
+	}
+	for key := range storedAfterKeyMutation.ToolArgs["keys"].(map[pointerKey]string) {
+		if key.Value == nil || *key.Value != 5 {
+			t.Fatalf("map-key snapshot mutation changed registry state: %#v", key)
+		}
+	}
+	if cycle := stored.ToolArgs["cycle"].(map[string]any); cycle["label"] != "cycle" || cycle["self"].(map[string]any)["label"] != "cycle" {
+		t.Fatalf("cyclic input composite aliased task state: %#v", cycle)
+	}
+	if stored.Metadata["source"] != "client" {
+		t.Fatalf("read snapshot aliased stored metadata: %#v", stored.Metadata)
+	}
+	name := stored.ToolResult.StructuredContent.(map[string]any)["host"].(map[string]any)["name"]
+	if name != "node-a" {
+		t.Fatalf("read snapshot aliased stored tool result: %#v", name)
+	}
+	if codes := stored.ToolResult.StructuredContent.(map[string]any)["codes"].([]int); codes[0] != 7 {
+		t.Fatalf("typed result composite aliased task state: %#v", codes)
+	}
+}
+
 func TestRestoreSnapshotKeepsTerminalTaskFindableAfterRestart(t *testing.T) {
 	registry := NewRegistry()
 	restored, ok := registry.RestoreSnapshot(map[string]any{
