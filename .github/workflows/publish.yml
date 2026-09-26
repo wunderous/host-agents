@@ -64,14 +64,14 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           make artifacts VERSION="$version"
 
+      - name: Prepare x64 standalone smoke binary
+        run: gzip -dc dist/host-agent-linux-x64.gz > dist/host-agent-linux-x64
+
       - name: Generate release checksums
-        run: (cd dist && sha256sum host-agent-linux-x64.gz host-agent-linux-arm64.gz host-agent-windows-x64.gz opute-provider-k3s-linux-x64 opute-provider-cloudflare-linux-x64 opute-provider-tailscale-linux-x64 > SHA256SUMS)
+        run: (cd dist && sha256sum host-agent-linux-x64 host-agent-linux-x64.gz host-agent-linux-arm64.gz host-agent-windows-x64.gz opute-provider-k3s-linux-x64 opute-provider-cloudflare-linux-x64 opute-provider-tailscale-linux-x64 > SHA256SUMS)
 
       - name: Verify release checksums
         run: (cd dist && sha256sum -c SHA256SUMS)
-
-      - name: Prepare x64 standalone smoke binary
-        run: gzip -dc dist/host-agent-linux-x64.gz > dist/host-agent-linux-x64
 
       - name: Verify npm tarball read-only path
         if: startsWith(github.ref, 'refs/tags/v')
@@ -94,6 +94,7 @@ jobs:
           if-no-files-found: error
           path: |
             dist/host-agent-linux-x64.gz
+            dist/host-agent-linux-x64
             dist/host-agent-linux-arm64.gz
             dist/host-agent-windows-x64.gz
             dist/opute-provider-k3s-linux-x64
@@ -118,6 +119,7 @@ jobs:
         with:
           files: |
             dist/host-agent-linux-x64.gz
+            dist/host-agent-linux-x64
             dist/host-agent-linux-arm64.gz
             dist/host-agent-windows-x64.gz
             dist/opute-provider-k3s-linux-x64

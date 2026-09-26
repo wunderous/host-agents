@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "public-documentation-release-parity",
   "title": "Public product claims stay within verified release and failure-test scope",
-  "claim": "The Host Agent-first public tutorial names the exact published @opute/host-agent package version whose read-only package canary passed. Stable capability reference data uses the same package version and catalog revision. Each archived release reference is generated from its own immutable, allowlisted release catalog snapshot and remains discoverable in the sitemap and search index. Any unverified candidate is visibly labelled preview. Empirical infrastructure claims use a generated evidence record that names the Host Agent runtime and catalog revision, provider and Kubernetes versions, datastore, failure domain, observed membership, typed API results, recovery, and outcomes that were not tested. A local development-runtime result never proves the published package has the same capability path. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity. Generated HTML addresses its stylesheet and client scripts using each asset's LF-normalized SHA-256 fingerprint, and CI rejects missing or stale fingerprints.",
+  "claim": "The Host Agent-first public tutorial and canonical capability reference use the newest stable @opute/host-agent catalog with matching published read-only canary evidence. Each archived release reference is built from the exact catalog and package metadata at the published source SHA, matched to that release's canary evidence, and remains immutable. An unverified current candidate is visibly labelled preview on a separate route. Empirical infrastructure claims use a generated evidence record that names the Host Agent runtime and catalog revision, provider and Kubernetes versions, datastore, failure domain, observed membership, typed API results, recovery, and outcomes that were not tested. A local development-runtime result never proves the published package has the same capability path. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity. Generated HTML addresses its stylesheet and client scripts using each asset's LF-normalized SHA-256 fingerprint, and CI rejects missing or stale fingerprints.",
   "rationale": "A successful source build, open health endpoint, or tool-name snapshot cannot prove that a visitor can install the published launcher, authenticate, discover tools, and read structured host facts. A local cluster membership result also cannot prove API write continuity or failures outside its stated domain. Matching release evidence and a bounded test record prevent public instructions from silently describing a different artifact, runtime, or failure scope.",
   "decidedOn": "2026-09-24",
   "section": "Public website and release parity",
@@ -12,10 +12,13 @@
     "package": "npm/local-host-agent/package.json",
     "catalog": "site/context/release-catalog.json",
     "releaseChannelPolicy": "site/scripts/catalog-release-policy.mjs",
+    "releaseArchiveWriter": "site/scripts/catalog-release-archive.mjs",
     "localHAEvidence": "site/context/ha-proof.json",
     "archivedCatalogExample": "site/context/release-archives/v0.2.0.json",
     "canary": "npm/local-host-agent/published-readonly-canary.test.js",
     "generator": "site/scripts/generate-docs.ts",
+    "archivedCatalogPromotion": "scripts/promote_archived_site_release_catalog.py",
+    "archivedCatalogPromotionTests": "scripts/test_promote_archived_site_release_catalog.py",
     "localDaemonHealth": "internal/transport/http.go",
     "canonicalIdentity": "docs/adr/0006-canonical-host-agent-identity.md",
     "verifier": "scripts/check_site_release_parity.py",
@@ -56,6 +59,9 @@
       "all public documentation routes are generated from the maintained Bun source",
       "every archived versioned capability page is generated from a validated release catalog snapshot and included in search and sitemap",
       "stable promotion archives the prior stable catalog when the package version advances and refuses conflicting archive content",
+      "archived release promotion reads the package metadata and catalog from the exact evidence source SHA and refuses mismatched release or canary evidence",
+      "the canonical capability page and first-success tutorial select the newest stable catalog; unverified current candidates appear only on a preview route",
+      "site generation fails closed when no published stable catalog exists for the canonical reference and first-success tutorial",
       "generated CSS and client-script URLs match the content fingerprint of each checked-in asset",
       "tutorial output example includes every schema-required get_host_info field and labels optional fields",
       "tutorial shows a wrong-token HTTP 401 check without exposing a real credential",
@@ -65,12 +71,12 @@
     "canary": "npm/local-host-agent/published-readonly-canary.test.js",
     "siteVerifier": "scripts/check_site_release_parity.py"
   },
-  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. Stable status and published canary evidence are carried forward only while both package version and catalog revision match; a changed snapshot returns to preview until exact published read-only canary evidence promotes it. The stable promotion script archives the prior stable catalog as site/context/release-archives/v<version>.json when the package version advances and refuses conflicting archive content. Archived snapshots are immutable, must include matching published read-only canary evidence, and drive their own versioned page, JSON download, search entry, and sitemap route. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. Update site/context/ha-proof.json for each new empirical Kubernetes claim; keep the Host Agent runtime and catalog revision, provider and Kubernetes versions, datastore, topology, fault, observations, recovery, and exclusions together. Do not promote the local development-runtime test as published-package HA evidence. CSS and client-script URL fingerprints change automatically with LF-normalized asset content; update the validator's asset allowlist and tests when that asset set changes. Recompute and review file anchors whenever an anchored authority changes.",
+  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. Stable status and published canary evidence are carried forward only while both package version and catalog revision match; a changed snapshot returns to preview until exact published read-only canary evidence promotes it. The stable promotion script archives the prior stable catalog as site/context/release-archives/v<version>.json when the package version advances and refuses conflicting archive content. The archive promotion script reads the package and catalog directly from the canary evidence's exact source SHA, checks the complete read-only canary result, and refuses an existing conflicting archive. The canonical capability page and first-success tutorial select the newest verified stable release; a candidate catalog is published on a separate preview route until its canary passes. Site generation fails closed if no published stable catalog can support the canonical reference and first-success tutorial. Archived snapshots are immutable, must include matching published read-only canary evidence, and drive their own versioned page, JSON download, search entry, and sitemap route. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. Update site/context/ha-proof.json for each new empirical Kubernetes claim; keep the Host Agent runtime and catalog revision, provider and Kubernetes versions, datastore, topology, fault, observations, recovery, and exclusions together. Do not promote the local development-runtime test as published-package HA evidence. CSS and client-script URL fingerprints change automatically with LF-normalized asset content; update the validator's asset allowlist and tests when that asset set changes. Recompute and review file anchors whenever an anchored authority changes.",
   "anchors": [
     {
       "kind": "file",
       "path": "site/context/release-catalog.json",
-      "digest": "5c713f2ab715644f313f93b62aa17b5c298d714dc8cd6167f3295798952bfe34",
+      "digest": "f5bdb4253065e213ed1ab959ab9c598bf03f25769caa597aa2634bde17bc8b42",
       "note": "Current published package, catalog revision, and read-only canary provenance"
     },
     {
@@ -82,7 +88,7 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "5d5e8d9c134eab4b7fd6c81a601f3e8c7d0093f7b7c65857644e9843bb0f2648",
+      "digest": "1d2faaae15fa1cb94d0113dbf0c070d0fdd3996aa4198c7d9ae66317cdc85a65",
       "note": "Published package name and release version"
     },
     {
@@ -124,31 +130,37 @@
     {
       "kind": "file",
       "path": "site/scripts/capture-catalog.mjs",
-      "digest": "6c7517c9a6c3033f0e333e8b1079d236b15b66e9b6c1966ded901a5eec5409e0",
+      "digest": "91f9510fd8076b712a24daf4e1dc8d883085b65dedebc08113a263c6b16436f9",
       "note": "Allowlisted runtime catalog projection"
     },
     {
       "kind": "file",
       "path": "site/scripts/catalog-release-policy.mjs",
-      "digest": "25e3ef833d6d284d9244cada9cfeec529bd2aa8e60022de6febc2105e59887c7",
+      "digest": "25b6810a928b5401c1f370a23826a8204ec1e69b6472c27f8238aebdd4035164",
       "note": "Stable channel and canary retention require an exact package and catalog snapshot"
     },
     {
       "kind": "file",
+      "path": "site/scripts/catalog-release-archive.mjs",
+      "digest": "3097799f444a30c349b460fdc255a399024f7106524c93f147ca374a7faf9bdb",
+      "note": "Prior stable catalogs are written immutably before the current candidate is replaced"
+    },
+    {
+      "kind": "file",
       "path": "site/scripts/capture-catalog.test.mjs",
-      "digest": "a4fa93eff70744dfdf80328d2bf99a9d054538424929864243ce158a7d302251",
+      "digest": "92fade0f04fccb282aa6646ba2b0ee8055cef5888013dc5fdf6af1b689aeb49c",
       "note": "Release channel policy regression coverage"
     },
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "070b10ac351d8d441866bd07a501a81148dc93fab7eb17e86299d6bb7e90032d",
+      "digest": "0f9f9e579ff0a5d62128bfb15cd946ef431556cf5f75ca0769bce5da9625421b",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
       "kind": "file",
       "path": "scripts/check_site_release_parity.py",
-      "digest": "f399acfdf6ab0b6b07e90ab9b66a5d3b4284589ef778cb68e9efe71d7fae09b8",
+      "digest": "2ff905bb2c4c208b91c51065dcabdf130c8a4a145564d0e651158bc315528f1e",
       "note": "Release metadata and anchor verifier"
     },
     {
@@ -160,7 +172,7 @@
     {
       "kind": "file",
       "path": "scripts/validate-generated-site.py",
-      "digest": "6578f720fe11407cf677ad02564ad9a6d035f635642326eeb3ea505912256811",
+      "digest": "2e515947fe414dab43a626145c7c1bc64770cc468c3a82c47c7cdc219ab5b274",
       "note": "Generated route, metadata, link, search, schema, and accessibility validator"
     },
     {
@@ -192,6 +204,24 @@
       "path": "scripts/test_promote_site_release_catalog.py",
       "digest": "f2b96e4582d080bf848e560975f0619fd5a2e0b91912fa3a5a93aafa9ddb759a",
       "note": "Regression tests for preserving prior stable release catalogs"
+    },
+    {
+      "kind": "file",
+      "path": "scripts/promote_archived_site_release_catalog.py",
+      "digest": "36a0db0cbb4b814425f26583aacd2a54e609978d06f6734c065eed72802ff4fa",
+      "note": "Archives only the catalog and package metadata at the exact canary source SHA"
+    },
+    {
+      "kind": "file",
+      "path": "scripts/test_promote_archived_site_release_catalog.py",
+      "digest": "d4e3086c1764a9ece55f80217d0d341f9306a810a4c59ebda2a69c60c3119937",
+      "note": "Regression coverage for exact-source and published-canary archive promotion"
+    },
+    {
+      "kind": "file",
+      "path": "site/context/release-archives/v0.2.1.json",
+      "digest": "bd7fb006b871b5eaa07f347bff8372fd782dfec6913314fa789ec4421e6002f9",
+      "note": "Immutable v0.2.1 catalog matched to its published read-only canary"
     }
   ],
   "verify": "python3 scripts/check_site_release_parity.py",
@@ -208,6 +238,8 @@
     "site/scripts/generate-docs.ts",
     "scripts/check_site_release_parity.py",
     "scripts/promote_site_release_catalog.py",
+    "scripts/promote_archived_site_release_catalog.py",
+    "scripts/test_promote_archived_site_release_catalog.py",
     "Makefile",
     ".github/workflows/ci.yml",
     ".github/workflows/publish-site-image.yml",
@@ -219,5 +251,5 @@
   ],
   "supersedes": [],
   "withdrawn": false,
-  "lastVerified": "2026-09-25"
+  "lastVerified": "2026-09-26"
 }

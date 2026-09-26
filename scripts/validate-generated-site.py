@@ -294,12 +294,29 @@ def main() -> None:
         openapi_json = json.loads((SITE / "openapi.json").read_text(encoding="utf-8"))
         openapi_yaml = json.loads((SITE / "openapi.yaml").read_text(encoding="utf-8"))
         catalog = json.loads((ROOT / "site" / "context" / "release-catalog.json").read_text(encoding="utf-8"))
+        archive_dir = ROOT / "site" / "context" / "release-archives"
+        archived_catalogs = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted(archive_dir.glob("v*.json"))
+        ]
     except (OSError, json.JSONDecodeError) as error:
         fail(f"OpenAPI or catalog JSON is invalid ({type(error).__name__})")
     if openapi_json != openapi_yaml:
         fail("OpenAPI JSON and YAML describe different objects")
-    if openapi_json.get("info", {}).get("version") != catalog.get("packageVersion"):
-        fail("OpenAPI version does not match the documented package")
+    verified_catalogs = archived_catalogs + ([catalog] if catalog.get("releaseChannel") == "stable" else [])
+    if not verified_catalogs:
+        fail("OpenAPI cannot be tied to a published stable capability catalog")
+    latest_catalog = max(
+        verified_catalogs,
+        key=lambda item: tuple(int(part) for part in item["packageVersion"].split(".")),
+    )
+    openapi_catalog = openapi_json.get("x-opute-mcp", {})
+    if (
+        openapi_json.get("info", {}).get("version") != latest_catalog.get("packageVersion")
+        or openapi_catalog.get("packageVersion") != latest_catalog.get("packageVersion")
+        or openapi_catalog.get("catalogRevision") != latest_catalog.get("catalogRevision")
+    ):
+        fail("OpenAPI metadata does not match the latest published stable catalog")
 
     css = (SITE / "styles.css").read_text(encoding="utf-8")
     for required in (":focus-visible", "max-width: 879px", "max-width: 520px", ".search-error", ".diagram-alt"):
