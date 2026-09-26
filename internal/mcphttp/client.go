@@ -36,6 +36,9 @@ func (c Client) Call(ctx context.Context, method, name string, params map[string
 			info["name"] = c.Name
 		}
 	}
+	if delegation := ResourceDelegationFromContext(ctx); delegation != "" {
+		meta[ResourceDelegationMetaKey] = delegation
+	}
 	params["_meta"] = meta
 	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
 	if err != nil {

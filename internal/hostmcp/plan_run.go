@@ -275,6 +275,18 @@ func (s *Server) handleRunHostPlanWithMetadata(ctx context.Context, args map[str
 		}
 	}
 	lease := claimReservationLease(ctx)
+	if err := lease.bindTask(rec.TaskID); err != nil {
+		cancel()
+		s.tasks.Fail(rec.TaskID, err.Error())
+		if failed, ok := s.tasks.Get(rec.TaskID); ok {
+			s.persistTask(failed)
+		}
+		stateValue.Status = "failed"
+		stateValue.Error = fmt.Sprintf("bind plan resource reservation: %v", err)
+		_ = s.state.UpdatePlan(record.RunID, "failed", s.marshalPlanState(stateValue, &doc), stateValue.Error)
+		lease.finish()
+		return tools.ErrorResult(fmt.Errorf("%s", stateValue.Error)), nil
+	}
 	lease.keepAlive(taskCtx)
 	go s.executeHostPlan(taskCtx, cancel, rec.TaskID, doc, stateValue, snapshot, recipeMetadata, nil, lease)
 	return s.planRunResult(record), nil

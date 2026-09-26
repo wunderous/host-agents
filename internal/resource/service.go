@@ -42,6 +42,9 @@ type HostResourceService interface {
 	// Renew extends a live reservation's lease for an operation whose work
 	// outlives a single request, such as a durable plan run.
 	Renew(*Reservation) error
+	// BindReservationTask transfers a launcher's reservation to the durable
+	// task that claimed it, so callbacks can prove exact task ownership.
+	BindReservationTask(*Reservation, string) error
 	// ReclaimTerminalTaskReservations removes durable reservations whose owning
 	// task is known to be terminal after a process restart. Reservations for
 	// working or input_required tasks remain fenced until their owner releases
@@ -279,6 +282,9 @@ func (c *Coordinator) Admit(ctx context.Context, request AdmissionRequest) (*Res
 			if !reservationOwnerCanInherit(parent.Request, request) {
 				return nil, &RequestError{Code: "host_reservation_owner_mismatch", Reason: "nested reservation owner does not match the reservation in context"}
 			}
+			if err := c.validateParentReservation(parent); err != nil {
+				return nil, err
+			}
 			inherited := *parent
 			inherited.Request = request
 			inherited.inherited = true
@@ -339,6 +345,86 @@ func (c *Coordinator) Admit(ctx context.Context, request AdmissionRequest) (*Res
 		return nil, err
 	}
 	return reservation, nil
+}
+
+// BindReservationTask transfers a launcher's unscoped reservation to the
+// durable plan task that claims it. This lets authenticated provider callbacks
+// prove same-task ownership across the MCP process boundary.
+func (c *Coordinator) BindReservationTask(reservation *Reservation, taskID string) error {
+	if c == nil || reservation == nil || reservation.ID == "" || reservation.ID == "control" || reservation.ID == "unmanaged" {
+		return nil
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return &RequestError{Code: "host_reservation_task_invalid", Field: "taskId", Reason: "durable task identity is required"}
+	}
+	if reservation.Request.TaskID != "" {
+		if reservation.Request.TaskID == taskID {
+			return nil
+		}
+		return &RequestError{Code: "host_reservation_owner_mismatch", Reason: "reservation is already bound to another task"}
+	}
+	lockRelease, err := c.reservationLock.acquire(context.Background(), true)
+	if err != nil {
+		return err
+	}
+	defer lockRelease()
+	records, err := c.readReservations()
+	if err != nil {
+		return err
+	}
+	record, ok := records[reservation.ID]
+	if !ok {
+		return &RequestError{Code: "host_reservation_expired", Reason: "the reservation being bound is no longer held"}
+	}
+	if record.Request.AgentID != reservation.Request.AgentID ||
+		(record.Request.OperationID != reservation.Request.OperationID && (record.Request.OperationID != "" || reservation.Request.OperationID != "")) {
+		return &RequestError{Code: "host_reservation_owner_mismatch", Reason: "reservation ownership does not match the binding operation"}
+	}
+	if strings.TrimSpace(record.Request.TaskID) != "" {
+		if record.Request.TaskID == taskID {
+			reservation.Request.TaskID = taskID
+			return nil
+		}
+		return &RequestError{Code: "host_reservation_owner_mismatch", Reason: "reservation is already bound to another task"}
+	}
+	record.Request.TaskID = taskID
+	records[reservation.ID] = record
+	if err := c.writeReservations(records); err != nil {
+		return err
+	}
+	reservation.Request.TaskID = taskID
+	return nil
+}
+
+// validateParentReservation rechecks the durable owner record before a child
+// borrows its capacity. An in-memory or replayed reservation value is not
+// enough after the owning lease has been released or expired.
+func (c *Coordinator) validateParentReservation(parent *Reservation) error {
+	if parent.ID == "control" || parent.ID == "unmanaged" {
+		return nil
+	}
+	lockRelease, err := c.reservationLock.acquire(context.Background(), true)
+	if err != nil {
+		return err
+	}
+	defer lockRelease()
+	records, err := c.readReservations()
+	if err != nil {
+		return err
+	}
+	record, ok := records[parent.ID]
+	if !ok {
+		return &RequestError{Code: "host_reservation_expired", Reason: "the parent reservation is no longer held"}
+	}
+	if !sameReservationScope(record.Request, parent.Request) {
+		return &RequestError{Code: "host_reservation_owner_mismatch", Reason: "parent reservation owner does not match its durable record"}
+	}
+	expires, err := time.Parse(time.RFC3339Nano, record.ExpiresAt)
+	if err != nil || !expires.After(time.Now().UTC()) {
+		return &RequestError{Code: "host_reservation_expired", Reason: "the parent reservation has expired"}
+	}
+	return nil
 }
 
 func (c *Coordinator) Release(reservation *Reservation) error {
@@ -682,10 +768,17 @@ func removeExpired(records map[string]persistedReservation, now time.Time) bool 
 }
 
 func sameReservationOwner(left, right AdmissionRequest) bool {
-	if left.AgentID != right.AgentID && (left.AgentID != "" || right.AgentID != "") {
+	if !sameReservationScope(left, right) {
 		return false
 	}
 	if left.OperationID != right.OperationID && (left.OperationID != "" || right.OperationID != "") {
+		return false
+	}
+	return true
+}
+
+func sameReservationScope(left, right AdmissionRequest) bool {
+	if left.AgentID != right.AgentID && (left.AgentID != "" || right.AgentID != "") {
 		return false
 	}
 	if left.TaskID != right.TaskID && (left.TaskID != "" || right.TaskID != "") {

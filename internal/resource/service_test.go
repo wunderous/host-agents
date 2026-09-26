@@ -135,6 +135,68 @@ func TestTypedAdmissionRejectsOwnerMismatchAndHonorsCancellationAndExpiry(t *tes
 	}
 }
 
+func TestBindReservationTaskPersistsOwnerAndRejectsStaleParent(t *testing.T) {
+	lockDir := t.TempDir()
+	first, err := NewCoordinator(testServiceConfig(lockDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewCoordinator(testServiceConfig(lockDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parent, err := first.Admit(context.Background(), zeroCostRequest("agent-a", "run_host_local_recipe", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleCopy := *parent
+	if err := first.BindReservationTask(parent, "task-a"); err != nil {
+		t.Fatalf("bind launcher reservation: %v", err)
+	}
+	if err := second.BindReservationTask(&staleCopy, "task-a"); err != nil {
+		t.Fatalf("repeat same-task binding: %v", err)
+	}
+	if err := second.BindReservationTask(&staleCopy, "task-b"); err == nil {
+		t.Fatal("rebind to a different task was accepted")
+	}
+	if parent.Request.TaskID != "task-a" {
+		t.Fatalf("in-memory task owner = %q, want task-a", parent.Request.TaskID)
+	}
+
+	callback := WithReservation(context.Background(), parent)
+	inherited, err := second.Admit(callback, AdmissionRequest{
+		Class: ClassHeavy, Operation: "apply_manifest", AgentID: "agent-a",
+		TaskID: "task-a", ParentReservationID: parent.ID,
+	})
+	if err != nil {
+		t.Fatalf("same-task callback should inherit the durable reservation: %v", err)
+	}
+	if inherited.ID != parent.ID || !inherited.inherited {
+		t.Fatalf("callback reservation = %#v, want inherited %q", inherited, parent.ID)
+	}
+
+	_, err = second.Admit(callback, AdmissionRequest{
+		Class: ClassHeavy, Operation: "apply_manifest", AgentID: "agent-a",
+		TaskID: "task-b", ParentReservationID: parent.ID,
+	})
+	var requestErr *RequestError
+	if !errors.As(err, &requestErr) || requestErr.Code != "host_reservation_owner_mismatch" {
+		t.Fatalf("foreign task admission = %T %v, want owner mismatch", err, err)
+	}
+
+	if err := first.Release(parent); err != nil {
+		t.Fatalf("release parent: %v", err)
+	}
+	_, err = second.Admit(callback, AdmissionRequest{
+		Class: ClassHeavy, Operation: "apply_manifest", AgentID: "agent-a",
+		TaskID: "task-a", ParentReservationID: parent.ID,
+	})
+	if !errors.As(err, &requestErr) || requestErr.Code != "host_reservation_expired" {
+		t.Fatalf("stale parent admission = %T %v, want expired", err, err)
+	}
+}
+
 func TestTerminalTaskReservationsAreReclaimedAfterRestart(t *testing.T) {
 	config := testServiceConfig(t.TempDir())
 	config.MaxNormal = 2

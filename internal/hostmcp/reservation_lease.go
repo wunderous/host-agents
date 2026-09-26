@@ -89,6 +89,20 @@ func (l *reservationLease) releaseIfUnclaimed() {
 
 // keepAlive renews the lease until the run's context ends, so a plan longer
 // than the reservation TTL keeps the record its nodes inherit.
+// bindTask associates a launcher reservation with the durable plan task
+// before the first node runs. The task identity is persisted with the lease.
+func (l *reservationLease) bindTask(taskID string) error {
+	if l == nil || l.reservation == nil {
+		return nil
+	}
+	if l.reservation.Request.TaskID != "" {
+		// A nested durable run has already detached its task context from the
+		// launcher's reservation. The outer task continues to own that lease.
+		return nil
+	}
+	return l.admission.BindReservationTask(l.reservation, taskID)
+}
+
 func (l *reservationLease) keepAlive(ctx context.Context) {
 	if l == nil || ctx == nil {
 		return

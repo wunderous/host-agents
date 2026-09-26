@@ -214,7 +214,7 @@ func addCloudflareOperations(server *mcp.Server) {
 			if err != nil {
 				return nil, err
 			}
-			return dispatchCloudflareOperation(ctx, operation.ID, args)
+			return dispatchCloudflareOperation(hostagentclient.ForwardResourceDelegation(ctx, request), operation.ID, args)
 		})
 	}
 }

@@ -240,6 +240,15 @@ func (r *Registry) Get(taskID string) (*Record, bool) {
 	return rec, ok
 }
 
+// IsWorking reports whether taskID currently owns active work without exposing
+// the mutable task record to the caller.
+func (r *Registry) IsWorking(taskID string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	rec, ok := r.tasks[taskID]
+	return ok && rec.Status == StatusWorking
+}
+
 func (r *Registry) List() []*Record {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

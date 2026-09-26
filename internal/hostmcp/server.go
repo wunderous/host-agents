@@ -64,6 +64,9 @@ type Server struct {
 	providerManifests          map[string]providercontract.InstallManifest
 	registeredToolNames        map[string]bool
 	internalToolNames          map[string]bool
+	resourceDelegationKey      []byte
+	resourceDelegationMu       sync.Mutex
+	resourceDelegations        map[string]string
 }
 
 func (s *Server) logProviderRestoreSkip(record state.ProviderGenerationRecord, stage string, err error) {
@@ -161,6 +164,10 @@ func NewServer(opts Options) (*Server, error) {
 	if resourceService == nil {
 		resourceService = opts.Ops.ResourceService()
 	}
+	resourceDelegationKey, err := newResourceDelegationKey()
+	if err != nil {
+		return nil, fmt.Errorf("initialize provider callback delegation: %w", err)
+	}
 	hs := &Server{
 		mcpServer:                  srv,
 		logger:                     opts.Logger,
@@ -186,6 +193,8 @@ func NewServer(opts Options) (*Server, error) {
 		implementationName:         implementationName,
 		registeredToolNames:        make(map[string]bool),
 		internalToolNames:          make(map[string]bool),
+		resourceDelegationKey:      resourceDelegationKey,
+		resourceDelegations:        make(map[string]string),
 		planCancels:                make(map[string]context.CancelFunc),
 		planResumeRequests:         make(map[string]plan.ResumeRequest),
 	}
@@ -1353,6 +1362,10 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 			return tools.ErrorResult(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
+	}
+	ctx, err := s.contextForProviderCallback(ctx, req, name)
+	if err != nil {
+		return tools.ErrorResult(err), nil
 	}
 	dynamicEffect := s.dynamicEffect(name)
 	if s.standalone && (tools.IsStandaloneMutation(name) || (dynamicEffect != "" && dynamicEffect != "read")) && !s.allowMutations {

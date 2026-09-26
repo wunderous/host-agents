@@ -17,6 +17,17 @@ public `pkg/hostagentclient` boundary for generic Host Agent primitives. A
 resource target is resolved by its canonical tenant-scoped URI before the
 primitive executes; provider code cannot import `internal/*` packages.
 
+When a provider operation is nested in a durable Host Agent task, the Host
+Agent may forward a signed, one-hour resource delegation through MCP request
+metadata so the provider's public callback client can inherit that task's
+already-held reservation. The delegation is bound to the canonical agent,
+durable task, provider generation, and provider operation. Host Agent verifies
+that it is still in flight and checks the durable reservation record before
+admitting the callback. It does not authorize calls: HTTP authentication,
+typed dispatch, canonical resource resolution, and mutation gates still apply.
+Lifecycle and provider-capability calls cannot use the delegation, and the
+opaque token is not included in arguments, results, or durable evidence.
+
 Incus system containers are first-class compute resources. Their canonical
 identity is `container:<tenant>:<id>`, provisioning registers that URI and
 `instanceType=container`, and `run_instance_command` executes a typed argv only
@@ -41,6 +52,10 @@ container and never imports Host Agent internals.
 
 - Added C-15 to permit narrowly scoped public-MCP callbacks without weakening
   the provider-neutral core boundary.
+- Added an in-flight, same-agent and same-task resource delegation for
+  provider callbacks that cross the MCP process boundary. The durable
+  reservation is bound before a plan starts, validated before inheritance,
+  and remains subject to normal dispatch and mutation gates.
 - Replaced built-in Cloudflare routing with manifest-backed dynamic provider
   operations.
 - Added URI and instance-type enforcement for container placement.
@@ -54,6 +69,12 @@ container and never imports Host Agent internals.
   internals while permitting only the public callback client.
 - Provider manifest, operation, raw-argument, placement, and secret-redaction
   tests live beside the Cloudflare MCP executable.
+- `internal/hostmcp/resource_delegation_test.go` covers signature validation,
+  active-task and tool scope, expiry, and revocation; `internal/resource/service_test.go`
+  verifies persisted reservation binding and stale-owner rejection.
+- `internal/mcphttp/resource_delegation_test.go` and
+  `pkg/hostagentclient/resource_delegation_test.go` verify that the opaque
+  delegation crosses the provider callback boundary only as MCP metadata.
 - `internal/ops/exec_command_test.go` covers container URI execution,
   cross-tenant rejection, and no implicit VM fallback.
 - `internal/hostmcp/kubernetes_provider.go` is the sole Host Agent adapter
