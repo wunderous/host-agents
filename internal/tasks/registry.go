@@ -2,6 +2,8 @@ package tasks
 
 import (
 	"encoding/json"
+	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -79,7 +81,7 @@ func (r *Registry) CreateWithInput(toolName string, toolArgs map[string]any, ttl
 	rec.InputRequests = cloneMap(inputRequests)
 	rec.resume = resume
 	r.tasks[rec.TaskID] = rec
-	return rec
+	return cloneRecord(rec)
 }
 
 // CreateWithID restores a durable operation identity after a process restart.
@@ -89,11 +91,11 @@ func (r *Registry) CreateWithID(taskID, toolName string, toolArgs map[string]any
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if existing, ok := r.tasks[taskID]; ok && existing.Status == StatusWorking {
-		return existing
+		return cloneRecord(existing)
 	}
 	rec := newRecord(taskID, toolName, toolArgs, ttl, description, metadata, cancel)
 	r.tasks[taskID] = rec
-	return rec
+	return cloneRecord(rec)
 }
 
 // RestoreSnapshot rehydrates a task handle from durable state. A waiting task
@@ -109,9 +111,12 @@ func (r *Registry) RestoreSnapshot(snapshot map[string]any) (*Record, bool) {
 	toolArgs, _ := snapshot["toolArgs"].(map[string]any)
 	description, _ := snapshot["description"].(string)
 	metadata, _ := snapshot["metadata"].(map[string]any)
-	rec := r.CreateWithID(taskID, toolName, toolArgs, durationFromMilliseconds(snapshot["ttlMs"]), description, metadata, nil)
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if existing, ok := r.tasks[taskID]; ok && existing.Status == StatusWorking {
+		return cloneRecord(existing), true
+	}
+	rec := newRecord(taskID, toolName, toolArgs, durationFromMilliseconds(snapshot["ttlMs"]), description, metadata, nil)
 	if createdAt, ok := snapshot["createdAt"].(string); ok && createdAt != "" {
 		rec.CreatedAt = createdAt
 	}
@@ -155,7 +160,7 @@ func (r *Registry) RestoreSnapshot(snapshot map[string]any) (*Record, bool) {
 		rec.StatusMessage = "The Host Agent restarted before the task completed."
 	}
 	r.tasks[taskID] = rec
-	return rec, true
+	return cloneRecord(rec), true
 }
 
 // RequireInput durably changes a working task into an input barrier and
@@ -173,7 +178,7 @@ func (r *Registry) RequireInputWithMetadata(taskID string, inputRequests, inputR
 	defer r.mu.Unlock()
 	rec, ok := r.tasks[taskID]
 	if !ok || (rec.Status != StatusWorking && rec.Status != StatusInputRequired) {
-		return rec, ok
+		return cloneRecord(rec), ok
 	}
 	rec.Status = StatusInputRequired
 	rec.StatusMessage = "The task requires input before it can continue."
@@ -181,7 +186,7 @@ func (r *Registry) RequireInputWithMetadata(taskID string, inputRequests, inputR
 	rec.InputRequest = cloneMap(inputRequest)
 	rec.resume = resume
 	rec.LastUpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	return rec, true
+	return cloneRecord(rec), true
 }
 
 // SetResume attaches the continuation for a restored input_required task.
@@ -190,10 +195,10 @@ func (r *Registry) SetResume(taskID string, resume func(map[string]any)) (*Recor
 	defer r.mu.Unlock()
 	rec, ok := r.tasks[taskID]
 	if !ok || rec.Status != StatusInputRequired {
-		return rec, ok
+		return cloneRecord(rec), ok
 	}
 	rec.resume = resume
-	return rec, true
+	return cloneRecord(rec), true
 }
 
 func durationFromMilliseconds(value any) time.Duration {
@@ -209,7 +214,7 @@ func (r *Registry) create(toolName string, toolArgs map[string]any, ttl time.Dur
 	id := uuid.NewString()
 	rec := newRecord(id, toolName, toolArgs, ttl, description, metadata, cancel)
 	r.tasks[id] = rec
-	return rec
+	return cloneRecord(rec)
 }
 
 func newRecord(taskID, toolName string, toolArgs map[string]any, ttl time.Duration, description string, metadata map[string]any, cancel func()) *Record {
@@ -220,10 +225,10 @@ func newRecord(taskID, toolName string, toolArgs map[string]any, ttl time.Durati
 	return &Record{
 		TaskID:        taskID,
 		ToolName:      toolName,
-		ToolArgs:      toolArgs,
+		ToolArgs:      cloneMap(toolArgs),
 		Status:        StatusWorking,
 		Description:   description,
-		Metadata:      metadata,
+		Metadata:      cloneMap(metadata),
 		CreatedAt:     now,
 		LastUpdatedAt: now,
 		TTL:           int64(ttl / time.Millisecond),
@@ -237,7 +242,7 @@ func (r *Registry) Get(taskID string) (*Record, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	rec, ok := r.tasks[taskID]
-	return rec, ok
+	return cloneRecord(rec), ok
 }
 
 // IsWorking reports whether taskID currently owns active work without exposing
@@ -254,7 +259,7 @@ func (r *Registry) List() []*Record {
 	defer r.mu.RUnlock()
 	out := make([]*Record, 0, len(r.tasks))
 	for _, rec := range r.tasks {
-		out = append(out, rec)
+		out = append(out, cloneRecord(rec))
 	}
 	return out
 }
@@ -280,9 +285,9 @@ func (r *Registry) Complete(taskID string, result ToolResult) {
 	rec.Status = StatusCompleted
 	rec.StatusMessage = "The operation completed successfully."
 	rec.LastUpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	rec.ToolResult = &result
+	rec.ToolResult = cloneToolResult(&result)
 	select {
-	case rec.resultCh <- result:
+	case rec.resultCh <- *cloneToolResult(&result):
 	default:
 	}
 }
@@ -309,6 +314,12 @@ func (r *Registry) Fail(taskID string, message string) {
 }
 
 func (r *Registry) Cancel(taskID string) (*Record, bool) {
+	return r.CancelWithMessage(taskID, "The task was cancelled by request.")
+}
+
+// CancelWithMessage cancels working or input-required work and records the
+// lifecycle reason for callers such as task-handle acknowledgement expiry.
+func (r *Registry) CancelWithMessage(taskID, message string) (*Record, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	rec, ok := r.tasks[taskID]
@@ -322,7 +333,10 @@ func (r *Registry) Cancel(taskID string) (*Record, bool) {
 		rec.cancel()
 	}
 	rec.Status = StatusCancelled
-	rec.StatusMessage = "The task was cancelled by request."
+	rec.StatusMessage = strings.TrimSpace(message)
+	if rec.StatusMessage == "" {
+		rec.StatusMessage = "The task was cancelled."
+	}
 	rec.LastUpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	result := ToolResult{
 		Content: []map[string]any{{"type": "text", "text": "Error: " + rec.StatusMessage}},
@@ -333,7 +347,7 @@ func (r *Registry) Cancel(taskID string) (*Record, bool) {
 	case rec.resultCh <- result:
 	default:
 	}
-	return rec, true
+	return cloneRecord(rec), true
 }
 
 // Update applies only responses keyed by currently outstanding input
@@ -348,7 +362,7 @@ func (r *Registry) Update(taskID string, responses map[string]any) (*Record, boo
 	}
 	if rec.Status != StatusInputRequired {
 		r.mu.Unlock()
-		return rec, false
+		return cloneRecord(rec), false
 	}
 	if rec.InputRequests == nil {
 		rec.InputRequests = map[string]any{}
@@ -363,19 +377,21 @@ func (r *Registry) Update(taskID string, responses map[string]any) (*Record, boo
 	}
 	if len(rec.InputRequests) != 0 {
 		rec.LastUpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		snapshot := cloneRecord(rec)
 		r.mu.Unlock()
-		return rec, true
+		return snapshot, true
 	}
 	rec.Status = StatusWorking
 	rec.StatusMessage = "Input received; resuming the task."
 	rec.InputRequest = nil
 	rec.LastUpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	resume := rec.resume
+	snapshot := cloneRecord(rec)
 	r.mu.Unlock()
 	if resume != nil {
 		resume(accepted)
 	}
-	return rec, true
+	return snapshot, true
 }
 
 func (r *Registry) ToGetTaskResult(rec *Record) map[string]any {
@@ -431,11 +447,125 @@ func cloneMap(value map[string]any) map[string]any {
 	if value == nil {
 		return nil
 	}
-	out := make(map[string]any, len(value))
-	for key, item := range value {
-		out[key] = item
+	return cloneValue(value).(map[string]any)
+}
+
+// cloneRecord returns a stable snapshot for callers. Registry-owned records
+// are mutated under Registry.mu; exposing those pointers would let an
+// otherwise read-only caller race with completion, cancellation, or input
+// updates after the registry lock is released.
+func cloneRecord(rec *Record) *Record {
+	if rec == nil {
+		return nil
 	}
-	return out
+	clone := *rec
+	clone.ToolArgs = cloneMap(rec.ToolArgs)
+	clone.Metadata = cloneMap(rec.Metadata)
+	clone.Logs = append([]string(nil), rec.Logs...)
+	clone.InputRequests = cloneMap(rec.InputRequests)
+	clone.InputRequest = cloneMap(rec.InputRequest)
+	clone.ToolResult = cloneToolResult(rec.ToolResult)
+	return &clone
+}
+
+func cloneToolResult(result *ToolResult) *ToolResult {
+	if result == nil {
+		return nil
+	}
+	clone := *result
+	if result.Content != nil {
+		clone.Content = make([]map[string]any, len(result.Content))
+		for i, item := range result.Content {
+			clone.Content[i] = cloneMap(item)
+		}
+	}
+	clone.StructuredContent = cloneValue(result.StructuredContent)
+	return &clone
+}
+
+func cloneValue(value any) any {
+	reflected := reflect.ValueOf(value)
+	if !reflected.IsValid() {
+		return nil
+	}
+	return cloneReflectValue(reflected, make(map[cloneVisit]reflect.Value)).Interface()
+}
+
+type cloneVisit struct {
+	typ reflect.Type
+	ptr uintptr
+	len int
+}
+
+func cloneReflectValue(value reflect.Value, visited map[cloneVisit]reflect.Value) reflect.Value {
+	switch value.Kind() {
+	case reflect.Interface:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		clone := reflect.New(value.Type()).Elem()
+		clone.Set(cloneReflectValue(value.Elem(), visited))
+		return clone
+	case reflect.Map:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		visit := cloneVisit{typ: value.Type(), ptr: value.Pointer()}
+		if prior, ok := visited[visit]; ok {
+			return prior
+		}
+		clone := reflect.MakeMapWithSize(value.Type(), value.Len())
+		visited[visit] = clone
+		iter := value.MapRange()
+		for iter.Next() {
+			key := cloneReflectValue(iter.Key(), visited)
+			clone.SetMapIndex(key, cloneReflectValue(iter.Value(), visited))
+		}
+		return clone
+	case reflect.Slice:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		visit := cloneVisit{typ: value.Type(), ptr: value.Pointer(), len: value.Len()}
+		if prior, ok := visited[visit]; ok {
+			return prior
+		}
+		clone := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		visited[visit] = clone
+		for i := 0; i < value.Len(); i++ {
+			clone.Index(i).Set(cloneReflectValue(value.Index(i), visited))
+		}
+		return clone
+	case reflect.Array:
+		clone := reflect.New(value.Type()).Elem()
+		for i := 0; i < value.Len(); i++ {
+			clone.Index(i).Set(cloneReflectValue(value.Index(i), visited))
+		}
+		return clone
+	case reflect.Pointer:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		visit := cloneVisit{typ: value.Type(), ptr: value.Pointer()}
+		if prior, ok := visited[visit]; ok {
+			return prior
+		}
+		clone := reflect.New(value.Type().Elem())
+		visited[visit] = clone
+		clone.Elem().Set(cloneReflectValue(value.Elem(), visited))
+		return clone
+	case reflect.Struct:
+		clone := reflect.New(value.Type()).Elem()
+		clone.Set(value)
+		for i := 0; i < value.NumField(); i++ {
+			if clone.Field(i).CanSet() && value.Field(i).CanInterface() {
+				clone.Field(i).Set(cloneReflectValue(value.Field(i), visited))
+			}
+		}
+		return clone
+	default:
+		return value
+	}
 }
 
 // TaskAwareTools is the residue of the pre-W8 table: names with no dispatch

@@ -161,7 +161,7 @@ func (c Client) waitTask(ctx context.Context, taskID string, pollInterval time.D
 		// Mcp-Name for tasks/get, just as tools/call binds the tool name.
 		statusResult, err := c.Call(ctx, "tasks/get", taskID, map[string]any{"taskId": taskID})
 		if err != nil {
-			return nil, fmt.Errorf("get host task %s: %w", taskID, err)
+			return nil, c.cancelTaskAfterWaitFailure(ctx, taskID, fmt.Errorf("get host task %s: %w", taskID, err))
 		}
 		status, _ := statusResult["status"].(string)
 		switch strings.ToLower(strings.TrimSpace(status)) {
@@ -171,13 +171,30 @@ func (c Client) waitTask(ctx context.Context, taskID string, pollInterval time.D
 				return nil, fmt.Errorf("host task %s completed without a tool result", taskID)
 			}
 			return result, nil
-		case "failed", "cancelled", "input_required":
+		case "input_required":
+			cause := fmt.Errorf("host task %s %s: %s", taskID, status, taskStatusMessage(statusResult))
+			return nil, c.cancelTaskAfterWaitFailure(ctx, taskID, cause)
+		case "failed", "cancelled":
 			return nil, fmt.Errorf("host task %s %s: %s", taskID, status, taskStatusMessage(statusResult))
 		}
 		if err := waitForTaskPoll(ctx, pollInterval); err != nil {
-			return nil, fmt.Errorf("wait for host task %s: %w", taskID, err)
+			return nil, c.cancelTaskAfterWaitFailure(ctx, taskID, err)
 		}
 	}
+}
+
+func (c Client) cancelTaskAfterWaitFailure(ctx context.Context, taskID string, cause error) error {
+	// An interrupted provider callback must not leave its Host Agent child task
+	// running after the parent operation releases the shared reservation.
+	// Preserve request values such as the signed resource delegation, but give
+	// the cancellation RPC a short independent deadline so it can reach the
+	// Host Agent after the original request context has ended or polling failed.
+	cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	if _, err := c.Call(cancelCtx, "tasks/cancel", taskID, map[string]any{"taskId": taskID}); err != nil {
+		return fmt.Errorf("wait for host task %s: %w; cancellation request failed: %v", taskID, cause, err)
+	}
+	return fmt.Errorf("wait for host task %s: %w", taskID, cause)
 }
 
 func waitForTaskPoll(ctx context.Context, interval time.Duration) error {

@@ -60,7 +60,8 @@ func (a *recordingAdmission) Renew(reservation *resource.Reservation) error {
 	return nil
 }
 
-func (a *recordingAdmission) BindReservationTask(reservation *resource.Reservation, taskID string) error {
+func (a *recordingAdmission) BindReservationTask(reservation *resource.Reservation, operationID, taskID string) error {
+	reservation.Request.OperationID = operationID
 	reservation.Request.TaskID = taskID
 	return nil
 }

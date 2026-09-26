@@ -46,6 +46,8 @@ type Server struct {
 	planMu                     sync.Mutex
 	planWG                     sync.WaitGroup
 	closed                     bool
+	closeDone                  chan struct{}
+	closeErr                   error
 	planCancels                map[string]context.CancelFunc
 	planResumeRequests         map[string]plan.ResumeRequest
 	agentID                    string
@@ -67,6 +69,18 @@ type Server struct {
 	resourceDelegationKey      []byte
 	resourceDelegationMu       sync.Mutex
 	resourceDelegations        map[string]string
+	asyncTaskStartMu           sync.Mutex
+	asyncTaskStartWG           sync.WaitGroup
+	pendingAsyncTaskStarts     map[string]*pendingAsyncTaskStart
+	asyncTaskStartTimeout      time.Duration
+	asyncTaskStartsClosed      bool
+}
+
+const callbackTaskAcknowledgementTimeout = 2 * time.Minute
+
+type pendingAsyncTaskStart struct {
+	start func()
+	timer *time.Timer
 }
 
 func (s *Server) logProviderRestoreSkip(record state.ProviderGenerationRecord, stage string, err error) {
@@ -195,6 +209,8 @@ func NewServer(opts Options) (*Server, error) {
 		internalToolNames:          make(map[string]bool),
 		resourceDelegationKey:      resourceDelegationKey,
 		resourceDelegations:        make(map[string]string),
+		pendingAsyncTaskStarts:     make(map[string]*pendingAsyncTaskStart),
+		asyncTaskStartTimeout:      callbackTaskAcknowledgementTimeout,
 		planCancels:                make(map[string]context.CancelFunc),
 		planResumeRequests:         make(map[string]plan.ResumeRequest),
 	}
@@ -243,22 +259,39 @@ func NewServer(opts Options) (*Server, error) {
 
 // Close releases standalone-owned resources. Platform mode is also safe to
 // close, which keeps shutdown behavior consistent across profiles.
-func (s *Server) Close() error {
+func (s *Server) Close() (closeErr error) {
 	if s == nil {
 		return nil
 	}
 	s.planMu.Lock()
 	if s.closed {
+		done := s.closeDone
 		s.planMu.Unlock()
-		s.planWG.Wait()
-		return nil
+		if done == nil {
+			s.planWG.Wait()
+			return nil
+		}
+		<-done
+		s.planMu.Lock()
+		closeErr := s.closeErr
+		s.planMu.Unlock()
+		return closeErr
 	}
 	s.closed = true
+	s.closeDone = make(chan struct{})
+	closeDone := s.closeDone
 	for runID, cancel := range s.planCancels {
 		cancel()
 		delete(s.planCancels, runID)
 	}
 	s.planMu.Unlock()
+	defer func() {
+		s.planMu.Lock()
+		s.closeErr = closeErr
+		close(closeDone)
+		s.planMu.Unlock()
+	}()
+	s.closePendingAsyncTaskStarts("The Host Agent shut down before the callback task handle was acknowledged.")
 	s.planWG.Wait()
 	s.planMu.Lock()
 	store := s.state
@@ -1384,7 +1417,7 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		if !taskExtensionDeclared(req) {
 			return nil, missingTasksCapabilityError()
 		}
-		return s.createAsyncTask(name, args)
+		return s.createAsyncTask(ctx, name, args)
 	}
 	if name == "cancel_operation" {
 		if id, _ := args["operationId"].(string); id != "" {
@@ -1475,7 +1508,7 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, n
 		if !taskExtensionDeclared(req) {
 			return nil, missingTasksCapabilityError()
 		}
-		return s.createAsyncTask(name, args)
+		return s.createAsyncTask(ctx, name, args)
 	}
 	onData := func(chunk string) {}
 	return s.DispatchTool(ctx, name, args, onData)
@@ -1592,43 +1625,69 @@ func missingTasksCapabilityError() error {
 	}
 }
 
-func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToolResult, error) {
+func (s *Server) createAsyncTask(ctx context.Context, name string, args map[string]any) (*mcp.CallToolResult, error) {
+	owner, err := s.providerCallbackTaskOwnerFromContext(ctx)
+	if err != nil {
+		return tools.ErrorResult(err), nil
+	}
+	if !s.beginAsyncTaskStart() {
+		return tools.ErrorResult(fmt.Errorf("the Host Agent is shutting down and cannot start a task")), nil
+	}
+	defer s.asyncTaskStartWG.Done()
 	desc := fmt.Sprintf("Executing %s...", name)
 	if vm, ok := args["vmName"].(string); ok && vm != "" {
 		desc = fmt.Sprintf("Running %s on '%s'...", name, vm)
 	}
 	taskCtx, cancel := context.WithCancel(context.Background())
 	rec := s.tasks.CreateWithCancel(name, s.redactTaskArgs(name, args), time.Hour, desc, nil, cancel)
-	taskCtx = resource.WithOperationIdentity(taskCtx, name, rec.TaskID)
+	taskCtx = asyncTaskExecutionContext(taskCtx, name, rec.TaskID, owner)
 	if s.state != nil {
 		_ = s.state.Create(rec.TaskID, name, desc)
 	}
 	s.persistTask(rec)
-	go func(taskID string) {
-		onData := func(chunk string) { s.tasks.AppendLog(taskID, chunk) }
-		result, err := s.DispatchTool(taskCtx, name, args, onData)
-		if err != nil {
-			if s.state != nil {
-				_ = s.state.Fail(taskID, err.Error())
+	start := func() {
+		go func(taskID string) {
+			defer s.asyncTaskStartWG.Done()
+			onData := func(chunk string) { s.tasks.AppendLog(taskID, chunk) }
+			result, err := s.DispatchTool(taskCtx, name, args, onData)
+			if err != nil {
+				if s.state != nil {
+					_ = s.state.Fail(taskID, err.Error())
+				}
+				s.tasks.Fail(taskID, err.Error())
+				if failed, ok := s.tasks.Get(taskID); ok {
+					s.persistTask(failed)
+				}
+				return
 			}
-			s.tasks.Fail(taskID, err.Error())
-			if failed, ok := s.tasks.Get(taskID); ok {
-				s.persistTask(failed)
+			if result.IsError {
+				redactedResult := s.redactTaskResult(name, result)
+				tr := tasks.ToolResult{StructuredContent: redactedResult.StructuredContent, IsError: true}
+				for _, content := range result.Content {
+					if text, ok := content.(*mcp.TextContent); ok {
+						tr.Content = append(tr.Content, map[string]any{"type": "text", "text": text.Text})
+					}
+				}
+				// A tool-level failure is still a successful JSON-RPC execution. The
+				// Tasks spec requires it to be a completed task containing the normal
+				// CallToolResult with isError:true; failed is reserved for JSON-RPC
+				// errors during execution.
+				s.tasks.Complete(taskID, tr)
+				if s.state != nil {
+					_ = s.state.Complete(taskID, tr)
+				}
+				if completed, ok := s.tasks.Get(taskID); ok {
+					s.persistTask(completed)
+				}
+				return
 			}
-			return
-		}
-		if result.IsError {
 			redactedResult := s.redactTaskResult(name, result)
-			tr := tasks.ToolResult{StructuredContent: redactedResult.StructuredContent, IsError: true}
-			for _, content := range result.Content {
-				if text, ok := content.(*mcp.TextContent); ok {
-					tr.Content = append(tr.Content, map[string]any{"type": "text", "text": text.Text})
+			tr := tasks.ToolResult{StructuredContent: redactedResult.StructuredContent, IsError: redactedResult.IsError}
+			for _, c := range result.Content {
+				if tc, ok := c.(*mcp.TextContent); ok {
+					tr.Content = append(tr.Content, map[string]any{"type": "text", "text": tc.Text})
 				}
 			}
-			// A tool-level failure is still a successful JSON-RPC execution. The
-			// Tasks spec requires it to be a completed task containing the normal
-			// CallToolResult with isError:true; failed is reserved for JSON-RPC
-			// errors during execution.
 			s.tasks.Complete(taskID, tr)
 			if s.state != nil {
 				_ = s.state.Complete(taskID, tr)
@@ -1636,27 +1695,150 @@ func (s *Server) createAsyncTask(name string, args map[string]any) (*mcp.CallToo
 			if completed, ok := s.tasks.Get(taskID); ok {
 				s.persistTask(completed)
 			}
-			return
-		}
-		redactedResult := s.redactTaskResult(name, result)
-		tr := tasks.ToolResult{StructuredContent: redactedResult.StructuredContent, IsError: redactedResult.IsError}
-		for _, c := range result.Content {
-			if tc, ok := c.(*mcp.TextContent); ok {
-				tr.Content = append(tr.Content, map[string]any{"type": "text", "text": tc.Text})
-			}
-		}
-		s.tasks.Complete(taskID, tr)
-		if s.state != nil {
-			_ = s.state.Complete(taskID, tr)
-		}
-		if completed, ok := s.tasks.Get(taskID); ok {
-			s.persistTask(completed)
-		}
-	}(rec.TaskID)
+		}(rec.TaskID)
+	}
+	if owner != nil {
+		// A delegated callback has a parent reservation whose lifetime is
+		// bounded by the provider call. Do not start detached work until the
+		// caller proves it received the task handle by polling that exact ID;
+		// if the initial response is lost, no child operation can outlive the
+		// parent merely because the client never learned how to cancel it.
+		s.registerPendingAsyncTaskStart(rec.TaskID, start)
+	} else {
+		s.startAsyncTaskIfOpen(rec.TaskID, start)
+	}
 	return &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: desc}},
 		StructuredContent: s.tasks.ToCreateTaskResult(rec),
 	}, nil
+}
+
+func (s *Server) beginAsyncTaskStart() bool {
+	s.asyncTaskStartMu.Lock()
+	defer s.asyncTaskStartMu.Unlock()
+	if s.asyncTaskStartsClosed {
+		return false
+	}
+	// Admission and the positive WaitGroup Add share a mutex with Close's
+	// transition to asyncTaskStartsClosed, so shutdown cannot miss a creator
+	// that has already been accepted.
+	s.asyncTaskStartWG.Add(1)
+	return true
+}
+
+func (s *Server) startAsyncTaskIfOpen(taskID string, start func()) {
+	s.asyncTaskStartMu.Lock()
+	if s.asyncTaskStartsClosed {
+		s.asyncTaskStartMu.Unlock()
+		s.cancelPendingAsyncTask(taskID, "The Host Agent shut down before the task could start.")
+		return
+	}
+	// Transfer a tracked reference to the worker before releasing the same lock
+	// Close uses to reject starts and drain active task contexts.
+	s.asyncTaskStartWG.Add(1)
+	s.asyncTaskStartMu.Unlock()
+	start()
+}
+
+func (s *Server) registerPendingAsyncTaskStart(taskID string, start func()) {
+	s.asyncTaskStartMu.Lock()
+	if s.pendingAsyncTaskStarts == nil {
+		s.pendingAsyncTaskStarts = make(map[string]*pendingAsyncTaskStart)
+	}
+	if s.asyncTaskStartsClosed {
+		s.asyncTaskStartMu.Unlock()
+		s.cancelPendingAsyncTask(taskID, "The Host Agent shut down before the callback task handle was acknowledged.")
+		return
+	}
+	timeout := s.asyncTaskStartTimeout
+	if timeout <= 0 {
+		timeout = callbackTaskAcknowledgementTimeout
+	}
+	pending := &pendingAsyncTaskStart{start: start}
+	pending.timer = time.AfterFunc(timeout, func() {
+		s.expirePendingAsyncTaskStart(taskID, pending)
+	})
+	s.pendingAsyncTaskStarts[taskID] = pending
+	s.asyncTaskStartMu.Unlock()
+}
+
+func (s *Server) startPendingAsyncTask(taskID string) {
+	s.asyncTaskStartMu.Lock()
+	pending := s.pendingAsyncTaskStarts[taskID]
+	delete(s.pendingAsyncTaskStarts, taskID)
+	if pending != nil && pending.timer != nil {
+		pending.timer.Stop()
+	}
+	if pending != nil && pending.start != nil && !s.asyncTaskStartsClosed {
+		// This child worker outlives the tasks/get request. Account for it while
+		// still holding the admission mutex shared with Close.
+		s.asyncTaskStartWG.Add(1)
+	} else {
+		pending = nil
+	}
+	s.asyncTaskStartMu.Unlock()
+	if pending != nil && pending.start != nil {
+		pending.start()
+	}
+}
+
+func (s *Server) discardPendingAsyncTaskStart(taskID string) {
+	s.asyncTaskStartMu.Lock()
+	pending := s.pendingAsyncTaskStarts[taskID]
+	delete(s.pendingAsyncTaskStarts, taskID)
+	if pending != nil && pending.timer != nil {
+		pending.timer.Stop()
+	}
+	s.asyncTaskStartMu.Unlock()
+}
+
+func (s *Server) expirePendingAsyncTaskStart(taskID string, expected *pendingAsyncTaskStart) {
+	s.asyncTaskStartMu.Lock()
+	if s.pendingAsyncTaskStarts[taskID] != expected {
+		s.asyncTaskStartMu.Unlock()
+		return
+	}
+	delete(s.pendingAsyncTaskStarts, taskID)
+	// Register before releasing asyncTaskStartMu so Close cannot begin
+	// waiting between removal and this timer's cancellation/persistence work.
+	s.asyncTaskStartWG.Add(1)
+	s.asyncTaskStartMu.Unlock()
+	defer s.asyncTaskStartWG.Done()
+	s.cancelPendingAsyncTask(taskID, "The callback task handle was not acknowledged before its timeout.")
+}
+
+func (s *Server) closePendingAsyncTaskStarts(message string) {
+	s.asyncTaskStartMu.Lock()
+	s.asyncTaskStartsClosed = true
+	taskIDs := make([]string, 0, len(s.pendingAsyncTaskStarts))
+	for taskID, pending := range s.pendingAsyncTaskStarts {
+		if pending != nil && pending.timer != nil {
+			pending.timer.Stop()
+		}
+		taskIDs = append(taskIDs, taskID)
+		delete(s.pendingAsyncTaskStarts, taskID)
+	}
+	s.asyncTaskStartMu.Unlock()
+	for _, taskID := range taskIDs {
+		s.cancelPendingAsyncTask(taskID, message)
+	}
+	if s.tasks != nil {
+		for _, rec := range s.tasks.List() {
+			if rec.Status == tasks.StatusWorking {
+				s.cancelPendingAsyncTask(rec.TaskID, "The Host Agent shut down before the task completed.")
+			}
+		}
+	}
+	// An expiry callback may already have removed its entry and started
+	// persisting cancellation. Wait for that callback before Close releases the
+	// durable state store.
+	s.asyncTaskStartWG.Wait()
+}
+
+func (s *Server) cancelPendingAsyncTask(taskID, message string) {
+	if rec, cancelled := s.tasks.CancelWithMessage(taskID, message); cancelled {
+		s.persistTask(rec)
+	}
 }
 
 // redactTaskArgs projects task arguments through the operation's declared
@@ -1742,6 +1924,7 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, err
 		}
+		s.startPendingAsyncTask(p.TaskID)
 		rec, ok := s.tasks.Get(p.TaskID)
 		if !ok {
 			return nil, fmt.Errorf("task not found: %s", p.TaskID)
@@ -1754,6 +1937,7 @@ func (s *Server) HandleExtensionMethod(method string, params json.RawMessage) (a
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, err
 		}
+		s.discardPendingAsyncTaskStart(p.TaskID)
 		if rec, ok := s.tasks.Get(p.TaskID); ok && isHostPlanTask(rec.ToolName) {
 			if _, isPlan := s.cancelHostPlan(p.TaskID); isPlan {
 				if updated, found := s.tasks.Get(p.TaskID); found {

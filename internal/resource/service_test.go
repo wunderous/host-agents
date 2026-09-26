@@ -135,7 +135,81 @@ func TestTypedAdmissionRejectsOwnerMismatchAndHonorsCancellationAndExpiry(t *tes
 	}
 }
 
-func TestBindReservationTaskPersistsOwnerAndRejectsStaleParent(t *testing.T) {
+func TestInheritedAdmissionHonorsCancellationBeforeReusingParent(t *testing.T) {
+	coordinator, err := NewCoordinator(testServiceConfig(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := coordinator.Admit(context.Background(), zeroCostRequest("agent-a", "parent-operation", "task-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = coordinator.Release(parent) })
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = coordinator.Admit(cancelled, AdmissionRequest{
+		Class: ClassNormal, Operation: "nested-operation", AgentID: "agent-a",
+		OperationID: "parent-operation", TaskID: "task-a", ParentReservationID: parent.ID,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("inherited admission error = %v, want context.Canceled", err)
+	}
+}
+
+func TestParentReservationValidationWaitHonorsCancellation(t *testing.T) {
+	coordinator, err := NewCoordinator(testServiceConfig(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := coordinator.Admit(context.Background(), zeroCostRequest("agent-a", "parent-operation", "task-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = coordinator.Release(parent) })
+
+	originalLock := coordinator.reservationLock
+	lock := &contextObservedLock{entered: make(chan struct{}), release: make(chan struct{})}
+	coordinator.reservationLock = lock
+	defer func() { coordinator.reservationLock = originalLock }()
+	ctx, cancel := context.WithCancel(context.Background())
+	validation := make(chan error, 1)
+	go func() { validation <- coordinator.validateParentReservation(ctx, parent) }()
+	select {
+	case <-lock.entered:
+	case <-time.After(time.Second):
+		close(lock.release)
+		cancel()
+		t.Fatal("parent validation did not enter the reservation lock")
+	}
+	cancel()
+
+	select {
+	case err := <-validation:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("parent validation error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("parent validation did not stop after its context was cancelled")
+	}
+}
+
+type contextObservedLock struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (l *contextObservedLock) acquire(ctx context.Context, _ bool) (func(), error) {
+	close(l.entered)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-l.release:
+		return func() {}, nil
+	}
+}
+
+func TestBindReservationTaskPersistsOperationAndTaskOwner(t *testing.T) {
 	lockDir := t.TempDir()
 	first, err := NewCoordinator(testServiceConfig(lockDir))
 	if err != nil {
@@ -146,27 +220,32 @@ func TestBindReservationTaskPersistsOwnerAndRejectsStaleParent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parent, err := first.Admit(context.Background(), zeroCostRequest("agent-a", "run_host_local_recipe", ""))
+	launcherRequest := zeroCostRequest("agent-a", "run_host_local_recipe", "")
+	launcherRequest.OperationID = ""
+	parent, err := first.Admit(context.Background(), launcherRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	staleCopy := *parent
-	if err := first.BindReservationTask(parent, "task-a"); err != nil {
+	if err := first.BindReservationTask(parent, "run_host_local_recipe", "task-a"); err != nil {
 		t.Fatalf("bind launcher reservation: %v", err)
 	}
-	if err := second.BindReservationTask(&staleCopy, "task-a"); err != nil {
+	if err := second.BindReservationTask(&staleCopy, "run_host_local_recipe", "task-a"); err != nil {
 		t.Fatalf("repeat same-task binding: %v", err)
 	}
-	if err := second.BindReservationTask(&staleCopy, "task-b"); err == nil {
+	if err := second.BindReservationTask(&staleCopy, "run_host_local_recipe", "task-b"); err == nil {
 		t.Fatal("rebind to a different task was accepted")
 	}
-	if parent.Request.TaskID != "task-a" {
-		t.Fatalf("in-memory task owner = %q, want task-a", parent.Request.TaskID)
+	if err := second.BindReservationTask(&staleCopy, "different-operation", "task-a"); err == nil {
+		t.Fatal("rebind to a different operation was accepted")
+	}
+	if parent.Request.OperationID != "run_host_local_recipe" || parent.Request.TaskID != "task-a" {
+		t.Fatalf("in-memory owner = (%q, %q), want (run_host_local_recipe, task-a)", parent.Request.OperationID, parent.Request.TaskID)
 	}
 
-	callback := WithReservation(context.Background(), parent)
+	callback := WithOperationIdentity(WithReservation(context.Background(), parent), "run_host_local_recipe", "task-a")
 	inherited, err := second.Admit(callback, AdmissionRequest{
-		Class: ClassHeavy, Operation: "apply_manifest", AgentID: "agent-a",
+		Class: ClassHeavy, Operation: "apply_manifest", OperationID: "run_host_local_recipe", AgentID: "agent-a",
 		TaskID: "task-a", ParentReservationID: parent.ID,
 	})
 	if err != nil {
@@ -174,6 +253,18 @@ func TestBindReservationTaskPersistsOwnerAndRejectsStaleParent(t *testing.T) {
 	}
 	if inherited.ID != parent.ID || !inherited.inherited {
 		t.Fatalf("callback reservation = %#v, want inherited %q", inherited, parent.ID)
+	}
+
+	wrongOperationParent := *parent
+	wrongOperationParent.Request.OperationID = "different-parent-operation"
+	wrongOperationContext := WithOperationIdentity(WithReservation(context.Background(), &wrongOperationParent), "different-parent-operation", "task-a")
+	_, err = second.Admit(wrongOperationContext, AdmissionRequest{
+		Class: ClassHeavy, Operation: "apply_manifest", OperationID: "different-parent-operation",
+		AgentID: "agent-a", TaskID: "task-a", ParentReservationID: parent.ID,
+	})
+	var operationOwnerErr *RequestError
+	if !errors.As(err, &operationOwnerErr) || operationOwnerErr.Code != "host_reservation_owner_mismatch" {
+		t.Fatalf("different operation owner admission = %T %v, want owner mismatch", err, err)
 	}
 
 	_, err = second.Admit(callback, AdmissionRequest{

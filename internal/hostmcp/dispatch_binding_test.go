@@ -49,6 +49,7 @@ func (c *capturingCapability) ValidateResult(_ context.Context, result *mcp.Call
 func newBindingTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	svc := hostagent.New(hostagent.Options{
+		AgentID:    "agent-a",
 		ProviderID: hostruntime.IDIncus,
 		ToolsForProvider: func(providerID string) []string {
 			names, err := tools.HostToolNamesForProvider(providerID)

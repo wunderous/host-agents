@@ -333,6 +333,42 @@ prohibit provider task results and enforce synchronous-only behavior. MCP SDK
 discovery or an in-process structured result does not make provider tasks
 pollable or cancellable through the Host Agent.
 
+When a verified provider callback reaches a Host Agent task-aware capability,
+the Host Agent task bridge must preserve the signed parent reservation and its
+exact operation/task owner in the child execution context. The bridged MCP task
+retains an independent task ID for polling, cancellation, and terminal state;
+that child ID must not replace the resource owner. A callback without a valid,
+active parent owner follows ordinary admission and cannot inherit a reservation.
+The callback signature, active parent task, canonical Host Agent identity, and
+persisted reservation operation/task owner are all rechecked at their
+respective boundaries. The signed operation identity must match the durable
+reservation operation before a delegation is issued. When a durable plan first
+claims an unscoped launcher reservation, it binds both the plan operation name
+and the run's task ID before any plan node can issue a provider callback.
+Task registry APIs that return records must return stable deep snapshots rather
+than mutable internal pointers, so completion, cancellation, and input updates
+cannot race with consumers reading after the registry lock is released. This
+includes pointer graphs reachable through typed map keys. Server shutdown
+atomically closes asynchronous task admission, cancels active and
+unacknowledged tasks, and waits for accepted task creation and worker writes to
+reach durable terminal state before closing the state store. Concurrent
+`Close` callers wait for the same completed shutdown barrier and receive its
+result; no caller returns while shutdown work is still draining.
+If the callback client stops waiting because its context is cancelled, task
+polling fails, or the child requests input the client cannot provide, its
+task-aware client must issue a bounded `tasks/cancel` request using the
+delegation values from the original context before returning. Inherited
+resource admission must observe task cancellation both before and after
+validating the durable parent reservation.
+
+A delegated asynchronous child does not begin executing until the callback
+client first polls that exact task ID with `tasks/get`. That request confirms
+the client received the initial task handle; a lost create response therefore
+cannot start detached work with no cancellable handle. Cancelling a child
+before that acknowledgement discards its pending start. An unacknowledged
+callback task is cancelled after two minutes and during server shutdown, so a
+lost response cannot leave an inert working task indefinitely.
+
 **C-23 — Runtime-kind and executor agreement.** A canonical `vm:` resource and
 `container:` resource are distinct typed identities. Lifecycle admission must
 resolve the returned resource kind and the owning execution layer before guest
