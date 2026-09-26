@@ -81,13 +81,13 @@
     {
       "kind": "file",
       "path": "Makefile",
-      "digest": "d28042a09571abd4ef8c24afb5241f9604c6554e63301bc07f5b37c6d4682ac1",
+      "digest": "08e9319e05be88c8b24bfba2275afc82145b332141beb225a9f257b60b57a93a",
       "note": "Invariant verifier is part of the normal test target"
     },
     {
       "kind": "file",
       "path": ".github/workflows/ci.yml",
-      "digest": "b2042dbf6fe5b67ebda9b6aff6710fb734f01dfdbe37659f5cb0059ce109077f",
+      "digest": "121b8e676e238595c3d08bce72c568ab483d1f96a802fdf0a1e268daf4e5b26a",
       "note": "CI runs the module test target that includes the invariant verifier"
     }
   ],
@@ -104,5 +104,5 @@
   ],
   "supersedes": [],
   "withdrawn": false,
-  "lastVerified": "2026-09-25"
+  "lastVerified": "2026-09-26"
 }

@@ -82,13 +82,13 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "5d5e8d9c134eab4b7fd6c81a601f3e8c7d0093f7b7c65857644e9843bb0f2648",
+      "digest": "1d2faaae15fa1cb94d0113dbf0c070d0fdd3996aa4198c7d9ae66317cdc85a65",
       "note": "Host Agent release version matches the release tag"
     },
     {
       "kind": "file",
       "path": ".github/workflows/publish.yml",
-      "digest": "f77b758e3ba66a508e9e308d0ec147c9243bd09a2c3105c4e976a54b681ac82c",
+      "digest": "b9ded7f492f4a0df90cf1b806fe1b35388ba65eb1433590ae6f4457a97facb00",
       "note": "Release publishes the K3s provider artifact under the verified tag"
     },
     {
@@ -112,13 +112,13 @@
     {
       "kind": "file",
       "path": "Makefile",
-      "digest": "d28042a09571abd4ef8c24afb5241f9604c6554e63301bc07f5b37c6d4682ac1",
+      "digest": "08e9319e05be88c8b24bfba2275afc82145b332141beb225a9f257b60b57a93a",
       "note": "Verifier is part of the normal Host Agent test target"
     },
     {
       "kind": "file",
       "path": ".github/workflows/ci.yml",
-      "digest": "b2042dbf6fe5b67ebda9b6aff6710fb734f01dfdbe37659f5cb0059ce109077f",
+      "digest": "121b8e676e238595c3d08bce72c568ab483d1f96a802fdf0a1e268daf4e5b26a",
       "note": "CI reaches the normal Host Agent test target"
     },
     {
@@ -174,5 +174,5 @@
   ],
   "supersedes": [],
   "withdrawn": false,
-  "lastVerified": "2026-09-25"
+  "lastVerified": "2026-09-26"
 }

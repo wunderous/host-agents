@@ -67,7 +67,8 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
-  <p><a href="/docs/versions/v0.2.1/capabilities/">Versioned catalog</a></p>
+  <p><a href="/docs/versions/v0.2.1/capabilities/">Latest verified catalog — v0.2.1</a></p>
+  <p><a href="/docs/previews/v0.2.2/capabilities/">Preview catalog — v0.2.2</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
@@ -96,14 +97,21 @@
 
 <h2>From source</h2>
 <p>From the Host Agent repository root, build and start the standalone HTTP server. Host inspection does not require Incus or Kubernetes.</p>
-<pre><code>make build VERSION=0.2.1
+<pre><code>make build VERSION=0.2.2
 export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 ./dist/opute-host-agent serve --mode standalone --transport http</code></pre>
 <p>Keep both values in your local shell. The agent ID is an explicit opaque identity; the launcher does not invent a default. The token authenticates MCP requests.</p>
 
 <h2>Published npm launcher</h2>
-<p>The current package candidate is labelled Preview because its published-package canary has not passed. Use the source-build path above until a tested release is published. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>
+<pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
+npx -y @opute/host-agent@0.2.1 start --background
+npx -y @opute/host-agent@0.2.1 url
+npx -y @opute/host-agent@0.2.1 status
+npx -y @opute/host-agent@0.2.1 stop</code></pre>
+<p>This pins the newest published release with a passing read-only package canary. The launcher keeps the explicit identity and token in the child process. Stop the background process when you finish. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>
+<p class="meta"><strong>Current source candidate:</strong> <code>@opute/host-agent@0.2.2</code> is a preview until its published-package canary passes. The first-success and published launcher instructions above remain pinned to <code>@opute/host-agent@0.2.1</code>.</p>
 
 <h2>Local endpoint and modes</h2>
 <table>

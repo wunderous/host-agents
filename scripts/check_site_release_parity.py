@@ -174,6 +174,7 @@ def verify_enforcement_wiring() -> None:
         "scripts/check_site_release_boundary.py",
         "scripts/check_site_release_parity.py",
         "scripts/test_promote_site_release_catalog.py",
+        "scripts/test_promote_archived_site_release_catalog.py",
         "scripts/test_validate_generated_site.py",
         "scripts/test_check_generated_site_clean.py",
         "scripts/validate-generated-site.py",
@@ -194,12 +195,13 @@ def verify_enforcement_wiring() -> None:
         fail("generated-output gate must detect untracked files as well as tracked drift")
 
 
-def verify_archived_catalogs(current_version: str) -> None:
+def verify_archived_catalogs(current_version: str) -> list[dict]:
     archive_dir = ROOT / "site" / "context" / "release-archives"
     paths = sorted(archive_dir.glob("v*.json"))
     if not paths:
         fail("no archived release catalog snapshots are maintained")
     versions = set()
+    catalogs = []
     for path in paths:
         if not re.fullmatch(r"v\d+\.\d+\.\d+\.json", path.name):
             fail("archived release catalog filename is invalid: " + path.name)
@@ -279,6 +281,8 @@ def verify_archived_catalogs(current_version: str) -> None:
             fail("generated sitemap is missing")
         if "https://www.opute.io" + public_route not in sitemap:
             fail("archived capability route is missing from sitemap: " + version)
+        catalogs.append(archive)
+    return catalogs
 
 
 def main() -> None:
@@ -324,7 +328,7 @@ def main() -> None:
     version = package.get("version")
     if package.get("name") != "@opute/host-agent" or not isinstance(version, str):
         fail("npm package identity is invalid")
-    verify_archived_catalogs(version)
+    archived_catalogs = verify_archived_catalogs(version)
     if catalog.get("packageName") != package["name"] or catalog.get("packageVersion") != version:
         fail("catalog package identity/version differs from npm/local-host-agent/package.json")
     if catalog.get("releaseChannel") not in {"preview", "stable"}:
@@ -376,17 +380,50 @@ def main() -> None:
     if catalog["releaseChannel"] == "stable" and evidence is None:
         fail("stable catalog lacks matching published read-only canary evidence")
 
-    route = ROOT / "site" / "public" / "docs" / "versions" / ("v" + version) / "capabilities" / "catalog.json"
+    current_route_kind = "versions" if catalog["releaseChannel"] == "stable" else "previews"
+    route = ROOT / "site" / "public" / "docs" / current_route_kind / ("v" + version) / "capabilities" / "catalog.json"
     published = load_json(route, "generated versioned catalog")
     if published != catalog:
         fail("generated versioned catalog differs from the source release catalog")
+
+    stable_catalogs = archived_catalogs + ([catalog] if catalog["releaseChannel"] == "stable" else [])
+    if not stable_catalogs:
+        fail("there is no canary-verified stable catalog for the public tutorial")
+    latest_stable = max(
+        stable_catalogs,
+        key=lambda item: tuple(int(part) for part in item["packageVersion"].split(".")),
+    )
+    stable_version = latest_stable["packageVersion"]
+    stable_revision = latest_stable["catalogRevision"]
+    stable_route = ROOT / "site" / "public" / "docs" / "versions" / ("v" + stable_version) / "capabilities"
+    if load_json(stable_route / "catalog.json", "latest verified catalog") != latest_stable:
+        fail("generated latest verified catalog differs from its canary-backed source")
+    canonical_reference_path = ROOT / "site" / "public" / "docs" / "capabilities" / "index.html"
+    try:
+        canonical_reference = canonical_reference_path.read_text(encoding="utf-8")
+    except OSError:
+        fail("canonical capability reference is missing")
+    if stable_version not in canonical_reference or stable_revision not in canonical_reference:
+        fail("canonical capability reference does not identify the latest verified release")
+
     tutorial_path = ROOT / "site" / "public" / "docs" / "get-started" / "index.html"
     try:
         tutorial = tutorial_path.read_text(encoding="utf-8")
     except OSError:
         fail("generated first-success tutorial is missing")
-    if version not in tutorial:
-        fail("generated tutorial does not name the selected package version")
+    if (
+        stable_version not in tutorial
+        or "npx -y @opute/host-agent@" + stable_version not in tutorial
+        or "/docs/versions/v" + stable_version + "/capabilities/" not in tutorial
+    ):
+        fail("generated tutorial does not use and link the latest verified published package")
+    install_path = ROOT / "site" / "public" / "docs" / "install" / "index.html"
+    try:
+        install_page = install_path.read_text(encoding="utf-8")
+    except OSError:
+        fail("generated install instructions are missing")
+    if "npx -y @opute/host-agent@" + stable_version not in install_page:
+        fail("published install instructions do not pin the latest verified package")
     availability_path = ROOT / "site" / "public" / "docs" / "availability" / "index.html"
     try:
         availability = availability_path.read_text(encoding="utf-8")
@@ -399,7 +436,7 @@ def main() -> None:
         "typed ConfigMap apply and read both succeeded",
         "get-cluster-info.readyNodeCount",
         "does not establish host or site failure recovery",
-        version,
+        stable_version,
     ):
         if required not in availability:
             fail("generated availability page omits scoped local proof detail: " + required)
@@ -411,13 +448,24 @@ def main() -> None:
     for required in ("OPUTE_REMOTE_AGENT_ID", "MCP_AUTH_TOKEN", "tools/list", "get_host_info", "HTTP 401", "lxcBinaryPath", "systemctlPath", "Optional fields such as", "intentionally-wrong", "A request with no Authorization header"):
         if required not in tutorial:
             fail("generated tutorial is missing first-success evidence for " + required)
-    if catalog["releaseChannel"] == "preview" and "Preview" not in tutorial:
-        fail("unverified package tutorial is not visibly labelled preview")
-    if catalog["releaseChannel"] == "stable" and (
-        "npx -y @opute/host-agent@" + version not in tutorial
-        or "published-package canary has passed" in tutorial
+    if catalog["releaseChannel"] == "preview":
+        preview_path = ROOT / "site" / "public" / "docs" / "previews" / ("v" + version) / "capabilities"
+        if load_json(preview_path / "catalog.json", "generated preview catalog") != catalog:
+            fail("generated preview catalog differs from the current source candidate")
+        try:
+            preview_page = (preview_path / "index.html").read_text(encoding="utf-8")
+        except OSError:
+            fail("current preview capability page is missing")
+        if "Preview" not in preview_page or version not in preview_page:
+            fail("current unverified candidate is not visibly labeled as a preview")
+
+    openapi = load_json(ROOT / "site" / "public" / "openapi.json", "generated OpenAPI")
+    if (
+        openapi.get("info", {}).get("version") != stable_version
+        or openapi.get("x-opute-mcp", {}).get("packageVersion") != stable_version
+        or openapi.get("x-opute-mcp", {}).get("catalogRevision") != stable_revision
     ):
-        fail("stable tutorial does not use the tested pinned npm package")
+        fail("default OpenAPI metadata does not match the latest verified catalog")
 
     print(
         "Verified release parity for "

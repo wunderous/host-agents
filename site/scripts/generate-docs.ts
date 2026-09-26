@@ -272,6 +272,9 @@ for (const tool of releaseCatalog.tools) {
   }
 }
 if (releaseCatalog.releaseChannel === "stable") {
+  if (!/^\d+\.\d+\.\d+$/.test(releaseCatalog.packageVersion)) {
+    throw new Error("stable release catalog must use a final semantic version")
+  }
   const evidence = releaseCatalog.publishedCanary
   const requiredChecks = [
     "explicitIdentity",
@@ -297,6 +300,33 @@ if (releaseCatalog.releaseChannel === "stable") {
     throw new Error("stable release catalog is missing matching published read-only canary evidence")
   }
 }
+
+const compareReleaseVersions = (left: string, right: string) => {
+  const leftParts = left.split(".").map(Number)
+  const rightParts = right.split(".").map(Number)
+  for (let index = 0; index < 3; index += 1) {
+    const delta = (leftParts[index] ?? 0) - (rightParts[index] ?? 0)
+    if (delta !== 0) return delta
+  }
+  return 0
+}
+const verifiedReleaseCatalogs = [
+  ...archivedReleaseCatalogs.map(({ catalog }) => catalog),
+  ...(releaseCatalog.releaseChannel === "stable" ? [releaseCatalog] : []),
+].sort((left, right) => compareReleaseVersions(left.packageVersion, right.packageVersion))
+const latestVerifiedCatalog = verifiedReleaseCatalogs.at(-1)
+if (!latestVerifiedCatalog) {
+  throw new Error("the public tutorial and canonical reference require a published stable catalog")
+}
+const tutorialCatalog = latestVerifiedCatalog
+const catalogRouteFor = (catalog: ReleaseCatalog) =>
+  "docs/" +
+  (catalog.releaseChannel === "stable" ? "versions" : "previews") +
+  "/v" +
+  catalog.packageVersion +
+  "/capabilities"
+const currentCatalogRoute = catalogRouteFor(releaseCatalog)
+const tutorialCatalogRoute = catalogRouteFor(tutorialCatalog)
 
 type StaticAsset = "styles.css" | "search.js" | "i18n.js" | "docs-nav.js"
 
@@ -417,7 +447,8 @@ const side = (current: string) => `
     <li><a href="/docs/troubleshooting/"${current === "troubleshooting" ? ' aria-current="page"' : ""}>Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
-  <p><a href="/docs/versions/v${releaseCatalog.packageVersion}/capabilities/">Versioned catalog</a></p>
+  <p><a href="/${tutorialCatalogRoute}/">Latest verified catalog — v${tutorialCatalog.packageVersion}</a></p>
+  ${releaseCatalog.releaseChannel === "preview" ? `<p><a href="/${currentCatalogRoute}/">Preview catalog — v${releaseCatalog.packageVersion}</a></p>` : ""}
   <ul>
     <li><a href="/docs/capabilities/"${current === "capabilities" ? ' aria-current="page"' : ""}>Capabilities</a></li>
     <li><a href="/docs/configuration/"${current === "configuration" ? ' aria-current="page"' : ""}>Configuration</a></li>
@@ -472,42 +503,47 @@ ${SITE_SCRIPTS}
 </html>
 `
 
-const versionedCapabilityPath =
-  "docs/versions/v" + releaseCatalog.packageVersion + "/capabilities/index.html"
-const versionedCatalogDownload =
-  "/docs/versions/v" + releaseCatalog.packageVersion + "/capabilities/catalog.json"
+const versionedCapabilityPath = currentCatalogRoute + "/index.html"
+const versionedCatalogDownload = "/" + currentCatalogRoute + "/catalog.json"
+const tutorialCatalogPath = "/" + tutorialCatalogRoute + "/"
+const tutorialCatalogDownload = tutorialCatalogPath + "catalog.json"
 const tutorialStartCommand =
-  releaseCatalog.releaseChannel === "stable"
-    ? "npx -y @opute/host-agent@" + releaseCatalog.packageVersion + " start --background"
+  tutorialCatalog.releaseChannel === "stable"
+    ? "npx -y @opute/host-agent@" + tutorialCatalog.packageVersion + " start --background"
     : "make build VERSION=" +
-      releaseCatalog.packageVersion +
+      tutorialCatalog.packageVersion +
       "\n./dist/opute-host-agent serve --mode standalone --transport http"
 const tutorialStopText =
-  releaseCatalog.releaseChannel === "stable"
+  tutorialCatalog.releaseChannel === "stable"
     ? "Stop the background process with npx -y @opute/host-agent@" +
-      releaseCatalog.packageVersion +
+      tutorialCatalog.packageVersion +
       " stop."
     : "Stop the foreground process with Ctrl+C in its terminal."
 const tutorialPlatformPrerequisite =
-  releaseCatalog.releaseChannel === "stable"
+  tutorialCatalog.releaseChannel === "stable"
     ? "Linux or WSL2, Node.js 18 or newer, npm, and VS Code with HTTP MCP support."
     : "Linux or WSL2, Go, and VS Code with HTTP MCP support."
 const tutorialArtifactPrerequisite =
-  releaseCatalog.releaseChannel === "stable"
-    ? `Network access to npm and the <a href="https://github.com/wunderous/host-agents/releases/tag/v${releaseCatalog.packageVersion}">matching Linux binary in GitHub Releases</a>.`
+  tutorialCatalog.releaseChannel === "stable"
+    ? `Network access to npm and the <a href="https://github.com/wunderous/host-agents/releases/tag/v${tutorialCatalog.packageVersion}">matching Linux binary in GitHub Releases</a>.`
     : "A Host Agent checkout and Go toolchain to build the preview."
 const tutorialLaunchContext =
-  releaseCatalog.releaseChannel === "stable"
+  tutorialCatalog.releaseChannel === "stable"
     ? "This starts the pinned published package shown on this page."
     : "Run source-build commands from the Host Agent repository root."
 const tutorialReleaseNotice =
-  releaseCatalog.releaseChannel === "stable"
-    ? '<p class="meta"><strong>Verified release.</strong> This path pins the published package whose authenticated read-only canary passed for the catalog revision shown in the capability reference.</p>'
+  tutorialCatalog.releaseChannel === "stable"
+    ? '<p class="meta"><strong>Verified release.</strong> This path pins <code>' +
+      escapeHTML(tutorialCatalog.packageName) + "@" +
+      escapeHTML(tutorialCatalog.packageVersion) +
+      '</code>; its published authenticated read-only canary passed for catalog revision <code>' +
+      escapeHTML(tutorialCatalog.catalogRevision) +
+      '</code>. <a href="' + tutorialCatalogPath + '">View this exact capability snapshot</a> or <a href="' + tutorialCatalogDownload + '">download its JSON</a>.</p>'
     : '<div class="callout warn"><strong>Preview tutorial.</strong> The published-package canary has not passed for this candidate. Follow the local source-build path below; do not treat it as a verified published release.</div>'
 const tutorialPortHelp =
-  releaseCatalog.releaseChannel === "stable"
+  tutorialCatalog.releaseChannel === "stable"
     ? "Check the launcher with npx -y @opute/host-agent@" +
-      releaseCatalog.packageVersion +
+      tutorialCatalog.packageVersion +
       " status, stop it if needed, then choose an unused HOST_MCP_PORT and use that same port in curl and VS Code."
     : "The preview process runs in the foreground. Read its terminal output, then set an unused HOST_MCP_PORT and use that same port in curl and VS Code."
 const schemaDisclosure = (label: string, schema?: Record<string, unknown>) =>
@@ -598,16 +634,16 @@ const catalogNoticeFor = (catalog: ReleaseCatalog, archived = false) =>
         "</code>. The published-package canary has not passed for this version, so this snapshot is not a verified release reference.</div>"
 
 const capabilityReferenceBody = (
-  catalog: ReleaseCatalog = releaseCatalog,
+  catalog: ReleaseCatalog = latestVerifiedCatalog,
   versioned = false,
   archived = false,
 ) => {
-  const downloadPath =
-    "/docs/versions/v" + catalog.packageVersion + "/capabilities/catalog.json"
+  const downloadPath = "/" + catalogRouteFor(catalog) + "/catalog.json"
+  const preview = catalog.releaseChannel === "preview"
   return [
-    '<p class="badge">' + (versioned ? "Versioned reference" : "Reference") + "</p>",
+    '<p class="badge">' + (preview ? "Preview reference" : versioned ? "Versioned reference" : "Reference") + "</p>",
     "<h1>" +
-      (versioned ? "Capabilities — v" + catalog.packageVersion : "Capabilities") +
+      (preview ? "Capabilities preview — v" + catalog.packageVersion : versioned ? "Capabilities — v" + catalog.packageVersion : "Capabilities") +
       "</h1>",
     catalogNoticeFor(catalog, archived),
     archived
@@ -651,15 +687,14 @@ export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 <p>Keep both values in your local shell. The agent ID is an explicit opaque identity; the launcher does not invent a default. The token authenticates MCP requests.</p>
 
 <h2>Published npm launcher</h2>
-${releaseCatalog.releaseChannel === "stable"
-  ? `<pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
+<pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
-npx -y @opute/host-agent@${releaseCatalog.packageVersion} start --background
-npx -y @opute/host-agent@${releaseCatalog.packageVersion} url
-npx -y @opute/host-agent@${releaseCatalog.packageVersion} status
-npx -y @opute/host-agent@${releaseCatalog.packageVersion} stop</code></pre>
-<p>The launcher keeps the explicit identity and token in the child process. Stop the background process when you finish.</p>`
-  : `<p>The current package candidate is labelled Preview because its published-package canary has not passed. Use the source-build path above until a tested release is published. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>`}
+npx -y @opute/host-agent@${tutorialCatalog.packageVersion} start --background
+npx -y @opute/host-agent@${tutorialCatalog.packageVersion} url
+npx -y @opute/host-agent@${tutorialCatalog.packageVersion} status
+npx -y @opute/host-agent@${tutorialCatalog.packageVersion} stop</code></pre>
+<p>This pins the newest published release with a passing read-only package canary. The launcher keeps the explicit identity and token in the child process. Stop the background process when you finish. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>
+${releaseCatalog.releaseChannel === "preview" ? `<p class="meta"><strong>Current source candidate:</strong> <code>@opute/host-agent@${releaseCatalog.packageVersion}</code> is a preview until its published-package canary passes. The first-success and published launcher instructions above remain pinned to <code>@opute/host-agent@${tutorialCatalog.packageVersion}</code>.</p>` : ""}
 
 <h2>Local endpoint and modes</h2>
 <table>
@@ -810,7 +845,7 @@ flowchart LR
   <section>
     <h2>Reference</h2>
     <ul>
-      <li><a href="/docs/capabilities/"><strong>Capabilities</strong><span>${releaseCatalog.toolCount} allowlisted descriptors at ${releaseCatalog.catalogRevision}; provider readiness varies by host.</span></a></li>
+      <li><a href="/docs/capabilities/"><strong>Capabilities</strong><span>${latestVerifiedCatalog.toolCount} descriptors from the newest verified catalog; provider readiness varies by host.</span></a></li>
       <li><a href="/docs/configuration/"><strong>Configuration</strong><span>Ports, bind hosts, required identity, auth, Cloudflare env.</span></a></li>
       <li><a href="/docs/recipe-primitives/"><strong>Recipe &amp; plan primitives</strong><span>Fields, statuses, assertion ops, caps — dry facts.</span></a></li>
       <li><a href="/docs/openapi/"><strong>OpenAPI</strong><span>HTTP surface for <code>/health</code> and Streamable HTTP <code>/mcp</code>.</span></a></li>
@@ -969,11 +1004,16 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
     title: "Capabilities",
     description: "Browse the versioned Opute Host Agent catalog, including declared effects and JSON schemas.",
     current: "capabilities",
-    body: capabilityReferenceBody(releaseCatalog),
+    body: capabilityReferenceBody(latestVerifiedCatalog),
   },
   [versionedCapabilityPath]: {
-    title: "Capabilities — v" + releaseCatalog.packageVersion,
-    description: "Versioned Opute Host Agent capability descriptors and JSON schemas.",
+    title:
+      (releaseCatalog.releaseChannel === "preview" ? "Capabilities preview — v" : "Capabilities — v") +
+      releaseCatalog.packageVersion,
+    description:
+      releaseCatalog.releaseChannel === "preview"
+        ? "Unreleased preview of Opute Host Agent capability descriptors and JSON schemas."
+        : "Versioned Opute Host Agent capability descriptors and JSON schemas.",
     current: "capabilities",
     body: capabilityReferenceBody(releaseCatalog, true),
   },  "docs/configuration/index.html": {
@@ -1139,7 +1179,7 @@ flowchart LR
 <h1>Kubernetes availability and failure scope</h1>
 <p class="meta">“High availability” is a behavior under a named failure. State which behavior should continue, where the failed component lives, and how recovery works.</p>
 <aside class="callout" id="local-host-agent-test"><strong>Verified local Host Agent test · ${escapeHTML(localHAProof.evidenceDate)}.</strong> Three fresh ${escapeHTML(localHAProof.guestKind)} server guests were provisioned and configured through typed Host Agent MCP operations as a K3s ${escapeHTML(localHAProof.k3sVersion)} cluster with ${escapeHTML(localHAProof.datastoreMode)}. The guests shared one physical host. With one guest stopped, ${localHAProof.readyWhileOneGuestStopped} of ${localHAProof.serverCount} nodes were Ready; a typed ConfigMap apply and read both succeeded through the surviving control plane. Starting the guest restored ${localHAProof.readyAfter} of ${localHAProof.serverCount} Ready nodes.</aside>
-<p>The test used K3s provider <code>${escapeHTML(localHAProof.providerVersion)}</code>. The Host Agent process reported runtime <code>${escapeHTML(localHAProof.hostAgentRuntime)}</code> and catalog revision <code>${escapeHTML(localHAProof.hostAgentCatalogRevision)}</code>. The published <code>@opute/host-agent@${releaseCatalog.packageVersion}</code> canary separately proves the authenticated read-only first-success path; it did not test this HA setup flow.</p>
+<p>The test used K3s provider <code>${escapeHTML(localHAProof.providerVersion)}</code>. The Host Agent process reported runtime <code>${escapeHTML(localHAProof.hostAgentRuntime)}</code> and catalog revision <code>${escapeHTML(localHAProof.hostAgentCatalogRevision)}</code>. The published <code>@opute/host-agent@${tutorialCatalog.packageVersion}</code> canary separately proves the authenticated read-only first-success path; it did not test this HA setup flow.</p>
 <p>This result covers one Incus guest/server failure on one physical host. It does not establish host or site failure recovery, network partition behavior, workload serving, durable application data, new workload scheduling, or external endpoint failover. The membership probe also reported that no external HA endpoint was configured.</p>
 
 <h2>Separate the outcomes</h2>
@@ -1921,7 +1961,7 @@ console.log("wrote robots.txt and sitemap.xml", sitemapPaths.length)
       .replace(/\s+/g, " ")
       .trim()
   const catalogByPage = new Map<string, ReleaseCatalog>([
-    ["docs/capabilities/index.html", releaseCatalog],
+    ["docs/capabilities/index.html", latestVerifiedCatalog],
     [versionedCapabilityPath, releaseCatalog],
   ])
   for (const { catalog: archive } of archivedReleaseCatalogs) {
@@ -1953,7 +1993,7 @@ console.log("wrote robots.txt and sitemap.xml", sitemapPaths.length)
     openapi: "3.1.0",
     info: {
       title: "Opute Host Agent HTTP edge",
-      version: releaseCatalog.packageVersion,
+      version: latestVerifiedCatalog.packageVersion,
       description:
         "Streamable HTTP MCP transport for Opute Host Agent. Tool schemas are revisioned via tools/list — not frozen in this document. See https://www.opute.io/docs/openapi/",
       contact: { url: "https://www.opute.io/docs/" },
@@ -2047,11 +2087,11 @@ console.log("wrote robots.txt and sitemap.xml", sitemapPaths.length)
       protocolVersion: "2026-07-28",
       transport: "streamable-http",
       catalogAuthority: "tools/list",
-      packageVersion: releaseCatalog.packageVersion,
-      releaseChannel: releaseCatalog.releaseChannel,
-      catalogRevision: releaseCatalog.catalogRevision,
-      toolCount: releaseCatalog.toolCount,
-      toolNames: releaseCatalog.tools.map((tool) => tool.name),
+      packageVersion: latestVerifiedCatalog.packageVersion,
+      releaseChannel: latestVerifiedCatalog.releaseChannel,
+      catalogRevision: latestVerifiedCatalog.catalogRevision,
+      toolCount: latestVerifiedCatalog.toolCount,
+      toolNames: latestVerifiedCatalog.tools.map((tool) => tool.name),
     },
   }
 
@@ -2092,7 +2132,8 @@ Host Agent documentation covers the execution server. Opute Platform: https://pl
 
 ## Reference
 - [Capabilities](https://www.opute.io/docs/capabilities/)
-- [Versioned capability catalog](https://www.opute.io/docs/versions/v${releaseCatalog.packageVersion}/capabilities/)
+- [Latest verified capability catalog](https://www.opute.io/docs/versions/v${latestVerifiedCatalog.packageVersion}/capabilities/)
+${releaseCatalog.releaseChannel === "preview" ? `- [Preview capability catalog](https://www.opute.io/${currentCatalogRoute}/)` : ""}
 - [Configuration](https://www.opute.io/docs/configuration/)
 - [Recipe & plan primitives](https://www.opute.io/docs/recipe-primitives/)
 
@@ -2117,7 +2158,7 @@ writeFileSync(
 
 The Bun generator in site/scripts/generate-docs.ts owns rendered pages, search index, sitemap, OpenAPI downloads, llms.txt, and this packet. Do not hand-edit generated HTML.
 
-The active public-documentation-release-parity decision in .agents/decisions/public-documentation-release-parity.json is authoritative for release claims. The default tutorial and stable catalog require matching published-package read-only canary evidence. Unverified candidates are marked preview. The catalog snapshot is an allowlisted projection; live tools/list is authoritative at runtime.
+The active public-documentation-release-parity decision in .agents/decisions/public-documentation-release-parity.json is authoritative for release claims. The first-success tutorial and canonical capability reference use the newest stable catalog with matching published-package read-only canary evidence. Unreleased candidates live on a visibly labeled preview route. An archived release catalog is created from the exact catalog and package metadata at its published source SHA, matched to that release's canary evidence, and is immutable afterward. The catalog snapshot is an allowlisted projection; live tools/list is authoritative at runtime.
 
 ## Audience jobs
 
@@ -2137,7 +2178,7 @@ Host Agent executes explicit typed capabilities against one host. Opute Platform
 
 ## Release metadata
 
-Generated reference metadata is read from site/context/release-catalog.json. Change its release channel to stable only with matching package version, source revision, catalog revision, and passing published read-only canary. Catalog capture drops stable status and old canary evidence whenever either the package version or catalog revision changes. Recompute decision anchors when an anchored authority file changes.
+Generated candidate metadata is read from site/context/release-catalog.json. Change its release channel to stable only with matching package version, source revision, catalog revision, and passing published read-only canary. Catalog capture drops stable status and old canary evidence whenever either the package version or catalog revision changes. The tutorial selects the newest verified stable release while the current candidate remains preview. Recompute decision anchors when an anchored authority file changes.
 `,
 )
 console.log("wrote context/PACKET.md")

@@ -3,7 +3,7 @@
 BINARY=opute-host-agent
 DIST=dist
 MODULE=github.com/wunderous/host-agents
-VERSION ?= 0.2.1
+VERSION ?= 0.2.2
 LDFLAGS=-s -w -X $(MODULE)/internal/version.Version=$(VERSION)
 
 build: build-agent
@@ -69,6 +69,7 @@ check-site: local-npm-readonly-canary
 	python3 scripts/check_site_release_boundary.py
 	python3 scripts/check_site_release_parity.py
 	python3 scripts/test_promote_site_release_catalog.py
+	python3 scripts/test_promote_archived_site_release_catalog.py
 	python3 scripts/test_validate_generated_site.py
 	python3 scripts/test_check_generated_site_clean.py
 	python3 scripts/validate-generated-site.py
@@ -105,7 +106,7 @@ build-provider-tailscale-linux-x64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go -C plugins/tunneling/tailscale build -a -ldflags='-s -w' -o $(CURDIR)/$(DIST)/opute-provider-tailscale-linux-x64 ./cmd/opute-provider-tailscale
 
 checksums:
-	(cd $(DIST) && sha256sum host-agent-linux-x64.gz host-agent-linux-arm64.gz host-agent-windows-x64.gz opute-provider-k3s-linux-x64 opute-provider-cloudflare-linux-x64 opute-provider-tailscale-linux-x64 > SHA256SUMS)
+	(cd $(DIST) && sha256sum host-agent-linux-x64 host-agent-linux-x64.gz host-agent-linux-arm64.gz host-agent-windows-x64.gz opute-provider-k3s-linux-x64 opute-provider-cloudflare-linux-x64 opute-provider-tailscale-linux-x64 > SHA256SUMS)
 
 clean:
 	rm -rf $(DIST)

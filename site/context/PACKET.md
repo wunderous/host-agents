@@ -4,7 +4,7 @@
 
 The Bun generator in site/scripts/generate-docs.ts owns rendered pages, search index, sitemap, OpenAPI downloads, llms.txt, and this packet. Do not hand-edit generated HTML.
 
-The active public-documentation-release-parity decision in .agents/decisions/public-documentation-release-parity.json is authoritative for release claims. The default tutorial and stable catalog require matching published-package read-only canary evidence. Unverified candidates are marked preview. The catalog snapshot is an allowlisted projection; live tools/list is authoritative at runtime.
+The active public-documentation-release-parity decision in .agents/decisions/public-documentation-release-parity.json is authoritative for release claims. The first-success tutorial and canonical capability reference use the newest stable catalog with matching published-package read-only canary evidence. Unreleased candidates live on a visibly labeled preview route. An archived release catalog is created from the exact catalog and package metadata at its published source SHA, matched to that release's canary evidence, and is immutable afterward. The catalog snapshot is an allowlisted projection; live tools/list is authoritative at runtime.
 
 ## Audience jobs
 
@@ -24,4 +24,4 @@ Host Agent executes explicit typed capabilities against one host. Opute Platform
 
 ## Release metadata
 
-Generated reference metadata is read from site/context/release-catalog.json. Change its release channel to stable only with matching package version, source revision, catalog revision, and passing published read-only canary. Catalog capture drops stable status and old canary evidence whenever either the package version or catalog revision changes. Recompute decision anchors when an anchored authority file changes.
+Generated candidate metadata is read from site/context/release-catalog.json. Change its release channel to stable only with matching package version, source revision, catalog revision, and passing published read-only canary. Catalog capture drops stable status and old canary evidence whenever either the package version or catalog revision changes. The tutorial selects the newest verified stable release while the current candidate remains preview. Recompute decision anchors when an anchored authority file changes.

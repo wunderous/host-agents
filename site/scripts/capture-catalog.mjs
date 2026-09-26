@@ -8,7 +8,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { selectCatalogRelease } from './catalog-release-policy.mjs'
+import { archivePreviousStableCatalog, selectCatalogRelease } from './catalog-release-policy.mjs'
+import { persistPreviousStableArchive } from './catalog-release-archive.mjs'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteDir = path.resolve(scriptDir, '..')
@@ -172,6 +173,11 @@ async function main() {
       catalogRevision: catalog.catalogRevision,
       requestedChannel: process.env.SITE_CATALOG_CHANNEL,
     })
+
+    persistPreviousStableArchive(
+      archivePreviousStableCatalog(previous, packageInfo.version, catalog.catalogRevision),
+      outputPath,
+    )
 
     const output = {
       packageName: packageInfo.name,

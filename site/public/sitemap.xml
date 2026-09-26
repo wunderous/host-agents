@@ -31,7 +31,7 @@
     <loc>https://www.opute.io/docs/capabilities/</loc>
   </url>
   <url>
-    <loc>https://www.opute.io/docs/versions/v0.2.1/capabilities/</loc>
+    <loc>https://www.opute.io/docs/previews/v0.2.2/capabilities/</loc>
   </url>
   <url>
     <loc>https://www.opute.io/docs/configuration/</loc>
@@ -62,5 +62,8 @@
   </url>
   <url>
     <loc>https://www.opute.io/docs/versions/v0.2.0/capabilities/</loc>
+  </url>
+  <url>
+    <loc>https://www.opute.io/docs/versions/v0.2.1/capabilities/</loc>
   </url>
 </urlset>

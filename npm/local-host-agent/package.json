@@ -1,6 +1,6 @@
 {
   "name": "@opute/host-agent",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Local Streamable HTTP launcher for the Opute Go host agent",
   "license": "MIT",
   "repository": {
