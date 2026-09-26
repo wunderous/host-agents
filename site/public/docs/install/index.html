@@ -106,12 +106,12 @@ export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 <h2>Published npm launcher</h2>
 <pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
-npx -y @opute/host-agent@0.2.2 start --background
-npx -y @opute/host-agent@0.2.2 url
-npx -y @opute/host-agent@0.2.2 status
-npx -y @opute/host-agent@0.2.2 stop</code></pre>
+npx -y <!--email_off-->@opute/host-agent@0.2.2<!--/email_off--> start --background
+npx -y <!--email_off-->@opute/host-agent@0.2.2<!--/email_off--> url
+npx -y <!--email_off-->@opute/host-agent@0.2.2<!--/email_off--> status
+npx -y <!--email_off-->@opute/host-agent@0.2.2<!--/email_off--> stop</code></pre>
 <p>This pins the newest published release with a passing read-only package canary. The launcher keeps the explicit identity and token in the child process. Stop the background process when you finish. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>
-<p class="meta"><strong>Current source candidate:</strong> <code>@opute/host-agent@0.2.2</code> is a preview until its published-package canary passes. The first-success and published launcher instructions above remain pinned to <code>@opute/host-agent@0.2.2</code>.</p>
+<p class="meta"><strong>Current source candidate:</strong> <code><!--email_off-->@opute/host-agent@0.2.2<!--/email_off--></code> is a preview until its published-package canary passes. The first-success and published launcher instructions above remain pinned to <code><!--email_off-->@opute/host-agent@0.2.2<!--/email_off--></code>.</p>
 
 <h2>Local endpoint and modes</h2>
 <table>

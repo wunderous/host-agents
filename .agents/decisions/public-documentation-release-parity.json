@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "public-documentation-release-parity",
   "title": "Public product claims stay within verified release and failure-test scope",
-  "claim": "The Host Agent-first public tutorial and canonical capability reference use the newest stable @opute/host-agent catalog with matching published read-only canary evidence. Each archived release reference is built from the exact catalog and package metadata at the published source SHA, matched to that release's canary evidence, and remains immutable. An unverified current candidate is visibly labelled preview on a separate route. Empirical infrastructure claims use a generated evidence record that names the Host Agent runtime and catalog revision, provider and Kubernetes versions, datastore, failure domain, observed membership, typed API results, recovery, and outcomes that were not tested. A local development-runtime result never proves the published package has the same capability path. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity. Generated HTML addresses its stylesheet and client scripts using each asset's LF-normalized SHA-256 fingerprint, and CI rejects missing or stale fingerprints.",
-  "rationale": "A successful source build, open health endpoint, or tool-name snapshot cannot prove that a visitor can install the published launcher, authenticate, discover tools, and read structured host facts. A local cluster membership result also cannot prove API write continuity or failures outside its stated domain. Matching release evidence and a bounded test record prevent public instructions from silently describing a different artifact, runtime, or failure scope.",
+  "claim": "The Host Agent-first public tutorial and canonical capability reference use the newest stable @opute/host-agent catalog with matching published read-only canary evidence. Each archived release reference is built from the exact catalog and package metadata at the published source SHA, matched to that release's canary evidence, and remains immutable. An unverified current candidate is visibly labelled preview on a separate route. Empirical infrastructure claims use a generated evidence record that names the Host Agent runtime and catalog revision, provider and Kubernetes versions, datastore, failure domain, observed membership, typed API results, recovery, and outcomes that were not tested. A local development-runtime result never proves the published package has the same capability path. The launcher requires and preserves one explicit opaque OPUTE_REMOTE_AGENT_ID and MCP_AUTH_TOKEN. Its local daemon ownership identity is reported separately and never substitutes for canonical Host Agent identity. Generated HTML addresses its stylesheet and client scripts using each asset's LF-normalized SHA-256 fingerprint, and CI rejects missing or stale fingerprints. Every versioned scoped npm package token in generated HTML is enclosed by Cloudflare's documented email-obfuscation suppression markers so edge rewriting cannot corrupt displayed or copied commands.",
+  "rationale": "A successful source build, open health endpoint, or tool-name snapshot cannot prove that a visitor can install the published launcher, authenticate, discover tools, and read structured host facts. A local cluster membership result also cannot prove API write continuity or failures outside its stated domain. Matching release evidence and a bounded test record prevent public instructions from silently describing a different artifact, runtime, or failure scope. Cloudflare's edge email-obfuscation can rewrite npm scope tokens that resemble addresses; local source rendering alone therefore cannot prove package commands remain intact in the visitor's browser.",
   "decidedOn": "2026-09-24",
   "section": "Public website and release parity",
   "owner": "wunderous/host-agents owns public copy, catalog projection, npm launcher, and release evidence; wunderous/opute-site-deploy owns production deployment.",
@@ -32,7 +32,8 @@
       "published npm launcher behavior",
       "allowlisted catalog snapshots and versioned capability routes",
       "locally tested Host Agent Kubernetes setup and guest-failure claims",
-      "generated static site validation"
+      "generated static site validation",
+      "integrity of versioned npm package tokens after public edge HTML transformation"
     ],
     "excluded": [
       "private deployment credentials, controller, and rollout",
@@ -41,7 +42,7 @@
       "mutating canaries outside the named disposable fixture and failure scope"
     ]
   },
-  "exception": "An unpublished or unverified candidate may be shown only with a visible Preview label. Stable tutorial or reference claims require matching package, source, catalog revision, and successful published read-only canary evidence. Local infrastructure evidence may describe only its recorded runtime, topology, and tested failure; extending it to a published package, a different failure domain, or application-serving behavior requires a new matching test record.",
+  "exception": "An unpublished or unverified candidate may be shown only with a visible Preview label. Stable tutorial or reference claims require matching package, source, catalog revision, and successful published read-only canary evidence. Local infrastructure evidence may describe only its recorded runtime, topology, and tested failure; extending it to a published package, a different failure domain, or application-serving behavior requires a new matching test record. Cloudflare suppression markers may be removed only after the public edge obfuscation behavior is changed under its deployment owner's authority and rendered browser text/copy is revalidated; this decision does not authorize zone-wide setting changes.",
   "evidence": {
     "required": [
       "exact published package version and source SHA",
@@ -64,6 +65,8 @@
       "the canonical capability page and first-success tutorial select the newest stable catalog; unverified current candidates appear only on a preview route",
       "site generation fails closed when no published stable catalog exists for the canonical reference and first-success tutorial",
       "generated CSS and client-script URLs match the content fingerprint of each checked-in asset",
+      "every active and archived versioned scoped npm package token in generated HTML is immediately enclosed by Cloudflare email-obfuscation suppression markers",
+      "the published browser accessibility tree and copied first-success command preserve the exact package token after edge transformation",
       "tutorial output example includes every schema-required get_host_info field and labels optional fields",
       "tutorial shows a wrong-token HTTP 401 check without exposing a real credential",
       "local HA evidence records the exact Host Agent runtime and catalog revision, provider and K3s versions, datastore, host and guest failure domains, typed API read/write outcomes, recovery, and untested outcomes",
@@ -72,7 +75,7 @@
     "canary": "npm/local-host-agent/published-readonly-canary.test.js",
     "siteVerifier": "scripts/check_site_release_parity.py"
   },
-  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. Stable status and published canary evidence are carried forward only while both package version and catalog revision match; a changed snapshot returns to preview until exact published read-only canary evidence promotes it. The stable promotion script archives the prior stable catalog as site/context/release-archives/v<version>.json when the package version advances and refuses conflicting archive content. The archive promotion script reads the package and catalog directly from the canary evidence's exact source SHA, checks the complete read-only canary result, and refuses an existing conflicting archive. The canonical capability page and first-success tutorial select the newest verified stable release; a candidate catalog is published on a separate preview route until its canary passes. Site generation fails closed if no published stable catalog can support the canonical reference and first-success tutorial. Archived snapshots are immutable, must include matching published read-only canary evidence, and drive their own versioned page, JSON download, search entry, and sitemap route. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. Update site/context/ha-proof.json for each new empirical Kubernetes claim; keep the Host Agent runtime and catalog revision, provider and Kubernetes versions, datastore, topology, fault, observations, recovery, and exclusions together. Do not promote the local development-runtime test as published-package HA evidence. CSS and client-script URL fingerprints change automatically with LF-normalized asset content; update the validator's asset allowlist and tests when that asset set changes. Recompute and review file anchors whenever an anchored authority changes.",
+  "revisionBehavior": "Update the package version and recapture the allowlisted catalog when the release artifact or public descriptors change. Stable status and published canary evidence are carried forward only while both package version and catalog revision match; a changed snapshot returns to preview until exact published read-only canary evidence promotes it. The stable promotion script archives the prior stable catalog as site/context/release-archives/v<version>.json when the package version advances and refuses conflicting archive content. The archive promotion script reads the package and catalog directly from the canary evidence's exact source SHA, checks the complete read-only canary result, and refuses an existing conflicting archive. The canonical capability page and first-success tutorial select the newest verified stable release; a candidate catalog is published on a separate preview route until its canary passes. Site generation fails closed if no published stable catalog can support the canonical reference and first-success tutorial. Archived snapshots are immutable, must include matching published read-only canary evidence, and drive their own versioned page, JSON download, search entry, and sitemap route. Stable promotion stores the exact package version, source SHA, catalog revision, canary run and attempt. Update site/context/ha-proof.json for each new empirical Kubernetes claim; keep the Host Agent runtime and catalog revision, provider and Kubernetes versions, datastore, topology, fault, observations, recovery, and exclusions together. Do not promote the local development-runtime test as published-package HA evidence. CSS and client-script URL fingerprints change automatically with LF-normalized asset content; update the validator's asset allowlist and tests when that asset set changes. For every versioned scoped npm package token in generated HTML, emit the exact Cloudflare <!--email_off-->TOKEN<!--/email_off--> comments from a shared generator helper. The generated-site validator derives expected tokens from the current catalog and immutable release archives and rejects any unwrapped occurrence. After deployment, verify rendered browser text and copied commands because source HTML validation cannot observe an edge transformation. Do not change Cloudflare zone-wide settings from the public repository. Recompute and review file anchors whenever an anchored authority changes.",
   "anchors": [
     {
       "kind": "file",
@@ -155,13 +158,13 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "ffb78666691f6fd37ac41e77f7e70edee871147c14e35490d4b7faccc0ea6c90",
+      "digest": "577041df094e4c16504391775adb73d8c89b71c3bd233736417159c27184f0d4",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
       "kind": "file",
       "path": "scripts/check_site_release_parity.py",
-      "digest": "bf3e7213d91b7dacf85e114ea02db9ce5b7dd12e2e7b8d59c7cdf82359a075dd",
+      "digest": "a1a4439d011c053c66f1a935341711ebee0d866f649d3314be6b8e07f27de546",
       "note": "Release metadata and anchor verifier"
     },
     {
@@ -173,7 +176,7 @@
     {
       "kind": "file",
       "path": "scripts/validate-generated-site.py",
-      "digest": "2e515947fe414dab43a626145c7c1bc64770cc468c3a82c47c7cdc219ab5b274",
+      "digest": "bdabb40c61ed84d0a6625b0c30707a8841ff3984a55dd4a4572c6984c1bbabf5",
       "note": "Generated route, metadata, link, search, schema, and accessibility validator"
     },
     {
@@ -185,7 +188,7 @@
     {
       "kind": "file",
       "path": "scripts/test_validate_generated_site.py",
-      "digest": "a2092791ffd81c31e84f35ac8aeb6ba61d9c258b873c7103956e15d773db73c9",
+      "digest": "c2370fd4ad6c4ae1b3d8ba1c6daa657d3f3e5eb5c02d020871d91f979582f97d",
       "note": "Regression coverage for links that escape the published output tree"
     },
     {
