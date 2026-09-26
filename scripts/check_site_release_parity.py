@@ -195,7 +195,7 @@ def verify_enforcement_wiring() -> None:
         fail("generated-output gate must detect untracked files as well as tracked drift")
 
 
-def verify_archived_catalogs(current_version: str) -> list[dict]:
+def verify_archived_catalogs(current_version: str, current_channel: str) -> list[dict]:
     archive_dir = ROOT / "site" / "context" / "release-archives"
     paths = sorted(archive_dir.glob("v*.json"))
     if not paths:
@@ -213,7 +213,7 @@ def verify_archived_catalogs(current_version: str) -> list[dict]:
             or archive.get("packageName") != "@opute/host-agent"
             or not isinstance(version, str)
             or path.name != "v" + version + ".json"
-            or version == current_version
+            or (version == current_version and current_channel == "stable")
             or version in versions
             or archive.get("releaseChannel") != "stable"
             or not isinstance(revision, str)
@@ -328,7 +328,7 @@ def main() -> None:
     version = package.get("version")
     if package.get("name") != "@opute/host-agent" or not isinstance(version, str):
         fail("npm package identity is invalid")
-    archived_catalogs = verify_archived_catalogs(version)
+    archived_catalogs = verify_archived_catalogs(version, str(catalog.get("releaseChannel", "")))
     if catalog.get("packageName") != package["name"] or catalog.get("packageVersion") != version:
         fail("catalog package identity/version differs from npm/local-host-agent/package.json")
     if catalog.get("releaseChannel") not in {"preview", "stable"}:

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from promote_archived_site_release_catalog import (
     CHECKS,
@@ -78,6 +80,22 @@ class PromoteArchivedCatalogTests(unittest.TestCase):
         (self.archive_dir / destination.name).write_text("{}", encoding="utf-8")
         with self.assertRaises(SystemExit):
             promote_archive(evidence, self.root, self.archive_dir)
+
+    def test_concurrent_conflicting_archive_is_never_overwritten(self) -> None:
+        evidence = self.evidence_file()
+        competing_evidence = {**self.evidence, "runId": self.evidence["runId"] + 1}
+        competing_catalog = archived_catalog(competing_evidence, self.root)
+        destination = self.archive_dir / "v0.2.1.json"
+
+        def create_competing_archive(_source: str, target: str) -> None:
+            Path(target).write_text(json.dumps(competing_catalog), encoding="utf-8")
+            raise FileExistsError(os.fspath(target))
+
+        with patch("promote_archived_site_release_catalog.os.link", side_effect=create_competing_archive):
+            with self.assertRaises(SystemExit):
+                promote_archive(evidence, self.root, self.archive_dir)
+
+        self.assertEqual(json.loads(destination.read_text(encoding="utf-8")), competing_catalog)
 
     def test_changed_catalog_revision_fails(self) -> None:
         evidence = {**self.evidence, "catalogRevision": "sha256:" + "b" * 64}
