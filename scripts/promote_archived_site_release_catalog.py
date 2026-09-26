@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -147,32 +148,52 @@ def archived_catalog(evidence: dict, repository: Path = ROOT) -> dict:
     }
 
 
-def write_json_atomic(path: Path, value: dict) -> None:
+def write_json_exclusive(path: Path, value: dict) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
             json.dump(value, output, indent=2)
             output.write("\n")
-        os.replace(temporary, path)
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            return False
+        return True
     except BaseException:
         try:
             os.unlink(temporary)
         except FileNotFoundError:
             pass
         raise
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def verify_existing_archive(path: Path, catalog: dict) -> bool:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(metadata.st_mode):
+        fail("existing release archive is not a regular file")
+    existing = parse_object(path.read_text(encoding="utf-8"), "existing release archive")
+    if existing != catalog:
+        fail("existing archive conflicts with published evidence for " + catalog["packageVersion"])
+    return True
 
 
 def promote_archive(evidence_path: Path, repository: Path = ROOT, archive_dir: Path = ARCHIVE_DIR) -> Path:
     evidence = parse_object(evidence_path.read_text(encoding="utf-8"), "published canary evidence")
     catalog = archived_catalog(evidence, repository)
     destination = archive_dir / ("v" + catalog["packageVersion"] + ".json")
-    if destination.exists():
-        existing = parse_object(destination.read_text(encoding="utf-8"), "existing release archive")
-        if existing != catalog:
-            fail("existing archive conflicts with published evidence for " + catalog["packageVersion"])
+    if verify_existing_archive(destination, catalog):
         return destination
-    write_json_atomic(destination, catalog)
+    if not write_json_exclusive(destination, catalog) and not verify_existing_archive(destination, catalog):
+        fail("release archive appeared concurrently but could not be read")
     return destination
 
 

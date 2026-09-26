@@ -67,7 +67,7 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
-  <p><a href="/docs/versions/v0.2.1/capabilities/">Latest verified catalog — v0.2.1</a></p>
+  <p><a href="/docs/versions/v0.2.2/capabilities/">Latest verified catalog — v0.2.2</a></p>
   <p><a href="/docs/previews/v0.2.2/capabilities/">Preview catalog — v0.2.2</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
@@ -106,12 +106,12 @@ export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 <h2>Published npm launcher</h2>
 <pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
-npx -y @opute/host-agent@0.2.1 start --background
-npx -y @opute/host-agent@0.2.1 url
-npx -y @opute/host-agent@0.2.1 status
-npx -y @opute/host-agent@0.2.1 stop</code></pre>
+npx -y @opute/host-agent@0.2.2 start --background
+npx -y @opute/host-agent@0.2.2 url
+npx -y @opute/host-agent@0.2.2 status
+npx -y @opute/host-agent@0.2.2 stop</code></pre>
 <p>This pins the newest published release with a passing read-only package canary. The launcher keeps the explicit identity and token in the child process. Stop the background process when you finish. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>
-<p class="meta"><strong>Current source candidate:</strong> <code>@opute/host-agent@0.2.2</code> is a preview until its published-package canary passes. The first-success and published launcher instructions above remain pinned to <code>@opute/host-agent@0.2.1</code>.</p>
+<p class="meta"><strong>Current source candidate:</strong> <code>@opute/host-agent@0.2.2</code> is a preview until its published-package canary passes. The first-success and published launcher instructions above remain pinned to <code>@opute/host-agent@0.2.2</code>.</p>
 
 <h2>Local endpoint and modes</h2>
 <table>

@@ -171,7 +171,7 @@ for (const { filename, catalog: archive } of archivedReleaseCatalogs) {
     archive.packageName !== "@opute/host-agent" ||
     !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version) ||
     filename !== "v" + version + ".json" ||
-    version === releaseCatalog.packageVersion ||
+    (version === releaseCatalog.packageVersion && releaseCatalog.releaseChannel === "stable") ||
     archivedVersions.has(version) ||
     archive.releaseChannel !== "stable" ||
     !/^sha256:[0-9a-f]{64}$/.test(archive.catalogRevision) ||

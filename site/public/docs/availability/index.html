@@ -67,7 +67,7 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
-  <p><a href="/docs/versions/v0.2.1/capabilities/">Latest verified catalog — v0.2.1</a></p>
+  <p><a href="/docs/versions/v0.2.2/capabilities/">Latest verified catalog — v0.2.2</a></p>
   <p><a href="/docs/previews/v0.2.2/capabilities/">Preview catalog — v0.2.2</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
@@ -95,7 +95,7 @@
 <h1>Kubernetes availability and failure scope</h1>
 <p class="meta">“High availability” is a behavior under a named failure. State which behavior should continue, where the failed component lives, and how recovery works.</p>
 <aside class="callout" id="local-host-agent-test"><strong>Verified local Host Agent test · 2026-09-25.</strong> Three fresh Incus system container server guests were provisioned and configured through typed Host Agent MCP operations as a K3s v1.31.8+k3s1 cluster with embedded-etcd. The guests shared one physical host. With one guest stopped, 2 of 3 nodes were Ready; a typed ConfigMap apply and read both succeeded through the surviving control plane. Starting the guest restored 3 of 3 Ready nodes.</aside>
-<p>The test used K3s provider <code>1.0.2</code>. The Host Agent process reported runtime <code>dev</code> and catalog revision <code>sha256:1399404a31f51c6120e4ea84c5691b61e93a5c4fb23356600bfd28b3aa6f9e2b</code>. The published <code>@opute/host-agent@0.2.1</code> canary separately proves the authenticated read-only first-success path; it did not test this HA setup flow.</p>
+<p>The test used K3s provider <code>1.0.2</code>. The Host Agent process reported runtime <code>dev</code> and catalog revision <code>sha256:1399404a31f51c6120e4ea84c5691b61e93a5c4fb23356600bfd28b3aa6f9e2b</code>. The published <code>@opute/host-agent@0.2.2</code> canary separately proves the authenticated read-only first-success path; it did not test this HA setup flow.</p>
 <p>This result covers one Incus guest/server failure on one physical host. It does not establish host or site failure recovery, network partition behavior, workload serving, durable application data, new workload scheduling, or external endpoint failover. The membership probe also reported that no external HA endpoint was configured.</p>
 
 <h2>Separate the outcomes</h2>

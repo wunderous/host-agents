@@ -14,7 +14,7 @@
     "releaseChannelPolicy": "site/scripts/catalog-release-policy.mjs",
     "releaseArchiveWriter": "site/scripts/catalog-release-archive.mjs",
     "localHAEvidence": "site/context/ha-proof.json",
-    "archivedCatalogExample": "site/context/release-archives/v0.2.0.json",
+    "archivedCatalogExample": "site/context/release-archives/v0.2.2.json",
     "canary": "npm/local-host-agent/published-readonly-canary.test.js",
     "generator": "site/scripts/generate-docs.ts",
     "archivedCatalogPromotion": "scripts/promote_archived_site_release_catalog.py",
@@ -154,13 +154,13 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "0f9f9e579ff0a5d62128bfb15cd946ef431556cf5f75ca0769bce5da9625421b",
+      "digest": "e07616a6a68defa3efbbfda65d5595e66c1e251fcd22f83ff20e2240394a6915",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
       "kind": "file",
       "path": "scripts/check_site_release_parity.py",
-      "digest": "2ff905bb2c4c208b91c51065dcabdf130c8a4a145564d0e651158bc315528f1e",
+      "digest": "7b14f33151f8ee661f32c7e40e620633f342bb9be8f757d2d0fd78e8dbd857d6",
       "note": "Release metadata and anchor verifier"
     },
     {
@@ -208,13 +208,13 @@
     {
       "kind": "file",
       "path": "scripts/promote_archived_site_release_catalog.py",
-      "digest": "36a0db0cbb4b814425f26583aacd2a54e609978d06f6734c065eed72802ff4fa",
+      "digest": "879ff9beb82311ad27ede62c30ca8edd767d0a3e8304bc1c9e549808efb67042",
       "note": "Archives only the catalog and package metadata at the exact canary source SHA"
     },
     {
       "kind": "file",
       "path": "scripts/test_promote_archived_site_release_catalog.py",
-      "digest": "d4e3086c1764a9ece55f80217d0d341f9306a810a4c59ebda2a69c60c3119937",
+      "digest": "fbae0c1ec2deb340b76668d8009f0f40111a340c67f4435ba98b50f51d0b0abb",
       "note": "Regression coverage for exact-source and published-canary archive promotion"
     },
     {
@@ -222,6 +222,12 @@
       "path": "site/context/release-archives/v0.2.1.json",
       "digest": "bd7fb006b871b5eaa07f347bff8372fd782dfec6913314fa789ec4421e6002f9",
       "note": "Immutable v0.2.1 catalog matched to its published read-only canary"
+    },
+    {
+      "kind": "file",
+      "path": "site/context/release-archives/v0.2.2.json",
+      "digest": "becb2a9beb07d4f9a63da5b500ac9d250327304a20ecc1e2014789f2e4f0cafa",
+      "note": "Immutable v0.2.2 catalog matched to its published read-only canary"
     }
   ],
   "verify": "python3 scripts/check_site_release_parity.py",
