@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import struct
 import sys
 import xml.etree.ElementTree as ET
@@ -15,6 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site" / "public"
 ORIGIN = "https://www.opute.io"
 ASSET_URL_PATHS = ("/styles.css", "/search.js", "/i18n.js", "/docs-nav.js")
+VERSIONED_PACKAGE_TOKEN = re.compile(r"@opute/host-agent@\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?")
+EMAIL_OFF_START = "<!--email_off-->"
+EMAIL_OFF_END = "<!--/email_off-->"
 
 
 def fail(message: str) -> None:
@@ -123,6 +127,21 @@ def html_parser(path: Path) -> PageParser:
 def content_fingerprint(path: Path) -> str:
     contents = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     return hashlib.sha256(contents).hexdigest()
+
+
+def package_token_obfuscation_error(html: str, expected_tokens: set[str]) -> str | None:
+    for match in VERSIONED_PACKAGE_TOKEN.finditer(html):
+        token = match.group(0)
+        if token not in expected_tokens:
+            return f"generated HTML contains a package token absent from release metadata: {token}"
+        start = match.start()
+        end = match.end()
+        if (
+            html[start - len(EMAIL_OFF_START):start] != EMAIL_OFF_START
+            or html[end:end + len(EMAIL_OFF_END)] != EMAIL_OFF_END
+        ):
+            return f"generated HTML package token is not protected from edge obfuscation: {token}"
+    return None
 
 
 def asset_cache_key_error(raw: str, expected_versions: dict[str, str]) -> str | None:
@@ -310,6 +329,19 @@ def main() -> None:
         verified_catalogs,
         key=lambda item: tuple(int(part) for part in item["packageVersion"].split(".")),
     )
+    expected_package_tokens = set()
+    for release in archived_catalogs + [catalog]:
+        package_name = release.get("packageName")
+        package_version = release.get("packageVersion")
+        if package_name != "@opute/host-agent" or not isinstance(package_version, str):
+            fail("release metadata cannot define a valid public package token")
+        expected_package_tokens.add(package_name + "@" + package_version)
+    for page in html_files:
+        token_error = package_token_obfuscation_error(
+            page.read_text(encoding="utf-8"), expected_package_tokens
+        )
+        if token_error:
+            fail(f"{route_for_file(page)} {token_error}")
     openapi_catalog = openapi_json.get("x-opute-mcp", {})
     if (
         openapi_json.get("info", {}).get("version") != latest_catalog.get("packageVersion")

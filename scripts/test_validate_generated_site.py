@@ -45,5 +45,21 @@ class AssetCacheKeyTest(unittest.TestCase):
         self.assertIsNotNone(VALIDATOR.asset_cache_key_error("/styles.css?v=20260924d", versions))
 
 
+class PackageTokenObfuscationTest(unittest.TestCase):
+    def test_versioned_package_token_is_protected_by_cloudflare_comments(self) -> None:
+        token = "@opute/host-agent@0.2.2"
+        html = f"<pre><code>npx -y <!--email_off-->{token}<!--/email_off--> start</code></pre>"
+        self.assertIsNone(VALIDATOR.package_token_obfuscation_error(html, {token}))
+
+    def test_unprotected_package_token_is_rejected(self) -> None:
+        token = "@opute/host-agent@0.2.2"
+        self.assertIsNotNone(VALIDATOR.package_token_obfuscation_error(token, {token}))
+
+    def test_package_token_without_release_provenance_is_rejected(self) -> None:
+        token = "@opute/host-agent@9.9.9"
+        html = f"<!--email_off-->{token}<!--/email_off-->"
+        self.assertIsNotNone(VALIDATOR.package_token_obfuscation_error(html, set()))
+
+
 if __name__ == "__main__":
     unittest.main()

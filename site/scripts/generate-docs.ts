@@ -389,6 +389,13 @@ const escapeHTML = (value: string) =>
     }
   })
 
+const cloudflareProtectedPackageToken = (
+  catalog: Pick<ReleaseCatalog, "packageName" | "packageVersion">,
+) =>
+  "<!--email_off-->" +
+  escapeHTML(catalog.packageName + "@" + catalog.packageVersion) +
+  "<!--/email_off-->"
+
 const seoMeta = (title: string, description: string, canonicalUrl: string) => `<title>${escapeHTML(title)}</title>
   <meta name="description" content="${escapeHTML(description)}" />
   <link rel="canonical" href="${escapeHTML(canonicalUrl)}" />
@@ -509,15 +516,13 @@ const tutorialCatalogPath = "/" + tutorialCatalogRoute + "/"
 const tutorialCatalogDownload = tutorialCatalogPath + "catalog.json"
 const tutorialStartCommand =
   tutorialCatalog.releaseChannel === "stable"
-    ? "npx -y @opute/host-agent@" + tutorialCatalog.packageVersion + " start --background"
+    ? `npx -y ${cloudflareProtectedPackageToken(tutorialCatalog)} start --background`
     : "make build VERSION=" +
       tutorialCatalog.packageVersion +
       "\n./dist/opute-host-agent serve --mode standalone --transport http"
 const tutorialStopText =
   tutorialCatalog.releaseChannel === "stable"
-    ? "Stop the background process with npx -y @opute/host-agent@" +
-      tutorialCatalog.packageVersion +
-      " stop."
+    ? `Stop the background process with npx -y ${cloudflareProtectedPackageToken(tutorialCatalog)} stop.`
     : "Stop the foreground process with Ctrl+C in its terminal."
 const tutorialPlatformPrerequisite =
   tutorialCatalog.releaseChannel === "stable"
@@ -534,17 +539,14 @@ const tutorialLaunchContext =
 const tutorialReleaseNotice =
   tutorialCatalog.releaseChannel === "stable"
     ? '<p class="meta"><strong>Verified release.</strong> This path pins <code>' +
-      escapeHTML(tutorialCatalog.packageName) + "@" +
-      escapeHTML(tutorialCatalog.packageVersion) +
+      cloudflareProtectedPackageToken(tutorialCatalog) +
       '</code>; its published authenticated read-only canary passed for catalog revision <code>' +
       escapeHTML(tutorialCatalog.catalogRevision) +
       '</code>. <a href="' + tutorialCatalogPath + '">View this exact capability snapshot</a> or <a href="' + tutorialCatalogDownload + '">download its JSON</a>.</p>'
     : '<div class="callout warn"><strong>Preview tutorial.</strong> The published-package canary has not passed for this candidate. Follow the local source-build path below; do not treat it as a verified published release.</div>'
 const tutorialPortHelp =
   tutorialCatalog.releaseChannel === "stable"
-    ? "Check the launcher with npx -y @opute/host-agent@" +
-      tutorialCatalog.packageVersion +
-      " status, stop it if needed, then choose an unused HOST_MCP_PORT and use that same port in curl and VS Code."
+    ? `Check the launcher with npx -y ${cloudflareProtectedPackageToken(tutorialCatalog)} status, stop it if needed, then choose an unused HOST_MCP_PORT and use that same port in curl and VS Code.`
     : "The preview process runs in the foreground. Read its terminal output, then set an unused HOST_MCP_PORT and use that same port in curl and VS Code."
 const schemaDisclosure = (label: string, schema?: Record<string, unknown>) =>
   schema
@@ -611,24 +613,18 @@ const capabilityCardsFor = (catalog: ReleaseCatalog) => {
 const catalogNoticeFor = (catalog: ReleaseCatalog, archived = false) =>
   archived
     ? '<p class="meta"><strong>Archived verified release.</strong> ' +
-      escapeHTML(catalog.packageName) +
-      "@" +
-      escapeHTML(catalog.packageVersion) +
+      cloudflareProtectedPackageToken(catalog) +
       " passed its published read-only package canary for catalog revision <code>" +
       escapeHTML(catalog.catalogRevision) +
       ".</code></p>"
     : catalog.releaseChannel === "stable"
       ? '<p class="meta">Published reference for <code>' +
-        escapeHTML(catalog.packageName) +
-        "@" +
-        escapeHTML(catalog.packageVersion) +
+        cloudflareProtectedPackageToken(catalog) +
         "</code>. Its read-only package canary passed for catalog revision <code>" +
         escapeHTML(catalog.catalogRevision) +
         ".</code></p>"
       : '<div class="callout warn"><strong>Preview catalog.</strong> This source candidate is <code>' +
-        escapeHTML(catalog.packageName) +
-        "@" +
-        escapeHTML(catalog.packageVersion) +
+        cloudflareProtectedPackageToken(catalog) +
         "</code> at revision <code>" +
         escapeHTML(catalog.catalogRevision) +
         "</code>. The published-package canary has not passed for this version, so this snapshot is not a verified release reference.</div>"
@@ -689,12 +685,12 @@ export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 <h2>Published npm launcher</h2>
 <pre><code>export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
-npx -y @opute/host-agent@${tutorialCatalog.packageVersion} start --background
-npx -y @opute/host-agent@${tutorialCatalog.packageVersion} url
-npx -y @opute/host-agent@${tutorialCatalog.packageVersion} status
-npx -y @opute/host-agent@${tutorialCatalog.packageVersion} stop</code></pre>
+npx -y ${cloudflareProtectedPackageToken(tutorialCatalog)} start --background
+npx -y ${cloudflareProtectedPackageToken(tutorialCatalog)} url
+npx -y ${cloudflareProtectedPackageToken(tutorialCatalog)} status
+npx -y ${cloudflareProtectedPackageToken(tutorialCatalog)} stop</code></pre>
 <p>This pins the newest published release with a passing read-only package canary. The launcher keeps the explicit identity and token in the child process. Stop the background process when you finish. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>
-${releaseCatalog.releaseChannel === "preview" ? `<p class="meta"><strong>Current source candidate:</strong> <code>@opute/host-agent@${releaseCatalog.packageVersion}</code> is a preview until its published-package canary passes. The first-success and published launcher instructions above remain pinned to <code>@opute/host-agent@${tutorialCatalog.packageVersion}</code>.</p>` : ""}
+${releaseCatalog.releaseChannel === "preview" ? `<p class="meta"><strong>Current source candidate:</strong> <code>${cloudflareProtectedPackageToken(releaseCatalog)}</code> is a preview until its published-package canary passes. The first-success and published launcher instructions above remain pinned to <code>${cloudflareProtectedPackageToken(tutorialCatalog)}</code>.</p>` : ""}
 
 <h2>Local endpoint and modes</h2>
 <table>
@@ -1179,7 +1175,7 @@ flowchart LR
 <h1>Kubernetes availability and failure scope</h1>
 <p class="meta">“High availability” is a behavior under a named failure. State which behavior should continue, where the failed component lives, and how recovery works.</p>
 <aside class="callout" id="local-host-agent-test"><strong>Verified local Host Agent test · ${escapeHTML(localHAProof.evidenceDate)}.</strong> Three fresh ${escapeHTML(localHAProof.guestKind)} server guests were provisioned and configured through typed Host Agent MCP operations as a K3s ${escapeHTML(localHAProof.k3sVersion)} cluster with ${escapeHTML(localHAProof.datastoreMode)}. The guests shared one physical host. With one guest stopped, ${localHAProof.readyWhileOneGuestStopped} of ${localHAProof.serverCount} nodes were Ready; a typed ConfigMap apply and read both succeeded through the surviving control plane. Starting the guest restored ${localHAProof.readyAfter} of ${localHAProof.serverCount} Ready nodes.</aside>
-<p>The test used K3s provider <code>${escapeHTML(localHAProof.providerVersion)}</code>. The Host Agent process reported runtime <code>${escapeHTML(localHAProof.hostAgentRuntime)}</code> and catalog revision <code>${escapeHTML(localHAProof.hostAgentCatalogRevision)}</code>. The published <code>@opute/host-agent@${tutorialCatalog.packageVersion}</code> canary separately proves the authenticated read-only first-success path; it did not test this HA setup flow.</p>
+<p>The test used K3s provider <code>${escapeHTML(localHAProof.providerVersion)}</code>. The Host Agent process reported runtime <code>${escapeHTML(localHAProof.hostAgentRuntime)}</code> and catalog revision <code>${escapeHTML(localHAProof.hostAgentCatalogRevision)}</code>. The published <code>${cloudflareProtectedPackageToken(tutorialCatalog)}</code> canary separately proves the authenticated read-only first-success path; it did not test this HA setup flow.</p>
 <p>This result covers one Incus guest/server failure on one physical host. It does not establish host or site failure recovery, network partition behavior, workload serving, durable application data, new workload scheduling, or external endpoint failover. The membership probe also reported that no external HA endpoint was configured.</p>
 
 <h2>Separate the outcomes</h2>
@@ -2179,6 +2175,8 @@ Host Agent executes explicit typed capabilities against one host. Opute Platform
 ## Release metadata
 
 Generated candidate metadata is read from site/context/release-catalog.json. Change its release channel to stable only with matching package version, source revision, catalog revision, and passing published read-only canary. Catalog capture drops stable status and old canary evidence whenever either the package version or catalog revision changes. The tutorial selects the newest verified stable release while the current candidate remains preview. Recompute decision anchors when an anchored authority file changes.
+
+Wrap every versioned @opute/host-agent@VERSION token emitted into HTML with Cloudflare's <!--email_off--> and <!--/email_off--> suppression comments using the shared generator helper. Cloudflare can otherwise rewrite this scoped package token as an email address, breaking what visitors see, hear, or copy. The generated-site validator checks active and archived releases; a public deployment must also be checked in a browser after edge transformation. Do not change zone-wide Cloudflare settings from this repository.
 `,
 )
 console.log("wrote context/PACKET.md")

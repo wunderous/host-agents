@@ -411,10 +411,15 @@ def main() -> None:
         tutorial = tutorial_path.read_text(encoding="utf-8")
     except OSError:
         fail("generated first-success tutorial is missing")
+    tutorial_text = tutorial.replace("<!--email_off-->", "").replace("<!--/email_off-->", "")
+    protected_package_token = (
+        "<!--email_off-->" + package["name"] + "@" + stable_version + "<!--/email_off-->"
+    )
     if (
-        stable_version not in tutorial
-        or "npx -y @opute/host-agent@" + stable_version not in tutorial
-        or "/docs/versions/v" + stable_version + "/capabilities/" not in tutorial
+        stable_version not in tutorial_text
+        or "npx -y @opute/host-agent@" + stable_version not in tutorial_text
+        or protected_package_token not in tutorial
+        or "/docs/versions/v" + stable_version + "/capabilities/" not in tutorial_text
     ):
         fail("generated tutorial does not use and link the latest verified published package")
     install_path = ROOT / "site" / "public" / "docs" / "install" / "index.html"
@@ -422,7 +427,11 @@ def main() -> None:
         install_page = install_path.read_text(encoding="utf-8")
     except OSError:
         fail("generated install instructions are missing")
-    if "npx -y @opute/host-agent@" + stable_version not in install_page:
+    install_text = install_page.replace("<!--email_off-->", "").replace("<!--/email_off-->", "")
+    if (
+        "npx -y @opute/host-agent@" + stable_version not in install_text
+        or protected_package_token not in install_page
+    ):
         fail("published install instructions do not pin the latest verified package")
     availability_path = ROOT / "site" / "public" / "docs" / "availability" / "index.html"
     try:
@@ -446,11 +455,11 @@ def main() -> None:
     if "npm launcher defaults to" in generator_source or "local-host-agent</code>" in generator_source:
         fail("site docs must not claim the launcher has an identity default")
     for required in ("OPUTE_REMOTE_AGENT_ID", "MCP_AUTH_TOKEN", "tools/list", "get_host_info", "HTTP 401", "lxcBinaryPath", "systemctlPath", "Optional fields such as", "intentionally-wrong", "A request with no Authorization header"):
-        if required not in tutorial:
+        if required not in tutorial_text:
             fail("generated tutorial is missing first-success evidence for " + required)
     wrong_token_request = re.search(
         r"curl -i -sS http://127[.]0[.]0[.]1:3014/mcp(.*?)</code></pre>",
-        tutorial,
+        tutorial_text,
     )
     if not wrong_token_request:
         fail("generated tutorial is missing the wrong-token MCP request")
