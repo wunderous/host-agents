@@ -132,6 +132,9 @@ ownership.
   (`production-completion-evidence`).
 - Provider adapters are generation-bound. Durable evidence uses schema-driven
   redaction; unknown projections fail closed.
+- A provider callback may inherit capacity only through the signed, active
+  same-agent and same-task MCP metadata delegation defined by C-15; this does
+  not grant tool authorization or bypass typed dispatch.
 - Boundary claims require wire, lifecycle, cleanup, and durable-state evidence.
 
 For K3s Node readiness projections, follow the invariant and verifier in

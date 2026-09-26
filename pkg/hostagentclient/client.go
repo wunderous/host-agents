@@ -112,6 +112,17 @@ func (c *Client) Call(ctx context.Context, name string, arguments map[string]any
 	return c.client.CallTool(ctx, name, arguments)
 }
 
+// ForwardResourceDelegation attaches the opaque Host Agent-issued reservation
+// context received with a provider operation to the provider's Host Agent
+// callback context. The token remains MCP metadata and is never added to tool
+// arguments, results, or durable evidence.
+func ForwardResourceDelegation(ctx context.Context, request *mcp.CallToolRequest) context.Context {
+	if request == nil || request.Params == nil {
+		return ctx
+	}
+	return mcphttp.WithResourceDelegation(ctx, mcphttp.ResourceDelegationFromMeta(request.Params.Meta))
+}
+
 func (c *Client) OperationStatus(ctx context.Context, operationID string) (*mcp.CallToolResult, error) {
 	operationID = strings.TrimSpace(operationID)
 	if operationID == "" {

@@ -60,6 +60,11 @@ func (a *recordingAdmission) Renew(reservation *resource.Reservation) error {
 	return nil
 }
 
+func (a *recordingAdmission) BindReservationTask(reservation *resource.Reservation, taskID string) error {
+	reservation.Request.TaskID = taskID
+	return nil
+}
+
 func (a *recordingAdmission) ReclaimTerminalTaskReservations(map[string]struct{}) (int, error) {
 	return 0, nil
 }

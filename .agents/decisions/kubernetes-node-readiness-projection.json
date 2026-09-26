@@ -100,8 +100,8 @@
     {
       "kind": "file",
       "path": "AGENTS.md",
-      "digest": "ac2ca59b3b1e3e2488c4497acd87071289d5c2a0f18ed825439df35d33c29dfe",
-      "note": "Routes agents to the typed readiness authority"
+      "digest": "2f1796597217d52e3629fbb5017b29a1b8a7132b20eaa8f5b95f5b8b31cfbf6e",
+      "note": "Routes contributors to the typed readiness and callback boundary decisions"
     },
     {
       "kind": "file",

@@ -87,6 +87,14 @@ func (s *Server) newProviderOperationCapability(
 ) hostcapability.Capability {
 	descriptor := providerOperationDescriptor(manifest, service, operation, generationID)
 	return hostcapability.NewProviderAdapter(descriptor, func(ctx context.Context, args hostcapability.RawArguments, _ tools.ExecutionBinding, _ hostcapability.ExecutionSink) (*mcp.CallToolResult, error) {
+		delegatedCtx, releaseDelegation, err := s.withProviderResourceDelegation(ctx, manifest.Provider.ID, generationID, operation.ID)
+		if err != nil {
+			return tools.ErrorResult(err), nil
+		}
+		if releaseDelegation != nil {
+			defer releaseDelegation()
+		}
+		ctx = delegatedCtx
 		if candidate {
 			session, err := s.providerLifecycle.OpenSessionForGeneration(manifest.Provider.ID, generationID)
 			if err != nil {

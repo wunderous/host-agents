@@ -15,6 +15,7 @@ import (
 	providercontract "github.com/wunderous/host-agents/contracts/provider"
 	"github.com/wunderous/host-agents/internal/mcphttp"
 	"github.com/wunderous/host-agents/internal/resourceid"
+	"github.com/wunderous/host-agents/pkg/hostagentclient"
 )
 
 const (
@@ -339,7 +340,7 @@ func addTailscaleOperations(server *mcp.Server) {
 			if err != nil {
 				return nil, err
 			}
-			return dispatchTailscaleOperation(ctx, operation.ID, args)
+			return dispatchTailscaleOperation(hostagentclient.ForwardResourceDelegation(ctx, request), operation.ID, args)
 		})
 	}
 }

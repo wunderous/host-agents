@@ -241,7 +241,17 @@ Agent MCP interface only to execute an already-admitted neutral primitive
 (artifact, file, service, HTTP, Kubernetes, or typed Incus instance command).
 The callback must use a canonical tenant-scoped URI where a resource target is
 required; it must not request provider installation, bypass admission, or
-import Host Agent internals.
+import Host Agent internals. When a provider operation runs under a durable
+Host Agent task, the Host Agent may forward a signed, one-hour callback
+delegation in MCP request metadata. The delegation identifies the originating
+provider generation and operation and refers only to that task's existing
+resource reservation. The receiver accepts it only while the provider call is
+in flight, for the same canonical Host Agent identity and an active durable
+task, and rechecks the persisted reservation owner and expiry before nested
+admission. It supplies resource context only: the callback still passes normal
+HTTP authentication, typed tool dispatch, canonical resource resolution, and
+mutation gates. Lifecycle and provider-capability calls are not valid callback
+targets. The delegation is never a tool argument, result, or durable evidence.
 
 **C-04 — Tool-owned argument validation.** The orchestrator does not validate,
 rewrite, enrich, or reject tool-specific arguments. The owning tool returns
