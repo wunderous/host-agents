@@ -4,7 +4,7 @@
  * Capability reference data comes from an allowlisted standalone catalog export.
  * Architecture facts track README.md + docs/adr/* (verify before changing).
  */
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from "fs"
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "fs"
 import { createHash } from "crypto"
 import { dirname, join } from "path"
 import { fileURLToPath } from "url"
@@ -327,6 +327,22 @@ const catalogRouteFor = (catalog: ReleaseCatalog) =>
   "/capabilities"
 const currentCatalogRoute = catalogRouteFor(releaseCatalog)
 const tutorialCatalogRoute = catalogRouteFor(tutorialCatalog)
+const previewsRoot = join(root, "docs", "previews")
+if (existsSync(previewsRoot)) {
+  const currentPreview = releaseCatalog.releaseChannel === "preview"
+    ? "v" + releaseCatalog.packageVersion
+    : null
+  for (const entry of readdirSync(previewsRoot, { withFileTypes: true })) {
+    if (
+      entry.isDirectory() &&
+      /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(entry.name) &&
+      entry.name !== currentPreview
+    ) {
+      rmSync(join(previewsRoot, entry.name), { recursive: true })
+      console.log("removed stale preview", entry.name)
+    }
+  }
+}
 
 type StaticAsset = "styles.css" | "search.js" | "i18n.js" | "docs-nav.js"
 

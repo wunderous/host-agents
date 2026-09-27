@@ -31,6 +31,7 @@
       "public tutorial and product claims about Host Agent",
       "published npm launcher behavior",
       "allowlisted catalog snapshots and versioned capability routes",
+      "removal of superseded generated preview routes when a candidate version changes or becomes stable",
       "locally tested Host Agent Kubernetes setup and guest-failure claims",
       "generated static site validation",
       "integrity of versioned npm package tokens after public edge HTML transformation"
@@ -63,6 +64,7 @@
       "stable promotion archives the prior stable catalog when the package version advances and refuses conflicting archive content",
       "archived release promotion reads the package metadata and catalog from the exact evidence source SHA and refuses mismatched release or canary evidence",
       "the canonical capability page and first-success tutorial select the newest stable catalog; unverified current candidates appear only on a preview route",
+      "site generation removes superseded preview-version directories so rendered routes, search, and sitemap remain in parity",
       "site generation fails closed when no published stable catalog exists for the canonical reference and first-success tutorial",
       "generated CSS and client-script URLs match the content fingerprint of each checked-in asset",
       "every active and archived versioned scoped npm package token in generated HTML is immediately enclosed by Cloudflare email-obfuscation suppression markers",
@@ -158,7 +160,7 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "577041df094e4c16504391775adb73d8c89b71c3bd233736417159c27184f0d4",
+      "digest": "0241f8bba3f7ca409fa24356018523c61e9a913c1d1dc18c75350fcfa0c946be",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
