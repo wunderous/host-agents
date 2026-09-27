@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,15 @@ func TestInspectHostServiceRequiresListenerOwnedByItsProcess(t *testing.T) {
 	if err != nil || owned["listenerOwned"] != true {
 		t.Fatalf("owning service listener = %#v, err=%v", owned, err)
 	}
-	mainPID = os.Getpid() + 1000000
+	otherProcess := exec.Command("sleep", "10")
+	if err := otherProcess.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = otherProcess.Process.Kill()
+		_ = otherProcess.Wait()
+	}()
+	mainPID = otherProcess.Process.Pid
 	other, err := service.InspectHostService(args, nil)
 	if err != nil || other["active"] != true || other["listenerOwned"] != false {
 		t.Fatalf("another process's listener accepted = %#v, err=%v", other, err)
