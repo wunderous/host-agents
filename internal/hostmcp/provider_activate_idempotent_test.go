@@ -116,4 +116,20 @@ func TestActivateCompletedThenPlanActivateDoesNotFailLiveGeneration(t *testing.T
 	if body["active"] != true {
 		t.Fatalf("provider status active=%v body=%#v", body["active"], body)
 	}
+	matching, err := server.handleProviderStatus(map[string]any{"provider": manifest.Provider.ID, "expectedEndpoint": provider.httpServer.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	matchingBody, _ := matching.StructuredContent.(map[string]any)
+	if matchingBody["endpointMatches"] != true {
+		t.Fatalf("active provider endpoint did not match: %#v", matchingBody)
+	}
+	stale, err := server.handleProviderStatus(map[string]any{"provider": manifest.Provider.ID, "expectedEndpoint": "http://127.0.0.1:4320/mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleBody, _ := stale.StructuredContent.(map[string]any)
+	if staleBody["endpointMatches"] != false {
+		t.Fatalf("stale provider endpoint matched: %#v", staleBody)
+	}
 }

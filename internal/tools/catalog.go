@@ -564,7 +564,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Name:         "inspect_host_service",
 		Title:        "Inspect host service",
 		Description:  "Read systemd service state for a caller-declared host service without changing it.",
-		InputSchema:  map[string]any{"type": "object", "required": []string{"serviceName"}, "properties": map[string]any{"serviceName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_.@:-]+$`}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}}}},
+		InputSchema:  map[string]any{"type": "object", "required": []string{"serviceName"}, "properties": map[string]any{"serviceName": map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_.@:-]+$`}, "scope": map[string]any{"type": "string", "enum": []string{"user", "system"}}, "listenPort": map[string]any{"type": "integer", "minimum": 1, "maximum": 65535}}},
 		OutputSchema: map[string]any{"type": "object", "required": []string{"serviceName", "scope", "status", "active", "enabled", "exitCode"}},
 	}, ToolDefinition{
 		Name:        "ensure_host_service_supervisor",
@@ -744,7 +744,7 @@ func appendGenericHostDefinitions(defs []ToolDefinition) []ToolDefinition {
 		Name:         "opute.provider.status",
 		Title:        "Get provider status",
 		Description:  "Read the connected provider and active provider-generation state without changing host state.",
-		InputSchema:  map[string]any{"type": "object", "required": []string{"provider"}, "properties": map[string]any{"provider": map[string]any{"type": "string", "minLength": 1}}},
+		InputSchema:  map[string]any{"type": "object", "required": []string{"provider"}, "properties": map[string]any{"provider": map[string]any{"type": "string", "minLength": 1}, "expectedEndpoint": map[string]any{"type": "string", "format": "uri"}}},
 		OutputSchema: map[string]any{"type": "object"},
 		Meta:         map[string]any{"resourceCost": map[string]any{"class": "control"}},
 	}, ToolDefinition{

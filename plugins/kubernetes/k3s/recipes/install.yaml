@@ -22,7 +22,7 @@
 # manager in /home and a root agent under the system manager in /root.
 contractVersion: host-recipe.v1
 recipeId: com.opute.k3s.install
-recipeVersion: 2.0.1
+recipeVersion: 2.0.2
 execution:
   coordinator: host-agent
   mode: local
@@ -198,6 +198,9 @@ plan:
           - {path: /enabled, op: eq, value: true}
 
     # start is the default; restart is an explicit version-upgrade choice.
+    # A shared WSL loopback can reach another distribution's provider while
+    # this unit briefly reports active before its bind fails. Require this
+    # service's MainPID to own the requested listener before adoption.
     - id: start
       dependsOn: [enable]
       action:
@@ -211,8 +214,10 @@ plan:
         args:
           uri: host-service:local:${nodes.agent.output.agent.serviceScope}/opute-provider-k3s.service
           scope: ${nodes.agent.output.agent.serviceScope}
+          listenPort: ${vars.inputs.providerPort}
         assert:
           - {path: /active, op: eq, value: true}
+          - {path: /listenerOwned, op: eq, value: true}
         pollIntervalMs: 2000
         timeoutMs: 120000
 
@@ -247,16 +252,18 @@ plan:
             activationNonce: ${vars.inputs.runNonce}
           activate: true
       timeoutMs: 1800000
-      # Activation is asynchronous: install returns once the generation is
-      # accepted, not once it is serving. Polling a typed status is how a
-      # host-local recipe waits, having no durable wait fence of its own.
+      # Activation is asynchronous: the previously active generation may still
+      # answer status. Match the requested endpoint as well as version before
+      # reporting the new provider as ready.
       validate:
         tool: opute.provider.status
         args:
           provider: ${vars.inputs.providerId}
+          expectedEndpoint: http://127.0.0.1:${vars.inputs.providerPort}/mcp
         assert:
           - {path: /active, op: eq, value: true}
           - {path: /connected, op: eq, value: true}
+          - {path: /endpointMatches, op: eq, value: true}
           - {path: /generation/Provider/version, op: eq, value: 1.0.2}
         pollIntervalMs: 3000
         timeoutMs: 600000

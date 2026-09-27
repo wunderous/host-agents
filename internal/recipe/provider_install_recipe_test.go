@@ -19,7 +19,7 @@ func TestProviderInstallRecipesPassPinnedActivationProvenance(t *testing.T) {
 		path        string
 		wantVersion string
 	}{
-		{name: "k3s", path: "../../plugins/kubernetes/k3s/recipes/install.yaml", wantVersion: "2.0.1"},
+		{name: "k3s", path: "../../plugins/kubernetes/k3s/recipes/install.yaml", wantVersion: "2.0.2"},
 		{name: "tailscale", path: "../../plugins/tunneling/tailscale/recipes/install.yaml", wantVersion: "2.0.0"},
 	}
 
@@ -79,6 +79,16 @@ func TestProviderInstallRecipesPassPinnedActivationProvenance(t *testing.T) {
 				if got, _ := stateArgs["state"].(string); got != "start" {
 					t.Fatalf("default provider service state = %q, want start", got)
 				}
+				if start.Validate == nil {
+					t.Fatal("K3s provider start has no listener ownership validation")
+				}
+				startCheck, err := plan.InterpolateArgs(start.Validate.Args, eval)
+				if err != nil || startCheck["listenPort"] != 4320 {
+					t.Fatalf("provider listener port = %#v, err=%v", startCheck["listenPort"], err)
+				}
+				if !hasProviderAssertion(start.Validate.Assert, "/listenerOwned", true) {
+					t.Fatal("K3s provider start accepts a listener owned by another service")
+				}
 
 				inputs := map[string]any{
 					"artifactUri":              "https://example.invalid/provider",
@@ -137,6 +147,15 @@ func TestProviderInstallRecipesPassPinnedActivationProvenance(t *testing.T) {
 			if install == nil {
 				t.Fatal("provider install recipe has no opute.provider.install action")
 			}
+			if test.name == "k3s" {
+				if install.Validate == nil || !hasProviderAssertion(install.Validate.Assert, "/endpointMatches", true) {
+					t.Fatal("K3s install does not wait for the requested active endpoint")
+				}
+				check, err := plan.InterpolateArgs(install.Validate.Args, plan.EvalContext{Variables: loaded.ExpandedPlan.Variables})
+				if err != nil || check["expectedEndpoint"] != "http://127.0.0.1:4320/mcp" {
+					t.Fatalf("provider endpoint check = %#v, err=%v", check["expectedEndpoint"], err)
+				}
+			}
 			args, err := plan.InterpolateArgs(install.Action.Args, plan.EvalContext{Variables: loaded.ExpandedPlan.Variables})
 			if err != nil {
 				t.Fatalf("interpolate provider install action: %v", err)
@@ -152,4 +171,13 @@ func TestProviderInstallRecipesPassPinnedActivationProvenance(t *testing.T) {
 			}
 		})
 	}
+}
+
+func hasProviderAssertion(assertions []plan.Assertion, path string, value any) bool {
+	for _, assertion := range assertions {
+		if assertion.Path == path && assertion.Op == "eq" && assertion.Value == value {
+			return true
+		}
+	}
+	return false
 }

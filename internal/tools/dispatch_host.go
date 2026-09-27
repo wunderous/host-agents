@@ -167,7 +167,7 @@ func init() {
 
 func init() {
 	register(toolname.InspectHostService, EffectRead, resource.ClassNormal, TaskInline, func(ctx context.Context, svc *hostagent.Service, args map[string]any, binding ExecutionBinding, onData func(string)) (*mcp.CallToolResult, error) {
-		out, err := svc.Host().InspectHostService(host.InspectHostServiceArgs{ServiceName: serviceNameFromBinding(args, binding), Scope: serviceScopeFromBinding(args, binding)}, onData)
+		out, err := svc.Host().InspectHostService(host.InspectHostServiceArgs{ServiceName: serviceNameFromBinding(args, binding), Scope: serviceScopeFromBinding(args, binding), ListenPort: intField(args, "listenPort")}, onData)
 		if err != nil {
 			return nil, err
 		}

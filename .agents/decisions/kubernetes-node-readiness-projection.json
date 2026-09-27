@@ -47,7 +47,7 @@
     "test": "go test ./internal/domain/kubernetes ./internal/domain/cluster -run 'TestListKubernetesClustersPreservesMultipleNodeRoles|TestClusterRuntimeProjectionPreservesMultipleNodeRoles|TestParseClusterNodesPreservesSchemaFieldsWhenAgeIsUnavailable' -count=1",
     "verifier": "python3 scripts/check_kubernetes_node_readiness_projection.py"
   },
-  "revisionBehavior": "Any change to the Ready condition interpretation, node status output, or aggregate readiness fields requires updating the focused test and reviewed whole-file anchors. Provider behavior increments the provider plugin version and install recipe together, and publishes the K3s artifact in the next Host Agent release tag before live claims use the revised projection. Every wire-facing provider version string must be derived from and match the same provider catalog version. The ClusterNode.roles JSON type is a list of provider-observed labels. Changes to that type require a Host Agent package/catalog revision, generated release reference update, focused decode tests, and a new published read-only canary before the tutorial targets that release.",
+  "revisionBehavior": "Any change to the Ready condition interpretation, node status output, or aggregate readiness fields requires updating the focused test and reviewed whole-file anchors. Provider wire behavior increments the provider plugin version and install recipe together; an installer-only readiness correction increments the recipe patch version while keeping the unchanged provider binary version, and publishes the K3s artifact in the next Host Agent release tag before live claims use the revised projection. Every wire-facing provider version string must be derived from and match the same provider catalog version. The ClusterNode.roles JSON type is a list of provider-observed labels. Changes to that type require a Host Agent package/catalog revision, generated release reference update, focused decode tests, and a new published read-only canary before the tutorial targets that release.",
   "anchors": [
     {
       "kind": "file",
@@ -76,7 +76,7 @@
     {
       "kind": "file",
       "path": "plugins/kubernetes/k3s/recipes/install.yaml",
-      "digest": "850d6940c00eca5b9f6dd9207e196aa28ed22fdf9e70521c80a4ef1484d8f111",
+      "digest": "556e504cf2fd6b05cf83cabb2fdd144c79b70da7e3da0286226272b27eb124f6",
       "note": "Installer selects the matching readiness provider version"
     },
     {
@@ -174,5 +174,5 @@
   ],
   "supersedes": [],
   "withdrawn": false,
-  "lastVerified": "2026-09-26"
+  "lastVerified": "2026-09-27"
 }

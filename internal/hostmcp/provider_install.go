@@ -193,12 +193,16 @@ func (s *Server) handleProviderValidateContext(ctx context.Context, args map[str
 
 func (s *Server) handleProviderStatus(args map[string]any) (*mcp.CallToolResult, error) {
 	providerID := recipeStringField(args, "provider")
+	expectedEndpoint := recipeStringField(args, "expectedEndpoint")
 	active, activeOK := s.providerLifecycle.Active(providerID)
 	connected := false
 	if activeOK {
 		connected = s.providerGenerationAdapter(providerID, active.ID) != nil
 	}
 	result := map[string]any{"providerId": providerID, "connected": connected, "active": activeOK}
+	if expectedEndpoint != "" {
+		result["endpointMatches"] = activeOK && active.Endpoint == expectedEndpoint
+	}
 	if activeOK {
 		result["generation"] = active
 	}
