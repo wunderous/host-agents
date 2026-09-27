@@ -71,7 +71,7 @@ def main() -> None:
             fail("anchor changed; review and re-anchor: " + relative)
 
     for relative, wanted_version in (
-        ("plugins/kubernetes/k3s/recipes/install.yaml", "2.0.1"),
+        ("plugins/kubernetes/k3s/recipes/install.yaml", "2.0.2"),
         ("plugins/tunneling/tailscale/recipes/install.yaml", "2.0.0"),
     ):
         source = read(relative)
@@ -96,6 +96,17 @@ def main() -> None:
         fail("K3s install does not pass the explicit service state to the typed action")
     if f"- {{path: /generation/Provider/version, op: eq, value: {plugin_version}}}" not in k3s:
         fail("K3s install does not wait for the active provider version selected by plugin.yaml")
+    if "listenPort: ${vars.inputs.providerPort}" not in k3s or "{path: /listenerOwned, op: eq, value: true}" not in k3s:
+        fail("K3s install does not require its own service to own the listener")
+    if "expectedEndpoint: http://127.0.0.1:${vars.inputs.providerPort}/mcp" not in k3s or "{path: /endpointMatches, op: eq, value: true}" not in k3s:
+        fail("K3s install does not wait for its requested provider endpoint")
+    service_probe = read("internal/domain/host/service_probe.go")
+    listener_probe = read("internal/domain/host/service_listener.go")
+    provider_status = read("internal/hostmcp/provider_install.go")
+    if "listenerOwnedByPID" not in service_probe or "func listenerOwnedByPID" not in listener_probe:
+        fail("typed host service listener ownership probe is missing")
+    if 'result["endpointMatches"] = activeOK && active.Endpoint == expectedEndpoint' not in provider_status:
+        fail("typed provider status endpoint comparison is missing")
 
     parser = read("internal/recipe/recipe.go")
     if "GitHub source revision disagrees with URL" not in parser:
@@ -103,6 +114,8 @@ def main() -> None:
     recipe_tests = read("internal/recipe/provider_install_recipe_test.go")
     if "TestProviderInstallRecipesPassPinnedActivationProvenance" not in recipe_tests:
         fail("resolved provider install provenance regression is missing")
+    if "TestInspectHostServiceRequiresListenerOwnedByItsProcess" not in read("internal/domain/host/service_listener_test.go"):
+        fail("service listener ownership regression is missing")
     parser_tests = read("internal/recipe/recipe_test.go")
     if "TestRawGitHubRecipeSourceRequiresMatchingExplicitRevision" not in parser_tests:
         fail("source revision mismatch regression is missing")

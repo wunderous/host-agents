@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "provider-activation-recipe-provenance",
-  "title": "Provider bootstrap recipes pin activation provenance and wait for the requested provider generation",
-  "claim": "Every Host Agent local provider bootstrap recipe that overrides opute.provider.install.recipeSource must pass the source, its exact immutable commit revision, and its SHA-256 from required recipe inputs. The Host Agent rejects a remote source whose explicit revision disagrees with the commit in its URL; provider descriptor fallback metadata never replaces the caller's revision. The K3s bootstrap defaults to starting its provider service, allows an explicit restart for a version upgrade, and is successful only when an active, connected generation reports the exact provider version selected by the descriptor.",
-  "rationale": "A recipe that supplies a pinned raw GitHub URL and digest but omits revision can inherit a descriptor's working-tree revision. The Host Agent correctly rejects that mismatch, but only after earlier bootstrap nodes may have installed a binary and service. Separately, replacing a provider binary does not replace a process already running from the previous version; a status check for active and connected alone can therefore report an old generation as a successful upgrade. The version gate prevents that false green, while the explicit service-state input avoids silently restarting a healthy provider.",
+  "title": "Provider bootstrap pins provenance and verifies service-owned endpoint activation",
+  "claim": "Every Host Agent local provider bootstrap recipe that overrides opute.provider.install.recipeSource must pass the source, its exact immutable commit revision, and its SHA-256 from required recipe inputs. The Host Agent rejects a remote source whose explicit revision disagrees with the commit in its URL; provider descriptor fallback metadata never replaces the caller's revision. The K3s bootstrap defaults to starting its provider service, allows an explicit restart for a version upgrade, and is successful only when an active, connected generation reports the exact provider version selected by the descriptor. For a service-backed K3s provider, bootstrap succeeds only when the declared systemd service process owns its requested TCP listener and the active connected generation matches the requested endpoint as well as the declared provider version. A reachable loopback endpoint or transient active unit alone cannot establish ownership.",
+  "rationale": "A recipe that supplies a pinned raw GitHub URL and digest but omits revision can inherit a descriptor's working-tree revision. The Host Agent correctly rejects that mismatch, but only after earlier bootstrap nodes may have installed a binary and service. Separately, replacing a provider binary does not replace a process already running from the previous version; a status check for active and connected alone can therefore report an old generation as a successful upgrade. The version gate prevents that false green, while the explicit service-state input avoids silently restarting a healthy provider. WSL distributions can share a network namespace: a newly started B service may fail to bind a port already held by A while A remains reachable at that URL. Systemd can briefly report B active before failure, and a previous provider generation can remain active during asynchronous activation. Both conditions produced a false completed recipe; listener ownership and endpoint match close that gap.",
   "decidedOn": "2026-09-25",
   "section": "Provider bootstrap provenance",
   "owner": "wunderous/host-agents owns provider bootstrap recipes, source parsing, and their typed regression evidence.",
@@ -14,7 +14,12 @@
     "tailscaleBootstrap": "plugins/tunneling/tailscale/recipes/install.yaml",
     "recipeTests": "internal/recipe/provider_install_recipe_test.go",
     "revisionMismatchTest": "internal/recipe/recipe_test.go",
-    "verifier": "scripts/check_provider_activation_recipe_provenance.py"
+    "verifier": "scripts/check_provider_activation_recipe_provenance.py",
+    "hostServiceProbe": "internal/domain/host/service_probe.go",
+    "listenerOwnership": "internal/domain/host/service_listener.go",
+    "providerStatus": "internal/hostmcp/provider_install.go",
+    "listenerOwnershipTest": "internal/domain/host/service_listener_test.go",
+    "providerEndpointTest": "internal/hostmcp/provider_activate_idempotent_test.go"
   },
   "scope": {
     "included": [
@@ -23,7 +28,9 @@
       "nested opute.provider.install actions with an explicit recipeSource override",
       "remote raw GitHub source and exact commit revision matching",
       "K3s provider service start versus explicit version-upgrade restart",
-      "K3s bootstrap readiness against the active provider generation version"
+      "K3s bootstrap readiness against the active provider generation version",
+      "service-backed K3s provider listener ownership before adoption",
+      "active provider generation endpoint match after asynchronous activation"
     ],
     "excluded": [
       "provider installs that use their descriptor's default source",
@@ -31,7 +38,7 @@
       "source types without a declared immutable revision contract"
     ]
   },
-  "exception": "No remote source may inherit descriptor revision fallback when a recipe overrides recipeSource. K3s bootstrap may not treat an older active generation as success for a newer descriptor version, and it may not silently restart an active provider. Adding another source type requires an explicit typed source, revision, and content-digest contract with matching validation and regression evidence.",
+  "exception": "No remote source may inherit descriptor revision fallback when a recipe overrides recipeSource. K3s bootstrap may not treat an older active generation as success for a newer descriptor version, and it may not silently restart an active provider. Adding another source type requires an explicit typed source, revision, and content-digest contract with matching validation and regression evidence. Service-backed K3s bootstrap cannot waive the listener-owner or exact-endpoint gates; a different supervisor requires a separate typed ownership proof and reviewed decision.",
   "evidence": {
     "required": [
       "both bootstrap recipes require a lowercase 40-character activationRecipeRevision input",
@@ -41,17 +48,21 @@
       "K3s install validates active, connected status against the provider version selected by plugin.yaml",
       "the K3s recipe verifier rejects removal or mismatch of that version gate",
       "the Host Agent parser accepts a matching URL revision and rejects a mismatch",
-      "the verifier checks file anchors and confirms CI reaches the regression tests"
+      "the verifier checks file anchors and confirms CI reaches the regression tests",
+      "the K3s start validation checks that the declared service process owns providerPort",
+      "the K3s install validation checks that the active connected generation endpoint equals the requested providerPort endpoint",
+      "a focused test rejects a reachable listener owned by another PID",
+      "a focused test rejects a stale active provider endpoint"
     ],
-    "test": "go test ./internal/recipe -run 'TestProviderInstallRecipesPassPinnedActivationProvenance|TestRawGitHubRecipeSourceRequiresMatchingExplicitRevision' -count=1",
+    "test": "go test ./internal/recipe -run 'TestProviderInstallRecipesPassPinnedActivationProvenance|TestRawGitHubRecipeSourceRequiresMatchingExplicitRevision' -count=1 && go test ./internal/domain/host ./internal/hostmcp -run 'TestInspectHostServiceRequiresListenerOwnedByItsProcess|TestActivateCompletedThenPlanActivateDoesNotFailLiveGeneration' -count=1",
     "verifier": "python3 scripts/check_provider_activation_recipe_provenance.py"
   },
-  "revisionBehavior": "Bump a recipe's patch or minor version when its behavior changes without making a new input mandatory; bump its major version when the required input contract changes. Keep the K3s plugin descriptor, install-recipe descriptor, active-version status gate, and provider wire metadata aligned. Recompute and review whole-file anchors when either recipe, source parser, regression test, Makefile verifier wiring, or CI test entry point changes.",
+  "revisionBehavior": "Bump a recipe's patch or minor version when its behavior changes without making a new input mandatory; bump its major version when the required input contract changes. Keep the K3s plugin descriptor, install-recipe descriptor, active-version status gate, and provider wire metadata aligned. Recompute and review whole-file anchors when either recipe, source parser, regression test, Makefile verifier wiring, or CI test entry point changes. The K3s recipe patch version, catalog revision, and file anchors change with listener or endpoint gate behavior.",
   "anchors": [
     {
       "kind": "file",
       "path": "plugins/kubernetes/k3s/recipes/install.yaml",
-      "digest": "850d6940c00eca5b9f6dd9207e196aa28ed22fdf9e70521c80a4ef1484d8f111",
+      "digest": "556e504cf2fd6b05cf83cabb2fdd144c79b70da7e3da0286226272b27eb124f6",
       "note": "K3s activation provenance inputs and provider install projection"
     },
     {
@@ -69,7 +80,7 @@
     {
       "kind": "file",
       "path": "internal/recipe/provider_install_recipe_test.go",
-      "digest": "9a3b4039b2d2ceb9b67b9c1279a90b881c743b9798055cd3dbb7e1eb7263fa48",
+      "digest": "54c6fc8b3af4e341ba1cec1bc70eb7e5238833ec32dc9bb51ad3964cf2664e78",
       "note": "Resolved source, revision, and digest regression for both recipes"
     },
     {
@@ -89,9 +100,57 @@
       "path": ".github/workflows/ci.yml",
       "digest": "121b8e676e238595c3d08bce72c568ab483d1f96a802fdf0a1e268daf4e5b26a",
       "note": "CI runs the module test target that includes the invariant verifier"
+    },
+    {
+      "kind": "file",
+      "path": "internal/domain/host/service_probe.go",
+      "digest": "b9d26587e454a78a3167f6ca4e4dbc1096a376286ffd0c5a80d797b88d809b79",
+      "note": "Typed systemd observation includes optional listener ownership"
+    },
+    {
+      "kind": "file",
+      "path": "internal/domain/host/service_listener.go",
+      "digest": "62adf20eee824fa71a66b9a61742411ca85ab32a21b617df1956eb34c3641551",
+      "note": "Process socket ownership check in the service network namespace"
+    },
+    {
+      "kind": "file",
+      "path": "internal/domain/host/service_listener_test.go",
+      "digest": "0dc0296453b358e16cf6b7142836c8d2a686989fc3f21befa3eb5220ce24f92e",
+      "note": "Another process cannot satisfy service listener readiness"
+    },
+    {
+      "kind": "file",
+      "path": "internal/hostmcp/provider_install.go",
+      "digest": "e7a7e95b1d0b42fc8913b769cfe870f442db631ee84abd555c2f4c0fe8aefece",
+      "note": "Active provider status can compare the declared endpoint"
+    },
+    {
+      "kind": "file",
+      "path": "internal/hostmcp/provider_activate_idempotent_test.go",
+      "digest": "5ffbc654be18eab4054d3677010a42c6806f73485b410f25fea3eb6867cfb6a6",
+      "note": "Stale active endpoint is not a match"
+    },
+    {
+      "kind": "file",
+      "path": "internal/tools/catalog.go",
+      "digest": "f10587a48c7b1627dd05b85e0f904f3c715a4f9a80f2f5b71137b7aaaffcf2f6",
+      "note": "Bridge catalog publishes optional service and provider status inputs"
+    },
+    {
+      "kind": "file",
+      "path": "internal/tools/standalone.go",
+      "digest": "881b6a8792d3aa57a7a6faf778646fea1a4eb6c5933ee2a7a60466f59b1bcff4",
+      "note": "Standalone catalog publishes optional service and provider status inputs"
+    },
+    {
+      "kind": "file",
+      "path": "internal/tools/dispatch_host.go",
+      "digest": "7c9d88db43b88a088770242ffa52b43fc4742937753505907e561c16bce9fedc",
+      "note": "Host service probe dispatch carries listenPort"
     }
   ],
-  "verify": "python3 scripts/check_provider_activation_recipe_provenance.py && go test ./internal/recipe -run 'TestProviderInstallRecipesPassPinnedActivationProvenance|TestRawGitHubRecipeSourceRequiresMatchingExplicitRevision' -count=1",
+  "verify": "python3 scripts/check_provider_activation_recipe_provenance.py && go test ./internal/recipe -run 'TestProviderInstallRecipesPassPinnedActivationProvenance|TestRawGitHubRecipeSourceRequiresMatchingExplicitRevision' -count=1 && go test ./internal/domain/host ./internal/hostmcp -run 'TestInspectHostServiceRequiresListenerOwnedByItsProcess|TestActivateCompletedThenPlanActivateDoesNotFailLiveGeneration' -count=1",
   "enforcedBy": [
     "plugins/kubernetes/k3s/recipes/install.yaml",
     "plugins/tunneling/tailscale/recipes/install.yaml",
@@ -100,9 +159,17 @@
     "internal/recipe/recipe_test.go",
     "scripts/check_provider_activation_recipe_provenance.py",
     "Makefile",
-    ".github/workflows/ci.yml"
+    ".github/workflows/ci.yml",
+    "internal/domain/host/service_probe.go",
+    "internal/domain/host/service_listener.go",
+    "internal/domain/host/service_listener_test.go",
+    "internal/hostmcp/provider_install.go",
+    "internal/hostmcp/provider_activate_idempotent_test.go",
+    "internal/tools/catalog.go",
+    "internal/tools/standalone.go",
+    "internal/tools/dispatch_host.go"
   ],
   "supersedes": [],
   "withdrawn": false,
-  "lastVerified": "2026-09-26"
+  "lastVerified": "2026-09-27"
 }

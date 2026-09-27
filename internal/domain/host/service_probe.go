@@ -2,6 +2,7 @@ package host
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 type InspectHostServiceArgs struct {
 	ServiceName string
 	Scope       string
+	ListenPort  int
 }
 
 // InspectHostService returns read-only systemd evidence for a caller-owned
@@ -27,6 +29,9 @@ func (s *Service) InspectHostService(args InspectHostServiceArgs, onData func(st
 	}
 	if scope != "user" && scope != "system" {
 		return nil, fmt.Errorf("scope must be user or system")
+	}
+	if args.ListenPort < 0 || args.ListenPort > 65535 {
+		return nil, fmt.Errorf("listenPort must be between 1 and 65535")
 	}
 	commandPrefix := []string{hostruntime.DefaultSystemctlPath}
 	if scope == "user" {
@@ -52,12 +57,12 @@ func (s *Service) InspectHostService(args InspectHostServiceArgs, onData func(st
 	// read-only systemd properties, which is all this probe is allowed to be.
 	fragmentPath, execStart := "", ""
 	showResult, showErr := s.shared.HostCommandRunner(
-		append(append([]string{}, commandPrefix...), "show", serviceName, "-p", "FragmentPath", "-p", "ExecStart", "--no-pager"),
+		append(append([]string{}, commandPrefix...), "show", serviceName, "-p", "FragmentPath", "-p", "ExecStart", "-p", "MainPID", "--no-pager"),
 		onData, 15*time.Second)
 	if showErr == nil && showResult.ExitCode == 0 {
 		fragmentPath, execStart = parseUnitLaunchProperties(showResult.Stdout)
 	}
-	return map[string]any{
+	output := map[string]any{
 		"serviceName":   serviceName,
 		"scope":         scope,
 		"status":        status,
@@ -67,7 +72,30 @@ func (s *Service) InspectHostService(args InspectHostServiceArgs, onData func(st
 		"exitCode":      result.ExitCode,
 		"fragmentPath":  fragmentPath,
 		"execStart":     execStart,
-	}, nil
+	}
+	if args.ListenPort > 0 {
+		output["listenPort"] = args.ListenPort
+		output["listenerOwned"] = false
+		if showErr == nil && showResult.ExitCode == 0 && result.ExitCode == 0 && status == "active" {
+			if pid := parseUnitMainPID(showResult.Stdout); pid > 0 {
+				owned, probeErr := listenerOwnedByPID(pid, args.ListenPort)
+				output["listenerOwned"] = probeErr == nil && owned
+			}
+		}
+	}
+	return output, nil
+}
+
+func parseUnitMainPID(output string) int {
+	for _, line := range strings.Split(output, "\n") {
+		if value, ok := strings.CutPrefix(strings.TrimSpace(line), "MainPID="); ok {
+			pid, err := strconv.Atoi(value)
+			if err == nil && pid > 0 {
+				return pid
+			}
+		}
+	}
+	return 0
 }
 
 // parseUnitLaunchProperties reads FragmentPath and the ExecStart executable out
