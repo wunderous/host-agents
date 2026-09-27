@@ -107,6 +107,20 @@ def main() -> None:
         fail("typed host service listener ownership probe is missing")
     if 'result["endpointMatches"] = activeOK && active.Endpoint == expectedEndpoint' not in provider_status:
         fail("typed provider status endpoint comparison is missing")
+    embedded_tools = json.loads(read("schemas/incus-tools.json"))
+    for tool_name, input_field, output_field in (
+        ("inspect_host_service", "listenPort", "listenerOwned"),
+        ("opute.provider.status", "expectedEndpoint", "endpointMatches"),
+    ):
+        definition = next((tool for tool in embedded_tools if tool.get("name") == tool_name), None)
+        if definition is None:
+            fail("embedded host schema omits " + tool_name)
+        if input_field not in definition.get("inputSchema", {}).get("properties", {}):
+            fail("embedded host schema omits " + tool_name + "." + input_field)
+        if output_field not in definition.get("outputSchema", {}).get("properties", {}):
+            fail("embedded host output schema omits " + tool_name + "." + output_field)
+    if "TestProviderBootstrapProbeFieldsReachCanonicalCatalog" not in read("internal/tools/catalog_test.go"):
+        fail("canonical catalog field parity regression is missing")
 
     parser = read("internal/recipe/recipe.go")
     if "GitHub source revision disagrees with URL" not in parser:

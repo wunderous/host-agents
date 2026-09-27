@@ -6285,7 +6285,7 @@
   {
     "name": "opute.provider.status",
     "title": "Get provider status",
-    "description": "Read the connected provider and active provider-generation state without changing host state.",
+    "description": "Read connected provider and active generation state, optionally matching a caller-declared endpoint, without changing host state.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -6295,11 +6295,20 @@
         "provider": {
           "type": "string",
           "minLength": 1
+        },
+        "expectedEndpoint": {
+          "type": "string",
+          "format": "uri"
         }
       }
     },
     "outputSchema": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "endpointMatches": {
+          "type": "boolean"
+        }
+      }
     },
     "_meta": {
       "effect": "read",
@@ -6442,7 +6451,7 @@
   {
     "name": "inspect_host_service",
     "title": "Inspect host service",
-    "description": "Read systemd service state for a caller-declared host service without changing it.",
+    "description": "Read systemd service state and optional TCP listener ownership for a caller-declared host service without changing it.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -6460,11 +6469,24 @@
           "type": "string",
           "minLength": 1,
           "description": "Canonical Host Agent resource URI returned by discovery."
+        },
+        "listenPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
         }
       }
     },
     "outputSchema": {
       "type": "object",
+      "properties": {
+        "listenPort": {
+          "type": "integer"
+        },
+        "listenerOwned": {
+          "type": "boolean"
+        }
+      },
       "required": [
         "serviceName",
         "scope",

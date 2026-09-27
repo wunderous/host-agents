@@ -31,6 +31,7 @@
       "public tutorial and product claims about Host Agent",
       "published npm launcher behavior",
       "allowlisted catalog snapshots and versioned capability routes",
+      "removal of superseded generated preview routes when a candidate version changes or becomes stable",
       "locally tested Host Agent Kubernetes setup and guest-failure claims",
       "generated static site validation",
       "integrity of versioned npm package tokens after public edge HTML transformation"
@@ -63,6 +64,7 @@
       "stable promotion archives the prior stable catalog when the package version advances and refuses conflicting archive content",
       "archived release promotion reads the package metadata and catalog from the exact evidence source SHA and refuses mismatched release or canary evidence",
       "the canonical capability page and first-success tutorial select the newest stable catalog; unverified current candidates appear only on a preview route",
+      "site generation removes superseded preview-version directories so rendered routes, search, and sitemap remain in parity",
       "site generation fails closed when no published stable catalog exists for the canonical reference and first-success tutorial",
       "generated CSS and client-script URLs match the content fingerprint of each checked-in asset",
       "every active and archived versioned scoped npm package token in generated HTML is immediately enclosed by Cloudflare email-obfuscation suppression markers",
@@ -80,7 +82,7 @@
     {
       "kind": "file",
       "path": "site/context/release-catalog.json",
-      "digest": "f5bdb4253065e213ed1ab959ab9c598bf03f25769caa597aa2634bde17bc8b42",
+      "digest": "18f608f58a124b948c5fff8ce53a197fa8c6002e047356084f6a983f58fffb00",
       "note": "Current published package, catalog revision, and read-only canary provenance"
     },
     {
@@ -92,7 +94,7 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "1d2faaae15fa1cb94d0113dbf0c070d0fdd3996aa4198c7d9ae66317cdc85a65",
+      "digest": "cf7c1efd97664a6918a201143657457be26dedf27ab81a1cbfd0bc7e8c7c5138",
       "note": "Published package name and release version"
     },
     {
@@ -158,7 +160,7 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "577041df094e4c16504391775adb73d8c89b71c3bd233736417159c27184f0d4",
+      "digest": "0241f8bba3f7ca409fa24356018523c61e9a913c1d1dc18c75350fcfa0c946be",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {

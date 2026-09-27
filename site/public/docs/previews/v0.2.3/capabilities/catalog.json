@@ -1,8 +1,8 @@
 {
   "packageName": "@opute/host-agent",
-  "packageVersion": "0.2.2",
+  "packageVersion": "0.2.3",
   "releaseChannel": "preview",
-  "catalogRevision": "sha256:761488e3d57ef63c6b51ed3df4bf8b2893929e2be6e083de7a2cff9e6b573bf7",
+  "catalogRevision": "sha256:50b20e5885a225bd45f0a67d2c0327dfa7d096f845c71b81ca689d37c153f6a2",
   "toolCount": 142,
   "tools": [
     {
@@ -2268,11 +2268,16 @@
     },
     {
       "name": "inspect_host_service",
-      "description": "Read systemd service state for a caller-declared host service without changing it.",
+      "description": "Read systemd service state and optional TCP listener ownership for a caller-declared host service without changing it.",
       "effect": "read",
       "idempotent": true,
       "inputSchema": {
         "properties": {
+          "listenPort": {
+            "maximum": 65535,
+            "minimum": 1,
+            "type": "integer"
+          },
           "scope": {
             "enum": [
               "user",
@@ -2294,6 +2299,14 @@
       "title": "Inspect host service",
       "version": 1,
       "outputSchema": {
+        "properties": {
+          "listenPort": {
+            "type": "integer"
+          },
+          "listenerOwned": {
+            "type": "boolean"
+          }
+        },
         "required": [
           "serviceName",
           "scope",
@@ -3776,11 +3789,15 @@
     },
     {
       "name": "opute.provider.status",
-      "description": "Read the connected provider and active provider-generation state without changing host state.",
+      "description": "Read connected provider and active generation state, optionally matching a caller-declared endpoint, without changing host state.",
       "effect": "read",
       "idempotent": true,
       "inputSchema": {
         "properties": {
+          "expectedEndpoint": {
+            "format": "uri",
+            "type": "string"
+          },
           "provider": {
             "minLength": 1,
             "type": "string"
@@ -3794,6 +3811,11 @@
       "title": "Get provider status",
       "version": 1,
       "outputSchema": {
+        "properties": {
+          "endpointMatches": {
+            "type": "boolean"
+          }
+        },
         "type": "object"
       }
     },
