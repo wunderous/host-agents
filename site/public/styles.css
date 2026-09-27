@@ -149,6 +149,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   display: grid;
   gap: 1.75rem;
 }
+.doc-shell > * { min-width: 0; }
 @media (min-width: 880px) {
   .doc-shell {
     grid-template-columns: var(--rail) minmax(0, 1fr);
@@ -300,6 +301,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   background: rgba(0,0,0,0.28);
   padding: 0.1em 0.35em;
   border-radius: 0.25rem;
+  overflow-wrap: anywhere;
 }
 .doc pre {
   background: rgba(0,0,0,0.35);
@@ -480,7 +482,7 @@ footer {
 footer code { color: var(--ink); }
 
 @media (prefers-reduced-motion: no-preference) {
-  .hero > *, .doc-shell > *, .pitch > * { min-width: 0; }
+  .hero > *, .pitch > * { min-width: 0; }
 .hero .lede, .eyebrow { overflow-wrap: anywhere; }
 .hero h1 { animation: rise 700ms ease-out both; }
   .lede, .cta { animation: rise 700ms ease-out 80ms both; }
