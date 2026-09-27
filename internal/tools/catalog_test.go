@@ -367,6 +367,49 @@ func TestIncusCatalogAdvertisesHelmPrerequisiteOperation(t *testing.T) {
 	t.Fatal("install_helm_chart must be advertised by the Incus catalog")
 }
 
+func TestProviderBootstrapProbeFieldsReachCanonicalCatalog(t *testing.T) {
+	definitions, err := HostToolDefinitionsForProvider("incus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The server appends standalone definitions after the embedded host schema.
+	// The first definition wins, so the published snapshot must include these
+	// fields even when both sources declare the same tool.
+	snapshot := BuildCapabilityCatalog("incus", append(definitions, StandaloneToolDefinitions()...))
+	for _, want := range []struct {
+		name           string
+		inputProperty  string
+		outputProperty string
+	}{
+		{name: "inspect_host_service", inputProperty: "listenPort", outputProperty: "listenerOwned"},
+		{name: "opute.provider.status", inputProperty: "expectedEndpoint", outputProperty: "endpointMatches"},
+	} {
+		found := false
+		for _, tool := range snapshot.Tools {
+			if tool.Name != want.name {
+				continue
+			}
+			found = true
+			for _, property := range []struct {
+				label  string
+				schema map[string]any
+				name   string
+			}{
+				{label: "input", schema: tool.InputSchema, name: want.inputProperty},
+				{label: "output", schema: tool.OutputSchema, name: want.outputProperty},
+			} {
+				properties, ok := property.schema["properties"].(map[string]any)
+				if !ok || properties[property.name] == nil {
+					t.Fatalf("%s %s schema omits %s", want.name, property.label, property.name)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("catalog omits %s", want.name)
+		}
+	}
+}
+
 func TestCredentialBearingHostInputsAreWriteOnly(t *testing.T) {
 	assertWriteOnly := func(definitions []ToolDefinition, toolName, propertyName string) {
 		t.Helper()

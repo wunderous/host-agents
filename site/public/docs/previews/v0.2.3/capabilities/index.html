@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Capabilities — Opute Host Agent</title>
-  <meta name="description" content="Browse the versioned Opute Host Agent catalog, including declared effects and JSON schemas." />
-  <link rel="canonical" href="https://www.opute.io/docs/capabilities/" />
+  <title>Capabilities preview — v0.2.3 — Opute Host Agent</title>
+  <meta name="description" content="Unreleased preview of Opute Host Agent capability descriptors and JSON schemas." />
+  <link rel="canonical" href="https://www.opute.io/docs/previews/v0.2.3/capabilities/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Opute Host Agent" />
-  <meta property="og:title" content="Capabilities — Opute Host Agent" />
-  <meta property="og:description" content="Browse the versioned Opute Host Agent catalog, including declared effects and JSON schemas." />
-  <meta property="og:url" content="https://www.opute.io/docs/capabilities/" />
+  <meta property="og:title" content="Capabilities preview — v0.2.3 — Opute Host Agent" />
+  <meta property="og:description" content="Unreleased preview of Opute Host Agent capability descriptors and JSON schemas." />
+  <meta property="og:url" content="https://www.opute.io/docs/previews/v0.2.3/capabilities/" />
   <meta property="og:locale" content="en_US" />
   <meta property="og:image" content="https://www.opute.io/og-image.png" />
   <meta property="og:image:type" content="image/png" />
@@ -20,8 +20,8 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="https://www.opute.io/og-image.png" />
   <meta name="twitter:image:alt" content="Opute Host Agent connects an authenticated MCP client to a Linux host." />
-  <meta name="twitter:title" content="Capabilities — Opute Host Agent" />
-  <meta name="twitter:description" content="Browse the versioned Opute Host Agent catalog, including declared effects and JSON schemas." />
+  <meta name="twitter:title" content="Capabilities preview — v0.2.3 — Opute Host Agent" />
+  <meta name="twitter:description" content="Unreleased preview of Opute Host Agent capability descriptors and JSON schemas." />
   <link rel="stylesheet" href="/styles.css?v=3bfc1c1fdc4e574d74030303c39de5b25e1c27056a1bf9f66676f5cd9aea6c47" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -90,12 +90,12 @@
 </aside>
 </details>
 <main class="doc" id="main-content" lang="en">
-<p class="badge">Reference</p>
-<h1>Capabilities</h1>
-<p class="meta">Published reference for <code><!--email_off-->@opute/host-agent@0.2.2<!--/email_off--></code>. Its read-only package canary passed for catalog revision <code>sha256:761488e3d57ef63c6b51ed3df4bf8b2893929e2be6e083de7a2cff9e6b573bf7.</code></p>
+<p class="badge">Preview reference</p>
+<h1>Capabilities preview — v0.2.3</h1>
+<div class="callout warn"><strong>Preview catalog.</strong> This source candidate is <code><!--email_off-->@opute/host-agent@0.2.3<!--/email_off--></code> at revision <code>sha256:50b20e5885a225bd45f0a67d2c0327dfa7d096f845c71b81ca689d37c153f6a2</code>. The published-package canary has not passed for this version, so this snapshot is not a verified release reference.</div>
 <p>Archived release snapshots: <a href="/docs/versions/v0.2.0/capabilities/">v0.2.0</a> · <a href="/docs/versions/v0.2.1/capabilities/">v0.2.1</a> · <a href="/docs/versions/v0.2.2/capabilities/">v0.2.2</a>.</p>
 <p class="meta">This standalone catalog contains 142 typed descriptors. Each entry shows its declared effect, idempotency, and available JSON schemas. A tool appearing here does not prove that its provider or required host service is ready.</p>
-<p>Catalog revision: <code>sha256:761488e3d57ef63c6b51ed3df4bf8b2893929e2be6e083de7a2cff9e6b573bf7</code>. Download the allowlisted descriptor snapshot as <a href="/docs/versions/v0.2.2/capabilities/catalog.json">JSON</a>. At runtime, <code>tools/list</code> and <code>get_capability_catalog</code> remain authoritative; refresh them when a client connects.</p>
+<p>Catalog revision: <code>sha256:50b20e5885a225bd45f0a67d2c0327dfa7d096f845c71b81ca689d37c153f6a2</code>. Download the allowlisted descriptor snapshot as <a href="/docs/previews/v0.2.3/capabilities/catalog.json">JSON</a>. At runtime, <code>tools/list</code> and <code>get_capability_catalog</code> remain authoritative; refresh them when a client connects.</p>
 <div class="callout"><strong>Ownership boundary.</strong> Host Agent executes explicit typed capabilities against one host. Opute Platform owns intent, authorization, and durable orchestration across hosts. See <a href="/docs/concepts/#host-agent-and-platform">how the products fit together</a>.</div>
 <section class="catalog-group"><h2>Host operations</h2><div class="catalog-tools"><details class="catalog-tool" id="catalog-tool-0"><summary><code>apply_manifest</code><span class="effect-tag">mutation</span></summary><p>Apply a generic Kubernetes manifest to a VM-backed cluster.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
@@ -1848,8 +1848,13 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-54"><summary><code>inspect_host_service</code><span class="effect-tag">read</span></summary><p>Read systemd service state for a caller-declared host service without changing it.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-54"><summary><code>inspect_host_service</code><span class="effect-tag">read</span></summary><p>Read systemd service state and optional TCP listener ownership for a caller-declared host service without changing it.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
+    &quot;listenPort&quot;: {
+      &quot;maximum&quot;: 65535,
+      &quot;minimum&quot;: 1,
+      &quot;type&quot;: &quot;integer&quot;
+    },
     &quot;scope&quot;: {
       &quot;enum&quot;: [
         &quot;user&quot;,
@@ -1868,6 +1873,14 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
+  &quot;properties&quot;: {
+    &quot;listenPort&quot;: {
+      &quot;type&quot;: &quot;integer&quot;
+    },
+    &quot;listenerOwned&quot;: {
+      &quot;type&quot;: &quot;boolean&quot;
+    }
+  },
   &quot;required&quot;: [
     &quot;serviceName&quot;,
     &quot;scope&quot;,
@@ -3088,8 +3101,12 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-83"><summary><code>opute.provider.status</code><span class="effect-tag">read</span></summary><p>Read the connected provider and active provider-generation state without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-83"><summary><code>opute.provider.status</code><span class="effect-tag">read</span></summary><p>Read connected provider and active generation state, optionally matching a caller-declared endpoint, without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
+    &quot;expectedEndpoint&quot;: {
+      &quot;format&quot;: &quot;uri&quot;,
+      &quot;type&quot;: &quot;string&quot;
+    },
     &quot;provider&quot;: {
       &quot;minLength&quot;: 1,
       &quot;type&quot;: &quot;string&quot;
@@ -3100,6 +3117,11 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
+  &quot;properties&quot;: {
+    &quot;endpointMatches&quot;: {
+      &quot;type&quot;: &quot;boolean&quot;
+    }
+  },
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
 <details class="catalog-tool" id="catalog-tool-84"><summary><code>opute.provider.teardown</code><span class="effect-tag">destructive</span></summary><p>Ask the connected provider for a generic teardown host plan, validate it, execute it durably, and retire the provider only after the plan succeeds.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
