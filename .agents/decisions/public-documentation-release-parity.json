@@ -82,7 +82,7 @@
     {
       "kind": "file",
       "path": "site/context/release-catalog.json",
-      "digest": "18f608f58a124b948c5fff8ce53a197fa8c6002e047356084f6a983f58fffb00",
+      "digest": "8a8231c3a1c150d12c2f34cf193eb4978547f190515d66ea2f27b1b92ab4dffb",
       "note": "Current published package, catalog revision, and read-only canary provenance"
     },
     {
@@ -160,7 +160,7 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "0241f8bba3f7ca409fa24356018523c61e9a913c1d1dc18c75350fcfa0c946be",
+      "digest": "b403305706dbe6c9ef72e92b06f9d14631d3c86717d6e8860bfa7e426162a811",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
