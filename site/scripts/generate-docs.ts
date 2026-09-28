@@ -471,7 +471,7 @@ const side = (current: string) => `
   </ul>
   <h2>Reference</h2>
   <p><a href="/${tutorialCatalogRoute}/">Latest verified catalog — v${tutorialCatalog.packageVersion}</a></p>
-  ${releaseCatalog.releaseChannel === "preview" ? `<p><a href="/${currentCatalogRoute}/">Preview catalog — v${releaseCatalog.packageVersion}</a></p>` : ""}
+${releaseCatalog.releaseChannel === "preview" ? `  <p><a href="/${currentCatalogRoute}/">Preview catalog — v${releaseCatalog.packageVersion}</a></p>` : ""}
   <ul>
     <li><a href="/docs/capabilities/"${current === "capabilities" ? ' aria-current="page"' : ""}>Capabilities</a></li>
     <li><a href="/docs/configuration/"${current === "configuration" ? ' aria-current="page"' : ""}>Configuration</a></li>
