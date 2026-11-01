@@ -98,6 +98,12 @@ func Check() error {
 	if err := validateConfig(cfg); err != nil {
 		return err
 	}
+	// state.Open creates tables, so check refuses next to a live agent too.
+	lock, err := acquireInstanceLock(cfg)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	if cfg.AgentMode == "standalone" {
 		store, err := state.Open(cfg.StandaloneStateDir)
 		if err != nil {

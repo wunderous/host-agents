@@ -36,6 +36,7 @@ func TestDeprecatedTransportFlagIsRejectOnly(t *testing.T) {
 		"OPUTE_AGENT_MODE=standalone",
 		"OPUTE_INFRA_PROVIDER_ID=incus",
 		"OPUTE_STANDALONE_STATE_DIR=" + t.TempDir(),
+		"OPUTE_HOST_AGENT_INSTANCE_ROOT=" + t.TempDir(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

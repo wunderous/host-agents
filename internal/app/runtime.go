@@ -10,6 +10,7 @@ import (
 	"github.com/wunderous/host-agents/internal/hostagent"
 	"github.com/wunderous/host-agents/internal/hostmcp"
 	"github.com/wunderous/host-agents/internal/hostruntime"
+	"github.com/wunderous/host-agents/internal/instancelock"
 	"github.com/wunderous/host-agents/internal/resource"
 	"github.com/wunderous/host-agents/internal/resourceid"
 	"github.com/wunderous/host-agents/internal/tools"
@@ -27,6 +28,7 @@ type Runtime struct {
 	svc       *hostagent.Service
 	admission *resource.Coordinator
 	host      *hostmcp.Server
+	lock      *instancelock.Lock
 }
 
 // NewRuntime builds the host executor without opening a listener or contacting
@@ -40,9 +42,16 @@ func NewRuntime(logger *slog.Logger) (*Runtime, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	}
+	// One process per instance state: taken before any store is opened or a
+	// port bound, and held until Close (the kernel releases it on exit).
+	lock, err := acquireInstanceLock(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	toolNames, svc, admission, host, err := buildHostRuntime(cfg, logger)
 	if err != nil {
+		lock.Release()
 		return nil, err
 	}
 	return &Runtime{
@@ -52,7 +61,20 @@ func NewRuntime(logger *slog.Logger) (*Runtime, error) {
 		svc:       svc,
 		admission: admission,
 		host:      host,
+		lock:      lock,
 	}, nil
+}
+
+// acquireInstanceLock locks the instance root, then the standalone state and
+// SQLite database roots when they lie outside it, in that fixed order.
+func acquireInstanceLock(cfg config.Config) (*instancelock.Lock, error) {
+	roots := []string{cfg.InstanceRoot}
+	for _, root := range []string{cfg.StandaloneStateDir, cfg.SQLiteDatabaseRoot} {
+		if root != "" && !instancelock.Within(cfg.InstanceRoot, root) {
+			roots = append(roots, root)
+		}
+	}
+	return instancelock.Acquire(roots...)
 }
 
 func buildHostRuntime(cfg config.Config, logger *slog.Logger) ([]string, *hostagent.Service, *resource.Coordinator, *hostmcp.Server, error) {
@@ -147,7 +169,11 @@ func (r *Runtime) Config() config.Config {
 // Close stops host-owned durable work and releases state resources. Transport
 // shutdown remains owned by the caller that started that transport.
 func (r *Runtime) Close() error {
-	if r == nil || r.host == nil {
+	if r == nil {
+		return nil
+	}
+	defer r.lock.Release()
+	if r.host == nil {
 		return nil
 	}
 	return r.host.Close()

@@ -144,6 +144,13 @@ Other CLI entrypoints: `public-mcp`, `recipe`, `provider`, `help`, `--check`,
 `--env-file`, repeatable `--env KEY=VALUE`. Precedence: CLI `--env` → process
 environment → `--env-file` / `OPUTE_HOST_AGENT_ENV_FILE` (file only fills unset keys).
 
+One process owns an instance at a time. The agent, `--check` and the in-process
+`public-mcp`, `recipe` and `provider` commands lock `host-agent.lock` in the
+instance root (`OPUTE_HOST_AGENT_INSTANCE_ROOT`), and in the state and SQLite
+roots when they lie outside it. A second process on the same instance exits 1
+with `host agent instance is already in use: <path> is locked by another
+process`. Give each agent its own instance root.
+
 ### Multiple agents in one Cursor workspace
 
 Set `OPUTE_MCP_PREFIX_TOOL_NAMES=true` (and `OPUTE_MCP_ALLOW_LEGACY_HANDSHAKE=true`

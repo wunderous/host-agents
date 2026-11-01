@@ -60,6 +60,7 @@ func TestPackagedShapeStandaloneHTTPContract(t *testing.T) {
 		"OPUTE_AGENT_MODE=standalone",
 		"OPUTE_INFRA_PROVIDER_ID=incus",
 		"OPUTE_STANDALONE_STATE_DIR="+t.TempDir(),
+		"OPUTE_HOST_AGENT_INSTANCE_ROOT="+t.TempDir(),
 		"HOST_MCP_BIND_HOST=127.0.0.1",
 		fmt.Sprintf("HOST_MCP_PORT=%d", port),
 		"MCP_AUTH_TOKEN=host-bootstrap",

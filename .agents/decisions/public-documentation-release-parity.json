@@ -112,7 +112,7 @@
     {
       "kind": "file",
       "path": "internal/app/app.go",
-      "digest": "b3f2070baf1e022647da0f19bff346174a70165cc987914ef2088d23ded5ee06",
+      "digest": "47a740a012541a85a45a5dd3a14fcf4e93f3aa5cd267d663d32eb199d87ac6e6",
       "note": "Standalone configuration wiring to local health identity"
     },
     {

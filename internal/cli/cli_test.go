@@ -14,6 +14,7 @@ func TestRunServerLoadsModeFromEnvFileBeforeApplyingDefaults(t *testing.T) {
 	t.Setenv("OPUTE_TRANSPORT", "")
 	t.Setenv("OPUTE_HOST_AGENT_ENV_FILE", "")
 	t.Setenv("OPUTE_INFRA_PROVIDER_ID", "")
+	t.Setenv("OPUTE_HOST_AGENT_INSTANCE_ROOT", t.TempDir())
 	envPath := filepath.Join(t.TempDir(), "agent.env")
 	if err := os.WriteFile(envPath, []byte("OPUTE_AGENT_MODE=platform\nOPUTE_INFRA_PROVIDER_ID=incus\nOPUTE_REMOTE_AGENT_ID=test-host-agent\n"), 0o600); err != nil {
 		t.Fatal(err)
