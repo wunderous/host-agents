@@ -65,7 +65,15 @@ func TestPackagedSingleBinaryServerOnly(t *testing.T) {
 		t.Fatalf("server-only mode did not report its HTTP listener:\n%s", serverOutput.String())
 	}
 
+	// The running server holds its instance, so a check on the same instance
+	// is refused (D25: one process per instance state); a check on an
+	// instance of its own passes.
 	checkOutput, err := runBinary(t, repoRoot, binary, serverEnv,
+		[]string{"--mode=standalone", "--check"}, "")
+	if err == nil || !strings.Contains(checkOutput, "host agent instance is already in use: ") {
+		t.Fatalf("check next to the running server = %v, want the in-use refusal\n%s", err, checkOutput)
+	}
+	checkOutput, err = runBinary(t, repoRoot, binary, hostEnv(t, incusPath, t.TempDir(), t.TempDir()),
 		[]string{"--mode=standalone", "--check"}, "")
 	if err != nil || !strings.Contains(checkOutput, "configuration ok") {
 		t.Fatalf("bare server check failed: %v\n%s", err, checkOutput)
@@ -105,6 +113,7 @@ func hostEnv(t *testing.T, incusPath, stateDir, lockDir string) []string {
 		"OPUTE_INFRA_PROVIDER_ID=incus",
 		"OPUTE_INCUS_BINARY_PATH="+incusPath,
 		"OPUTE_STANDALONE_STATE_DIR="+stateDir,
+		"OPUTE_HOST_AGENT_INSTANCE_ROOT="+filepath.Join(stateDir, "instance"),
 		"OPUTE_HOST_RESOURCE_LOCK_DIR="+lockDir,
 		"PATH="+filepath.Dir(incusPath)+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
