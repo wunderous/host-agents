@@ -88,7 +88,7 @@
     {
       "kind": "file",
       "path": ".github/workflows/publish.yml",
-      "digest": "bf73d84329949e408826ee91f36847a85d7dc81a6c00055da6c10dfd871d0a1b",
+      "digest": "c452ff039b74f6f5563183335582f66fdfeeb4ebfd9e282b2f73e443a17aa008",
       "note": "Release publishes the K3s provider artifact under the verified tag"
     },
     {

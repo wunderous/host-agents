@@ -186,7 +186,7 @@ jobs:
             const s = pin.source
             console.log(`Host Agent ${pin.version}, built in Rust from [${s.repository}@${s.commit.slice(0, 12)}](https://github.com/${s.repository}/releases/tag/${s.tag}) (candidate \`${s.candidate}\`, [evidence](${s.evidence})).`)
             console.log("")
-            console.log("These are that release's files, unchanged; every digest is pinned in `release/" + process.env.GITHUB_REF_NAME + ".json`. Go v0.2.4 remains the rollback release. There is no Windows binary.")
+            console.log("These are the files of that release, unchanged; every digest is pinned in `release/" + process.env.GITHUB_REF_NAME + ".json`. Go v0.2.4 remains the rollback release. There is no Windows binary.")
           ' > dist/release-notes.md
 
       - name: Publish GitHub release
