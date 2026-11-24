@@ -125,7 +125,7 @@ npx -y <!--email_off-->@opute/host-agent@0.4.0<!--/email_off--> stop</code></pre
 <p>Set <code>HOST_MCP_BIND_HOST</code> and <code>HOST_MCP_PORT</code> when needed. Keep a local tutorial on loopback and use the same port in the agent URL and client configuration.</p>
 
 <h2>Mutations</h2>
-<p>Mutations are denied by default. This first-success path stays read-only. Only enable <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code> after reviewing the capability effects, approval requirements, and host-local consequences.</p>
+<p>Mutations are denied by default. This first-success path stays read-only. Only start the agent with <code>--allow-mutations</code> (<code>npx -y @opute/host-agent start --allow-mutations</code>), or grant an OAuth client the <code>mutate</code> scope, after reviewing the capability effects, approval requirements, and host-local consequences.</p>
 
 <h2>WSL and production</h2>
 <p>For a first client connection, run the Linux agent and VS Code integration in the same WSL environment. Verify reachability before configuring a client across Windows and WSL.</p>

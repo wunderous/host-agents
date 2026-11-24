@@ -720,7 +720,7 @@ ${releaseCatalog.releaseChannel === "preview" ? `<p class="meta"><strong>Current
 <p>Set <code>HOST_MCP_BIND_HOST</code> and <code>HOST_MCP_PORT</code> when needed. Keep a local tutorial on loopback and use the same port in the agent URL and client configuration.</p>
 
 <h2>Mutations</h2>
-<p>Mutations are denied by default. This first-success path stays read-only. Only enable <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code> after reviewing the capability effects, approval requirements, and host-local consequences.</p>
+<p>Mutations are denied by default. This first-success path stays read-only. Only start the agent with <code>--allow-mutations</code> (<code>npx -y @opute/host-agent start --allow-mutations</code>), or grant an OAuth client the <code>mutate</code> scope, after reviewing the capability effects, approval requirements, and host-local consequences.</p>
 
 <h2>WSL and production</h2>
 <p>For a first client connection, run the Linux agent and VS Code integration in the same WSL environment. Verify reachability before configuring a client across Windows and WSL.</p>
@@ -768,7 +768,7 @@ ${releaseCatalog.releaseChannel === "preview" ? `<p class="meta"><strong>Current
 <p>Host facts do not require Incus or Kubernetes. VM inventory requires an Incus provider; cluster discovery requires the relevant Kubernetes provider and host access. A listed tool does not prove the provider service is ready.</p>
 
 <h2>Mutation denied</h2>
-<p>The agent denies mutating tools unless <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code> is explicitly enabled. Keep it disabled during the first-success tutorial. Releases before 0.4.0 read <code>OPUTE_STANDALONE_ALLOW_MUTATIONS</code> instead.</p>
+<p>Each caller holds its own grant. The <code>MCP_AUTH_TOKEN</code> bearer mutates only when the agent was started with <code>--allow-mutations</code>; an OAuth client needs a token with the <code>mutate</code> scope. The refusal names the grant that would admit the call. Keep mutations off during the first-success tutorial.</p>
 
 <h2>Launcher status does not match the health response</h2>
 <p>The launcher uses <code>localInstanceId</code> to identify its managed local process. <code>agentId</code> is the canonical Host Agent identity and <code>instanceId</code> describes the execution mode; these fields have separate meanings.</p>
@@ -921,7 +921,7 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
   "supportedTools": ["…"]
 }</code></pre><p>Those six fields are required by the current schema. Optional fields such as <code>agent</code>, <code>capacity</code>, and <code>system</code> appear only when observable. Values are redacted; this is an example shape, not captured host output. A listed capability does not prove its provider is ready.</p></li>
 </ol>
-<div class="callout warn"><strong>Keep this first check read-only.</strong> Do not set <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code> or call a tool whose declared effect is not <code>read</code>.</div>
+<div class="callout warn"><strong>Keep this first check read-only.</strong> Do not start the agent with <code>--allow-mutations</code> or call a tool whose declared effect is not <code>read</code>.</div>
 <h2>Verify the authenticated path</h2>
 <p>Check that authentication rejects a deliberately wrong token before completing the valid call in VS Code. This request uses the Host Agent's stateless MCP protocol version and matching request metadata:</p>
 <pre><code>curl -i -sS http://127.0.0.1:3014/mcp -H 'Accept: application/json, text/event-stream' -H 'Content-Type: application/json' -H 'Authorization: Bearer intentionally-wrong' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/list' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"curl","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}'</code></pre>
@@ -1060,7 +1060,7 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
   <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
   <tbody>
     <tr><td><code>MCP_AUTH_TOKEN</code></td><td>Bootstrap Bearer for <code>/mcp</code></td></tr>
-    <tr><td><code>OPUTE_HOST_ALLOW_MUTATIONS</code></td><td><code>true</code> enables mutations (0.4.0 and later; earlier releases read <code>OPUTE_STANDALONE_ALLOW_MUTATIONS</code>)</td></tr>
+    <tr><td><code>OPUTE_OAUTH_CLIENTS</code></td><td>Machine OAuth clients and their grants: <code>id</code> or <code>id:read</code> (read only), <code>id:mutate</code></td></tr>
     <tr><td><code>OPUTE_STANDALONE_STATE_DIR</code></td><td>Standalone state / journal directory</td></tr>
     <tr><td><code>OPUTE_MCP_PREFIX_TOOL_NAMES</code></td><td>Prefix wire tool names for multi-agent IDE workspaces</td></tr>
   </tbody>
@@ -1090,7 +1090,7 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
 
 <h2>CLI</h2>
 <pre><code>opute-host-agent --check
-opute-host-agent serve --transport http
+opute-host-agent serve --transport http [--allow-mutations]
 opute-host-agent public-mcp …
 opute-host-agent recipe …
 opute-host-agent provider …
@@ -1762,7 +1762,7 @@ flowchart LR
 <p class="diagram-alt"><strong>Diagram in words:</strong> Discovery produces a canonical resource URI. Admission and capacity checks precede a typed operation; its observation is schema-redacted before it reaches the MCP client.</p>
 
 <h2>Effects</h2>
-<p>Catalog entries carry effect classifications such as <code>read</code>, <code>mutation</code>, <code>destructive</code>, and <code>credential_bearing</code>. The agent denies mutations until <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code>.</p>
+<p>Catalog entries carry effect classifications such as <code>read</code>, <code>mutation</code>, <code>destructive</code>, and <code>credential_bearing</code>. The agent denies a tool whose effect is not <code>read</code> unless its caller holds <code>mutate</code>: the bearer on an agent started with <code>--allow-mutations</code>, or an OAuth token with the <code>mutate</code> scope.</p>
 
 <h2>Quotas and storage bounds</h2>
 <ul>

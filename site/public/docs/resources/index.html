@@ -111,7 +111,7 @@ flowchart LR
 <p class="diagram-alt"><strong>Diagram in words:</strong> Discovery produces a canonical resource URI. Admission and capacity checks precede a typed operation; its observation is schema-redacted before it reaches the MCP client.</p>
 
 <h2>Effects</h2>
-<p>Catalog entries carry effect classifications such as <code>read</code>, <code>mutation</code>, <code>destructive</code>, and <code>credential_bearing</code>. The agent denies mutations until <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code>.</p>
+<p>Catalog entries carry effect classifications such as <code>read</code>, <code>mutation</code>, <code>destructive</code>, and <code>credential_bearing</code>. The agent denies a tool whose effect is not <code>read</code> unless its caller holds <code>mutate</code>: the bearer on an agent started with <code>--allow-mutations</code>, or an OAuth token with the <code>mutate</code> scope.</p>
 
 <h2>Quotas and storage bounds</h2>
 <ul>

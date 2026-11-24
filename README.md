@@ -49,10 +49,10 @@ export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"   # recommended for authenticate
 # Validate config without listening
 ./dist/opute-host-agent --check
 
-# Serve (bare invocation defaults to --mode standalone --transport http)
+# Serve (bare invocation defaults to serve --transport http)
 ./dist/opute-host-agent
 # equivalent:
-./dist/opute-host-agent serve --mode standalone --transport http
+./dist/opute-host-agent serve --transport http
 ```
 
 Default endpoint: **`http://127.0.0.1:3014/mcp`**.
@@ -115,11 +115,16 @@ agent returns **401**.
 
 ### Mutations
 
-Standalone mutations are **denied by default**. Enable deliberately:
+Mutations are **denied by default**. Each caller holds its own grant:
 
-```bash
-export OPUTE_STANDALONE_ALLOW_MUTATIONS=true
-```
+- the `MCP_AUTH_TOKEN` bearer mutates only when the agent starts with
+  `--allow-mutations` (`./dist/opute-host-agent serve --transport http --allow-mutations`);
+- an OAuth client listed in `OPUTE_OAUTH_CLIENTS` gets `read` (`id` or
+  `id:read`) or `mutate` (`id:mutate`), and requests a token with that scope;
+- an interactive OAuth client asks for scope `mutate`, and the operator
+  approves it with `opute-host-agent oauth approve`.
+
+A refused call names the grant that would admit it.
 
 ### Safe first calls
 
@@ -131,14 +136,10 @@ Prefer read-only discovery before mutating:
 
 Do not treat memorized tool names as authoritative — always use the live catalog.
 
-## Serve modes
+## Serving
 
-| Mode | How | Default bind | Default port | Typical use |
-|------|-----|--------------|--------------|-------------|
-| **standalone** | bare binary, `serve --mode standalone`, or npm launcher | `127.0.0.1` | **3014** | Local IDE / laptop dogfood |
-| **platform** | `serve --mode platform` or `OPUTE_AGENT_MODE=platform` | `0.0.0.0` | **3004** | Enrolled host next to Opute control plane |
-
-Override with `HOST_MCP_BIND_HOST` and `HOST_MCP_PORT`.
+The agent has one profile: `127.0.0.1:3014` and read-only callers by
+default. Override the address with `HOST_MCP_BIND_HOST` and `HOST_MCP_PORT`.
 
 Other CLI entrypoints: `public-mcp`, `recipe`, `provider`, `help`, `--check`,
 `--env-file`, repeatable `--env KEY=VALUE`. Precedence: CLI `--env` → process
