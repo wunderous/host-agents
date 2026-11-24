@@ -68,7 +68,7 @@
   </ul>
   <h2>Reference</h2>
   <p><a href="/docs/versions/v0.3.0/capabilities/">Latest verified catalog — v0.3.0</a></p>
-
+  <p><a href="/docs/previews/v0.4.0/capabilities/">Preview catalog — v0.4.0</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
@@ -96,11 +96,12 @@
 <p class="meta">Choose a local source build or the published npm launcher. For a tested end-to-end setup, begin with the <a href="/docs/get-started/">first-success tutorial</a>.</p>
 
 <h2>From source</h2>
-<p>From the Host Agent repository root, build and start the standalone HTTP server. Host inspection does not require Incus or Kubernetes.</p>
-<pre><code>make build VERSION=0.3.0
+<p>The Host Agent is built from <a href="https://github.com/wunderous/opute-host-agent">wunderous/opute-host-agent</a> (Rust). Build and start the HTTP server; host inspection does not require Incus or Kubernetes.</p>
+<pre><code>git clone https://github.com/wunderous/opute-host-agent.git && cd opute-host-agent
+make rust-build
 export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
-./dist/opute-host-agent serve --mode standalone --transport http</code></pre>
+./target/release/opute-host-agent serve --transport http</code></pre>
 <p>Keep both values in your local shell. The agent ID is an explicit opaque identity; the launcher does not invent a default. The token authenticates MCP requests.</p>
 
 <h2>Published npm launcher</h2>
@@ -111,7 +112,7 @@ npx -y <!--email_off-->@opute/host-agent@0.3.0<!--/email_off--> url
 npx -y <!--email_off-->@opute/host-agent@0.3.0<!--/email_off--> status
 npx -y <!--email_off-->@opute/host-agent@0.3.0<!--/email_off--> stop</code></pre>
 <p>This pins the newest published release with a passing read-only package canary. The launcher keeps the explicit identity and token in the child process. Stop the background process when you finish. The <a href="/docs/compatibility/">compatibility page</a> records verified combinations.</p>
-
+<p class="meta"><strong>Current source candidate:</strong> <code><!--email_off-->@opute/host-agent@0.4.0<!--/email_off--></code> is a preview until its published-package canary passes. The first-success and published launcher instructions above remain pinned to <code><!--email_off-->@opute/host-agent@0.3.0<!--/email_off--></code>.</p>
 
 <h2>Local endpoint and modes</h2>
 <table>
@@ -124,7 +125,7 @@ npx -y <!--email_off-->@opute/host-agent@0.3.0<!--/email_off--> stop</code></pre
 <p>Set <code>HOST_MCP_BIND_HOST</code> and <code>HOST_MCP_PORT</code> when needed. Keep a local tutorial on loopback and use the same port in the agent URL and client configuration.</p>
 
 <h2>Mutations</h2>
-<p>Standalone mutations are denied by default. This first-success path stays read-only. Only enable <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> after reviewing the capability effects, approval requirements, and host-local consequences.</p>
+<p>Mutations are denied by default. This first-success path stays read-only. Only enable <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code> after reviewing the capability effects, approval requirements, and host-local consequences.</p>
 
 <h2>WSL and production</h2>
 <p>For a first client connection, run the Linux agent and VS Code integration in the same WSL environment. Verify reachability before configuring a client across Windows and WSL.</p>

@@ -117,7 +117,7 @@ async function main() {
     HOST_MCP_PORT: String(port),
     MCP_AUTH_TOKEN: token,
   }
-  const child = spawn(binary, ['--mode=standalone', '--transport=http'], {
+  const child = spawn(binary, ['--transport=http'], {
     cwd: runtimeDir,
     env,
     stdio: ['ignore', 'ignore', 'pipe'],

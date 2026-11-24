@@ -533,9 +533,9 @@ const tutorialCatalogDownload = tutorialCatalogPath + "catalog.json"
 const tutorialStartCommand =
   tutorialCatalog.releaseChannel === "stable"
     ? `npx -y ${cloudflareProtectedPackageToken(tutorialCatalog)} start --background`
-    : "make build VERSION=" +
-      tutorialCatalog.packageVersion +
-      "\n./dist/opute-host-agent serve --mode standalone --transport http"
+    : "git clone https://github.com/wunderous/opute-host-agent.git && cd opute-host-agent" +
+      "\nmake rust-build" +
+      "\n./target/release/opute-host-agent serve --transport http"
 const tutorialStopText =
   tutorialCatalog.releaseChannel === "stable"
     ? `Stop the background process with npx -y ${cloudflareProtectedPackageToken(tutorialCatalog)} stop.`
@@ -691,11 +691,12 @@ const pages: Record<string, { title: string; description: string; current: strin
 <p class="meta">Choose a local source build or the published npm launcher. For a tested end-to-end setup, begin with the <a href="/docs/get-started/">first-success tutorial</a>.</p>
 
 <h2>From source</h2>
-<p>From the Host Agent repository root, build and start the standalone HTTP server. Host inspection does not require Incus or Kubernetes.</p>
-<pre><code>make build VERSION=${releaseCatalog.packageVersion}
+<p>The Host Agent is built from <a href="https://github.com/wunderous/opute-host-agent">wunderous/opute-host-agent</a> (Rust). Build and start the HTTP server; host inspection does not require Incus or Kubernetes.</p>
+<pre><code>git clone https://github.com/wunderous/opute-host-agent.git && cd opute-host-agent
+make rust-build
 export OPUTE_REMOTE_AGENT_ID="local-$(openssl rand -hex 8)"
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
-./dist/opute-host-agent serve --mode standalone --transport http</code></pre>
+./target/release/opute-host-agent serve --transport http</code></pre>
 <p>Keep both values in your local shell. The agent ID is an explicit opaque identity; the launcher does not invent a default. The token authenticates MCP requests.</p>
 
 <h2>Published npm launcher</h2>
@@ -719,7 +720,7 @@ ${releaseCatalog.releaseChannel === "preview" ? `<p class="meta"><strong>Current
 <p>Set <code>HOST_MCP_BIND_HOST</code> and <code>HOST_MCP_PORT</code> when needed. Keep a local tutorial on loopback and use the same port in the agent URL and client configuration.</p>
 
 <h2>Mutations</h2>
-<p>Standalone mutations are denied by default. This first-success path stays read-only. Only enable <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> after reviewing the capability effects, approval requirements, and host-local consequences.</p>
+<p>Mutations are denied by default. This first-success path stays read-only. Only enable <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code> after reviewing the capability effects, approval requirements, and host-local consequences.</p>
 
 <h2>WSL and production</h2>
 <p>For a first client connection, run the Linux agent and VS Code integration in the same WSL environment. Verify reachability before configuring a client across Windows and WSL.</p>
@@ -767,7 +768,7 @@ ${releaseCatalog.releaseChannel === "preview" ? `<p class="meta"><strong>Current
 <p>Host facts do not require Incus or Kubernetes. VM inventory requires an Incus provider; cluster discovery requires the relevant Kubernetes provider and host access. A listed tool does not prove the provider service is ready.</p>
 
 <h2>Mutation denied</h2>
-<p>Standalone mode denies mutating tools unless <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> is explicitly enabled. Keep it disabled during the first-success tutorial. Platform-enrolled hosts use Platform authorization policy.</p>
+<p>The agent denies mutating tools unless <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code> is explicitly enabled. Keep it disabled during the first-success tutorial. Releases before 0.4.0 read <code>OPUTE_STANDALONE_ALLOW_MUTATIONS</code> instead.</p>
 
 <h2>Launcher status does not match the health response</h2>
 <p>The launcher uses <code>localInstanceId</code> to identify its managed local process. <code>agentId</code> is the canonical Host Agent identity and <code>instanceId</code> describes the execution mode; these fields have separate meanings.</p>
@@ -920,7 +921,7 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
   "supportedTools": ["…"]
 }</code></pre><p>Those six fields are required by the current schema. Optional fields such as <code>agent</code>, <code>capacity</code>, and <code>system</code> appear only when observable. Values are redacted; this is an example shape, not captured host output. A listed capability does not prove its provider is ready.</p></li>
 </ol>
-<div class="callout warn"><strong>Keep this first check read-only.</strong> Do not set <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> or call a tool whose declared effect is not <code>read</code>.</div>
+<div class="callout warn"><strong>Keep this first check read-only.</strong> Do not set <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code> or call a tool whose declared effect is not <code>read</code>.</div>
 <h2>Verify the authenticated path</h2>
 <p>Check that authentication rejects a deliberately wrong token before completing the valid call in VS Code. This request uses the Host Agent's stateless MCP protocol version and matching request metadata:</p>
 <pre><code>curl -i -sS http://127.0.0.1:3014/mcp -H 'Accept: application/json, text/event-stream' -H 'Content-Type: application/json' -H 'Authorization: Bearer intentionally-wrong' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/list' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"curl","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}'</code></pre>
@@ -1047,11 +1048,10 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
 
 <h2>Listen</h2>
 <table>
-  <thead><tr><th>Variable</th><th>Standalone default</th><th>Platform default</th></tr></thead>
+  <thead><tr><th>Variable</th><th>Default</th></tr></thead>
   <tbody>
-    <tr><td><code>HOST_MCP_PORT</code></td><td><code>3014</code></td><td><code>3004</code></td></tr>
-    <tr><td><code>HOST_MCP_BIND_HOST</code></td><td><code>127.0.0.1</code></td><td><code>0.0.0.0</code></td></tr>
-    <tr><td><code>OPUTE_AGENT_MODE</code></td><td><code>standalone</code></td><td><code>platform</code></td></tr>
+    <tr><td><code>HOST_MCP_PORT</code></td><td><code>3014</code></td></tr>
+    <tr><td><code>HOST_MCP_BIND_HOST</code></td><td><code>127.0.0.1</code></td></tr>
   </tbody>
 </table>
 
@@ -1060,7 +1060,7 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
   <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
   <tbody>
     <tr><td><code>MCP_AUTH_TOKEN</code></td><td>Bootstrap Bearer for <code>/mcp</code></td></tr>
-    <tr><td><code>OPUTE_STANDALONE_ALLOW_MUTATIONS</code></td><td><code>true</code> enables standalone mutations</td></tr>
+    <tr><td><code>OPUTE_HOST_ALLOW_MUTATIONS</code></td><td><code>true</code> enables mutations (0.4.0 and later; earlier releases read <code>OPUTE_STANDALONE_ALLOW_MUTATIONS</code>)</td></tr>
     <tr><td><code>OPUTE_STANDALONE_STATE_DIR</code></td><td>Standalone state / journal directory</td></tr>
     <tr><td><code>OPUTE_MCP_PREFIX_TOOL_NAMES</code></td><td>Prefix wire tool names for multi-agent IDE workspaces</td></tr>
   </tbody>
@@ -1086,11 +1086,11 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
 </table>
 
 <h2>Retired (rejected)</h2>
-<p>Do not set: <code>OPUTE_CPC_TOKEN</code>, <code>OPUTE_HOST_WS_URL</code>, <code>OPUTE_REMOTE_AGENT_AUTH_TOKEN</code>, <code>OPUTE_ONBOARDING_*</code>, <code>OPUTE_REVERSE_TUNNEL</code>. The Go agent fails closed if they appear.</p>
+<p>Do not set: <code>OPUTE_CPC_TOKEN</code>, <code>OPUTE_HOST_WS_URL</code>, <code>OPUTE_REMOTE_AGENT_AUTH_TOKEN</code>, <code>OPUTE_ONBOARDING_*</code>, <code>OPUTE_REVERSE_TUNNEL</code>. The agent fails closed if they appear.</p>
 
 <h2>CLI</h2>
 <pre><code>opute-host-agent --check
-opute-host-agent serve --mode standalone|platform --transport http
+opute-host-agent serve --transport http
 opute-host-agent public-mcp …
 opute-host-agent recipe …
 opute-host-agent provider …
@@ -1253,7 +1253,7 @@ flowchart LR
     <tr><td>Job</td><td>Execute typed assignments on one host</td><td>Intent, authz, durable orchestration</td></tr>
     <tr><td>Surface</td><td>Streamable HTTP MCP <code>/mcp</code></td><td>Web UI + control plane</td></tr>
     <tr><td>Public origin (dogfood)</td><td><code>opute.io</code> / <code>www.opute.io</code></td><td><code>platform.opute.io</code>, <code>mcp.opute.io</code></td></tr>
-    <tr><td>Default listen</td><td>standalone <code>127.0.0.1:3014</code></td><td>platform mode <code>0.0.0.0:3004</code></td></tr>
+    <tr><td>Default listen</td><td><code>127.0.0.1:3014</code></td><td>its own deployment</td></tr>
   </tbody>
 </table>
 
@@ -1762,7 +1762,7 @@ flowchart LR
 <p class="diagram-alt"><strong>Diagram in words:</strong> Discovery produces a canonical resource URI. Admission and capacity checks precede a typed operation; its observation is schema-redacted before it reaches the MCP client.</p>
 
 <h2>Effects</h2>
-<p>Catalog entries carry effect classifications such as <code>read</code>, <code>mutation</code>, <code>destructive</code>, and <code>credential_bearing</code>. Standalone mode denies mutations until <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code>. Platform mode applies enrollment policy instead of that env flag.</p>
+<p>Catalog entries carry effect classifications such as <code>read</code>, <code>mutation</code>, <code>destructive</code>, and <code>credential_bearing</code>. The agent denies mutations until <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code>.</p>
 
 <h2>Quotas and storage bounds</h2>
 <ul>
