@@ -160,7 +160,7 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "e61ba635ca92b0c46aa3ddb829fb49ce40675ccd872a90ee44cfe408b933a158",
+      "digest": "4a42be05a2f47c8db640c5c356ea483fca1435d92521576d88a0c93407f56fc0",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {

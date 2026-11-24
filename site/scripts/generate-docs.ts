@@ -449,6 +449,7 @@ const nav = (current: string) => `
       <a href="/docs/get-started/" data-i18n="nav.getStarted">Get started</a>
       <a href="/docs/concepts/#host-agent-and-platform" lang="en">How Host Agent and Platform fit</a>
       <a href="https://platform.opute.io/" lang="en">Platform</a>
+      <a href="https://github.com/wunderous/opute-host-agent" lang="en">GitHub</a>
     </nav>
   </div>
 </header>
