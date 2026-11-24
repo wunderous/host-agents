@@ -56,7 +56,7 @@
     {
       "kind": "file",
       "path": "Makefile",
-      "digest": "f4dda42a5cdf47dce9e0aa0f54e696cea29ebcbd3712dc08368b3f768db46b8d",
+      "digest": "5c58e410136a76dd054f6cbeab228520f640991cd3139104c6c00a97a3ab9eff",
       "note": "Test target runs the invariant verifier"
     },
     {

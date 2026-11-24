@@ -82,13 +82,13 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "4c5772840c9603138e5167950dd628161a2d92dc481a92540b6cfa0afafd0ee5",
+      "digest": "d1e089ba79ff7ba3ec3b638f6b24dab2c6ec0f477dfb987c23cab5b1bedb36a2",
       "note": "Host Agent release version matches the release tag"
     },
     {
       "kind": "file",
       "path": ".github/workflows/publish.yml",
-      "digest": "b9ded7f492f4a0df90cf1b806fe1b35388ba65eb1433590ae6f4457a97facb00",
+      "digest": "bf73d84329949e408826ee91f36847a85d7dc81a6c00055da6c10dfd871d0a1b",
       "note": "Release publishes the K3s provider artifact under the verified tag"
     },
     {
@@ -112,7 +112,7 @@
     {
       "kind": "file",
       "path": "Makefile",
-      "digest": "f4dda42a5cdf47dce9e0aa0f54e696cea29ebcbd3712dc08368b3f768db46b8d",
+      "digest": "5c58e410136a76dd054f6cbeab228520f640991cd3139104c6c00a97a3ab9eff",
       "note": "Verifier is part of the normal Host Agent test target"
     },
     {

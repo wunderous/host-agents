@@ -1,8 +1,8 @@
 {
   "packageName": "@opute/host-agent",
-  "packageVersion": "0.2.4",
+  "packageVersion": "0.3.0",
   "releaseChannel": "preview",
-  "catalogRevision": "sha256:50b20e5885a225bd45f0a67d2c0327dfa7d096f845c71b81ca689d37c153f6a2",
+  "catalogRevision": "sha256:9aba4c895695d25c6b8f91aecf06297a813283561bfe308a50cc3569fb20d912",
   "toolCount": 142,
   "tools": [
     {
@@ -44,9 +44,9 @@
           "builder": {
             "enum": [
               "auto",
-              "podman",
-              "buildah",
-              "buildkit"
+              "container-engine",
+              "image-builder",
+              "build-daemon"
             ],
             "type": "string"
           },
@@ -158,7 +158,7 @@
           "runtime": {
             "enum": [
               "auto",
-              "podman"
+              "container-engine"
             ],
             "type": "string"
           }
@@ -173,8 +173,8 @@
       }
     },
     {
-      "name": "compact_wsl_disk",
-      "description": "Inspect and compact a Stopped WSL2 distro VHDX with Optimize-VHD Full. Fails closed if the file is still locked by a sibling WSL VM; compact then needs shutdown_wsl (kills this agent). Does not enable sparse VHDX.",
+      "name": "compact_host_vm_disk",
+      "description": "Inspect and compact a Stopped WSL2 distro VHDX with Optimize-VHD Full. Fails closed if the file is still locked by a sibling WSL VM; compact then needs shutdown_host_vm_subsystem (kills this agent). Does not enable sparse VHDX.",
       "effect": "destructive",
       "idempotent": false,
       "inputSchema": {
@@ -398,7 +398,7 @@
           "runtime": {
             "enum": [
               "auto",
-              "podman"
+              "container-engine"
             ],
             "type": "string"
           },
@@ -419,7 +419,7 @@
     },
     {
       "name": "configure_service_domain",
-      "description": "Map a configurable DNS hostname to a Kubernetes Service through Ingress.",
+      "description": "Map a Kubernetes Service to a caller-selected hostname through the configured ingress class.",
       "effect": "mutation",
       "idempotent": false,
       "inputSchema": {
@@ -437,25 +437,29 @@
             "type": "string"
           },
           "serviceName": {
+            "description": "The Service the Ingress routes to.",
             "type": "string"
           },
           "servicePort": {
             "type": "integer"
           },
-          "vmName": {
+          "uri": {
+            "description": "Canonical Host Agent resource URI returned by discovery.",
+            "minLength": 1,
             "type": "string"
           }
         },
         "required": [
-          "vmName",
           "namespace",
           "ingressName",
           "hostname",
-          "serviceName",
-          "servicePort"
+          "servicePort",
+          "uri",
+          "serviceName"
         ],
         "type": "object"
       },
+      "title": "Configure service domain",
       "version": 1,
       "requiresApproval": true,
       "outputSchema": {
@@ -529,7 +533,7 @@
       }
     },
     {
-      "name": "delete_k8s_resource",
+      "name": "delete_cluster_resource",
       "description": "Delete a generic Kubernetes resource from a VM-backed cluster.",
       "effect": "destructive",
       "idempotent": false,
@@ -829,7 +833,7 @@
       }
     },
     {
-      "name": "ensure_docker",
+      "name": "ensure_container_engine",
       "description": "Verify Docker Desktop daemon is running on Windows hosts (does not install Docker Desktop)",
       "effect": "mutation",
       "idempotent": false,
@@ -1077,7 +1081,8 @@
             "type": "array"
           },
           "upstreamToken": {
-            "type": "string"
+            "type": "string",
+            "writeOnly": true
           }
         },
         "required": [
@@ -1147,9 +1152,9 @@
           "builder": {
             "enum": [
               "auto",
-              "podman",
-              "buildah",
-              "buildkit"
+              "container-engine",
+              "image-builder",
+              "build-daemon"
             ],
             "type": "string"
           }
@@ -1349,7 +1354,7 @@
       }
     },
     {
-      "name": "exec_kubernetes_command",
+      "name": "exec_cluster_command",
       "description": "Execute a kubectl command against a registered cluster using its stored kubeconfig.",
       "effect": "mutation",
       "idempotent": false,
@@ -1505,6 +1510,143 @@
           "providerId",
           "catalogRevision",
           "tools"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_cluster_resource",
+      "description": "Fetch a Kubernetes resource from a VM-backed cluster as YAML.",
+      "effect": "read",
+      "idempotent": true,
+      "inputSchema": {
+        "properties": {
+          "kind": {
+            "description": "Kubernetes resource kind, such as Deployment, Service, Pod, ConfigMap, or PersistentVolumeClaim",
+            "type": "string"
+          },
+          "namespace": {
+            "description": "Namespace containing the resource",
+            "type": "string"
+          },
+          "resourceName": {
+            "description": "Kubernetes resource name",
+            "type": "string"
+          },
+          "uri": {
+            "description": "Canonical Host Agent resource URI returned by discovery.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "resourceName",
+          "uri"
+        ],
+        "type": "object"
+      },
+      "title": "Get Kubernetes Resource",
+      "version": 1,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "resourceName": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          },
+          "vmName": {
+            "type": "string"
+          },
+          "yaml": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "yaml",
+          "uri"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_cluster_resource_status",
+      "description": "Fetch a normalized readiness status for a Kubernetes resource in a VM-backed cluster.",
+      "effect": "read",
+      "idempotent": true,
+      "inputSchema": {
+        "properties": {
+          "namespace": {
+            "description": "Namespace containing the resource",
+            "type": "string"
+          },
+          "resourceKind": {
+            "description": "Kubernetes resource kind, such as Deployment, Service, Pod, ConfigMap, or PersistentVolumeClaim",
+            "type": "string"
+          },
+          "resourceName": {
+            "description": "Kubernetes resource name",
+            "type": "string"
+          },
+          "uri": {
+            "description": "Canonical Host Agent resource URI returned by discovery.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "resourceKind",
+          "resourceName",
+          "namespace",
+          "uri"
+        ],
+        "type": "object"
+      },
+      "title": "Get Kubernetes Resource Status",
+      "version": 1,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "resourceKind": {
+            "type": "string"
+          },
+          "resourceName": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "pending",
+              "missing",
+              "error"
+            ],
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          },
+          "vmName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message",
+          "uri"
         ],
         "type": "object"
       }
@@ -1667,143 +1809,6 @@
       }
     },
     {
-      "name": "get_k8s_resource",
-      "description": "Fetch a Kubernetes resource from a VM-backed cluster as YAML.",
-      "effect": "read",
-      "idempotent": true,
-      "inputSchema": {
-        "properties": {
-          "kind": {
-            "description": "Kubernetes resource kind, such as Deployment, Service, Pod, ConfigMap, or PersistentVolumeClaim",
-            "type": "string"
-          },
-          "namespace": {
-            "description": "Namespace containing the resource",
-            "type": "string"
-          },
-          "resourceName": {
-            "description": "Kubernetes resource name",
-            "type": "string"
-          },
-          "uri": {
-            "description": "Canonical Host Agent resource URI returned by discovery.",
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "resourceName",
-          "uri"
-        ],
-        "type": "object"
-      },
-      "title": "Get Kubernetes Resource",
-      "version": 1,
-      "outputSchema": {
-        "additionalProperties": true,
-        "properties": {
-          "kind": {
-            "type": "string"
-          },
-          "namespace": {
-            "type": "string"
-          },
-          "resourceName": {
-            "type": "string"
-          },
-          "uri": {
-            "type": "string"
-          },
-          "vmName": {
-            "type": "string"
-          },
-          "yaml": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "yaml",
-          "uri"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "get_k8s_resource_status",
-      "description": "Fetch a normalized readiness status for a Kubernetes resource in a VM-backed cluster.",
-      "effect": "read",
-      "idempotent": true,
-      "inputSchema": {
-        "properties": {
-          "namespace": {
-            "description": "Namespace containing the resource",
-            "type": "string"
-          },
-          "resourceKind": {
-            "description": "Kubernetes resource kind, such as Deployment, Service, Pod, ConfigMap, or PersistentVolumeClaim",
-            "type": "string"
-          },
-          "resourceName": {
-            "description": "Kubernetes resource name",
-            "type": "string"
-          },
-          "uri": {
-            "description": "Canonical Host Agent resource URI returned by discovery.",
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "resourceKind",
-          "resourceName",
-          "namespace",
-          "uri"
-        ],
-        "type": "object"
-      },
-      "title": "Get Kubernetes Resource Status",
-      "version": 1,
-      "outputSchema": {
-        "additionalProperties": true,
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "namespace": {
-            "type": "string"
-          },
-          "resourceKind": {
-            "type": "string"
-          },
-          "resourceName": {
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "ready",
-              "pending",
-              "missing",
-              "error"
-            ],
-            "type": "string"
-          },
-          "uri": {
-            "type": "string"
-          },
-          "vmName": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "message",
-          "uri"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "get_local_status",
       "description": "Return local provider and standalone agent status.",
       "effect": "read",
@@ -1917,7 +1922,8 @@
               },
               "relayToken": {
                 "minLength": 32,
-                "type": "string"
+                "type": "string",
+                "writeOnly": true
               },
               "replaceExisting": {
                 "type": "boolean"
@@ -2172,7 +2178,7 @@
           "runtime": {
             "enum": [
               "auto",
-              "podman"
+              "container-engine"
             ],
             "type": "string"
           }
@@ -2489,7 +2495,7 @@
       }
     },
     {
-      "name": "install_helm_chart",
+      "name": "install_cluster_package",
       "description": "Deploy a Helm chart through the K3s Helm Controller on an explicit VM-backed Kubernetes target. The caller's vmName is retained for durable evidence; execution is admitted only through its canonical instance URI.",
       "effect": "mutation",
       "idempotent": false,
@@ -2535,35 +2541,6 @@
         "type": "object"
       },
       "title": "Install Helm chart",
-      "version": 1,
-      "requiresApproval": true,
-      "outputSchema": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "install_incus_stack",
-      "description": "Install or upgrade Incus, QEMU, virglrenderer, and explicitly requested GPU container prerequisites.",
-      "effect": "mutation",
-      "idempotent": false,
-      "inputSchema": {
-        "properties": {
-          "gpuPackages": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "incusPackage": {
-            "type": "string"
-          },
-          "qemuPackage": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "title": "Install Incus virtualization stack",
       "version": 1,
       "requiresApproval": true,
       "outputSchema": {
@@ -2842,6 +2819,35 @@
       }
     },
     {
+      "name": "install_virtualization_stack",
+      "description": "Install or upgrade Incus, QEMU, virglrenderer, and explicitly requested GPU container prerequisites.",
+      "effect": "mutation",
+      "idempotent": false,
+      "inputSchema": {
+        "properties": {
+          "gpuPackages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "packageName": {
+            "type": "string"
+          },
+          "qemuPackage": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "title": "Install Incus virtualization stack",
+      "version": 1,
+      "requiresApproval": true,
+      "outputSchema": {
+        "type": "object"
+      }
+    },
+    {
       "name": "list_agents",
       "description": "Retrieve a consolidated list of all agents (host and cluster) connected to the bridge server.",
       "effect": "read",
@@ -2950,6 +2956,131 @@
         "required": [
           "issuers",
           "uri"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_cluster_events",
+      "description": "List bounded, read-only Kubernetes events for an explicit cluster target.",
+      "effect": "read",
+      "idempotent": true,
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "uri": {
+            "description": "Canonical Host Agent resource URI returned by discovery.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri"
+        ],
+        "type": "object"
+      },
+      "title": "List Kubernetes Events",
+      "version": 1,
+      "outputSchema": {
+        "properties": {
+          "events": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          },
+          "vmName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "events",
+          "uri"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_compute_clusters",
+      "description": "List all managed Kubernetes clusters (both provisioned by Opute and externally registered).",
+      "effect": "read",
+      "idempotent": true,
+      "inputSchema": {
+        "properties": {
+          "source": {
+            "description": "Filter by cluster source: k3s-vm, k3s-container, or external",
+            "enum": [
+              "k3s-vm",
+              "k3s-container",
+              "external"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "title": "List Kubernetes Clusters",
+      "version": 1,
+      "outputSchema": {
+        "properties": {
+          "clusters": {
+            "items": {
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "apiEndpoint": {
+                  "type": "string"
+                },
+                "connectionState": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "lastHeartbeatAt": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "uri": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "uri"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "clusters",
+          "total"
         ],
         "type": "object"
       }
@@ -3151,131 +3282,6 @@
         "required": [
           "classes",
           "uri"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "list_k8s_events",
-      "description": "List bounded, read-only Kubernetes events for an explicit cluster target.",
-      "effect": "read",
-      "idempotent": true,
-      "inputSchema": {
-        "properties": {
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "namespace": {
-            "type": "string"
-          },
-          "uri": {
-            "description": "Canonical Host Agent resource URI returned by discovery.",
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "uri"
-        ],
-        "type": "object"
-      },
-      "title": "List Kubernetes Events",
-      "version": 1,
-      "outputSchema": {
-        "properties": {
-          "events": {
-            "items": {
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "limit": {
-            "type": "integer"
-          },
-          "namespace": {
-            "type": "string"
-          },
-          "uri": {
-            "type": "string"
-          },
-          "vmName": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "events",
-          "uri"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "list_kubernetes_clusters",
-      "description": "List all managed Kubernetes clusters (both provisioned by Opute and externally registered).",
-      "effect": "read",
-      "idempotent": true,
-      "inputSchema": {
-        "properties": {
-          "source": {
-            "description": "Filter by cluster source: k3s-vm, k3s-container, or external",
-            "enum": [
-              "k3s-vm",
-              "k3s-container",
-              "external"
-            ],
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "title": "List Kubernetes Clusters",
-      "version": 1,
-      "outputSchema": {
-        "properties": {
-          "clusters": {
-            "items": {
-              "properties": {
-                "agentId": {
-                  "type": "string"
-                },
-                "apiEndpoint": {
-                  "type": "string"
-                },
-                "connectionState": {
-                  "type": "string"
-                },
-                "id": {
-                  "type": "string"
-                },
-                "lastHeartbeatAt": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "source": {
-                  "type": "string"
-                },
-                "uri": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "uri"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "total": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "clusters",
-          "total"
         ],
         "type": "object"
       }
@@ -3967,20 +3973,6 @@
       }
     },
     {
-      "name": "probe_incus_gpu",
-      "description": "Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.",
-      "effect": "read",
-      "idempotent": true,
-      "inputSchema": {
-        "type": "object"
-      },
-      "title": "Probe Incus GPU capability",
-      "version": 1,
-      "outputSchema": {
-        "type": "object"
-      }
-    },
-    {
       "name": "probe_local_llm",
       "description": "LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1",
       "effect": "read",
@@ -4075,6 +4067,20 @@
       }
     },
     {
+      "name": "probe_virtualization_gpu",
+      "description": "Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.",
+      "effect": "read",
+      "idempotent": true,
+      "inputSchema": {
+        "type": "object"
+      },
+      "title": "Probe Incus GPU capability",
+      "version": 1,
+      "outputSchema": {
+        "type": "object"
+      }
+    },
+    {
       "name": "provision_container",
       "description": "Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.",
       "effect": "mutation",
@@ -4096,7 +4102,14 @@
           "gpu": {
             "type": "boolean"
           },
+          "hostGpuLibs": {
+            "type": "boolean"
+          },
           "image": {
+            "type": "string"
+          },
+          "ipv4Address": {
+            "description": "Pin the container to this address on the managed bridge instead of a DHCP lease.",
             "type": "string"
           },
           "memory": {
@@ -4112,9 +4125,6 @@
           },
           "port": {
             "type": "integer"
-          },
-          "wslGpuLibs": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -4246,7 +4256,7 @@
       }
     },
     {
-      "name": "put_k8s_secret",
+      "name": "put_cluster_secret",
       "description": "Create or replace a generic Kubernetes Secret without returning its values.",
       "effect": "credential_bearing",
       "idempotent": false,
@@ -4377,7 +4387,8 @@
               },
               "relayToken": {
                 "minLength": 32,
-                "type": "string"
+                "type": "string",
+                "writeOnly": true
               },
               "replaceExisting": {
                 "type": "boolean"
@@ -4731,7 +4742,8 @@
         "properties": {
           "relayToken": {
             "minLength": 32,
-            "type": "string"
+            "type": "string",
+            "writeOnly": true
           },
           "sessionId": {
             "minLength": 1,
@@ -4904,7 +4916,8 @@
               },
               "relayToken": {
                 "minLength": 32,
-                "type": "string"
+                "type": "string",
+                "writeOnly": true
               },
               "replaceExisting": {
                 "type": "boolean"
@@ -5026,7 +5039,7 @@
     },
     {
       "name": "remove_service_domain",
-      "description": "Remove a configurable Kubernetes service domain mapping.",
+      "description": "Remove a caller-selected Kubernetes Service domain mapping.",
       "effect": "destructive",
       "idempotent": false,
       "inputSchema": {
@@ -5037,17 +5050,20 @@
           "namespace": {
             "type": "string"
           },
-          "vmName": {
+          "uri": {
+            "description": "Canonical Host Agent resource URI returned by discovery.",
+            "minLength": 1,
             "type": "string"
           }
         },
         "required": [
-          "vmName",
           "namespace",
-          "ingressName"
+          "ingressName",
+          "uri"
         ],
         "type": "object"
       },
+      "title": "Remove service domain",
       "version": 1,
       "requiresApproval": true,
       "outputSchema": {
@@ -5136,7 +5152,7 @@
       }
     },
     {
-      "name": "render_helm_template",
+      "name": "render_cluster_package",
       "description": "Render a Helm chart to Kubernetes manifests on the host using helm template.",
       "effect": "read",
       "idempotent": true,
@@ -5209,7 +5225,7 @@
       }
     },
     {
-      "name": "reset_incus_stack",
+      "name": "reset_virtualization_stack",
       "description": "Fail-closed, ownership-checked, confirmation-gated reset of explicitly selected disposable Incus instances. Returns redacted resumable phase evidence.",
       "effect": "destructive",
       "idempotent": false,
@@ -5310,11 +5326,16 @@
     },
     {
       "name": "restart_host_service",
-      "description": "Restart a host-level service such as Incus and verify it becomes active",
+      "description": "Restart an Opute user service (an opute- systemd user unit) without blocking; system services are restarted with set_host_service_state",
       "effect": "mutation",
       "idempotent": false,
       "inputSchema": {
         "properties": {
+          "serviceName": {
+            "description": "The Opute user unit to restart (opute-...).",
+            "pattern": "^[A-Za-z0-9_.@:-]+$",
+            "type": "string"
+          },
           "uri": {
             "description": "Canonical Host Agent resource URI returned by discovery.",
             "minLength": 1,
@@ -5322,7 +5343,8 @@
           }
         },
         "required": [
-          "uri"
+          "uri",
+          "serviceName"
         ],
         "type": "object"
       },
@@ -5336,7 +5358,7 @@
           },
           "status": {
             "enum": [
-              "active"
+              "scheduled"
             ],
             "type": "string"
           },
@@ -5761,7 +5783,7 @@
       }
     },
     {
-      "name": "shutdown_wsl",
+      "name": "shutdown_host_vm_subsystem",
       "description": "Shutdown the complete WSL2 environment through the tested Windows lifecycle capability. Requires explicit destructive approval.",
       "effect": "destructive",
       "idempotent": false,
@@ -6002,7 +6024,7 @@
       }
     },
     {
-      "name": "terminate_wsl_distribution",
+      "name": "terminate_host_vm_distribution",
       "description": "Terminate exactly one named WSL distribution through the tested Windows interop capability. Requires host approval.",
       "effect": "mutation",
       "idempotent": false,
@@ -6056,35 +6078,6 @@
       }
     },
     {
-      "name": "uninstall_incus_stack",
-      "description": "Purge the Incus virtualization stack from this host. Refuses while any instance remains; opt in to discarding /var/lib/incus.",
-      "effect": "destructive",
-      "idempotent": false,
-      "inputSchema": {
-        "properties": {
-          "confirm": {
-            "type": "boolean"
-          },
-          "keepRepository": {
-            "type": "boolean"
-          },
-          "removeState": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "confirm"
-        ],
-        "type": "object"
-      },
-      "title": "Uninstall Incus virtualization stack",
-      "version": 1,
-      "requiresApproval": true,
-      "outputSchema": {
-        "type": "object"
-      }
-    },
-    {
       "name": "uninstall_provider_tools",
       "description": "Remove active provider association from the host after ensuring no VMs remain",
       "effect": "destructive",
@@ -6112,6 +6105,35 @@
           "providerId",
           "status"
         ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "uninstall_virtualization_stack",
+      "description": "Purge the Incus virtualization stack from this host. Refuses while any instance remains; opt in to discarding /var/lib/incus.",
+      "effect": "destructive",
+      "idempotent": false,
+      "inputSchema": {
+        "properties": {
+          "confirm": {
+            "type": "boolean"
+          },
+          "keepRepository": {
+            "type": "boolean"
+          },
+          "removeState": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "type": "object"
+      },
+      "title": "Uninstall Incus virtualization stack",
+      "version": 1,
+      "requiresApproval": true,
+      "outputSchema": {
         "type": "object"
       }
     },
