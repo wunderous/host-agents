@@ -1,7 +1,7 @@
 {
   "packageName": "@opute/host-agent",
   "packageVersion": "0.3.0",
-  "releaseChannel": "preview",
+  "releaseChannel": "stable",
   "catalogRevision": "sha256:9aba4c895695d25c6b8f91aecf06297a813283561bfe308a50cc3569fb20d912",
   "toolCount": 142,
   "tools": [
@@ -6358,5 +6358,21 @@
         "type": "object"
       }
     }
-  ]
+  ],
+  "publishedCanary": {
+    "packageVersion": "0.3.0",
+    "catalogRevision": "sha256:9aba4c895695d25c6b8f91aecf06297a813283561bfe308a50cc3569fb20d912",
+    "sourceSha": "730ee3366f08f7a1a7ee1cfd051d0c576d414f67",
+    "runId": 45328650629,
+    "runAttempt": 3,
+    "checks": {
+      "explicitIdentity": true,
+      "openHealth": true,
+      "invalidTokenRejected": true,
+      "authenticatedDiscovery": true,
+      "authenticatedToolsList": true,
+      "structuredGetHostInfo": true,
+      "readOnly": true
+    }
+  }
 }
