@@ -1,12 +1,20 @@
-.PHONY: build build-agent test check-host-file-confinement check-provider-activation-recipe-provenance check-kubernetes-node-readiness-projection test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary published-npm-readonly-canary npm-test local-npm-readonly-canary check-site artifacts build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-provider-tailscale-linux-x64 build-windows-x64 clean agent-work
+.PHONY: build build-agent rust-release test check-host-file-confinement check-provider-activation-recipe-provenance check-kubernetes-node-readiness-projection test-all-modules openrouter-llm-smoke standalone-smoke standalone-http-smoke standalone-lifecycle-gate published-npm-canary published-npm-readonly-canary npm-test local-npm-readonly-canary check-site artifacts build-provider-linux-x64 build-provider-cloudflare-linux-x64 build-provider-tailscale-linux-x64 build-windows-x64 clean agent-work
 
 BINARY=opute-host-agent
 DIST=dist
 MODULE=github.com/wunderous/host-agents
-VERSION ?= 0.2.4
-LDFLAGS=-s -w -X $(MODULE)/internal/version.Version=$(VERSION)
+VERSION ?= 0.3.0
+# From 0.3.0 the published agent is the Rust build pinned in release/v$(VERSION).json; the Go
+# tree stays the 0.2.4 rollback, and its local builds keep reporting that version.
+GO_VERSION ?= 0.2.4
+LDFLAGS=-s -w -X $(MODULE)/internal/version.Version=$(GO_VERSION)
+RUST_PIN=release/v$(VERSION).json
+AGENT_BINARY_TARGET=$(if $(wildcard $(RUST_PIN)),rust-release,build-agent)
 
 build: build-agent
+
+rust-release:
+	python3 scripts/fetch_rust_release.py $(RUST_PIN) $(DIST)
 
 build-agent:
 	mkdir -p $(DIST)
@@ -57,7 +65,7 @@ published-npm-canary:
 published-npm-readonly-canary:
 	cd npm/local-host-agent && PUBLISHED_NPM_VERSION=$(VERSION) npm run test:published-readonly-canary
 
-local-npm-readonly-canary: build-agent
+local-npm-readonly-canary: $(AGENT_BINARY_TARGET)
 	mkdir -p $(DIST)/npm-package
 	cd npm/local-host-agent && npm pack --pack-destination $(CURDIR)/$(DIST)/npm-package
 	cd npm/local-host-agent && PUBLISHED_NPM_PACKAGE=$(CURDIR)/$(DIST)/npm-package/opute-host-agent-$(VERSION).tgz OPUTE_HOST_AGENT_BINARY=$(CURDIR)/$(DIST)/$(BINARY) RUN_PUBLISHED_READONLY_NPM_CANARY=true node --test published-readonly-canary.test.js
