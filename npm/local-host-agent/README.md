@@ -1,6 +1,6 @@
 # @opute/host-agent
 
-Downloads and launches the checksum-verified Opute Go host agent as a local
+Downloads and launches the checksum-verified Opute host agent as a local
 **Streamable HTTP** MCP server. Cursor, VS Code, and Claude Desktop snippets
 below are copy/paste examples, not named-client certifications.
 
@@ -39,7 +39,7 @@ stdio MCP transport is not supported.
 
 Safe first-run sequence once the client is connected: `tools/list` → read-only
 host/VM inspection tools (for example `get_host_info`, `list_vms`). Mutating
-tools stay denied until `OPUTE_STANDALONE_ALLOW_MUTATIONS=true`.
+tools stay denied until `OPUTE_HOST_ALLOW_MUTATIONS=true` (0.3.x read `OPUTE_STANDALONE_ALLOW_MUTATIONS`).
 
 ## Commands
 
@@ -60,7 +60,7 @@ tools stay denied until `OPUTE_STANDALONE_ALLOW_MUTATIONS=true`.
 | `OPUTE_REMOTE_AGENT_ID` | Required explicit opaque canonical agent identity |
 | `MCP_AUTH_TOKEN` | Bearer bootstrap token for `/mcp` |
 | `OPUTE_HOST_AGENT_BINARY` | Use a local binary instead of downloading a release |
-| `OPUTE_STANDALONE_ALLOW_MUTATIONS=true` | Enable mutating infrastructure tools |
+| `OPUTE_HOST_ALLOW_MUTATIONS=true` | Enable mutating infrastructure tools (0.4.0 and later) |
 | `OPUTE_STANDALONE_STATE_DIR` | Local SQLite / operation journal directory |
 
 The launcher deliberately strips most other `OPUTE_*` variables so a

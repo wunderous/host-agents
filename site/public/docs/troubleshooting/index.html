@@ -68,7 +68,7 @@
   </ul>
   <h2>Reference</h2>
   <p><a href="/docs/versions/v0.3.0/capabilities/">Latest verified catalog — v0.3.0</a></p>
-
+  <p><a href="/docs/previews/v0.4.0/capabilities/">Preview catalog — v0.4.0</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
@@ -125,7 +125,7 @@
 <p>Host facts do not require Incus or Kubernetes. VM inventory requires an Incus provider; cluster discovery requires the relevant Kubernetes provider and host access. A listed tool does not prove the provider service is ready.</p>
 
 <h2>Mutation denied</h2>
-<p>Standalone mode denies mutating tools unless <code>OPUTE_STANDALONE_ALLOW_MUTATIONS=true</code> is explicitly enabled. Keep it disabled during the first-success tutorial. Platform-enrolled hosts use Platform authorization policy.</p>
+<p>The agent denies mutating tools unless <code>OPUTE_HOST_ALLOW_MUTATIONS=true</code> is explicitly enabled. Keep it disabled during the first-success tutorial. Releases before 0.4.0 read <code>OPUTE_STANDALONE_ALLOW_MUTATIONS</code> instead.</p>
 
 <h2>Launcher status does not match the health response</h2>
 <p>The launcher uses <code>localInstanceId</code> to identify its managed local process. <code>agentId</code> is the canonical Host Agent identity and <code>instanceId</code> describes the execution mode; these fields have separate meanings.</p>

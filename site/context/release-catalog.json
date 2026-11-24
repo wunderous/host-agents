@@ -1,9 +1,9 @@
 {
   "packageName": "@opute/host-agent",
-  "packageVersion": "0.3.0",
-  "releaseChannel": "stable",
-  "catalogRevision": "sha256:9aba4c895695d25c6b8f91aecf06297a813283561bfe308a50cc3569fb20d912",
-  "toolCount": 142,
+  "packageVersion": "0.4.0",
+  "releaseChannel": "preview",
+  "catalogRevision": "sha256:6ceca36091c4fc214fac50a643f9dfad87cb4163fb6ebe8b1913a57286e0178c",
+  "toolCount": 138,
   "tools": [
     {
       "name": "apply_manifest",
@@ -2776,49 +2776,6 @@
       }
     },
     {
-      "name": "install_provider_tools",
-      "description": "Validate provider readiness and switch the active infrastructure provider on this host (incus)",
-      "effect": "mutation",
-      "idempotent": false,
-      "inputSchema": {
-        "properties": {
-          "providerId": {
-            "description": "Target provider to switch to ('incus')",
-            "enum": [
-              "incus"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "providerId"
-        ],
-        "type": "object"
-      },
-      "title": "Install Provider Tools",
-      "version": 1,
-      "requiresApproval": true,
-      "outputSchema": {
-        "properties": {
-          "binaryPath": {
-            "type": "string"
-          },
-          "installed": {
-            "type": "boolean"
-          },
-          "providerId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "providerId",
-          "installed",
-          "binaryPath"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "install_virtualization_stack",
       "description": "Install or upgrade Incus, QEMU, virglrenderer, and explicitly requested GPU container prerequisites.",
       "effect": "mutation",
@@ -2844,76 +2801,6 @@
       "version": 1,
       "requiresApproval": true,
       "outputSchema": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "list_agents",
-      "description": "Retrieve a consolidated list of all agents (host and cluster) connected to the bridge server.",
-      "effect": "read",
-      "idempotent": true,
-      "inputSchema": {
-        "properties": {},
-        "type": "object"
-      },
-      "title": "List Agents",
-      "version": 1,
-      "outputSchema": {
-        "properties": {
-          "agents": {
-            "items": {
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "lastSeen": {
-                  "type": "string"
-                },
-                "metadata": {
-                  "type": "object"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "status": {
-                  "enum": [
-                    "connected",
-                    "disconnected",
-                    "degraded",
-                    "error"
-                  ],
-                  "type": "string"
-                },
-                "type": {
-                  "enum": [
-                    "host",
-                    "cluster"
-                  ],
-                  "type": "string"
-                },
-                "uri": {
-                  "type": "string"
-                },
-                "version": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "uri",
-                "id",
-                "name",
-                "type",
-                "status",
-                "lastSeen"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "agents"
-        ],
         "type": "object"
       }
     },
@@ -4672,68 +4559,6 @@
       }
     },
     {
-      "name": "register_kubernetes_cluster",
-      "description": "Register an externally-managed Kubernetes cluster (not provisioned by Opute). The cluster record is persisted in the bridge database and the kubeconfig is stored on the host.",
-      "effect": "mutation",
-      "idempotent": false,
-      "inputSchema": {
-        "properties": {
-          "apiEndpoint": {
-            "description": "Kubernetes API server endpoint (e.g. https://1.2.3.4:6443)",
-            "type": "string"
-          },
-          "clusterName": {
-            "description": "Display name for the cluster",
-            "type": "string"
-          },
-          "kubeconfigContent": {
-            "description": "Raw kubeconfig YAML content",
-            "type": "string"
-          },
-          "kubeconfigPath": {
-            "description": "Path to an existing kubeconfig file on the host",
-            "type": "string"
-          }
-        },
-        "required": [
-          "clusterName"
-        ],
-        "type": "object"
-      },
-      "title": "Register Kubernetes Cluster",
-      "version": 1,
-      "requiresApproval": true,
-      "outputSchema": {
-        "properties": {
-          "apiEndpoint": {
-            "type": "string"
-          },
-          "clusterId": {
-            "type": "string"
-          },
-          "clusterName": {
-            "type": "string"
-          },
-          "connectionState": {
-            "type": "string"
-          },
-          "source": {
-            "enum": [
-              "external"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "clusterId",
-          "clusterName",
-          "source",
-          "connectionState"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "release_postgresql_service_relay",
       "description": "Release one caller-owned PostgreSQL service relay without changing the underlying service or databases.",
       "effect": "credential_bearing",
@@ -5449,7 +5274,7 @@
     },
     {
       "name": "run_host_local_recipe",
-      "description": "Execute a host-recipe.v1 document that declares coordinator=host-agent/mode=local through the durable host-plan runner, so a first cluster node can be established with no Platform in the loop. Read the run with get_host_plan_run. A distributed recipe is refused.",
+      "description": "Execute a host-recipe.v1 document that declares coordinator=host-agent/mode=local through the durable host-plan runner, so a first cluster node can be established with no orchestrator in the loop. Read the run with get_host_plan_run. A distributed recipe is refused.",
       "effect": "mutation",
       "idempotent": false,
       "inputSchema": {
@@ -5716,10 +5541,18 @@
       "requiresApproval": true,
       "outputSchema": {
         "properties": {
+          "closed": {
+            "description": "True once the console process has exited; this is the session's last read",
+            "type": "boolean"
+          },
           "error": {
             "type": "string"
           },
           "operationId": {
+            "type": "string"
+          },
+          "output": {
+            "description": "Console output since the previous read, at most 64 KiB; older output is dropped",
             "type": "string"
           },
           "status": {
@@ -6078,37 +5911,6 @@
       }
     },
     {
-      "name": "uninstall_provider_tools",
-      "description": "Remove active provider association from the host after ensuring no VMs remain",
-      "effect": "destructive",
-      "idempotent": false,
-      "inputSchema": {
-        "properties": {},
-        "type": "object"
-      },
-      "title": "Uninstall Provider Tools",
-      "version": 1,
-      "requiresApproval": true,
-      "outputSchema": {
-        "properties": {
-          "providerId": {
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "removed"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "providerId",
-          "status"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "uninstall_virtualization_stack",
       "description": "Purge the Incus virtualization stack from this host. Refuses while any instance remains; opt in to discarding /var/lib/incus.",
       "effect": "destructive",
@@ -6358,21 +6160,5 @@
         "type": "object"
       }
     }
-  ],
-  "publishedCanary": {
-    "packageVersion": "0.3.0",
-    "catalogRevision": "sha256:9aba4c895695d25c6b8f91aecf06297a813283561bfe308a50cc3569fb20d912",
-    "sourceSha": "730ee3366f08f7a1a7ee1cfd051d0c576d414f67",
-    "runId": 45328650629,
-    "runAttempt": 3,
-    "checks": {
-      "explicitIdentity": true,
-      "openHealth": true,
-      "invalidTokenRejected": true,
-      "authenticatedDiscovery": true,
-      "authenticatedToolsList": true,
-      "structuredGetHostInfo": true,
-      "readOnly": true
-    }
-  }
+  ]
 }

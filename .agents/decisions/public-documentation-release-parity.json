@@ -82,7 +82,7 @@
     {
       "kind": "file",
       "path": "site/context/release-catalog.json",
-      "digest": "d98d70b250cdfbe9bd99d65849732fd714375bef435f009f3fd67fc950d04be4",
+      "digest": "c60be4a976e7c32195b83a6483c1f4f4c335e27212c3ebff8dda2d2573c789c5",
       "note": "Current published package, catalog revision, and read-only canary provenance"
     },
     {
@@ -94,13 +94,13 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "d1e089ba79ff7ba3ec3b638f6b24dab2c6ec0f477dfb987c23cab5b1bedb36a2",
+      "digest": "0181ee5b6032d683704234f28216658c967d69981775ebef948e210f3f89d787",
       "note": "Published package name and release version"
     },
     {
       "kind": "file",
       "path": "npm/local-host-agent/index.js",
-      "digest": "51a1bb0a704afc3c8e4c39fffeb1130706e85445ad5f093e1832be4ed7985796",
+      "digest": "e3e05775663efe49f5b24bd6a934ecc484cd84443de88aff279d9c9b512201c3",
       "note": "Launcher environment and process behavior"
     },
     {
@@ -136,7 +136,7 @@
     {
       "kind": "file",
       "path": "site/scripts/capture-catalog.mjs",
-      "digest": "91f9510fd8076b712a24daf4e1dc8d883085b65dedebc08113a263c6b16436f9",
+      "digest": "78b9a6ffd6e4052411733fde40cc467522e8499294d9f7f2fa247df7a6ca605e",
       "note": "Allowlisted runtime catalog projection"
     },
     {
@@ -160,7 +160,7 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "b403305706dbe6c9ef72e92b06f9d14631d3c86717d6e8860bfa7e426162a811",
+      "digest": "52eb87f234e64ada9918d938403d3962f1dd6622d84de282af72c01af00cef57",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
