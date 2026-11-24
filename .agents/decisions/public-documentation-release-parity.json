@@ -82,7 +82,7 @@
     {
       "kind": "file",
       "path": "site/context/release-catalog.json",
-      "digest": "050b2fb5583b486d577ffdbe9fc14747100a2854d85b9c76f793ef78a612f6dd",
+      "digest": "bd15b1342cc9b46a2f173cc5d4a02cc0383c3e87af0b2a834987d501a398d45a",
       "note": "Current published package, catalog revision, and read-only canary provenance"
     },
     {
@@ -94,13 +94,13 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "0181ee5b6032d683704234f28216658c967d69981775ebef948e210f3f89d787",
+      "digest": "777a433528f9ec67c560bcfe55d1701adf3dc7d760269a76f59dd64b6af38dde",
       "note": "Published package name and release version"
     },
     {
       "kind": "file",
       "path": "npm/local-host-agent/index.js",
-      "digest": "e3e05775663efe49f5b24bd6a934ecc484cd84443de88aff279d9c9b512201c3",
+      "digest": "8a8496b79f30721173590f52f7242299b1b5f74ba8813e99507f4cbbce8a4481",
       "note": "Launcher environment and process behavior"
     },
     {
@@ -130,7 +130,7 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/index.test.js",
-      "digest": "ce17764ca9a9cb8a5b8eb32fe05e2d0d79febf24e03857cd207594a3a5176a3c",
+      "digest": "56d110d44eedc00142c0b00defb4b33753d6ab079af57d99dba0f68906383fe6",
       "note": "Launcher fails closed without canonical identity and proves daemon ownership"
     },
     {
@@ -160,7 +160,7 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "52eb87f234e64ada9918d938403d3962f1dd6622d84de282af72c01af00cef57",
+      "digest": "e61ba635ca92b0c46aa3ddb829fb49ce40675ccd872a90ee44cfe408b933a158",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
