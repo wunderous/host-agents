@@ -68,7 +68,7 @@
   </ul>
   <h2>Reference</h2>
   <p><a href="/docs/versions/v0.4.0/capabilities/">Latest verified catalog — v0.4.0</a></p>
-
+  <p><a href="/docs/previews/v0.5.0/capabilities/">Preview catalog — v0.5.0</a></p>
   <ul>
     <li><a href="/docs/capabilities/">Capabilities</a></li>
     <li><a href="/docs/configuration/" aria-current="page">Configuration</a></li>
@@ -117,7 +117,7 @@
   <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
   <tbody>
     <tr><td><code>MCP_AUTH_TOKEN</code></td><td>Bootstrap Bearer for <code>/mcp</code></td></tr>
-    <tr><td><code>OPUTE_HOST_ALLOW_MUTATIONS</code></td><td><code>true</code> enables mutations (0.4.0 and later; earlier releases read <code>OPUTE_STANDALONE_ALLOW_MUTATIONS</code>)</td></tr>
+    <tr><td><code>OPUTE_OAUTH_CLIENTS</code></td><td>Machine OAuth clients and their grants: <code>id</code> or <code>id:read</code> (read only), <code>id:mutate</code></td></tr>
     <tr><td><code>OPUTE_STANDALONE_STATE_DIR</code></td><td>Standalone state / journal directory</td></tr>
     <tr><td><code>OPUTE_MCP_PREFIX_TOOL_NAMES</code></td><td>Prefix wire tool names for multi-agent IDE workspaces</td></tr>
   </tbody>
@@ -147,7 +147,7 @@
 
 <h2>CLI</h2>
 <pre><code>opute-host-agent --check
-opute-host-agent serve --transport http
+opute-host-agent serve --transport http [--allow-mutations]
 opute-host-agent public-mcp …
 opute-host-agent recipe …
 opute-host-agent provider …

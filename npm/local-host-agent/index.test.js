@@ -74,7 +74,6 @@ test('downloads, verifies, caches, and re-verifies the release binary', { skip: 
     ...launcherTestEnv,
     OPUTE_HOST_AGENT_CACHE_DIR: cacheDir,
     OPUTE_HOST_AGENT_RELEASE_BASE_URL: `http://127.0.0.1:${address.port}`,
-    OPUTE_AGENT_MODE: '',
   }
 
   await execFileAsync(process.execPath, [indexPath, 'start'], { env, timeout: 10_000 })
@@ -158,7 +157,9 @@ fs.writeFileSync(process.env.FAKE_ENV_REPORT, JSON.stringify({
   mcpAuth: process.env.MCP_AUTH_TOKEN || null,
   agentId: process.env.OPUTE_REMOTE_AGENT_ID || null,
   reverseTunnel: process.env.OPUTE_REVERSE_TUNNEL || null,
-  mode: process.env.OPUTE_AGENT_MODE,
+  leftover: ['OPUTE_AGENT_MODE', 'OPUTE_HOST_ALLOW_MUTATIONS', 'OPUTE_STANDALONE_ALLOW_MUTATIONS']
+    .filter(key => key in process.env),
+  args: process.argv.slice(2),
   transport: process.env.OPUTE_TRANSPORT || null,
   localInstanceId: process.env.OPUTE_LOCAL_HOST_AGENT_INSTANCE_ID || null,
 }, null, 2))
@@ -187,8 +188,12 @@ process.on('SIGINT', stop)
     OPUTE_REVERSE_TUNNEL: 'true',
     OPUTE_REMOTE_AGENT_ID: 'test-local-agent-identity',
     MCP_AUTH_TOKEN: 'platform-secret',
+    // Settings of earlier releases: stripped, so they grant nothing.
+    OPUTE_AGENT_MODE: 'standalone',
+    OPUTE_HOST_ALLOW_MUTATIONS: 'true',
+    OPUTE_STANDALONE_ALLOW_MUTATIONS: 'true',
   }
-  const started = await execFileAsync(process.execPath, [indexPath, 'start', '--background'], { env, timeout: 20_000 })
+  const started = await execFileAsync(process.execPath, [indexPath, 'start', '--background', '--allow-mutations'], { env, timeout: 20_000 })
   assert.equal(started.stdout.trim(), `http://127.0.0.1:${port}/mcp`)
   const daemonStatePath = path.join(runtimeDir, 'daemon.json')
   const firstState = JSON.parse(fs.readFileSync(daemonStatePath, 'utf8'))
@@ -207,7 +212,8 @@ process.on('SIGINT', stop)
     mcpAuth: 'platform-secret',
     agentId: 'test-local-agent-identity',
     reverseTunnel: null,
-    mode: 'standalone',
+    leftover: [],
+    args: ['--transport=http', '--allow-mutations'],
     transport: null,
     localInstanceId: secondState.instanceId,
   })

@@ -38,8 +38,9 @@ Point your MCP client at the printed URL (default port **3014**). When
 stdio MCP transport is not supported.
 
 Safe first-run sequence once the client is connected: `tools/list` → read-only
-host/VM inspection tools (for example `get_host_info`, `list_vms`). Mutating
-tools stay denied until `OPUTE_HOST_ALLOW_MUTATIONS=true` (0.3.x read `OPUTE_STANDALONE_ALLOW_MUTATIONS`).
+host/VM inspection tools (for example `get_host_info`, `list_vms`). The
+`MCP_AUTH_TOKEN` bearer stays read-only unless the agent starts with
+`--allow-mutations`; an OAuth client mutates only with the `mutate` scope.
 
 ## Commands
 
@@ -47,6 +48,7 @@ tools stay denied until `OPUTE_HOST_ALLOW_MUTATIONS=true` (0.3.x read `OPUTE_STA
 |---------|-------------|
 | `start` | Start standalone Streamable HTTP (foreground by default) |
 | `start --background` / `-d` | Daemonize, write pid state, print MCP URL |
+| `start --allow-mutations` | Let the `MCP_AUTH_TOKEN` bearer run tools that change the host |
 | `stop` | Stop a background daemon started by this launcher |
 | `status` | JSON status (`running`, `healthy`, `url`) |
 | `url` | Print the MCP URL |
@@ -60,7 +62,6 @@ tools stay denied until `OPUTE_HOST_ALLOW_MUTATIONS=true` (0.3.x read `OPUTE_STA
 | `OPUTE_REMOTE_AGENT_ID` | Required explicit opaque canonical agent identity |
 | `MCP_AUTH_TOKEN` | Bearer bootstrap token for `/mcp` |
 | `OPUTE_HOST_AGENT_BINARY` | Use a local binary instead of downloading a release |
-| `OPUTE_HOST_ALLOW_MUTATIONS=true` | Enable mutating infrastructure tools (0.4.0 and later) |
 | `OPUTE_STANDALONE_STATE_DIR` | Local SQLite / operation journal directory |
 
 The launcher deliberately strips most other `OPUTE_*` variables so a

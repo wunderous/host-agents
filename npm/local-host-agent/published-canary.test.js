@@ -167,8 +167,8 @@ test('published npm launcher black-box canary', { skip: process.env.RUN_PUBLISHE
     const incus = await execFileAsync('incus', ['list', '--format', 'csv'], { timeout: 30_000 })
     assert.equal(typeof incus.stdout, 'string', 'incus is not usable for the published lifecycle canary')
 
-    const mutationEnv = { ...env, OPUTE_HOST_ALLOW_MUTATIONS: 'true' }
-    const mutationStart = await runLauncher(npm, version, cache, npmrc, mutationEnv, 'start', '--background')
+    const mutationEnv = env
+    const mutationStart = await runLauncher(npm, version, cache, npmrc, mutationEnv, 'start', '--background', '--allow-mutations')
     assert.equal(mutationStart.stdout.trim(), `${mcp}`)
     await waitHealth(health)
     const mutationState = { nextId: 1, token: 'host-bootstrap' }
