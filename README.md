@@ -1,15 +1,19 @@
-# Opute Host Agent (Go)
+# Opute Host Agent: distribution and Go reference
 
-Go implementation of the Opute Host Agent — a **server-only** Streamable HTTP
-MCP process that executes typed infrastructure assignments on a Linux host.
+> **The Host Agent is developed in
+> [wunderous/opute-host-agent](https://github.com/wunderous/opute-host-agent).**
+> Start there for the quickstart, issues, pull requests and releases.
 
-- **Repository:** https://github.com/wunderous/host-agents
-- **Go module:** `github.com/wunderous/host-agents`
-- **npm launcher:** [`@opute/host-agent`](./npm/local-host-agent) (`npm/local-host-agent/`)
-- **Platform monorepo:** sibling checkout at `../opute` when developing against [opute](https://github.com/opute-io/opute)
+This repository holds:
 
-This README is the operator-facing source of truth for standalone and local
-dogfood. Prefer it over older blog posts or copied snippets.
+- the npm launcher [`@opute/host-agent`](./npm/local-host-agent);
+- the [www.opute.io](https://www.opute.io) documentation site (`site/`);
+- the release pins (`release/`) that the npm launcher downloads against;
+- the Go implementation, which is frozen and kept as a rollback target.
+
+The published agent is the Rust build from `wunderous/opute-host-agent`. The
+rest of this README documents the Go tree and the launcher, and it stays the
+reference the site's facts are checked against.
 
 ## What it is (and is not)
 
@@ -18,7 +22,7 @@ dogfood. Prefer it over older blog posts or copied snippets.
 | Surface | Streamable HTTP MCP (`/mcp`) | Web UI + control plane (`platform.opute.io`) |
 | Job | Execute typed tools against this host / cluster | Intent, authorization, durable orchestration |
 | Auth | Bootstrap `MCP_AUTH_TOKEN` and/or OAuth access tokens | Platform sessions |
-| Default bind | Standalone: `127.0.0.1:3014` | Platform mode: `0.0.0.0:3004` |
+| Default bind | `127.0.0.1:3014` (one profile since 0.4.0) | n/a |
 
 The Host Agent does **not** infer operations from prose and does **not** require
 an LLM. Clients discover the revisioned capability catalog, validate arguments

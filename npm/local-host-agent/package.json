@@ -8,9 +8,9 @@
     "url": "https://github.com/wunderous/host-agents.git",
     "directory": "npm/local-host-agent"
   },
-  "homepage": "https://github.com/wunderous/host-agents#readme",
+  "homepage": "https://github.com/wunderous/opute-host-agent#readme",
   "bugs": {
-    "url": "https://github.com/wunderous/host-agents/issues"
+    "url": "https://github.com/wunderous/opute-host-agent/issues"
   },
   "keywords": [
     "mcp",
