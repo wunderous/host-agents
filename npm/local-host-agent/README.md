@@ -42,6 +42,24 @@ host/VM inspection tools (for example `get_host_info`, `list_vms`). The
 `MCP_AUTH_TOKEN` bearer stays read-only unless the agent starts with
 `--allow-mutations`; an OAuth client mutates only with the `mutate` scope.
 
+Changes run inside the systemd user slice `opute-workload.slice`. The agent
+refuses them (`host_resource_enforcement_unknown`) until that slice has
+resource limits, which you may set lower than these but not higher:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/opute-workload.slice <<'EOF'
+[Slice]
+MemoryHigh=10G
+MemoryMax=11G
+MemorySwapMax=1G
+CPUQuota=600%
+CPUWeight=100
+TasksMax=4096
+EOF
+systemctl --user daemon-reload
+```
+
 ## Commands
 
 | Command | Description |

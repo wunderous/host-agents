@@ -82,7 +82,7 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "777a433528f9ec67c560bcfe55d1701adf3dc7d760269a76f59dd64b6af38dde",
+      "digest": "cd74acf082e46a43c2ed6a78171d950e4a4e0d7821e03b58c71261338b0cd451",
       "note": "Host Agent release version matches the release tag"
     },
     {
