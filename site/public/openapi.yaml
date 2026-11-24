@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Opute Host Agent HTTP edge",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "Streamable HTTP MCP transport for Opute Host Agent. Tool schemas are revisioned via tools/list — not frozen in this document. See https://www.opute.io/docs/openapi/",
     "contact": {
       "url": "https://www.opute.io/docs/"
@@ -127,10 +127,10 @@
     "protocolVersion": "2026-07-28",
     "transport": "streamable-http",
     "catalogAuthority": "tools/list",
-    "packageVersion": "0.3.0",
+    "packageVersion": "0.4.0",
     "releaseChannel": "stable",
-    "catalogRevision": "sha256:9aba4c895695d25c6b8f91aecf06297a813283561bfe308a50cc3569fb20d912",
-    "toolCount": 142,
+    "catalogRevision": "sha256:6ceca36091c4fc214fac50a643f9dfad87cb4163fb6ebe8b1913a57286e0178c",
+    "toolCount": 138,
     "toolNames": [
       "apply_manifest",
       "build_and_push_oci_image",
@@ -194,9 +194,7 @@
       "install_local_llm_model",
       "install_oci_registry",
       "install_postgresql",
-      "install_provider_tools",
       "install_virtualization_stack",
-      "list_agents",
       "list_certificate_issuers",
       "list_cluster_events",
       "list_compute_clusters",
@@ -232,7 +230,6 @@
       "reconcile_postgresql_service",
       "reconcile_serving_assignment",
       "recover_bridge",
-      "register_kubernetes_cluster",
       "release_postgresql_service_relay",
       "remove_host_file",
       "remove_local_llm_k3s_proxy",
@@ -267,7 +264,6 @@
       "stream_vm_console",
       "terminate_host_vm_distribution",
       "trim_guest_storage",
-      "uninstall_provider_tools",
       "uninstall_virtualization_stack",
       "update_vm_resources",
       "validate_host_local_recipe",

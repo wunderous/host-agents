@@ -67,8 +67,8 @@
     <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
   </ul>
   <h2>Reference</h2>
-  <p><a href="/docs/versions/v0.3.0/capabilities/">Latest verified catalog — v0.3.0</a></p>
-  <p><a href="/docs/previews/v0.4.0/capabilities/">Preview catalog — v0.4.0</a></p>
+  <p><a href="/docs/versions/v0.4.0/capabilities/">Latest verified catalog — v0.4.0</a></p>
+
   <ul>
     <li><a href="/docs/capabilities/" aria-current="page">Capabilities</a></li>
     <li><a href="/docs/configuration/">Configuration</a></li>
@@ -92,10 +92,10 @@
 <main class="doc" id="main-content" lang="en">
 <p class="badge">Reference</p>
 <h1>Capabilities</h1>
-<p class="meta">Published reference for <code><!--email_off-->@opute/host-agent@0.3.0<!--/email_off--></code>. Its read-only package canary passed for catalog revision <code>sha256:9aba4c895695d25c6b8f91aecf06297a813283561bfe308a50cc3569fb20d912.</code></p>
+<p class="meta">Published reference for <code><!--email_off-->@opute/host-agent@0.4.0<!--/email_off--></code>. Its read-only package canary passed for catalog revision <code>sha256:6ceca36091c4fc214fac50a643f9dfad87cb4163fb6ebe8b1913a57286e0178c.</code></p>
 <p>Archived release snapshots: <a href="/docs/versions/v0.2.0/capabilities/">v0.2.0</a> · <a href="/docs/versions/v0.2.1/capabilities/">v0.2.1</a> · <a href="/docs/versions/v0.2.2/capabilities/">v0.2.2</a> · <a href="/docs/versions/v0.2.3/capabilities/">v0.2.3</a> · <a href="/docs/versions/v0.3.0/capabilities/">v0.3.0</a>.</p>
-<p class="meta">This standalone catalog contains 142 typed descriptors. Each entry shows its declared effect, idempotency, and available JSON schemas. A tool appearing here does not prove that its provider or required host service is ready.</p>
-<p>Catalog revision: <code>sha256:9aba4c895695d25c6b8f91aecf06297a813283561bfe308a50cc3569fb20d912</code>. Download the allowlisted descriptor snapshot as <a href="/docs/versions/v0.3.0/capabilities/catalog.json">JSON</a>. At runtime, <code>tools/list</code> and <code>get_capability_catalog</code> remain authoritative; refresh them when a client connects.</p>
+<p class="meta">This standalone catalog contains 138 typed descriptors. Each entry shows its declared effect, idempotency, and available JSON schemas. A tool appearing here does not prove that its provider or required host service is ready.</p>
+<p>Catalog revision: <code>sha256:6ceca36091c4fc214fac50a643f9dfad87cb4163fb6ebe8b1913a57286e0178c</code>. Download the allowlisted descriptor snapshot as <a href="/docs/versions/v0.4.0/capabilities/catalog.json">JSON</a>. At runtime, <code>tools/list</code> and <code>get_capability_catalog</code> remain authoritative; refresh them when a client connects.</p>
 <div class="callout"><strong>Ownership boundary.</strong> Host Agent executes explicit typed capabilities against one host. Opute Platform owns intent, authorization, and durable orchestration across hosts. See <a href="/docs/concepts/#host-agent-and-platform">how the products fit together</a>.</div>
 <section class="catalog-group"><h2>Host operations</h2><div class="catalog-tools"><details class="catalog-tool" id="catalog-tool-0"><summary><code>apply_manifest</code><span class="effect-tag">mutation</span></summary><p>Apply a generic Kubernetes manifest to a VM-backed cluster.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
@@ -2280,40 +2280,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-62"><summary><code>install_provider_tools</code><span class="effect-tag">mutation</span></summary><p>Validate provider readiness and switch the active infrastructure provider on this host (incus)</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
-  &quot;properties&quot;: {
-    &quot;providerId&quot;: {
-      &quot;description&quot;: &quot;Target provider to switch to (&#39;incus&#39;)&quot;,
-      &quot;enum&quot;: [
-        &quot;incus&quot;
-      ],
-      &quot;type&quot;: &quot;string&quot;
-    }
-  },
-  &quot;required&quot;: [
-    &quot;providerId&quot;
-  ],
-  &quot;type&quot;: &quot;object&quot;
-}</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
-  &quot;properties&quot;: {
-    &quot;binaryPath&quot;: {
-      &quot;type&quot;: &quot;string&quot;
-    },
-    &quot;installed&quot;: {
-      &quot;type&quot;: &quot;boolean&quot;
-    },
-    &quot;providerId&quot;: {
-      &quot;type&quot;: &quot;string&quot;
-    }
-  },
-  &quot;required&quot;: [
-    &quot;providerId&quot;,
-    &quot;installed&quot;,
-    &quot;binaryPath&quot;
-  ],
-  &quot;type&quot;: &quot;object&quot;
-}</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-63"><summary><code>install_virtualization_stack</code><span class="effect-tag">mutation</span></summary><p>Install or upgrade Incus, QEMU, virglrenderer, and explicitly requested GPU container prerequisites.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-62"><summary><code>install_virtualization_stack</code><span class="effect-tag">mutation</span></summary><p>Install or upgrade Incus, QEMU, virglrenderer, and explicitly requested GPU container prerequisites.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;gpuPackages&quot;: {
       &quot;items&quot;: {
@@ -2332,68 +2299,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-64"><summary><code>list_agents</code><span class="effect-tag">read</span></summary><p>Retrieve a consolidated list of all agents (host and cluster) connected to the bridge server.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
-  &quot;properties&quot;: {},
-  &quot;type&quot;: &quot;object&quot;
-}</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
-  &quot;properties&quot;: {
-    &quot;agents&quot;: {
-      &quot;items&quot;: {
-        &quot;properties&quot;: {
-          &quot;id&quot;: {
-            &quot;type&quot;: &quot;string&quot;
-          },
-          &quot;lastSeen&quot;: {
-            &quot;type&quot;: &quot;string&quot;
-          },
-          &quot;metadata&quot;: {
-            &quot;type&quot;: &quot;object&quot;
-          },
-          &quot;name&quot;: {
-            &quot;type&quot;: &quot;string&quot;
-          },
-          &quot;status&quot;: {
-            &quot;enum&quot;: [
-              &quot;connected&quot;,
-              &quot;disconnected&quot;,
-              &quot;degraded&quot;,
-              &quot;error&quot;
-            ],
-            &quot;type&quot;: &quot;string&quot;
-          },
-          &quot;type&quot;: {
-            &quot;enum&quot;: [
-              &quot;host&quot;,
-              &quot;cluster&quot;
-            ],
-            &quot;type&quot;: &quot;string&quot;
-          },
-          &quot;uri&quot;: {
-            &quot;type&quot;: &quot;string&quot;
-          },
-          &quot;version&quot;: {
-            &quot;type&quot;: &quot;string&quot;
-          }
-        },
-        &quot;required&quot;: [
-          &quot;uri&quot;,
-          &quot;id&quot;,
-          &quot;name&quot;,
-          &quot;type&quot;,
-          &quot;status&quot;,
-          &quot;lastSeen&quot;
-        ],
-        &quot;type&quot;: &quot;object&quot;
-      },
-      &quot;type&quot;: &quot;array&quot;
-    }
-  },
-  &quot;required&quot;: [
-    &quot;agents&quot;
-  ],
-  &quot;type&quot;: &quot;object&quot;
-}</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-65"><summary><code>list_certificate_issuers</code><span class="effect-tag">read</span></summary><p>List cert-manager Issuers and ClusterIssuers inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-63"><summary><code>list_certificate_issuers</code><span class="effect-tag">read</span></summary><p>List cert-manager Issuers and ClusterIssuers inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;namespace&quot;: {
       &quot;description&quot;: &quot;Optional namespace filter for Issuers&quot;,
@@ -2427,7 +2333,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-66"><summary><code>list_cluster_events</code><span class="effect-tag">read</span></summary><p>List bounded, read-only Kubernetes events for an explicit cluster target.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-64"><summary><code>list_cluster_events</code><span class="effect-tag">read</span></summary><p>List bounded, read-only Kubernetes events for an explicit cluster target.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;limit&quot;: {
       &quot;maximum&quot;: 200,
@@ -2474,7 +2380,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-67"><summary><code>list_compute_clusters</code><span class="effect-tag">read</span></summary><p>List all managed Kubernetes clusters (both provisioned by Opute and externally registered).</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-65"><summary><code>list_compute_clusters</code><span class="effect-tag">read</span></summary><p>List all managed Kubernetes clusters (both provisioned by Opute and externally registered).</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;source&quot;: {
       &quot;description&quot;: &quot;Filter by cluster source: k3s-vm, k3s-container, or external&quot;,
@@ -2534,7 +2440,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-68"><summary><code>list_configmap_keys</code><span class="effect-tag">read</span></summary><p>List data keys in a Kubernetes ConfigMap inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-66"><summary><code>list_configmap_keys</code><span class="effect-tag">read</span></summary><p>List data keys in a Kubernetes ConfigMap inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;configMapName&quot;: {
       &quot;description&quot;: &quot;ConfigMap name&quot;,
@@ -2573,7 +2479,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-69"><summary><code>list_deployments</code><span class="effect-tag">read</span></summary><p>List Kubernetes deployments inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-67"><summary><code>list_deployments</code><span class="effect-tag">read</span></summary><p>List Kubernetes deployments inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;namespace&quot;: {
       &quot;description&quot;: &quot;Optional namespace filter&quot;,
@@ -2607,7 +2513,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-70"><summary><code>list_host_services</code><span class="effect-tag">read</span></summary><p>List systemd services on the host and return their canonical tenant-scoped resource URIs.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-68"><summary><code>list_host_services</code><span class="effect-tag">read</span></summary><p>List systemd services on the host and return their canonical tenant-scoped resource URIs.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;scope&quot;: {
       &quot;enum&quot;: [
@@ -2669,7 +2575,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-71"><summary><code>list_ingress_classes</code><span class="effect-tag">read</span></summary><p>List Kubernetes ingress classes inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-69"><summary><code>list_ingress_classes</code><span class="effect-tag">read</span></summary><p>List Kubernetes ingress classes inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;uri&quot;: {
       &quot;description&quot;: &quot;Canonical Host Agent resource URI returned by discovery.&quot;,
@@ -2699,7 +2605,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-72"><summary><code>list_local_llm_models</code><span class="effect-tag">read</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-70"><summary><code>list_local_llm_models</code><span class="effect-tag">read</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;includeChat&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -2716,7 +2622,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-73"><summary><code>list_namespaces</code><span class="effect-tag">read</span></summary><p>List Kubernetes namespaces inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-71"><summary><code>list_namespaces</code><span class="effect-tag">read</span></summary><p>List Kubernetes namespaces inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;uri&quot;: {
       &quot;description&quot;: &quot;Canonical Host Agent resource URI returned by discovery.&quot;,
@@ -2746,7 +2652,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-74"><summary><code>list_operations</code><span class="effect-tag">read</span></summary><p>List local standalone operations.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-72"><summary><code>list_operations</code><span class="effect-tag">read</span></summary><p>List local standalone operations.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;limit&quot;: {
       &quot;type&quot;: &quot;integer&quot;
@@ -2756,7 +2662,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-75"><summary><code>list_pods</code><span class="effect-tag">read</span></summary><p>List Kubernetes pods inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-73"><summary><code>list_pods</code><span class="effect-tag">read</span></summary><p>List Kubernetes pods inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;namespace&quot;: {
       &quot;description&quot;: &quot;Optional namespace filter&quot;,
@@ -2802,7 +2708,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-76"><summary><code>list_secret_keys</code><span class="effect-tag">read</span></summary><p>List data keys in a Kubernetes Secret inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-74"><summary><code>list_secret_keys</code><span class="effect-tag">read</span></summary><p>List data keys in a Kubernetes Secret inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;namespace&quot;: {
       &quot;description&quot;: &quot;Secret namespace&quot;,
@@ -2841,7 +2747,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-77"><summary><code>list_services</code><span class="effect-tag">read</span></summary><p>List Kubernetes services inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-75"><summary><code>list_services</code><span class="effect-tag">read</span></summary><p>List Kubernetes services inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;namespace&quot;: {
       &quot;description&quot;: &quot;Optional namespace filter&quot;,
@@ -2883,7 +2789,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-78"><summary><code>list_storage_classes</code><span class="effect-tag">read</span></summary><p>List Kubernetes StorageClasses inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-76"><summary><code>list_storage_classes</code><span class="effect-tag">read</span></summary><p>List Kubernetes StorageClasses inside a VM</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;uri&quot;: {
       &quot;description&quot;: &quot;Canonical Host Agent resource URI returned by discovery.&quot;,
@@ -2913,7 +2819,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-79"><summary><code>list_vms</code><span class="effect-tag">read</span></summary><p>List Incus virtual machines with structured inventory results</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-77"><summary><code>list_vms</code><span class="effect-tag">read</span></summary><p>List Incus virtual machines with structured inventory results</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;fast&quot;: {
       &quot;description&quot;: &quot;Whether to return a fast summary without per-VM info probes&quot;,
@@ -2984,7 +2890,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-80"><summary><code>open_assistant_session</code><span class="effect-tag">read</span></summary><p>Negotiate the bounded assistant-session.v1 contract and bind the client to the current capability revision.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-78"><summary><code>open_assistant_session</code><span class="effect-tag">read</span></summary><p>Negotiate the bounded assistant-session.v1 contract and bind the client to the current capability revision.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;catalogRevision&quot;: {
       &quot;type&quot;: &quot;string&quot;
@@ -3019,7 +2925,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-81"><summary><code>opute.provider.install</code><span class="effect-tag">mutation</span></summary><p>Connect to a trusted provider MCP module, validate its neutral install manifest, execute its selected declarative recipe, and optionally activate the resulting provider generation.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-79"><summary><code>opute.provider.install</code><span class="effect-tag">mutation</span></summary><p>Connect to a trusted provider MCP module, validate its neutral install manifest, execute its selected declarative recipe, and optionally activate the resulting provider generation.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;activate&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -3066,7 +2972,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-82"><summary><code>opute.provider.reload</code><span class="effect-tag">mutation</span></summary><p>Load a new trusted provider module generation and reconcile its selected recipe before activation.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-80"><summary><code>opute.provider.reload</code><span class="effect-tag">mutation</span></summary><p>Load a new trusted provider module generation and reconcile its selected recipe before activation.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;activate&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -3106,7 +3012,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-83"><summary><code>opute.provider.status</code><span class="effect-tag">read</span></summary><p>Read connected provider and active generation state, optionally matching a caller-declared endpoint, without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-81"><summary><code>opute.provider.status</code><span class="effect-tag">read</span></summary><p>Read connected provider and active generation state, optionally matching a caller-declared endpoint, without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;expectedEndpoint&quot;: {
       &quot;format&quot;: &quot;uri&quot;,
@@ -3129,7 +3035,7 @@
   },
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-84"><summary><code>opute.provider.teardown</code><span class="effect-tag">destructive</span></summary><p>Ask the connected provider for a generic teardown host plan, validate it, execute it durably, and retire the provider only after the plan succeeds.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-82"><summary><code>opute.provider.teardown</code><span class="effect-tag">destructive</span></summary><p>Ask the connected provider for a generic teardown host plan, validate it, execute it durably, and retire the provider only after the plan succeeds.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;confirm&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -3162,7 +3068,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-85"><summary><code>opute.provider.validate</code><span class="effect-tag">read</span></summary><p>Run a provider-declared capability validation operation through the generic provider MCP contract.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-83"><summary><code>opute.provider.validate</code><span class="effect-tag">read</span></summary><p>Run a provider-declared capability validation operation through the generic provider MCP contract.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;inputs&quot;: {
       &quot;type&quot;: &quot;object&quot;
@@ -3182,7 +3088,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-86"><summary><code>prepare_host_agent_artifacts</code><span class="effect-tag">mutation</span></summary><p>Build Linux host-agent binaries into a caller-selected directory for platform image builds.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-84"><summary><code>prepare_host_agent_artifacts</code><span class="effect-tag">mutation</span></summary><p>Build Linux host-agent binaries into a caller-selected directory for platform image builds.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;archs&quot;: {
       &quot;items&quot;: {
@@ -3205,12 +3111,12 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-87"><summary><code>probe_gpu_container</code><span class="effect-tag">mutation</span></summary><p>Launch a disposable Incus system container, probe GPU visibility and NVML, then delete it.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-85"><summary><code>probe_gpu_container</code><span class="effect-tag">mutation</span></summary><p>Launch a disposable Incus system container, probe GPU visibility and NVML, then delete it.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-88"><summary><code>probe_http_endpoint</code><span class="effect-tag">read</span></summary><p>Probe a caller-declared HTTP(S) endpoint for provider-neutral reachability evidence.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-86"><summary><code>probe_http_endpoint</code><span class="effect-tag">read</span></summary><p>Probe a caller-declared HTTP(S) endpoint for provider-neutral reachability evidence.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;endpoint&quot;: {
       &quot;format&quot;: &quot;uri&quot;,
@@ -3228,7 +3134,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-89"><summary><code>probe_local_llm</code><span class="effect-tag">read</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-87"><summary><code>probe_local_llm</code><span class="effect-tag">read</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;includeChat&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -3274,7 +3180,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-90"><summary><code>probe_openai_compatible_server</code><span class="effect-tag">read</span></summary><p>Probe a caller-declared runtime for model discovery and optional streaming chat readiness.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-88"><summary><code>probe_openai_compatible_server</code><span class="effect-tag">read</span></summary><p>Probe a caller-declared runtime for model discovery and optional streaming chat readiness.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;bearerToken&quot;: {
       &quot;type&quot;: &quot;string&quot;,
@@ -3304,12 +3210,12 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-91"><summary><code>probe_virtualization_gpu</code><span class="effect-tag">read</span></summary><p>Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-89"><summary><code>probe_virtualization_gpu</code><span class="effect-tag">read</span></summary><p>Inspect WSL GPU devices/libraries and host virtualization versions; does not claim container GPU inference success.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-92"><summary><code>provision_container</code><span class="effect-tag">mutation</span></summary><p>Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-90"><summary><code>provision_container</code><span class="effect-tag">mutation</span></summary><p>Launch or reuse a persistent Incus system container with optional GPU, WSL GPU libraries, nesting, and model volume.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;containerName&quot;: {
       &quot;type&quot;: &quot;string&quot;
@@ -3358,7 +3264,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-93"><summary><code>provision_vm</code><span class="effect-tag">mutation</span></summary><p>Launch a new Incus instance on the host (system container by default; pass instanceType virtual-machine for a QEMU VM)</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-91"><summary><code>provision_vm</code><span class="effect-tag">mutation</span></summary><p>Launch a new Incus instance on the host (system container by default; pass instanceType virtual-machine for a QEMU VM)</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;cpus&quot;: {
       &quot;default&quot;: 2,
@@ -3425,7 +3331,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-94"><summary><code>prune_unused_cluster_images</code><span class="effect-tag">destructive</span></summary><p>Age-gated removal of unused k3s/containerd images not referenced by current pods. Dry-run first. Never deletes PVCs or Incus instances.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-92"><summary><code>prune_unused_cluster_images</code><span class="effect-tag">destructive</span></summary><p>Age-gated removal of unused k3s/containerd images not referenced by current pods. Dry-run first. Never deletes PVCs or Incus instances.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;dryRun&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -3454,7 +3360,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-95"><summary><code>put_cluster_secret</code><span class="effect-tag">credential_bearing</span></summary><p>Create or replace a generic Kubernetes Secret without returning its values.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-93"><summary><code>put_cluster_secret</code><span class="effect-tag">credential_bearing</span></summary><p>Create or replace a generic Kubernetes Secret without returning its values.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;data&quot;: {
       &quot;additionalProperties&quot;: {
@@ -3484,7 +3390,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-96"><summary><code>reconcile_host_resource_policy</code><span class="effect-tag">mutation</span></summary><p>Reconcile an already-authorized versioned host resource policy against one exact host-service URI; raw systemd, cgroup, WSL, and shell controls are not accepted.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-94"><summary><code>reconcile_host_resource_policy</code><span class="effect-tag">mutation</span></summary><p>Reconcile an already-authorized versioned host resource policy against one exact host-service URI; raw systemd, cgroup, WSL, and shell controls are not accepted.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;policyRevision&quot;: {
       &quot;minLength&quot;: 1,
@@ -3517,7 +3423,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-97"><summary><code>reconcile_postgresql_service</code><span class="effect-tag">mutation</span></summary><p>Install or reconcile CloudNativePG and a SQL-gated caller-defined PostgreSQL service in an explicit K3s target. Credentials remain CNPG-owned and are never returned.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-95"><summary><code>reconcile_postgresql_service</code><span class="effect-tag">mutation</span></summary><p>Install or reconcile CloudNativePG and a SQL-gated caller-defined PostgreSQL service in an explicit K3s target. Credentials remain CNPG-owned and are never returned.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;clusterName&quot;: {
       &quot;type&quot;: &quot;string&quot;
@@ -3633,7 +3539,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-98"><summary><code>reconcile_serving_assignment</code><span class="effect-tag">mutation</span></summary><p>Validate and reconcile a product-neutral serving assignment against an explicit host target. Rejects VM or ambiguous targets and returns bounded readiness evidence.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-96"><summary><code>reconcile_serving_assignment</code><span class="effect-tag">mutation</span></summary><p>Validate and reconcile a product-neutral serving assignment against an explicit host target. Rejects VM or ambiguous targets and returns bounded readiness evidence.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;artifact&quot;: {
       &quot;type&quot;: &quot;object&quot;
@@ -3721,7 +3627,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-99"><summary><code>recover_bridge</code><span class="effect-tag">mutation</span></summary><p>Attempts to recover the local bridge control plane by restarting the service</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-97"><summary><code>recover_bridge</code><span class="effect-tag">mutation</span></summary><p>Attempts to recover the local bridge control plane by restarting the service</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {},
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
@@ -3820,59 +3726,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-100"><summary><code>register_kubernetes_cluster</code><span class="effect-tag">mutation</span></summary><p>Register an externally-managed Kubernetes cluster (not provisioned by Opute). The cluster record is persisted in the bridge database and the kubeconfig is stored on the host.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
-  &quot;properties&quot;: {
-    &quot;apiEndpoint&quot;: {
-      &quot;description&quot;: &quot;Kubernetes API server endpoint (e.g. https://1.2.3.4:6443)&quot;,
-      &quot;type&quot;: &quot;string&quot;
-    },
-    &quot;clusterName&quot;: {
-      &quot;description&quot;: &quot;Display name for the cluster&quot;,
-      &quot;type&quot;: &quot;string&quot;
-    },
-    &quot;kubeconfigContent&quot;: {
-      &quot;description&quot;: &quot;Raw kubeconfig YAML content&quot;,
-      &quot;type&quot;: &quot;string&quot;
-    },
-    &quot;kubeconfigPath&quot;: {
-      &quot;description&quot;: &quot;Path to an existing kubeconfig file on the host&quot;,
-      &quot;type&quot;: &quot;string&quot;
-    }
-  },
-  &quot;required&quot;: [
-    &quot;clusterName&quot;
-  ],
-  &quot;type&quot;: &quot;object&quot;
-}</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
-  &quot;properties&quot;: {
-    &quot;apiEndpoint&quot;: {
-      &quot;type&quot;: &quot;string&quot;
-    },
-    &quot;clusterId&quot;: {
-      &quot;type&quot;: &quot;string&quot;
-    },
-    &quot;clusterName&quot;: {
-      &quot;type&quot;: &quot;string&quot;
-    },
-    &quot;connectionState&quot;: {
-      &quot;type&quot;: &quot;string&quot;
-    },
-    &quot;source&quot;: {
-      &quot;enum&quot;: [
-        &quot;external&quot;
-      ],
-      &quot;type&quot;: &quot;string&quot;
-    }
-  },
-  &quot;required&quot;: [
-    &quot;clusterId&quot;,
-    &quot;clusterName&quot;,
-    &quot;source&quot;,
-    &quot;connectionState&quot;
-  ],
-  &quot;type&quot;: &quot;object&quot;
-}</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-101"><summary><code>release_postgresql_service_relay</code><span class="effect-tag">credential_bearing</span></summary><p>Release one caller-owned PostgreSQL service relay without changing the underlying service or databases.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-98"><summary><code>release_postgresql_service_relay</code><span class="effect-tag">credential_bearing</span></summary><p>Release one caller-owned PostgreSQL service relay without changing the underlying service or databases.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;relayToken&quot;: {
       &quot;minLength&quot;: 32,
@@ -3892,7 +3746,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-102"><summary><code>remove_host_file</code><span class="effect-tag">destructive</span></summary><p>Remove one caller-owned regular file beneath the current user&#39;s home directory after explicit confirmation and an optional content hash check.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-99"><summary><code>remove_host_file</code><span class="effect-tag">destructive</span></summary><p>Remove one caller-owned regular file beneath the current user&#39;s home directory after explicit confirmation and an optional content hash check.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;confirm&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -3918,7 +3772,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-103"><summary><code>remove_local_llm_k3s_proxy</code><span class="effect-tag">destructive</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-100"><summary><code>remove_local_llm_k3s_proxy</code><span class="effect-tag">destructive</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;namespace&quot;: {
       &quot;type&quot;: &quot;string&quot;
@@ -3931,7 +3785,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-104"><summary><code>remove_local_llm_model</code><span class="effect-tag">destructive</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-101"><summary><code>remove_local_llm_model</code><span class="effect-tag">destructive</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;modelRef&quot;: {
       &quot;type&quot;: &quot;string&quot;
@@ -3947,7 +3801,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-105"><summary><code>remove_local_llm_relay</code><span class="effect-tag">destructive</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-102"><summary><code>remove_local_llm_relay</code><span class="effect-tag">destructive</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {},
   &quot;required&quot;: [
     &quot;sessionId&quot;
@@ -3956,7 +3810,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-106"><summary><code>remove_postgresql_service</code><span class="effect-tag">destructive</span></summary><p>Destructively remove a caller-defined PostgreSQL CNPG service and owned data while preserving the operator. Requires confirm=true.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-103"><summary><code>remove_postgresql_service</code><span class="effect-tag">destructive</span></summary><p>Destructively remove a caller-defined PostgreSQL CNPG service and owned data while preserving the operator. Requires confirm=true.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;clusterName&quot;: {
       &quot;type&quot;: &quot;string&quot;
@@ -4064,7 +3918,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-107"><summary><code>remove_public_mcp_quick_tunnel</code><span class="effect-tag">destructive</span></summary><p>Stop and remove one Opute-owned Cloudflare Quick Tunnel and its verified artifact after explicit confirmation; unrelated paths are refused.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-104"><summary><code>remove_public_mcp_quick_tunnel</code><span class="effect-tag">destructive</span></summary><p>Stop and remove one Opute-owned Cloudflare Quick Tunnel and its verified artifact after explicit confirmation; unrelated paths are refused.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;artifactSha256&quot;: {
       &quot;pattern&quot;: &quot;^(sha256:)?[0-9a-fA-F]{64}$&quot;,
@@ -4106,7 +3960,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-108"><summary><code>remove_service_domain</code><span class="effect-tag">destructive</span></summary><p>Remove a caller-selected Kubernetes Service domain mapping.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-105"><summary><code>remove_service_domain</code><span class="effect-tag">destructive</span></summary><p>Remove a caller-selected Kubernetes Service domain mapping.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;ingressName&quot;: {
       &quot;type&quot;: &quot;string&quot;
@@ -4129,7 +3983,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-109"><summary><code>remove_sqlite_database</code><span class="effect-tag">destructive</span></summary><p>Remove an isolated caller-scoped SQLite database after explicit confirmation.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-106"><summary><code>remove_sqlite_database</code><span class="effect-tag">destructive</span></summary><p>Remove an isolated caller-scoped SQLite database after explicit confirmation.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;confirm&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -4150,7 +4004,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-110"><summary><code>remove_vm_network_device</code><span class="effect-tag">destructive</span></summary><p>Remove a network interface device from a VM Incus configuration</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-107"><summary><code>remove_vm_network_device</code><span class="effect-tag">destructive</span></summary><p>Remove a network interface device from a VM Incus configuration</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;deviceName&quot;: {
       &quot;description&quot;: &quot;Name of the NIC device to remove (e.g. eth1)&quot;,
@@ -4190,7 +4044,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-111"><summary><code>render_cluster_package</code><span class="effect-tag">read</span></summary><p>Render a Helm chart to Kubernetes manifests on the host using helm template.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-108"><summary><code>render_cluster_package</code><span class="effect-tag">read</span></summary><p>Render a Helm chart to Kubernetes manifests on the host using helm template.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;chartPath&quot;: {
       &quot;type&quot;: &quot;string&quot;
@@ -4222,7 +4076,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-112"><summary><code>request_task_input</code><span class="effect-tag">read</span></summary><p>Pause a read-only task and request one operator response through the standard MCP Tasks input_required/tasks/update flow.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-109"><summary><code>request_task_input</code><span class="effect-tag">read</span></summary><p>Pause a read-only task and request one operator response through the standard MCP Tasks input_required/tasks/update flow.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;prompt&quot;: {
       &quot;minLength&quot;: 1,
@@ -4246,7 +4100,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-113"><summary><code>reset_virtualization_stack</code><span class="effect-tag">destructive</span></summary><p>Fail-closed, ownership-checked, confirmation-gated reset of explicitly selected disposable Incus instances. Returns redacted resumable phase evidence.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-110"><summary><code>reset_virtualization_stack</code><span class="effect-tag">destructive</span></summary><p>Fail-closed, ownership-checked, confirmation-gated reset of explicitly selected disposable Incus instances. Returns redacted resumable phase evidence.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;confirm&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -4287,7 +4141,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-114"><summary><code>resize_console</code><span class="effect-tag">mutation</span></summary><p>Resize an active console terminal on this host.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-111"><summary><code>resize_console</code><span class="effect-tag">mutation</span></summary><p>Resize an active console terminal on this host.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;height&quot;: {
       &quot;description&quot;: &quot;New height in rows&quot;,
@@ -4326,7 +4180,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-115"><summary><code>restart_host_service</code><span class="effect-tag">mutation</span></summary><p>Restart an Opute user service (an opute- systemd user unit) without blocking; system services are restarted with set_host_service_state</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-112"><summary><code>restart_host_service</code><span class="effect-tag">mutation</span></summary><p>Restart an Opute user service (an opute- systemd user unit) without blocking; system services are restarted with set_host_service_state</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;serviceName&quot;: {
       &quot;description&quot;: &quot;The Opute user unit to restart (opute-...).&quot;,
@@ -4366,7 +4220,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-116"><summary><code>restart_vm</code><span class="effect-tag">mutation</span></summary><p>Force-stop and then start a VM on the host</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-113"><summary><code>restart_vm</code><span class="effect-tag">mutation</span></summary><p>Force-stop and then start a VM on the host</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;uri&quot;: {
       &quot;description&quot;: &quot;Canonical Host Agent resource URI&quot;,
@@ -4395,7 +4249,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-117"><summary><code>run_host_command</code><span class="effect-tag">mutation</span></summary><p>Run a caller-declared bounded host command for a generic serving or infrastructure assignment.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-114"><summary><code>run_host_command</code><span class="effect-tag">mutation</span></summary><p>Run a caller-declared bounded host command for a generic serving or infrastructure assignment.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;command&quot;: {
       &quot;minLength&quot;: 1,
@@ -4419,7 +4273,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-118"><summary><code>run_host_local_recipe</code><span class="effect-tag">mutation</span></summary><p>Execute a host-recipe.v1 document that declares coordinator=host-agent/mode=local through the durable host-plan runner, so a first cluster node can be established with no Platform in the loop. Read the run with get_host_plan_run. A distributed recipe is refused.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-115"><summary><code>run_host_local_recipe</code><span class="effect-tag">mutation</span></summary><p>Execute a host-recipe.v1 document that declares coordinator=host-agent/mode=local through the durable host-plan runner, so a first cluster node can be established with no orchestrator in the loop. Read the run with get_host_plan_run. A distributed recipe is refused.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;inputs&quot;: {
       &quot;type&quot;: &quot;object&quot;
@@ -4450,7 +4304,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-119"><summary><code>run_host_plan</code><span class="effect-tag">mutation</span></summary><p>Execute an explicit generic host-plan.v1 document with durable idempotency, readiness validation, recovery, and resume state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-116"><summary><code>run_host_plan</code><span class="effect-tag">mutation</span></summary><p>Execute an explicit generic host-plan.v1 document with durable idempotency, readiness validation, recovery, and resume state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;plan&quot;: {},
     &quot;resume&quot;: {
@@ -4469,7 +4323,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-120"><summary><code>run_instance_command</code><span class="effect-tag">mutation</span></summary><p>Execute a provider-declared argv on a resolved Incus VM or system container. The target must be a canonical tenant-scoped URI.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-117"><summary><code>run_instance_command</code><span class="effect-tag">mutation</span></summary><p>Execute a provider-declared argv on a resolved Incus VM or system container. The target must be a canonical tenant-scoped URI.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;args&quot;: {
       &quot;items&quot;: {
@@ -4509,7 +4363,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-121"><summary><code>run_runtime_recipe</code><span class="effect-tag">mutation</span></summary><p>Execute an external runtime-recipe.v1 through the durable host-plan runner; with activate=true, validate its neutral serving contract and commit it as the active runtime only after the run succeeds.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-118"><summary><code>run_runtime_recipe</code><span class="effect-tag">mutation</span></summary><p>Execute an external runtime-recipe.v1 through the durable host-plan runner; with activate=true, validate its neutral serving contract and commit it as the active runtime only after the run succeeds.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;activate&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -4544,7 +4398,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-122"><summary><code>run_sql</code><span class="effect-tag">mutation</span></summary><p>Run bounded SQL inside the standalone PostgreSQL pod.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-119"><summary><code>run_sql</code><span class="effect-tag">mutation</span></summary><p>Run bounded SQL inside the standalone PostgreSQL pod.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;database&quot;: {
       &quot;type&quot;: &quot;string&quot;
@@ -4567,7 +4421,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-123"><summary><code>run_tunnel_recipe</code><span class="effect-tag">mutation</span></summary><p>Execute an external tunnel-recipe.v1 through the durable host-plan runner; activate only after generic HTTP exposure validation succeeds.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-120"><summary><code>run_tunnel_recipe</code><span class="effect-tag">mutation</span></summary><p>Execute an external tunnel-recipe.v1 through the durable host-plan runner; activate only after generic HTTP exposure validation succeeds.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;activate&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -4602,7 +4456,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-124"><summary><code>send_console_input</code><span class="effect-tag">mutation</span></summary><p>Send input data to an active console stream on this host.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-121"><summary><code>send_console_input</code><span class="effect-tag">mutation</span></summary><p>Send input data to an active console stream on this host.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;data&quot;: {
       &quot;description&quot;: &quot;Raw string data to send to the console PTY&quot;,
@@ -4620,10 +4474,18 @@
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;properties&quot;: {
+    &quot;closed&quot;: {
+      &quot;description&quot;: &quot;True once the console process has exited; this is the session&#39;s last read&quot;,
+      &quot;type&quot;: &quot;boolean&quot;
+    },
     &quot;error&quot;: {
       &quot;type&quot;: &quot;string&quot;
     },
     &quot;operationId&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;output&quot;: {
+      &quot;description&quot;: &quot;Console output since the previous read, at most 64 KiB; older output is dropped&quot;,
       &quot;type&quot;: &quot;string&quot;
     },
     &quot;status&quot;: {
@@ -4636,7 +4498,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-125"><summary><code>set_host_service_state</code><span class="effect-tag">mutation</span></summary><p>Start, stop, restart, enable, or disable a validated host service; user scope is the default.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-122"><summary><code>set_host_service_state</code><span class="effect-tag">mutation</span></summary><p>Start, stop, restart, enable, or disable a validated host service; user scope is the default.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;scope&quot;: {
       &quot;enum&quot;: [
@@ -4675,7 +4537,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-126"><summary><code>shutdown_host_vm_subsystem</code><span class="effect-tag">destructive</span></summary><p>Shutdown the complete WSL2 environment through the tested Windows lifecycle capability. Requires explicit destructive approval.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-123"><summary><code>shutdown_host_vm_subsystem</code><span class="effect-tag">destructive</span></summary><p>Shutdown the complete WSL2 environment through the tested Windows lifecycle capability. Requires explicit destructive approval.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {},
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
@@ -4684,7 +4546,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-127"><summary><code>stage_build_context</code><span class="effect-tag">mutation</span></summary><p>Write a caller-provided build context into an allowlisted host directory for build_and_push_oci_image.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-124"><summary><code>stage_build_context</code><span class="effect-tag">mutation</span></summary><p>Write a caller-provided build context into an allowlisted host directory for build_and_push_oci_image.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;destDir&quot;: {
       &quot;type&quot;: &quot;string&quot;
@@ -4711,7 +4573,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-128"><summary><code>start_local_llm_runtime</code><span class="effect-tag">mutation</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-125"><summary><code>start_local_llm_runtime</code><span class="effect-tag">mutation</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;runtime&quot;: {
       &quot;enum&quot;: [
@@ -4728,7 +4590,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-129"><summary><code>start_vm</code><span class="effect-tag">mutation</span></summary><p>Start a VM on the host</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-126"><summary><code>start_vm</code><span class="effect-tag">mutation</span></summary><p>Start a VM on the host</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;uri&quot;: {
       &quot;description&quot;: &quot;Canonical Host Agent resource URI&quot;,
@@ -4757,7 +4619,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-130"><summary><code>stop_local_llm_runtime</code><span class="effect-tag">mutation</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-127"><summary><code>stop_local_llm_runtime</code><span class="effect-tag">mutation</span></summary><p>LEGACY compatibility wrapper for a local runtime operation; prefer runtime-recipe.v1</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;runtime&quot;: {
       &quot;enum&quot;: [
@@ -4774,7 +4636,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-131"><summary><code>stop_vm</code><span class="effect-tag">mutation</span></summary><p>Stop a VM on the host</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-128"><summary><code>stop_vm</code><span class="effect-tag">mutation</span></summary><p>Stop a VM on the host</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;uri&quot;: {
       &quot;description&quot;: &quot;Canonical Host Agent resource URI&quot;,
@@ -4803,7 +4665,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-132"><summary><code>stream_vm_console</code><span class="effect-tag">mutation</span></summary><p>Stream VM serial console output (lxc console). Direct TTY access for boot observability on this host.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-129"><summary><code>stream_vm_console</code><span class="effect-tag">mutation</span></summary><p>Stream VM serial console output (lxc console). Direct TTY access for boot observability on this host.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;height&quot;: {
       &quot;description&quot;: &quot;Terminal height in rows&quot;,
@@ -4846,7 +4708,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-133"><summary><code>terminate_host_vm_distribution</code><span class="effect-tag">mutation</span></summary><p>Terminate exactly one named WSL distribution through the tested Windows interop capability. Requires host approval.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-130"><summary><code>terminate_host_vm_distribution</code><span class="effect-tag">mutation</span></summary><p>Terminate exactly one named WSL distribution through the tested Windows interop capability. Requires host approval.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;distro&quot;: {
       &quot;minLength&quot;: 1,
@@ -4864,7 +4726,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-134"><summary><code>trim_guest_storage</code><span class="effect-tag">mutation</span></summary><p>Run fstrim inside the bound k3s Incus guest after reclaim so unused blocks are punched before VHDX compact.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-131"><summary><code>trim_guest_storage</code><span class="effect-tag">mutation</span></summary><p>Run fstrim inside the bound k3s Incus guest after reclaim so unused blocks are punched before VHDX compact.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;uri&quot;: {
       &quot;description&quot;: &quot;Canonical Host Agent resource URI returned by discovery.&quot;,
@@ -4880,28 +4742,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-135"><summary><code>uninstall_provider_tools</code><span class="effect-tag">destructive</span></summary><p>Remove active provider association from the host after ensuring no VMs remain</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
-  &quot;properties&quot;: {},
-  &quot;type&quot;: &quot;object&quot;
-}</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
-  &quot;properties&quot;: {
-    &quot;providerId&quot;: {
-      &quot;type&quot;: &quot;string&quot;
-    },
-    &quot;status&quot;: {
-      &quot;enum&quot;: [
-        &quot;removed&quot;
-      ],
-      &quot;type&quot;: &quot;string&quot;
-    }
-  },
-  &quot;required&quot;: [
-    &quot;providerId&quot;,
-    &quot;status&quot;
-  ],
-  &quot;type&quot;: &quot;object&quot;
-}</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-136"><summary><code>uninstall_virtualization_stack</code><span class="effect-tag">destructive</span></summary><p>Purge the Incus virtualization stack from this host. Refuses while any instance remains; opt in to discarding /var/lib/incus.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-132"><summary><code>uninstall_virtualization_stack</code><span class="effect-tag">destructive</span></summary><p>Purge the Incus virtualization stack from this host. Refuses while any instance remains; opt in to discarding /var/lib/incus.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;confirm&quot;: {
       &quot;type&quot;: &quot;boolean&quot;
@@ -4920,7 +4761,7 @@
 }</code></pre></details><details class="schema-disclosure"><summary>Output schema</summary><pre><code>{
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-137"><summary><code>update_vm_resources</code><span class="effect-tag">mutation</span></summary><p>Update CPU, memory, and/or root disk limits of an existing VM or system container. Disk is admitted only when the instance&#39;s storage pool can enforce it, and is grow-only.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-133"><summary><code>update_vm_resources</code><span class="effect-tag">mutation</span></summary><p>Update CPU, memory, and/or root disk limits of an existing VM or system container. Disk is admitted only when the instance&#39;s storage pool can enforce it, and is grow-only.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>no</strong></li><li>Requires an approval gate: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;cpus&quot;: {
       &quot;description&quot;: &quot;New vCPU limit (e.g. 2)&quot;,
@@ -4987,7 +4828,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-138"><summary><code>validate_host_local_recipe</code><span class="effect-tag">read</span></summary><p>Resolve and validate a host-recipe.v1 document that declares coordinator=host-agent/mode=local, against this Host Agent&#39;s catalog and identity, without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-134"><summary><code>validate_host_local_recipe</code><span class="effect-tag">read</span></summary><p>Resolve and validate a host-recipe.v1 document that declares coordinator=host-agent/mode=local, against this Host Agent&#39;s catalog and identity, without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;inputs&quot;: {
       &quot;type&quot;: &quot;object&quot;
@@ -5017,7 +4858,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-139"><summary><code>validate_host_plan</code><span class="effect-tag">read</span></summary><p>Validate a generic host-plan.v1 document against the current authorized capability catalog without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-135"><summary><code>validate_host_plan</code><span class="effect-tag">read</span></summary><p>Validate a generic host-plan.v1 document against the current authorized capability catalog without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;plan&quot;: {}
   },
@@ -5033,7 +4874,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-140"><summary><code>validate_runtime_recipe</code><span class="effect-tag">read</span></summary><p>Resolve and validate an external runtime-recipe.v1 source without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-136"><summary><code>validate_runtime_recipe</code><span class="effect-tag">read</span></summary><p>Resolve and validate an external runtime-recipe.v1 source without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;inputs&quot;: {
       &quot;type&quot;: &quot;object&quot;
@@ -5064,7 +4905,7 @@
   ],
   &quot;type&quot;: &quot;object&quot;
 }</code></pre></details></details>
-<details class="catalog-tool" id="catalog-tool-141"><summary><code>validate_tunnel_recipe</code><span class="effect-tag">read</span></summary><p>Resolve and validate an external tunnel-recipe.v1 source and its embedded host-plan.v1 without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
+<details class="catalog-tool" id="catalog-tool-137"><summary><code>validate_tunnel_recipe</code><span class="effect-tag">read</span></summary><p>Resolve and validate an external tunnel-recipe.v1 source and its embedded host-plan.v1 without changing host state.</p><ul class="catalog-facts"><li>Capability version: <code>1</code></li><li>Idempotent: <strong>yes</strong></li></ul><details class="schema-disclosure"><summary>Input schema</summary><pre><code>{
   &quot;properties&quot;: {
     &quot;inputs&quot;: {
       &quot;type&quot;: &quot;object&quot;
