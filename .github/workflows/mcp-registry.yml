@@ -1,0 +1,57 @@
+name: MCP Registry
+
+# Publishes npm/local-host-agent/server.json to the official MCP Registry
+# (registry.modelcontextprotocol.io) as io.github.wunderous/opute-host-agent.
+# Run it after the tag's Publish run has put that version on npm: the registry
+# checks that the npm package's mcpName matches the server name.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose server.json to publish, e.g. v0.5.2
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      PUBLISHER_VERSION: 1.8.8
+      PUBLISHER_SHA256: 09f1fa70ee146b640584274a1a6b2b8a0310b05d4321fa9224e6df6a016d67f4
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+
+      - name: Check server.json matches the tag and npm
+        working-directory: npm/local-host-agent
+        run: |
+          set -eo pipefail
+          version="${{ inputs.tag }}"; version="${version#v}"
+          node -e '
+            const s = require("./server.json"), p = require("./package.json"), v = process.argv[1]
+            if (s.version !== v || s.packages[0].version !== v || p.version !== v) throw new Error(`server.json and package.json must both be ${v}`)
+            if (s.name !== p.mcpName) throw new Error("server.json name must equal package.json mcpName")
+          ' "$version"
+          [ "$(npm view "@opute/host-agent@$version" mcpName)" = "io.github.wunderous/opute-host-agent" ]
+
+      - name: Install mcp-publisher
+        run: |
+          set -eo pipefail
+          curl -fsSL -o /tmp/mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v${PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${PUBLISHER_SHA256}  /tmp/mcp-publisher.tar.gz" | sha256sum -c -
+          tar -C /tmp -xzf /tmp/mcp-publisher.tar.gz mcp-publisher
+
+      - name: Publish
+        working-directory: npm/local-host-agent
+        run: |
+          set -eo pipefail
+          /tmp/mcp-publisher validate
+          /tmp/mcp-publisher login github-oidc
+          /tmp/mcp-publisher publish
