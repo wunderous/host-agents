@@ -1,0 +1,60 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.wunderous/opute-host-agent",
+  "title": "Opute Host Agent",
+  "description": "Run your Linux host from an AI assistant: Incus VMs, K3s, databases, tunnels. Read-only by default.",
+  "version": "0.5.2",
+  "websiteUrl": "https://www.opute.io",
+  "repository": {
+    "url": "https://github.com/wunderous/opute-host-agent",
+    "source": "github",
+    "id": "1394718036"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@opute/host-agent",
+      "version": "0.5.2",
+      "runtimeHint": "npx",
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "start"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "OPUTE_REMOTE_AGENT_ID",
+          "description": "This agent's identity, any opaque id such as local-<random hex>",
+          "isRequired": true
+        },
+        {
+          "name": "MCP_AUTH_TOKEN",
+          "description": "Bearer token clients send to the agent; generate one with openssl rand -hex 32",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ],
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://127.0.0.1:3014/mcp",
+        "headers": [
+          {
+            "name": "Authorization",
+            "value": "Bearer {MCP_AUTH_TOKEN}",
+            "isRequired": true,
+            "isSecret": true,
+            "variables": {
+              "MCP_AUTH_TOKEN": {
+                "description": "The MCP_AUTH_TOKEN the agent was started with",
+                "isRequired": true,
+                "isSecret": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

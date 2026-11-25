@@ -1,7 +1,8 @@
 {
   "name": "@opute/host-agent",
-  "version": "0.5.1",
-  "description": "Local Streamable HTTP launcher for the Opute host agent",
+  "version": "0.5.2",
+  "mcpName": "io.github.wunderous/opute-host-agent",
+  "description": "MCP server that lets AI assistants run your Linux host: Incus VMs, K3s clusters, databases and tunnels, read-only until you allow changes",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -14,8 +15,15 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "model-context-protocol",
+    "claude",
+    "ai-agent",
     "incus",
+    "k3s",
+    "kubernetes",
+    "homelab",
+    "self-hosted",
     "infrastructure",
     "opute"
   ],
