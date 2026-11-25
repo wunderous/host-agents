@@ -42,23 +42,13 @@ host/VM inspection tools (for example `get_host_info`, `list_vms`). The
 `MCP_AUTH_TOKEN` bearer stays read-only unless the agent starts with
 `--allow-mutations`; an OAuth client mutates only with the `mutate` scope.
 
-Changes run inside the systemd user slice `opute-workload.slice`. The agent
-refuses them (`host_resource_enforcement_unknown`) until that slice has
-resource limits, which you may set lower than these but not higher:
-
-```bash
-mkdir -p ~/.config/systemd/user
-cat > ~/.config/systemd/user/opute-workload.slice <<'EOF'
-[Slice]
-MemoryHigh=10G
-MemoryMax=11G
-MemorySwapMax=1G
-CPUQuota=600%
-CPUWeight=100
-TasksMax=4096
-EOF
-systemctl --user daemon-reload
-```
+Changes run inside the systemd user slice `opute-workload.slice`, and the
+agent refuses them until that slice has resource limits. With
+`--allow-mutations`, the launcher creates
+`~/.config/systemd/user/opute-workload.slice` with the agent's default limits,
+unless systemd already has one. You can edit it to lower the limits; the agent
+refuses higher ones. Without a systemd user session the start is refused, and
+the message shows the slice to create by hand.
 
 ## Commands
 
@@ -66,7 +56,7 @@ systemctl --user daemon-reload
 |---------|-------------|
 | `start` | Start standalone Streamable HTTP (foreground by default) |
 | `start --background` / `-d` | Daemonize, write pid state, print MCP URL |
-| `start --allow-mutations` | Let the `MCP_AUTH_TOKEN` bearer run tools that change the host |
+| `start --allow-mutations` | Let the `MCP_AUTH_TOKEN` bearer run tools that change the host; creates the workload slice if it is missing |
 | `stop` | Stop a background daemon started by this launcher |
 | `status` | JSON status (`running`, `healthy`, `url`) |
 | `url` | Print the MCP URL |

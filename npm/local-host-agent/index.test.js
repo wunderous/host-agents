@@ -19,6 +19,46 @@ const launcherTestEnv = Object.fromEntries(
 )
 launcherTestEnv.OPUTE_REMOTE_AGENT_ID = 'npm-launcher-test-' + crypto.randomUUID()
 
+// The workload slice the agent renders (opute-host-resource-policy.v2); the
+// launcher writes this exact text (D56).
+const WORKLOAD_SLICE_UNIT = '[Unit]\nDescription=Opute killable workload slice (opute-host-resource-policy.v2)\n\n[Slice]\nMemoryHigh=10G\nMemoryMax=11G\nMemorySwapMax=1G\nCPUQuota=600%\nCPUWeight=100\nTasksMax=4096\n'
+
+// A fake `systemctl` first on PATH and a private XDG_CONFIG_HOME. It logs
+// each call, answers `--user cat opute-workload.slice` from the config dir
+// (or `elsewhere`), and fails every call when there is no user manager.
+function fakeSystemd({ userManager = true, elsewhere = false } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opute-fake-systemd-'))
+  const bin = path.join(dir, 'bin')
+  const config = path.join(dir, 'config')
+  const log = path.join(dir, 'systemctl.log')
+  fs.mkdirSync(bin)
+  fs.writeFileSync(path.join(bin, 'systemctl'), `#!/bin/sh
+echo "$*" >> "${log}"
+[ "${userManager ? 1 : 0}" = 1 ] || exit 1
+case "$*" in
+  "--user cat opute-workload.slice")
+    [ "${elsewhere ? 1 : 0}" = 1 ] && exit 0
+    [ -f "$XDG_CONFIG_HOME/systemd/user/opute-workload.slice" ] ;;
+  "--user show-environment"|"--user daemon-reload") exit 0 ;;
+  *) exit 1 ;;
+esac
+`, { mode: 0o755 })
+  return {
+    env: { PATH: `${bin}${path.delimiter}${process.env.PATH}`, XDG_CONFIG_HOME: config },
+    slice: path.join(config, 'systemd', 'user', 'opute-workload.slice'),
+    calls: () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : []),
+  }
+}
+
+// A stand-in agent for foreground starts: records that it ran, then exits.
+function markerBinary() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opute-marker-agent-'))
+  const marker = path.join(dir, 'ran')
+  const binary = path.join(dir, 'agent')
+  fs.writeFileSync(binary, `#!/bin/sh\necho "$*" > "${marker}"\nexit 0\n`, { mode: 0o755 })
+  return { binary, ran: () => fs.existsSync(marker) }
+}
+
 async function freePort() {
   const server = net.createServer()
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -192,6 +232,7 @@ process.on('SIGINT', stop)
     OPUTE_AGENT_MODE: 'standalone',
     OPUTE_HOST_ALLOW_MUTATIONS: 'true',
     OPUTE_STANDALONE_ALLOW_MUTATIONS: 'true',
+    ...fakeSystemd().env,
   }
   const started = await execFileAsync(process.execPath, [indexPath, 'start', '--background', '--allow-mutations'], { env, timeout: 20_000 })
   assert.equal(started.stdout.trim(), `http://127.0.0.1:${port}/mcp`)
@@ -221,6 +262,69 @@ process.on('SIGINT', stop)
   await execFileAsync(process.execPath, [indexPath, 'stop'], { env, timeout: 15_000 })
   await waitForClosed(`http://127.0.0.1:${port}/health`)
   assert.equal(fs.existsSync(path.join(runtimeDir, 'daemon.json')), false)
+})
+
+test('start --allow-mutations creates the workload slice before the agent starts', { skip: process.platform !== 'linux' }, async () => {
+  const systemd = fakeSystemd()
+  const agent = markerBinary()
+  const env = { ...launcherTestEnv, ...systemd.env, OPUTE_HOST_AGENT_BINARY: agent.binary }
+  const started = await execFileAsync(process.execPath, [indexPath, 'start', '--allow-mutations'], { env, timeout: 20_000 })
+  assert.equal(fs.readFileSync(systemd.slice, 'utf8'), WORKLOAD_SLICE_UNIT)
+  assert.equal(fs.statSync(systemd.slice).mode & 0o777, 0o644)
+  assert.deepEqual(systemd.calls(), [
+    '--user cat opute-workload.slice',
+    '--user show-environment',
+    '--user daemon-reload',
+    '--user cat opute-workload.slice',
+  ])
+  assert.match(started.stderr, new RegExp(`created ${systemd.slice.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
+  assert.equal(started.stdout, '')
+  assert.equal(agent.ran(), true)
+})
+
+test('start --allow-mutations keeps an existing workload slice', { skip: process.platform !== 'linux' }, async () => {
+  for (const where of ['config', 'elsewhere']) {
+    const systemd = fakeSystemd({ elsewhere: where === 'elsewhere' })
+    const stricter = '[Slice]\nMemoryMax=2G\n'
+    if (where === 'config') {
+      fs.mkdirSync(path.dirname(systemd.slice), { recursive: true })
+      fs.writeFileSync(systemd.slice, stricter)
+    }
+    const agent = markerBinary()
+    const env = { ...launcherTestEnv, ...systemd.env, OPUTE_HOST_AGENT_BINARY: agent.binary }
+    await execFileAsync(process.execPath, [indexPath, 'start', '--allow-mutations'], { env, timeout: 20_000 })
+    assert.deepEqual(systemd.calls(), ['--user cat opute-workload.slice'], where)
+    assert.equal(fs.existsSync(systemd.slice) ? fs.readFileSync(systemd.slice, 'utf8') : null, where === 'config' ? stricter : null, where)
+    assert.equal(agent.ran(), true, where)
+  }
+})
+
+test('start --allow-mutations without a systemd user session refuses before the agent starts', { skip: process.platform !== 'linux' }, async () => {
+  const systemd = fakeSystemd({ userManager: false })
+  const agent = markerBinary()
+  const env = { ...launcherTestEnv, ...systemd.env, OPUTE_HOST_AGENT_BINARY: agent.binary }
+  await assert.rejects(
+    execFileAsync(process.execPath, [indexPath, 'start', '--background', '--allow-mutations'], { env, timeout: 20_000 }),
+    error => {
+      assert.equal(error.code, 1)
+      assert.match(error.stderr, /systemd user session/)
+      assert.match(error.stderr, /opute-workload\.slice/)
+      assert.match(error.stderr, /MemoryMax=11G/)
+      return true
+    },
+  )
+  assert.equal(fs.existsSync(systemd.slice), false)
+  assert.equal(agent.ran(), false)
+})
+
+test('start without --allow-mutations touches no slice', { skip: process.platform !== 'linux' }, async () => {
+  const systemd = fakeSystemd()
+  const agent = markerBinary()
+  const env = { ...launcherTestEnv, ...systemd.env, OPUTE_HOST_AGENT_BINARY: agent.binary }
+  await execFileAsync(process.execPath, [indexPath, 'start'], { env, timeout: 20_000 })
+  assert.deepEqual(systemd.calls(), [])
+  assert.equal(fs.existsSync(systemd.slice), false)
+  assert.equal(agent.ran(), true)
 })
 
 test('background start refuses a foreign listener without overwriting daemon state', { skip: process.platform !== 'linux' }, async () => {

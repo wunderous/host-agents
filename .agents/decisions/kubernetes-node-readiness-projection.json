@@ -82,7 +82,7 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "cd74acf082e46a43c2ed6a78171d950e4a4e0d7821e03b58c71261338b0cd451",
+      "digest": "36878b4900a6c125e8f500ec4f3b61098f590e115e36437398008b880264bdd5",
       "note": "Host Agent release version matches the release tag"
     },
     {
@@ -112,7 +112,7 @@
     {
       "kind": "file",
       "path": "Makefile",
-      "digest": "32ade111335576d1c3dcb193876ad28acdce21e25f282200d31997a64f4a9802",
+      "digest": "73ede2cdd846d7e202283537081274e88f3c4e6cb8e3bdba306fd9a8b1e931fe",
       "note": "Verifier is part of the normal Host Agent test target"
     },
     {
