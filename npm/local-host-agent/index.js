@@ -8,7 +8,7 @@ const http = require('node:http')
 const https = require('node:https')
 const net = require('node:net')
 const zlib = require('node:zlib')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 
 const packageVersion = require('./package.json').version
 const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
@@ -16,6 +16,39 @@ const MAX_BINARY_BYTES = 256 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 15_000
 const LOCK_TIMEOUT_MS = 30_000
 const HEALTH_WAIT_MS = 15_000
+
+// D56: the agent runs changes in this user slice and, under its default
+// fail-closed enforcement, refuses them until the slice has limits. This is
+// the text the agent's reconcile_host_resource_policy renders for it
+// (opute-host-resource-policy.v2).
+const WORKLOAD_SLICE = 'opute-workload.slice'
+const WORKLOAD_SLICE_UNIT = '[Unit]\nDescription=Opute killable workload slice (opute-host-resource-policy.v2)\n\n[Slice]\nMemoryHigh=10G\nMemoryMax=11G\nMemorySwapMax=1G\nCPUQuota=600%\nCPUWeight=100\nTasksMax=4096\n'
+
+function systemctlUser(...args) {
+  const result = spawnSync('systemctl', ['--user', ...args], { stdio: 'ignore', timeout: 15_000 })
+  return result.status === 0
+}
+
+// Before a start with --allow-mutations: keep any slice systemd already
+// loads, otherwise write the agent's own and reload the user manager.
+function ensureWorkloadSlice() {
+  if (systemctlUser('cat', WORKLOAD_SLICE)) return
+  const dir = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'systemd', 'user')
+  const file = path.join(dir, WORKLOAD_SLICE)
+  if (!systemctlUser('show-environment')) {
+    throw new Error(`--allow-mutations needs a systemd user session: the agent runs changes in ${WORKLOAD_SLICE} and refuses them until it exists. Start from a login session, or create ${file} with:\n\n${WORKLOAD_SLICE_UNIT}\nthen run: systemctl --user daemon-reload`)
+  }
+  fs.mkdirSync(dir, { recursive: true })
+  try {
+    fs.writeFileSync(file, WORKLOAD_SLICE_UNIT, { mode: 0o644, flag: 'wx' })
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+  }
+  if (!systemctlUser('daemon-reload') || !systemctlUser('cat', WORKLOAD_SLICE)) {
+    throw new Error(`systemd did not load ${file}; check it with: systemctl --user cat ${WORKLOAD_SLICE}`)
+  }
+  console.error(`created ${file}: resource limits for the agent's changes (edit it to lower them)`)
+}
 
 function targetName() {
   const platform = process.platform
@@ -334,7 +367,9 @@ Commands:
   start [--background|-d] [--allow-mutations]
                            Start standalone Streamable HTTP MCP (default: foreground).
                            --allow-mutations lets MCP_AUTH_TOKEN run tools that change
-                           the host; without it the agent is read-only.
+                           the host; without it the agent is read-only. It also
+                           creates ~/.config/systemd/user/opute-workload.slice
+                           (the limits changes run under) unless one exists.
   stop                     Stop a background daemon started by this launcher
   status                   Show daemon/listener status and MCP URL
   url                      Print the MCP URL (http://127.0.0.1:3014/mcp by default)
@@ -510,6 +545,7 @@ async function main() {
   requireCanonicalAgentID()
   const background = rest.includes('--background') || rest.includes('-d')
   const passthroughArgs = rest.filter(arg => arg !== '--background' && arg !== '-d')
+  if (passthroughArgs.includes('--allow-mutations')) ensureWorkloadSlice()
   const binary = await resolveBinary()
   if (background) return startBackground(binary, passthroughArgs)
   return startForeground(binary, passthroughArgs)
