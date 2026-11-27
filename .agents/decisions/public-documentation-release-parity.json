@@ -82,7 +82,7 @@
     {
       "kind": "file",
       "path": "site/context/release-catalog.json",
-      "digest": "0f6666c4991eb6d3f3e4a8743a10494b048ade9384fd94adeff1a6866e3ab1ad",
+      "digest": "ed8abb3ba02da4c2b9cbc3a27c38a725184bfeaa64f804ff875e4b6d0f171b8e",
       "note": "Current published package, catalog revision, and read-only canary provenance"
     },
     {
@@ -94,7 +94,7 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "07b49b634a37ddcc72d8cad9d26669422aec62b0a9cf9a541833868da00ae105",
+      "digest": "936fb31b61f276b5bd4dd2c7a41f84d5ad67e3373bac3b1c3bc174ac4c125ee1",
       "note": "Published package name and release version"
     },
     {
@@ -160,7 +160,7 @@
     {
       "kind": "file",
       "path": "site/scripts/generate-docs.ts",
-      "digest": "4a42be05a2f47c8db640c5c356ea483fca1435d92521576d88a0c93407f56fc0",
+      "digest": "48544591723c1565532a702f348cf5d7b2525c1ee10204d7940fa77dce8079c4",
       "note": "Release-aware tutorial prerequisites, launch steps, and generated reference authority"
     },
     {
