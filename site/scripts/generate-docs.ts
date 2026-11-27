@@ -1092,10 +1092,13 @@ ${tutorialStartCommand}</code></pre><p>${tutorialLaunchContext} ${tutorialStopTe
 <h2>CLI</h2>
 <pre><code>opute-host-agent --check
 opute-host-agent serve --transport http [--allow-mutations]
-opute-host-agent public-mcp …
-opute-host-agent recipe …
-opute-host-agent provider …
+opute-host-agent public-mcp … [--allow-mutations]
+opute-host-agent recipe validate|status …
+opute-host-agent recipe apply … [--allow-mutations]
+opute-host-agent provider validate|status …
+opute-host-agent provider install|reload … [--allow-mutations]
 opute-host-agent help</code></pre>
+<p><code>public-mcp</code>, <code>recipe</code> and <code>provider</code> call the agent's published tools in process, as the operator holding the bootstrap bearer. A call that changes the host is refused with <code>mutation_refused</code> unless the command is given <code>--allow-mutations</code>; reads need no flag. Run them while no agent is serving the same state: the command takes the instance lock.</p>
 `,
   },
 
