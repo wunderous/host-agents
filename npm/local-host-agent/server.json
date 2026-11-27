@@ -3,7 +3,7 @@
   "name": "io.github.wunderous/opute-host-agent",
   "title": "Opute Host Agent",
   "description": "Run your Linux host from an AI assistant: Incus VMs, K3s, databases, tunnels. Read-only by default.",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "websiteUrl": "https://www.opute.io",
   "repository": {
     "url": "https://github.com/wunderous/opute-host-agent",
@@ -15,7 +15,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@opute/host-agent",
-      "version": "0.5.2",
+      "version": "0.5.3",
       "runtimeHint": "npx",
       "packageArguments": [
         {
