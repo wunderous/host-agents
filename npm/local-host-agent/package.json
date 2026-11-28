@@ -1,6 +1,6 @@
 {
   "name": "@opute/host-agent",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "mcpName": "io.github.wunderous/opute-host-agent",
   "description": "MCP server that lets AI assistants run your Linux host: Incus VMs, K3s clusters, databases and tunnels, read-only until you allow changes",
   "license": "MIT",

@@ -3,7 +3,7 @@
 BINARY=opute-host-agent
 DIST=dist
 MODULE=github.com/wunderous/host-agents
-VERSION ?= 0.5.5
+VERSION ?= 0.5.6
 # From 0.3.0 the published agent is the Rust build pinned in release/v$(VERSION).json; the Go
 # tree stays the 0.2.4 rollback, and its local builds keep reporting that version.
 GO_VERSION ?= 0.2.4

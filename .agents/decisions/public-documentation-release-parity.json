@@ -82,7 +82,7 @@
     {
       "kind": "file",
       "path": "site/context/release-catalog.json",
-      "digest": "c0f5d3333faa49727b2d6185c904d49cd64088cecfe678e00e931dad5f38850d",
+      "digest": "73a5e6537eb3e90b562fb27ea527c2a0cfb70b39b14ed79c6a9d962e0269545e",
       "note": "Current published package, catalog revision, and read-only canary provenance"
     },
     {
@@ -94,7 +94,7 @@
     {
       "kind": "file",
       "path": "npm/local-host-agent/package.json",
-      "digest": "857506614a14385974cad45301cd2dcde02839c087f3bb5e7dfaff586a115dc5",
+      "digest": "d231cc5d80802e6cfcec87b0e0d68c13bad20c5640da77e31432a975c456d058",
       "note": "Published package name and release version"
     },
     {
