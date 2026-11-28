@@ -1,5 +1,14 @@
 # Proposal: Private deployment controller for www.opute.io
 
+> **Status (2026-11-28): superseded in practice.** The controller's target cluster
+> (`cluster:local:opute-ha-a`) no longer exists, so www.opute.io and opute.io returned
+> 530 until the site moved. The site image this repository publishes is now deployed
+> by a Host Agent recipe on a dedicated site VM, outside GitHub runners:
+> [opute-host-agent evidence/m34](https://github.com/wunderous/opute-host-agent/blob/main/evidence/m34/README.md)
+> (the recipe) and [evidence/m35](https://github.com/wunderous/opute-host-agent/blob/main/evidence/m35/README.md)
+> (the site VM, restore and deploy-on-new-image). The boundary below still holds:
+> nothing in this public repository can deploy.
+
 ## Why
 
 The Host Agent source repository is public. Giving a self-hosted runner access to
