@@ -82,7 +82,7 @@
     {
       "kind": "file",
       "path": "site/context/release-catalog.json",
-      "digest": "1e604a850f9d5ae9fecba46f54fc000767151a4a8292b174009510e7809b6a21",
+      "digest": "c0f5d3333faa49727b2d6185c904d49cd64088cecfe678e00e931dad5f38850d",
       "note": "Current published package, catalog revision, and read-only canary provenance"
     },
     {
