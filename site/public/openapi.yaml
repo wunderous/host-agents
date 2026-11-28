@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Opute Host Agent HTTP edge",
-    "version": "0.5.4",
+    "version": "0.5.5",
     "description": "Streamable HTTP MCP transport for Opute Host Agent. Tool schemas are revisioned via tools/list — not frozen in this document. See https://www.opute.io/docs/openapi/",
     "contact": {
       "url": "https://www.opute.io/docs/"
@@ -127,7 +127,7 @@
     "protocolVersion": "2026-07-28",
     "transport": "streamable-http",
     "catalogAuthority": "tools/list",
-    "packageVersion": "0.5.4",
+    "packageVersion": "0.5.5",
     "releaseChannel": "stable",
     "catalogRevision": "sha256:6ceca36091c4fc214fac50a643f9dfad87cb4163fb6ebe8b1913a57286e0178c",
     "toolCount": 138,
