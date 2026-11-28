@@ -1,0 +1,22 @@
+{
+ "schemaVersion": "opute-rust-release-pin.v1",
+ "version": "0.5.5",
+ "source": {
+  "repository": "wunderous/opute-host-agent",
+  "tag": "v0.5.5",
+  "commit": "4645018d3b087054a508a26863faa7c71b96c64c",
+  "candidate": "rust-0.5.5-rc1",
+  "evidence": "https://github.com/wunderous/opute-host-agent/blob/main/evidence/m33/README.md"
+ },
+ "assets": {
+  "host-agent-linux-x64": "12f2d0048ef45987d9e650a44c8b8c37dc3c46ba8aabdd90bccc669876c8da70",
+  "host-agent-linux-x64.gz": "dd90ce7b4415f1b825204f1d178512f50a15890d1e2870c5aeaed77e46a3f47f",
+  "host-agent-linux-arm64.gz": "d1c0837792931b0abde3e50142ae1202480b03eb8655adffdcdfacaacc5ed42c",
+  "opute-provider-k3s-linux-x64": "53dddca7b99dd28eb827480c398bea00ba65e272e0839215ba06b73881c9590a",
+  "opute-provider-cloudflare-linux-x64": "f2c13ef68a50088c5ab2b2ffaa680141a21032c5be9e5ed966f20cd0a0c020ec",
+  "opute-provider-tailscale-linux-x64": "bf5eaee0e5e7903d8adabb87734fa4098bdf645450130beb7e93b78c33b5e212",
+  "SHA256SUMS": "c0d50088a8da8e773916f38c5bc55ae10fcf23ec21d063b34bba468b2d9a1609",
+  "sbom.cdx.json": "d53de750b91556ea0caeaf074a5e2105e90ab9622b9ac6e5dc7d9f6b2cae3bed",
+  "sbom.cdx.json.sha256": "9a078986ccd8e4f670c826c6664d04275360fd7e9756841905a935f3ddbf72db"
+ }
+}

@@ -96,7 +96,7 @@
     {
       "kind": "file",
       "path": "Makefile",
-      "digest": "96cd1d83b61b97525c23803400d3964a2f983c86e1f70773fedda4358252729a",
+      "digest": "891b4352f59e22018c6d0f90095c80b738ec69808b88936b6181a11e88a1569b",
       "note": "Invariant verifier is part of the normal test target"
     },
     {
